@@ -1,0 +1,40 @@
+# Wine Quality (Red) — modeling steps
+- name: 加载葡萄酒数据
+  type: load
+  module: python
+  params:
+    source: wine.py:load
+
+- name: X/y 拆分
+  type: X_y
+  module: x_y
+  params:
+    targets: quality
+    # quality 为 0-10 整数评分（11 个唯一值），自动推断会判为分类；
+    # 品质评分为连续语义，显式指定回归（TASKTYPE StrEnum 枚举名）
+    task: REGRESSION
+
+- name: K-Fold CV
+  type: cross_validate
+  module: k_fold
+  params:
+    n_splits: 5
+
+- name: 模型训练与评估
+  branches:
+    - name: XGBoost
+      type: model
+      module: XGB
+      params: { n_estimators: 200, n_trials: 30, scoring: mae }
+    - name: LightGBM
+      type: model
+      module: LGBM
+      params: { n_estimators: 200, n_trials: 30, scoring: mae }
+    - name: CatBoost
+      type: model
+      module: CAT
+      params: { iterations: 200, n_trials: 30, scoring: mae }
+    - name: RandomForest
+      type: model
+      module: RF
+      params: { n_estimators: 200, n_trials: 30, scoring: mae }

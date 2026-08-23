@@ -1,0 +1,67 @@
+name: EDA Stage 2 - 目标深度分析 · {{ dataset_tag }}
+description: |
+  绘制数值特征相关性热图，分析数值自变量-因变量特征对的相关性
+  四个 target 图按目标类型自动分支（targets dtype 校验不通过的分支软失败跳过）：
+  数值目标走趋势散点 + 组间效应，分类目标走类别分离度 + 类别关联
+  按 target×分类特征组合做分组统计（cat_cols 缺省时自动探测分类列）
+steps:
+  - name: 导入表格型实验数据
+    type: load
+    module: file
+    params:
+      file_path: {{ path_to_data | tojson }}
+      {% if sheet %}
+      sheet_name: {{ sheet | tojson }}
+      {% endif %}
+      {% if skip %}
+      skiprows: {{skip}}
+      {% endif %}
+
+  - name: 分组效应量统计
+    type: statistic
+    module: effect_size
+    params:
+      targets: {{ target | tojson }}
+      {% if cat_cols %}
+      categorical_cols: {{ cat_cols | tojson }}
+      {% endif %}
+
+  - name: 特征-目标相关性热图
+    type: plot
+    module: correlation_heatmap
+    params:
+      method: {{ corr_method | tojson }}
+      targets: {{ target | tojson }}
+
+  - name: 目标-特征趋势 (LOWESS)
+    type: plot
+    module: target_trend_by_numeric
+    params:
+      method: {{ corr_method | tojson }}
+      targets: {{ target | tojson }}
+      top_k: {{top_k_high_correlated}}
+      lowess_frac: {{lowess_frac}}
+
+  - name: 分类特征目标分离度
+    type: plot
+    module: target_separation_by_numeric
+    params:
+      targets: {{ target | tojson }}
+
+  - name: 数值特征分类效应量
+    type: plot
+    module: target_effect_by_category
+    params:
+      targets: {{ target | tojson }}
+      {% if cat_cols %}
+      categorical_cols: {{ cat_cols | tojson }}
+      {% endif %}
+
+  - name: 分类特征-目标交叉关联
+    type: plot
+    module: target_association_by_category
+    params:
+      targets: {{ target | tojson }}
+      {% if cat_cols %}
+      categorical_cols: {{ cat_cols | tojson }}
+      {% endif %}

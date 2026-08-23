@@ -1,0 +1,29 @@
+# pre-commit 钩子：安装后每次 commit 自动执行。
+# 安装：uv run pre-commit install
+# 手动全量检查：uv run pre-commit run --all-files
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.8
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+        # 案例图 1-4MB、visualization.ipynb 8.3MB 为有意提交内容；23MB+ 数据集不入库（见 .gitignore）
+        args: [--maxkb=10240]
+  # UT 硬关卡：与 CI 相同的 pytest 入口，提交前本地跑一遍
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: uv run pytest tests/
+        language: system
+        pass_filenames: false
+        always_run: true

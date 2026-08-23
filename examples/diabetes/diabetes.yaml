@@ -1,0 +1,63 @@
+- name: "加载"
+  type: load
+  module: python
+  params:
+    source: diabetes.py:load
+- name: 删除空行与空列
+  type: clean
+  module: python
+  params:
+    source: diabetes.py:clean
+- name: "X/y 拆分"
+  type: X_y
+  module: x_y
+  params:
+    targets: target
+- name: "数据集划分"
+  type: cross_validate
+  module: simple_cv
+  params:
+    train_ratio: 0.8
+    val_ratio: 0.1
+- name: "模型训练与评估"
+  branches:
+    - name: "XGBoost"
+      type: model
+      module: XGB
+      params:
+        n_estimators: 30
+        n_trials: 2
+        scoring: mae
+    - name: "LightGBM"
+      type: model
+      module: LGBM
+      params:
+        n_estimators: 30
+        n_trials: 2
+        scoring: mae
+    - name: "CatBoost"
+      type: model
+      module: CAT
+      params:
+        iterations: 30
+        n_trials: 2
+        scoring: mae
+    - name: "RandomForest"
+      type: model
+      module: RF
+      params:
+        n_estimators: 30
+        n_trials: 2
+        scoring: mae
+    - name: "标准化"
+      type: x_transformer
+      module: standard_scaler
+      steps:
+        - name: "MLP"
+          type: model
+          module: MLP
+          params:
+            n_trials: 2
+            epochs: 10
+            batch_size: 16
+            hidden_dims: [16, 8, 4]

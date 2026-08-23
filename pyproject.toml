@@ -1,0 +1,147 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# 标准 src 布局：src/mflowy/ — 目录含 src 层（不进 import 路径），包名 = 发布名
+packages = ["src/mflowy"]
+
+[project]
+name = "mflowy"
+version = "0.1.2"
+description = "MCP-native ML capability layer for autonomous data-analysis / model-training / prediction agents — enumerable MCP tool catalog composed into traceable YAML-DAG experiment workflows"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+authors = [{ name = "lincode7", email = "15587025323@163.com" }]
+keywords = ["mcp", "machine-learning", "workflow", "mlflow", "data-analysis", "yaml"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# base = 仅信息查询能力（list_modules / get_module_info / validate / mlflow queries），不拉数据栈。
+# 数据分析工具（data_profile / eda / infer_task_type_by_statistic）装 [stats] extra；
+# 建模工具（modeling / explanation / predict / inverse_optimization）装 [modeling] extra（含 stats）。
+# 完全体：uvx --from "mflowy[modeling] @ file://<abs_path>" mcpSrv
+dependencies = [
+    # 配置解析 / 模板
+    "pyyaml>=6.0",
+    "jinja2>=3.1.0",
+    # MCP 工具层（server 直接导入 mcp.server.mcpserver，需 SDK ≥2.0）
+    "mcp>=2.0.0",
+    # mlflow 查询（直调 SDK 连 tracking DB）
+    "mlflow>=3.14",
+    # MCP 遥测采集（agentcat.track 纯 OTLP 模式，懒加载；缺失时遥测降级 off）
+    "agentcat>=2.0.2",
+    # 遥测设备指纹（machine-id，跨平台；仅 Windows 需 winregistry）
+    "py-machineid>=1.0.0",
+    # 工具参数描述注解（Annotated[..., Field]；mcp SDK 传递依赖，因直接 import 显式声明）
+    "pydantic>=2.0",
+]
+
+[project.urls]
+Repository = "https://github.com/ifoodsci-ai/mflowy"
+Issues = "https://github.com/ifoodsci-ai/mflowy/issues"
+Documentation = "https://github.com/ifoodsci-ai/mflowy#readme"
+
+[project.scripts]
+# JSON runner — K8s Job 容器 + subprocess 通用入口
+cmd = "mflowy.mcp.runner:main"
+# MCP server — stdio transport
+mcpSrv = "mflowy.mcp.server:main"
+
+[project.optional-dependencies]
+# ─── stats：数据分析工具（data_profile / eda / infer_task_type_by_statistic） ───
+stats = [
+    # http_loader（LOAD 步 HTTP 拉取）
+    "requests>=2.31",
+    # csv/xlsx/parquet 支持
+    "pyarrow>=12.0.0",
+    "openpyxl>=3.1.0",
+    # 数据处理
+    "pandas>=2.2,<3",
+    "numpy>=2.0.0",
+    "scipy>=1.17.0",
+    # 可视化
+    "matplotlib>=3.11.0",
+    "seaborn>=0.13.0",
+    # eda 目标趋势平滑（target_trend_by_numeric 的 lowess）
+    "statsmodels>=0.14.0",
+]
+# ─── modeling：建模工具（modeling / explanation / predict / inverse_optimization） ───
+modeling = [
+    # 建模编排含 load/clean/plot 全栈，复用 stats extra
+    "mflowy[stats]",
+    # 机器学习
+    "scikit-learn>=1.9.0",
+    # 实验追踪（mlflow 已在 base；此处 postgres 直连）
+    "psycopg2-binary>=2.9.0",
+    # 多标签 stratified_k_fold 支持
+    "iterative-stratification>=0.1.9",
+    # 模型框架
+    "torch>=2.12.0",
+    "pytorch-lightning>=2.6.5",
+    "lightgbm>=4.6.0",
+    "xgboost-cpu>=3.0.0",
+    "catboost>=1.2",
+    # 超参优化
+    "optuna>=4.8.0",
+    # 模型解释
+    "shap>=0.52.0",
+    "numba>=0.59.0,<0.61",
+    "llvmlite>=0.42.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::FutureWarning",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+exclude = ["*.ipynb"]
+
+[tool.ruff.lint]
+# E4/E7/E9/F: pycodestyle 核心错误 + pyflakes；I: import 排序；UP035/UP037: 废弃导入/引号注解
+select = ["E4", "E7", "E9", "F", "I", "UP035", "UP037"]
+per-file-ignores = { "src/mflowy/compute/plots/**" = ["F403", "F405"], "src/mflowy/compute/plots/model_evaluation/regression/_taylor_diagram_copin.py" = ["E741"] }  # 后者：vendored 第三方代码（public domain），原样保留
+
+[tool.ruff.format]
+exclude = ["*.ipynb"]
+
+[tool.uv]
+index-url = "https://mirrors.aliyun.com/pypi/simple/"
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.15.8",
+    "pre-commit>=3.0",
+]
+jupyter = [
+    "nbformat>=5.10.4",
+    "nbconvert>=7.17.1",
+    "ipykernel>=7.2.0",
+    "papermill>=2.7.0",
+]

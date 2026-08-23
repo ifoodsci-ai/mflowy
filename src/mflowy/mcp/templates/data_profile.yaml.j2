@@ -1,0 +1,28 @@
+name: EDA Stage 1 - 数据画像 · {{ dataset_tag }}
+description: |
+  加载数据，输出基本统计与每列类型，用于识别 target 与 cat_cols 候选
+  绘制所有数值特征的分布质量图，分析异常点、偏峰、多峰等数据分布问题
+steps:
+  - name: 导入表格型实验数据
+    type: load
+    module: file
+    params:
+      file_path: {{ path_to_data | tojson }}
+      {% if sheet %}
+      sheet_name: {{ sheet | tojson }}
+      {% endif %}
+      {% if skip %}
+      skiprows: {{skip}}
+      {% endif %}
+
+  - name: 数据画像
+    type: statistic
+    module: profile
+
+  - name: 数值特征分布与质量
+    type: plot
+    module: numeric_quality_kde_hist
+
+  - name: 数值特征尺度对比
+    type: plot
+    module: numeric_scale_box

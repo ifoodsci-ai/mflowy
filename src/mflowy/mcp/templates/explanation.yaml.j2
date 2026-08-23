@@ -1,0 +1,19 @@
+workflow:
+  name: "{{ name | default('模型SHAP解释性分析') }}"
+  description: "{{ description | default('[custom](load → clean → cross_validate → pre_process → model.loader) → SHAP 解释（beeswarm + dependence）') }}"
+  steps:
+    {{ modeling_steps | indent(4, blank=True) }}
+
+    - name: SHAP 模型解释
+      branches:
+        - name: 蜂群图
+          type: plot
+          module: shap_summary
+          params:
+            max_display: 10
+        - name: 依赖图
+          type: plot
+          module: shap_dependence
+          params:
+            top_n: 10
+            lowess_frac: {{ lowess_frac }}

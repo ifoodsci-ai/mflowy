@@ -1,0 +1,39 @@
+name: mflowy
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+      args:
+        USERNAME: ${USER}
+        USER_UID: 1000
+        USER_GID: 1000
+        WORKDIR: mflowy
+    volumes:
+      - ../:${HOME}/mflowy
+      # Git
+      - /usr/bin/git:/usr/bin/git:ro
+      - /usr/lib/git-core:/usr/lib/git-core:ro
+      - ${HOME}/.gitconfig:${HOME}/.gitconfig:ro
+      - ${HOME}/.ssh:${HOME}/.ssh:ro
+      # GitHub CLI
+      - /usr/bin/gh:/usr/bin/gh:ro
+      - ${HOME}/.config/gh:${HOME}/.config/gh:ro
+      # Docker socket（容器内使用 docker 命令）
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Claude
+      - ${HOME}/.local/bin/claude:${HOME}/.local/bin/claude:ro
+      - ${HOME}/.local/share/claude:${HOME}/.local/share/claude:ro
+      - ${HOME}/.claude:${HOME}/.claude
+      - ${HOME}/.claude.json:${HOME}/.claude.json
+      # Gstack
+      - ${HOME}/.gstack:${HOME}/.gstack
+    deploy:
+      resources:
+        reservations:
+          memory: 2G
+    command: sleep infinity
+
+volumes:
+  venv:
+    name: "mflowy-venv"

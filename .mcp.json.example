@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "mflowy": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "--index-strategy",
+        "unsafe-best-match",
+        "--default-index",
+        "https://mirrors.aliyun.com/pypi/simple/",
+        "--index",
+        "https://download.pytorch.org/whl/cpu",
+        "--from",
+        "mflowy[modeling]",
+        "mcpSrv"
+      ]
+    }
+  }
+}

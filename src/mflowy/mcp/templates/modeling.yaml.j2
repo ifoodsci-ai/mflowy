@@ -1,0 +1,19 @@
+workflow:
+  name: "{{ name | default('数据建模与分析') }}"
+  description: "{{ description | default('[custom](load → clean → cross_validate → pre_process → model)；model handler 内置评估可视化，多模型时叠加对比图') }}"
+  steps:
+    {{ modeling_steps | indent(4, blank=True) }}
+
+    {% if multi_model %}
+    - name: 预测 vs 真实散点图
+      type: plot
+      module: prediction_scatter
+
+    - name: 混淆矩阵
+      type: plot
+      module: confusion_matrix
+
+    - name: 模型对比
+      type: plot
+      module: taylor_diagram
+    {% endif %}

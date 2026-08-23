@@ -1,0 +1,15 @@
+workflow:
+  name: "predict_{{ flavor }}_{{ run_id[:8] }}"
+  description: "加载 {{ flavor }} 模型 {{ run_id }} 对 {{ data_path }} 做预测"
+  steps:
+    - name: 加载预测数据
+      type: load
+      module: file
+      params:
+        file_path: "{{ data_path }}"
+    - name: 模型预测
+      type: model
+      module: predict
+      params:
+        flavor: {{ flavor }}
+        run_id: {{ run_id }}

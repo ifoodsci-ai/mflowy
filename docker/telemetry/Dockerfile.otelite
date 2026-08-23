@@ -1,0 +1,21 @@
+FROM rust:alpine AS builder
+
+# 安装 OpenSSL 开发库和 pkg-config
+ARG APK_MIRROR=https://dl-cdn.alpinelinux.org/alpine
+RUN sed -i "s|https\?://.*/alpine|${APK_MIRROR}|g" /etc/apk/repositories && \
+    apk add --no-cache openssl-dev openssl-libs-static pkgconfig curl ca-certificates
+
+# 编译安装 otelite
+RUN cargo install otelite
+
+FROM alpine:latest
+
+# 从构建阶段复制编译好的二进制文件
+COPY --from=builder /usr/local/cargo/bin/otelite /usr/local/bin/otelite
+
+# 创建数据目录
+RUN mkdir -p /app/data
+WORKDIR /app
+
+EXPOSE 4317 4318 3333
+CMD ["otelite", "serve", "--addr", "0.0.0.0:3333", "--storage-path", "/app/data"]

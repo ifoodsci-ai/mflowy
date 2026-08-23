@@ -1,0 +1,64 @@
+version: "3.8"
+
+services:
+  # 1. OTLP 接收与展示后端 (otelite)
+  otelite:
+    build:
+      context: .
+      dockerfile: Dockerfile.otelite
+      args:
+        - APK_MIRROR=https://mirrors.aliyun.com/alpine
+    container_name: otelite
+    restart: unless-stopped
+    ports:
+      - "3333:3333" # Web 仪表盘 (可选)
+      # - "4318:4318"   # OTLP HTTP receiver (OpenResty traces 代理目标)
+    volumes:
+      - ${HOME}/.mflowy/otelite_data:/app/data
+    networks:
+      - telemetry-net
+
+  # 2. API 密钥管理服务 (Ory Talos)
+  talos:
+    image: oryd/talos:latest # 使用官方镜像
+    container_name: talos
+    restart: unless-stopped
+    # ports:
+    #   - "4420:4420"   # Talos admin API (OpenResty 设备注册 sub-request 目标)
+    # 镜像默认以 nonroot(65532) 运行，但容器内 /app/data 挂载点由内核以 root 创建，
+    # 非 root 无法在此创建 SQLite 库文件（SQLITE_CANTOPEN=14）→ 以 root 运行
+    user: "0:0"
+    # talos serve 不会自动执行数据库迁移，需先 migrate up（幂等，重启安全）
+    entrypoint: ["sh", "-c", "talos migrate up && exec talos serve"]
+    environment:
+      # SQLite 配置 (开源版默认使用 SQLite)
+      - DB_DSN=sqlite:///app/data/talos.db?_fk=true
+      # 生产环境务必设置认证密钥！
+      - SECRETS_HMAC_CURRENT=${TALOS_ENCRYPTION_KEY}
+      # 新增：凭证签发者（可以是任意字符串，用于标识你的服务）
+      - CREDENTIALS_ISSUER=mflowy
+    volumes:
+      - ${HOME}/.mflowy/talos_data:/app/data
+    networks:
+      - telemetry-net
+
+  # 3. OpenResty 网关（设备注册 + 验证 + 代理 otelite）
+  gateway:
+    image: openresty/openresty:alpine
+    container_name: telemetry-gateway
+    restart: unless-stopped
+    ports:
+      - "2333:2333" # 生产置于 TLS 终结后（443/域名）
+    volumes:
+      - ./telemetry.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro
+      - ./telemetry-register.lua:/usr/local/openresty/nginx/conf/telemetry-register.lua:ro
+      - ./telemetry-verify.lua:/usr/local/openresty/nginx/conf/telemetry-verify.lua:ro
+    depends_on:
+      - talos
+      - otelite
+    networks:
+      - telemetry-net
+
+networks:
+  telemetry-net:
+    driver: bridge

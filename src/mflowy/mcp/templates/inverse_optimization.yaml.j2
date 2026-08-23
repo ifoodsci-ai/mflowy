@@ -1,0 +1,32 @@
+workflow:
+  name: "search_input_{{ flavor }}_{{ run_id[:8] }}"
+  description: "逆向设计：搜让 {{ y_names | join(', ') }} 按 directions 最优的输入（model={{ flavor }}={{ run_id }}）"
+  steps:
+{% if data_path %}
+    - name: 加载参考数据
+      type: load
+      module: file
+      params:
+        file_path: "{{ data_path }}"
+{% endif %}
+    - name: 输入空间优化
+      type: model
+      module: search_input
+      params:
+        flavor: {{ flavor }}
+        run_id: {{ run_id }}
+        directions:
+{% for y, d in directions.items() %}
+          {{ y }}: {{ d }}
+{% endfor %}
+{% if columns %}
+        columns:
+{% for name, values in columns.items() %}
+          {{ name }}: {{ values | tojson }}
+{% endfor %}
+{% endif %}
+{% if cross_rules_source %}
+        cross_rules: "{{ cross_rules_source }}"
+{% endif %}
+        n_trials: {{ n_trials }}
+        random_seed: {{ random_seed }}

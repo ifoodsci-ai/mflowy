@@ -1,0 +1,20 @@
+name: Guess TaskType - 猜测任务类型 · {{ dataset_tag }}
+description: |
+  加载数据，对目标列进行统计分析，推断可能的任务类型
+steps:
+  - name: 导入表格型实验数据
+    type: load
+    module: file
+    params:
+      file_path: {{ path_to_data | tojson }}
+      {% if sheet %}
+      sheet_name: {{ sheet | tojson }}
+      {% endif %}
+      {% if skip %}
+      skiprows: {{skip}}
+      {% endif %}
+  - name: 划分训练目标
+    type: X_y
+    module: x_y
+    params:
+        targets: {{ target_or_targets | tojson }}
