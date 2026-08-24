@@ -3,7 +3,7 @@
 四类工具：
   - 分析（data_profile/eda/infer_task_type_by_statistic）→ 始终本地执行（Builder 直调）
   - compute（modeling/explanation/predict/inverse_optimization）→ JobProvider 委派
-  - info（list_modules/get_module_info/validate）→ 直接实现（base 依赖够用）
+  - info（file_hash/list_modules/get_module_info/validate）→ 直接实现（base 依赖够用）
   - mlflow（list_runs/get_run/list_artifacts）→ 直接实现（base 含 mlflow SDK）
 
 仅 compute（JobProvider 委派）工具带 ``ctx: Context | None = None`` 形参（SDK 注入，
@@ -21,9 +21,10 @@ JobProvider，无 ctx 形参。
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from dataclasses import asdict
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from mcp.server.mcpserver import Context
 from pydantic import Field
@@ -38,16 +39,64 @@ from .job_provider.local import DATA_PROFILE_TEMPLATE, EDA_TEMPLATE, INFER_TASK_
 
 # ── info 工具（始终本地执行） ─────────────────────────────────────────────
 
+_CHUNK_SIZE = 8 * 1024 * 1024  # 分块读取，避免大文件整读进内存
+_ALGORITHMS = {"sha256", "md5", "sha1"}  # Literal 之外的直调防线
+
+
+def file_hash(
+    path: Annotated[str, Field(description="文件绝对路径")],
+    algorithm: Annotated[Literal["sha256", "md5", "sha1"], Field(description="哈希算法，默认 sha256")] = "sha256",
+) -> dict | str:
+    """为文件当前内容生成稳定指纹。
+
+    何时使用 file_hash：
+    - 上传文件(如CSV)身份核验
+    - 跨阶段篡改检测
+    """
+    algorithm_lc = algorithm.lower()
+    if algorithm_lc not in _ALGORITHMS:
+        return f"Error: Unsupported algorithm '{algorithm}'. Supported: {', '.join(sorted(_ALGORITHMS))}"
+
+    file_path = Path(path)
+
+    if not file_path.exists():
+        return f"Error: File not found: {path}"
+    if not file_path.is_file():
+        return f"Error: Path is not a file: {path}"
+
+    try:
+        hasher = hashlib.new(algorithm_lc)
+        size = 0
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(_CHUNK_SIZE), b""):
+                hasher.update(chunk)
+                size += len(chunk)
+        digest = hasher.hexdigest()
+    except (OSError, ValueError) as e:  # ValueError：FIPS 模式下 md5 被禁
+        return f"Error hashing file: {type(e).__name__}: {e}"
+
+    return {
+        "path": path,
+        "algorithm": algorithm_lc,
+        "hash": digest,
+        "size_bytes": size,
+    }
+
 
 def list_modules(
     step: Annotated[
         str | None,
         Field(
-            description="可选，按 StepType 过滤（load/clean/X_y/x_transformer/cross_validate/model/plot/statistic/sampler）"
+            description="可选，过滤 step（load/clean/X_y/x_transformer/cross_validate/model/plot/statistic/sampler）"
         ),
     ] = None,
 ) -> list[dict]:
-    """查询 mflowy 所有已注册的 compute 模块，按 StepType 分组。"""
+    """查询 mflowy 已注册的步骤模块，按 step 分组。
+
+    何时使用 list_modules：
+    - 编写 modeling YAML 前盘点可用模块
+    - 确认某 step 下有哪些模块可选
+    """
     from mflowy.driver.module import list_modules as _list
 
     step = parse_enum(StepType, step) if step else None  # 值/名双形式（load / LOAD）
@@ -59,7 +108,12 @@ def get_module_info(
     step: Annotated[str, Field(description="步骤类型（如 model）")],
     module: Annotated[str, Field(description="模块名（如 XGB）")],
 ) -> dict:
-    """查询指定 compute 模块的 YAML 配置模板。"""
+    """查询指定步骤模块的 YAML 配置模板(参数/默认值)。
+
+    何时使用 get_module_info：
+    - 选定模块后查看参数与 YAML 写法
+    - 校对参数拼写、类型、默认值
+    """
     from mflowy.driver.module import get_module_info as _get
 
     return asdict(_get(step, module))
@@ -68,7 +122,12 @@ def get_module_info(
 def validate_modeling_steps(
     modeling_steps_yaml: Annotated[str, Field(description="建模步骤 YAML 文件路径")],
 ) -> dict:
-    """验证 modeling YAML 语法和逻辑，输出 DAG mermaid 预览。"""
+    """验证 modeling YAML 语法和逻辑，输出 DAG mermaid 预览。
+
+    何时使用 validate_modeling_steps：
+    - 提交 modeling 前静态检查 YAML
+    - 向用户展示工作流 DAG 结构
+    """
     from mflowy.driver.builder import Builder
     from mflowy.utils.file import read_text
 
@@ -134,7 +193,12 @@ def list_runs(
     max_results: Annotated[int, Field(description="每页最大数量")] = 10,
     page_token: Annotated[str | None, Field(description="翻页令牌（仅未过滤时有效）")] = None,
 ) -> dict:
-    """批量查询实验下所有执行步骤的 run 信息。"""
+    """批量查询实验下所有执行步骤的 run 信息。
+
+    何时使用 list_runs：
+    - 从 experiment_id 浏览历史运行(可按步骤过滤)
+    - 获取 run_id 供 get_run/预测类工具引用
+    """
     client = _mlflow_client()
     if filter_steps:
         # mlflow filter 不支持 tag IN / OR，按步骤等值查询后合并
@@ -169,7 +233,11 @@ def list_runs(
 
 
 def get_run(run_id: Annotated[str, Field(description="Run ID（从任务输出 RunInfo 或 list_runs 获取）")]) -> dict:
-    """查询单个执行步骤的详细信息（metrics/params/tags/artifact_uri）。"""
+    """查询单个执行步骤的详细信息(metrics/params/tags/artifact_uri)。
+
+    何时使用 get_run：
+    - 已有 run_id 时读取指标与参数
+    """
     client = _mlflow_client()
     run = client.get_run(run_id)
     d = run.to_dictionary()
@@ -181,7 +249,12 @@ def list_run_artifacts(
     run_id: Annotated[str, Field(description="Run ID")],
     path: Annotated[str | None, Field(description="可选，artifact 子路径过滤")] = None,
 ) -> list[dict]:
-    """查询执行步骤的文件产物列表。"""
+    """查询执行步骤的文件产物列表。
+
+    何时使用 list_run_artifacts：
+    - 查看 run 落盘的图表/模型文件
+    - 定位产物路径供用户查看
+    """
     from urllib.parse import unquote, urlparse
 
     client = _mlflow_client()
@@ -205,7 +278,12 @@ async def data_profile(
     sheet: Annotated[str | None, Field(description="Excel sheet 名（仅 xlsx）")] = None,
     skip: Annotated[int, Field(description="跳过前 n 行")] = 0,
 ) -> WorkflowResult:
-    """EDA — 查看数据画像（统计摘要 + 分布图）。"""
+    """EDA — 查看数据画像(统计摘要 + 分布图)。
+
+    何时使用 data_profile：
+    - 首次拿到数据的整体概览(形状/缺失/分布)
+    - 不指定目标列的通览；围绕 target 分析改用 eda
+    """
     _path, func = split_path_to_py_with_target(file_path)
 
     def _run():
@@ -242,7 +320,12 @@ async def eda(
     top_k: Annotated[int, Field(description="高相关对展示数量")] = 10,
     lowess_frac: Annotated[float, Field(description="LOWESS 平滑窗口比例")] = 0.3,
 ) -> WorkflowResult:
-    """EDA — 相关性与分组分析（热图 + target 图 + 效应量）。"""
+    """EDA — 相关性与分组分析(热图 + target 图 + 效应量)。
+
+    何时使用 eda：
+    - 已明确目标列，看特征与 target 的相关性/分组差异
+    - 特征筛选前识别强相关特征
+    """
     _path, func = split_path_to_py_with_target(file_path)
 
     def _run():
@@ -281,7 +364,11 @@ async def infer_task_type_by_statistic(
     sheet: Annotated[str | None, Field(description="Excel sheet 名")] = None,
     skip: Annotated[int, Field(description="跳过前 n 行")] = 0,
 ) -> WorkflowResult:
-    """从数据统计特征推测任务类型（regression/classification）。"""
+    """从数据统计特征推测任务类型(regression/classification)。
+
+    何时使用 infer_task_type_by_statistic：
+    - 不确定 target 按回归还是分类建模
+    """
     _path, func = split_path_to_py_with_target(file_path)
 
     def _run():
@@ -324,7 +411,12 @@ async def modeling(
     prune_missing: Annotated[bool, Field(description="配合 experiment_id — 未命中 model 剪枝不重训")] = False,
     ctx: Context | None = None,
 ) -> WorkflowResult:
-    """提交 mflowy 建模任务并等待完成。"""
+    """提交 mflowy 建模任务并等待完成。
+
+    何时使用 modeling：
+    - modeling_steps_yaml 验证通过后执行训练
+    - 传 experiment_id 复用已训模型，配 prune_missing 跳过重训
+    """
     return await get_job_provider().modeling(
         modeling_steps_yaml=modeling_steps_yaml,
         name=name,
@@ -343,7 +435,11 @@ async def explanation(
     lowess_frac: Annotated[float, Field(description="LOWESS 平滑比例")] = 0.3,
     ctx: Context | None = None,
 ) -> WorkflowResult:
-    """提交 SHAP 解释性分析 Job 并等待完成。"""
+    """提交 SHAP 解释性分析 Job 并等待完成。
+
+    何时使用 explanation：
+    - 训练完成后解释特征贡献与依赖关系
+    """
     return await get_job_provider().explanation(
         modeling_steps_yaml=modeling_steps_yaml,
         model=model,
@@ -359,7 +455,11 @@ async def predict(
     model: Annotated[str, Field(description="flavor=run_id（如 XGB=abc123）")],
     ctx: Context | None = None,
 ) -> WorkflowResult:
-    """加载已训练模型对新数据做预测。"""
+    """加载已训练模型对新数据做预测。
+
+    何时使用 predict：
+    - 用已训模型(flavor=run_id)对新增数据出预测值
+    """
     return await get_job_provider().predict(data=data, model=model, headers=ctx.request_context.meta if ctx else None)
 
 
@@ -379,7 +479,11 @@ async def inverse_optimization(
     seed: Annotated[int, Field(description="随机种子")] = 42,
     ctx: Context | None = None,
 ) -> WorkflowResult:
-    """基于已训练模型逆向设计最优输入特征组合。"""
+    """基于已训练模型逆向设计最优输入特征组合。
+
+    何时使用 inverse_optimization：
+    - 回答"什么输入让输出最优/满足约束"
+    """
     return await get_job_provider().inverse_optimization(
         data=data,
         model=model,
