@@ -6,9 +6,8 @@ services:
       dockerfile: .devcontainer/Dockerfile
       args:
         USERNAME: ${USER}
-        USER_UID: 1000
-        USER_GID: 1000
         WORKDIR: mflowy
+        APT_MIRROR: mirrors.aliyun.com
     volumes:
       - ../:${HOME}/mflowy
       # Git
@@ -26,14 +25,8 @@ services:
       - ${HOME}/.local/share/claude:${HOME}/.local/share/claude:ro
       - ${HOME}/.claude:${HOME}/.claude
       - ${HOME}/.claude.json:${HOME}/.claude.json
-      # Gstack
-      - ${HOME}/.gstack:${HOME}/.gstack
     deploy:
       resources:
         reservations:
           memory: 2G
     command: sleep infinity
-
-volumes:
-  venv:
-    name: "mflowy-venv"
