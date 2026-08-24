@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **file_hash MCP 工具**: 文件指纹（sha256/md5/sha1，分块流式），供 agent 核验
+  数据文件在阶段间未被改动
+
+### Fixed
+
+- **devcontainer**: 修复 Dockerfile 续行符缺失导致的解析失败与 `$APT_MIRROR`
+  单引号不展开问题；`APT_MIRROR` 空默认（官方源）仅非空时替换，镜像源改由
+  compose 显式传入；基础镜像对齐 3.12；移除仓库已不存在的 Tauri/Rust 依赖；
+  恢复 `--no-install-recommends` 与 `~/.local/bin` 挂载点；`postCreateCommand`
+  修正为 `make install`
+
 ## [0.1.2] - 2026-08-23
 
 首个公开版本。（0.1.0 / 0.1.1 版本号已被 PyPI 文件名保留规则永久占用——曾上传的文件删除后文件名不可复用，故首发从 0.1.2 计。）

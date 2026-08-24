@@ -1,8 +1,58 @@
-"""info 工具行为测试 — list_modules / get_module_info 返回 JSON 消息。"""
+"""info 工具行为测试 — file_hash / list_modules / get_module_info 返回 JSON 消息。"""
+
+import hashlib
 
 import pytest
 
-from mflowy.mcp.tools import get_module_info, list_modules
+from mflowy.mcp.tools import _CHUNK_SIZE, file_hash, get_module_info, list_modules
+
+
+def test_file_hash_sha256_default(tmp_path):
+    f = tmp_path / "data.csv"
+    f.write_bytes(b"mflowy")
+    assert file_hash(str(f)) == {
+        "path": str(f),
+        "algorithm": "sha256",
+        "hash": hashlib.sha256(b"mflowy").hexdigest(),
+        "size_bytes": 6,
+    }
+
+
+def test_file_hash_algorithm_variants_and_case_normalization(tmp_path):
+    f = tmp_path / "data.bin"
+    f.write_bytes(b"abc")
+    md5 = file_hash(str(f), algorithm="md5")
+    assert md5["algorithm"] == "md5"
+    assert md5["hash"] == hashlib.md5(b"abc").hexdigest()
+    # 枚举名/值双形式与大小写归一（SHA1 → sha1）
+    assert file_hash(str(f), algorithm="SHA1")["hash"] == hashlib.sha1(b"abc").hexdigest()
+
+
+def test_file_hash_streams_chunks(tmp_path):
+    """超过 _CHUNK_SIZE 的文件走多块路径，size/哈希仍准确"""
+    f = tmp_path / "big.bin"
+    payload = b"\0" * (_CHUNK_SIZE + 1)
+    f.write_bytes(payload)
+    result = file_hash(str(f))
+    assert result["size_bytes"] == len(payload)
+    assert result["hash"] == hashlib.sha256(payload).hexdigest()
+
+
+def test_file_hash_missing_file_returns_error():
+    assert file_hash("/no/such/file.csv").startswith("Error: File not found")
+
+
+def test_file_hash_directory_returns_error(tmp_path):
+    assert file_hash(str(tmp_path)).startswith("Error: Path is not a file")
+
+
+def test_file_hash_unsupported_algorithm(tmp_path):
+    """Literal 约束 schema；直调传入非法值时返回可读错误而非抛异常"""
+    f = tmp_path / "f"
+    f.write_bytes(b"1")
+    msg = file_hash(str(f), algorithm="crc32")  # type: ignore[arg-type]
+    assert msg.startswith("Error: Unsupported algorithm")
+    assert "sha1" in msg and "sha256" in msg
 
 
 def test_list_modules_groups():

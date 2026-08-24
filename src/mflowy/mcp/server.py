@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 def register(mcp: MCPServer):
     # ── info 工具 ──────────────────────────────────────────────────────────────
 
+    mcp.tool()(tools.file_hash)
     mcp.tool()(tools.list_modules)
     mcp.tool()(tools.get_module_info)
     mcp.tool()(tools.validate_modeling_steps)

@@ -3,24 +3,14 @@
     "dockerComposeFile": "docker-compose.yml",
     "service": "app",
     "workspaceFolder": "${localEnv:HOME}/mflowy",
-    "remoteUser": "${localEnv:USER}",
-    "postCreateCommand": "maek init",
+    "postCreateCommand": "make install",
     "customizations": {
         "vscode": {
             "extensions": [
                 "ms-python.python",
                 "charliermarsh.ruff",
-                "esbenp.prettier-vscode",
-                "hediet.vscode-drawio",
-                "cweijan.vscode-office",
-                "johnny-zhao.oai-compatible-copilot",
-                "Anthropic.claude-code",
                 "samuelcolvin.jinjahtml",
-                "mhutchie.git-graph",
-                "ms-vscode.live-server",
-                "redhat.vscode-yaml",
-                "bierner.markdown-mermaid",
-                "anthropic.claude-code"
+                "redhat.vscode-yaml"
             ]
         }
     }
