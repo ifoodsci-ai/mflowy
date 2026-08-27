@@ -1,6 +1,6 @@
 # Driver — 轻量 DAG 编译与调度内核
 
-`src/mflowy/driver/` 的架构文档。事实以代码为准，本文只沉淀心智模型、设计意图与赌注。
+`packages/driver/src/mflowy/driver/` 的架构文档。事实以代码为准，本文只沉淀心智模型、设计意图与赌注。
 
 ## 定位
 
@@ -75,7 +75,7 @@ sequenceDiagram
 新节点 = 一个 pyfunc + 一行装饰器，四处自动生效：
 
 ```python
-@handler(inject_df, df_diff)   # src/mflowy/compute/cleaners/filter/common_filter.py
+@handler(inject_df, df_diff)   # packages/builtin_plugins/src/mflowy/builtin_plugins/cleaners/filter/common_filter.py
 def common_filter(...) -> pd.DataFrame: ...
 ```
 
@@ -102,11 +102,11 @@ def common_filter(...) -> pd.DataFrame: ...
 
 ### 中间件链
 
-注册时一次性织入：`@handler(step, mw1, mw2)` → `mw1 → mw2 → mlflow_log → stop_on_error → handler`。现有中间件见 `src/mflowy/middlewares/`（`log_*` 领域日志 + mlflow + 错误即停 + 数据注入）。
+注册时一次性织入：`@handler(mw1, mw2)` → `mw1 → mw2 → mlflow_log → stop_on_error → handler`。中间件两处：内核默认尾链在 `driver/builtin_middleware.py`；注入器与领域日志在 `packages/builtin_plugins/src/mflowy/builtin_plugins/middlewares/`（`Get*` 数据访问 + `inject_*` 注入 + `log_*` 观测）。
 
 ### 模板与片段组合
 
-生产入口几乎不是手写 YAML，而是 **Jinja2 模板（`src/mflowy/mcp/templates/`）+ `env` 注入**：每个 MCP 工具对应一张模板，用户参数与 `modeling_steps` 片段渲染成完整配置。
+生产入口几乎不是手写 YAML，而是 **Jinja2 模板（`packages/mcp/src/mflowy/mcp/templates/`）+ `env` 注入**：每个 MCP 工具对应一张模板，用户参数与 `modeling_steps` 片段渲染成完整配置。
 
 片段可再加工后跨工具复用：`explanation` 工具复用 `modeling` 的 `modeling_steps_yaml` 片段——Builder 解析 → `prune_model_step` 改写（model 步替换为 loader）→ `serializer.steps_to_yaml` 重新序列化 → 注入另一张模板（`mcp/job_provider/local.py`）。`serializer.py: _plain`（Enum→名、dataclass→dict）与参数转换器构成 **YAML 往返闭环**，配置因此是可生成、可改写、可再注入的一等公民。
 
@@ -128,11 +128,11 @@ def common_filter(...) -> pd.DataFrame: ...
 
 | 需求 | 动作 |
 |------|------|
-| 新节点（compute 能力） | `src/mflowy/compute/<step>/**` 建 `.py` + `@handler(...)`，零配置，`uv sync` 后生效 |
-| 新能力族（新 step） | `hatch_metadata.py: _STEP_OF_DIR` 加目录→step 映射 + 为该族写 `Get*/inject*` 注入器对（`middlewares/data_inject.py` 范本） |
+| 新节点（插件） | `packages/builtin_plugins/src/mflowy/builtin_plugins/<step>/**` 建 `.py` + `@handler(...)`，零配置，`uv sync` 后生效 |
+| 新能力族（新 step） | `hatch_metadata.py: _STEP_OF_DIR` 加目录→step 映射 + 为该族写 `Get*/inject*` 注入器对（`builtin_plugins/middlewares/getters.py` 范本） |
 | 第三方插件 | 以 mflowy 为 base 依赖，声明 `[project.entry-points."mflowy.plugins"]`，name 格式 `step.module` |
 | 修改/剪枝配置 | `builder_options.py` 写 `BuilderOption`，`Builder(..., opt)` 传入 |
-| 新横切关注点 | `src/mflowy/middlewares/` 建 `log_*` 或功能中间件，装饰器引用 |
+| 新横切关注点 | builtin_plugins `middlewares/` 建 `log_*` 或功能中间件，装饰器引用 |
 | 查询已注册能力 | `discover.py: list_all()/has()` / MCP info 工具（list_modules / get_module_info） |
 | 复用/改写另一工具的 steps 片段 | Builder 解析 + BuilderOption 改写 + `serializer.steps_to_yaml` 再注入（见「模板与片段组合」） |
 | DAG 可视化 | `Workflow.__repr__` 三视图（name/tree/mermaid），mermaid 为默认 |
@@ -140,4 +140,4 @@ def common_filter(...) -> pd.DataFrame: ...
 ## 相关文档
 
 - 远程执行（引擎之上的 JobProvider 层）：[REMOTE_MODELING.md](REMOTE_MODELING.md)
-- 引擎消费方：`src/mflowy/mcp/tools.py` · `src/mflowy/mcp/templates/` · `src/mflowy/mcp/job_provider/protocol.py`
+- 引擎消费方：`packages/mcp/src/mflowy/mcp/tools.py` · `.../mcp/templates/` · `.../mcp/job_provider/protocol.py`

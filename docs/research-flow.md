@@ -692,6 +692,6 @@ flowchart LR
 
 ## 相关文档
 
-- 绘图能力实现：`src/mflowy/compute/plots/`（目录结构按 data_analysis / model_evaluation / model_interpretability 分类镜像本篇）
-- 模型与评估实现：`src/mflowy/compute/model/`、交叉验证：`src/mflowy/compute/cross_validation/`
+- 绘图能力实现：`packages/builtin_plugins/src/mflowy/builtin_plugins/plots/`（目录结构按 data_analysis / model_evaluation / model_interpretability 分类镜像本篇）
+- 模型与评估实现：`packages/builtin_plugins/src/mflowy/builtin_plugins/model/`、交叉验证：`packages/builtin_plugins/src/mflowy/builtin_plugins/cross_validation/`
 - 完整实战案例（含图表解读）：`examples/`（如 `examples/wine_quality/2026-08-23-wine-quality.md`）

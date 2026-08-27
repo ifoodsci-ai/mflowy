@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](pyproject.toml)
-[![MCP](https://img.shields.io/badge/MCP-Server-7B61FF.svg)](src/mflowy/mcp/server.py)
+[![MCP](https://img.shields.io/badge/MCP-Server-7B61FF.svg)](packages/mcp/src/mflowy/mcp/server.py)
 
 MFlowy 是 **MCP-native** 的 ML 能力层：把数据分析、模型训练与预测打包成可枚举、可自描述的 MCP 工具目录，供自主 agent（或人）组装成可追溯的实验工作流。agent 不需要读文档——能力发现、图组装预检、执行与结果读回全部经工具完成。
 
@@ -37,7 +37,7 @@ MFlowy 不内置 agent；它提供让 agent 自主运转的四个阶段，每个
 
 ## 架构与调用方式
 
-MFlowy 以 MCP 为架构主体：`src/mflowy/mcp/tools.py` 定义全部 compute 工具，三种入口共享同一套工具。执行按工具类别分流：建模类经 JobProvider 委派执行（内置本地实现由 driver 内核编译调度 `compute/` 能力，远程实现接管执行环境），分析类始终本地执行（详见 [docs/REMOTE_MODELING.md](docs/REMOTE_MODELING.md)）：
+MFlowy 以 MCP 为架构主体：`packages/mcp/src/mflowy/mcp/tools.py` 定义全部插件工具，三种入口共享同一套工具。执行按工具类别分流：建模类经 JobProvider 委派执行（内置本地实现由 driver 内核编译调度 `builtin_plugins/` 能力，远程实现接管执行环境），分析类始终本地执行（详见 [docs/REMOTE_MODELING.md](docs/REMOTE_MODELING.md)）：
 
 | 入口                | 命令                         | 场景                                     |
 | ------------------- | ---------------------------- | ---------------------------------------- |

@@ -1,0 +1,76 @@
+[project]
+name = "mflowy-builtin-plugins"
+version = "0.1.2"
+description = "MFlowy builtin capability plugins (loaders/cleaners/transformers/models/plots) — also the living reference for third-party mflowy.plugins packages"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+# entry-points 由 hatch_metadata.py 构建期生成
+dynamic = ["entry-points"]
+dependencies = [
+    "mflowy-driver",
+]
+
+[project.optional-dependencies]
+# ─── stats：数据分析工具（data_profile / eda / infer_task_type_by_statistic） ───
+stats = [
+    # http_loader（load 步 HTTP 拉取）
+    "requests>=2.31",
+    # csv/xlsx/parquet 支持
+    "pyarrow>=12.0.0",
+    "openpyxl>=3.1.0",
+    # 数据处理
+    "pandas>=2.2,<3",
+    "numpy>=2.0.0",
+    "scipy>=1.17.0",
+    # 可视化
+    "matplotlib>=3.11.0",
+    "seaborn>=0.13.0",
+    # eda 目标趋势平滑（target_trend_by_numeric 的 lowess）
+    "statsmodels>=0.14.0",
+]
+# ─── modeling：建模工具（modeling / explanation / predict / inverse_optimization） ───
+modeling = [
+    # 建模编排含 load/clean/plot 全栈，复用 stats extra
+    "mflowy-builtin-plugins[stats]",
+    # 内核 search space / 超参优化
+    "mflowy-driver[modeling]",
+    # 机器学习
+    "scikit-learn>=1.9.0",
+    # 实验追踪（mlflow 已在 base；此处 postgres 直连）
+    "psycopg2-binary>=2.9.0",
+    # 多标签 stratified_k_fold 支持
+    "iterative-stratification>=0.1.9",
+    # 模型框架
+    "torch>=2.12.0",
+    "pytorch-lightning>=2.6.5",
+    "lightgbm>=4.6.0",
+    "xgboost-cpu>=3.0.0",
+    "catboost>=1.2",
+    # 超参优化
+    "optuna>=4.8.0",
+    # 模型解释
+    "shap>=0.52.0",
+    "numba>=0.59.0,<0.61",
+    "llvmlite>=0.42.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# namespace 包（PEP 420）：src/mflowy 只剥 src 前缀，产出 mflowy/<portion>；
+# editable 经 pth 指向 src，多成员 portion 合成，零拷贝真 editable
+packages = ["src/mflowy"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "pyproject.toml", "hatch_metadata.py"]
+
+[tool.hatch.metadata.hooks.custom]
+# 构建期扫描 mflowy/builtin_plugins/** 的 @handler 生成内置插件 entry points
+# （第三方插件包抄本文件，把 GROUP 改为 mflowy.plugins 即可）
+path = "hatch_metadata.py"
+
+[tool.uv.sources]
+mflowy-driver = { workspace = true }

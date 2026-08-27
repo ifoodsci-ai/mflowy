@@ -29,13 +29,13 @@ install:
 	uv sync --all-extras --all-groups
 	uv lock
 
-# 运行测试
+# 运行全量测试（tests/ 根 + packages/*/tests，见 pyproject testpaths）
 test:
-	uv run --extra modeling pytest tests/
+	uv run pytest
 
-# 构建 wheel（uvx 分发产物 + 镜像构建输入）
+# 构建 wheel（workspace 五 distribution 锁步，uvx 分发产物 + 镜像构建输入）
 build-whl:
-	uv build --wheel -o dist/
+	uv build --all --wheel -o dist/
 
 # wheel 版本（pyproject.toml 单一来源，注入 Dockerfile ARG VERSION）
 WHL_VERSION ?= $(shell sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)

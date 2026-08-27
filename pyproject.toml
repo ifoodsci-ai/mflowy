@@ -1,15 +1,3 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-# 标准 src 布局：src/mflowy/ — 目录含 src 层（不进 import 路径），包名 = 发布名
-packages = ["src/mflowy"]
-
-[tool.hatch.metadata.hooks.custom]
-# 构建期扫描 mflowy.compute.** 的 @handler 生成内置插件 entry points（见 hatch_metadata.py）
-path = "hatch_metadata.py"
-
 [project]
 name = "mflowy"
 version = "0.1.2"
@@ -17,8 +5,6 @@ description = "MCP-native ML capability layer for autonomous data-analysis / mod
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
-# entry-points 由 hatch_metadata.py 构建期生成（内置插件目录）
-dynamic = ["entry-points"]
 authors = [{ name = "lincode7", email = "15587025323@163.com" }]
 keywords = ["mcp", "machine-learning", "workflow", "mlflow", "data-analysis", "yaml"]
 classifiers = [
@@ -30,25 +16,12 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-
-# base = 仅信息查询能力（list_modules / get_module_info / validate / mlflow queries），不拉数据栈。
-# 数据分析工具（data_profile / eda / infer_task_type_by_statistic）装 [stats] extra；
-# 建模工具（modeling / explanation / predict / inverse_optimization）装 [modeling] extra（含 stats）。
-# 完全体：uvx --from "mflowy[modeling] @ file://<abs_path>" mcpSrv
+# 聚合包：五 distribution 锁步版本（tests/test_workspace.py 断言一致）
 dependencies = [
-    # 配置解析 / 模板
-    "pyyaml>=6.0",
-    "jinja2>=3.1.0",
-    # MCP 工具层（server 直接导入 mcp.server.mcpserver，需 SDK ≥2.0）
-    "mcp>=2.0.0",
-    # mlflow 查询（直调 SDK 连 tracking DB）
-    "mlflow>=3.14",
-    # MCP 遥测采集（agentcat.track 纯 OTLP 模式，懒加载；缺失时遥测降级 off）
-    "agentcat>=2.0.2",
-    # 遥测设备指纹（machine-id，跨平台；仅 Windows 需 winregistry）
-    "py-machineid>=1.0.0",
-    # 工具参数描述注解（Annotated[..., Field]；mcp SDK 传递依赖，因直接 import 显式声明）
-    "pydantic>=2.0",
+    "mflowy-utils",
+    "mflowy-driver",
+    "mflowy-builtin-plugins",
+    "mflowy-mcp",
 ]
 
 [project.urls]
@@ -56,64 +29,33 @@ Repository = "https://github.com/ifoodsci-ai/mflowy"
 Issues = "https://github.com/ifoodsci-ai/mflowy/issues"
 Documentation = "https://github.com/ifoodsci-ai/mflowy#readme"
 
-[project.scripts]
-# JSON runner — K8s Job 容器 + subprocess 通用入口
-cmd = "mflowy.mcp.runner:main"
-# MCP server — stdio transport
-mcpSrv = "mflowy.mcp.server:main"
-
 [project.optional-dependencies]
-# ─── stats：数据分析工具（data_profile / eda / infer_task_type_by_statistic） ───
-stats = [
-    # http_loader（LOAD 步 HTTP 拉取）
-    "requests>=2.31",
-    # csv/xlsx/parquet 支持
-    "pyarrow>=12.0.0",
-    "openpyxl>=3.1.0",
-    # 数据处理
-    "pandas>=2.2,<3",
-    "numpy>=2.0.0",
-    "scipy>=1.17.0",
-    # 可视化
-    "matplotlib>=3.11.0",
-    "seaborn>=0.13.0",
-    # eda 目标趋势平滑（target_trend_by_numeric 的 lowess）
-    "statsmodels>=0.14.0",
-]
-# ─── modeling：建模工具（modeling / explanation / predict / inverse_optimization） ───
-modeling = [
-    # 建模编排含 load/clean/plot 全栈，复用 stats extra
-    "mflowy[stats]",
-    # 机器学习
-    "scikit-learn>=1.9.0",
-    # 实验追踪（mlflow 已在 base；此处 postgres 直连）
-    "psycopg2-binary>=2.9.0",
-    # 多标签 stratified_k_fold 支持
-    "iterative-stratification>=0.1.9",
-    # 模型框架
-    "torch>=2.12.0",
-    "pytorch-lightning>=2.6.5",
-    "lightgbm>=4.6.0",
-    "xgboost-cpu>=3.0.0",
-    "catboost>=1.2",
-    # 超参优化
-    "optuna>=4.8.0",
-    # 模型解释
-    "shap>=0.52.0",
-    "numba>=0.59.0,<0.61",
-    "llvmlite>=0.42.0",
-]
+# extras 透传：用户端 mflowy[modeling] 体验与单包时代完全一致
+stats = ["mflowy-builtin-plugins[stats]"]
+modeling = ["mflowy-builtin-plugins[modeling]"]
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+mflowy-utils = { workspace = true }
+mflowy-driver = { workspace = true }
+mflowy-builtin-plugins = { workspace = true }
+mflowy-mcp = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# 聚合包无自有代码：README 作 namespace 目录内容占位（PEP 420 禁止 mflowy/__init__.py）
+force-include = { "README.md" = "mflowy/README.md" }
+
+[tool.hatch.build.targets.sdist]
+include = ["README.md", "pyproject.toml"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-addopts = "-v --tb=short"
-filterwarnings = [
-    "ignore::DeprecationWarning",
-    "ignore::FutureWarning",
-]
+testpaths = ["tests", "packages"]
 
 [tool.ruff]
 line-length = 120
@@ -122,8 +64,8 @@ exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
 # E4/E7/E9/F: pycodestyle 核心错误 + pyflakes；I: import 排序；UP035/UP037: 废弃导入/引号注解
+per-file-ignores = { "packages/builtin_plugins/src/mflowy/builtin_plugins/plots/**" = ["F403", "F405"], "packages/builtin_plugins/src/mflowy/builtin_plugins/plots/model_evaluation/regression/_taylor_diagram_copin.py" = ["E741"], "packages/builtin_plugins/hatch_metadata.py" = ["E402"] }  # 后两者：vendored 代码原样保留 / hook 类定义需在扫描器之后
 select = ["E4", "E7", "E9", "F", "I", "UP035", "UP037"]
-per-file-ignores = { "src/mflowy/compute/plots/**" = ["F403", "F405"], "src/mflowy/compute/plots/model_evaluation/regression/_taylor_diagram_copin.py" = ["E741"], "hatch_metadata.py" = ["E402"] }  # 后两者：vendored 代码原样保留 / hook 类定义需在扫描器之后
 
 [tool.ruff.format]
 exclude = ["*.ipynb"]
@@ -131,8 +73,8 @@ exclude = ["*.ipynb"]
 [tool.uv]
 index-url = "https://mirrors.aliyun.com/pypi/simple/"
 
-[tool.uv.sources]
-torch = { index = "pytorch-cpu" }
+[tool.uv.sources.torch]
+index = "pytorch-cpu"
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
@@ -147,7 +89,4 @@ dev = [
 ]
 jupyter = [
     "nbformat>=5.10.4",
-    "nbconvert>=7.17.1",
-    "ipykernel>=7.2.0",
-    "papermill>=2.7.0",
 ]

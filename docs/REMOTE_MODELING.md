@@ -1,7 +1,7 @@
 # Remote Modeling（远程执行）
 
 MFlowy 不内置绑定任何远程执行平台。compute 工具的执行策略由
-**JobProvider 契约**抽象（`src/mflowy/mcp/job_provider/protocol.py`）。
+**JobProvider 契约**抽象（`packages/mcp/src/mflowy/mcp/job_provider/protocol.py`）。
 
 ## 工具分工
 
@@ -15,7 +15,7 @@ MFlowy 不内置绑定任何远程执行平台。compute 工具的执行策略�
 实现 `JobProvider` 协议的 **4 个类型化方法**（每个方法带 `headers: Mapping[str, str] | None`
 透传请求元数据，MCP 客户端经 `call_tool(meta={...})` 携带），即可把建模工具委派到
 任意执行环境——K8s Job、远程集群、Serverless 均可。方法签名以
-`src/mflowy/mcp/job_provider/protocol.py` 为准（本文不复述，防漂移）；契约行为由
+`packages/mcp/src/mflowy/mcp/job_provider/protocol.py` 为准（本文不复述，防漂移）；契约行为由
 `tests/mcp/test_job_provider.py` / `test_tools_headers.py` 锁定。
 
 启用方式：

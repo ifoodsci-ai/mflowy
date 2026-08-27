@@ -26,4 +26,4 @@ agentcat 自身匿名诊断已通过 `disable_diagnostics=True` 关闭）。
 
 ## 参考
 
-- 实现：`src/mflowy/mcp/telemetry.py`（唯一接线点 `wire_agentcat`，禁止 per-tool 打点）
+- 实现：`packages/mcp/src/mflowy/mcp/telemetry.py`（唯一接线点 `wire_agentcat`，禁止 per-tool 打点）

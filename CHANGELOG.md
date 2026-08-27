@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **workspace 组件化：单包拆为五 distribution（uv workspace + PEP 420 namespace，BREAKING 内部结构）**：
+  - `mflowy`（聚合包，PyPI 入口与 extras 透传不变）+ `mflowy-utils` / `mflowy-driver` / `mflowy-builtin-plugins` / `mflowy-mcp`，版本锁步（`tests/test_workspace.py` 断言）
+  - `mflowy.compute` 更名 `mflowy.builtin_plugins`（包名 = entry point 组名）；`mflowy.middlewares` 拆解：`mlflow_log`/`stop_on_error` → `mflowy.driver.builtin_middleware`，`data_inject` 拆为 `middlewares/getters.py`（Get*）+ `middlewares/inject.py`（inject_*），`log_*` 与 `df_columns` 随迁 `mflowy.builtin_plugins.middlewares`
+  - 测试随包迁移（`packages/<pkg>/tests/**`），根 `conftest.py` 全仓共享；新增 mlflow fluent run 栈隔离 fixture（修复 mock start_run 用例的跨包顺序污染）
+  - `hatch_metadata.py` 随迁 builtin_plugins 并作为第三方插件参考实现；`Makefile build-whl` 改 `uv build --all`；Dockerfile 一次安装五 wheel
+  - 依赖边界机器化：driver/utils/mcp 不得 import builtin_plugins（测试断言）；修复 `mlflow_log` 模块级 optuna import 导致缺 extra 环境无法加载插件的 latent bug
+
 - **插件化架构：词表从 StepType 枚举改为 entry points 目录**（BREAKING）：
   - 删除 `driver/config.py: StepType`，`StepConf.type` 改为 `str`，YAML 值不变（load/clean/X_y/...）
   - `@handler` 删除首参 step（签名变为 `@handler(*middlewares)`），身份由 entry point name `step.module` 声明；`handler.py` 注册表 `_REGISTRY`/`_POST_INIT_REGISTRY` 删除，改为函数属性挂载（`.handler` 调度链 + `.convert_params` 转换器）

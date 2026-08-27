@@ -7,13 +7,15 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 WORKDIR /app
 ARG VERSION
 COPY pyproject.toml uv.lock ./
+COPY packages/ packages/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --all-extras --no-install-project
-COPY dist/mflowy-${VERSION}-py3-none-any.whl /tmp/
-# 项目本体从 wheel 安装（= 用户 uvx wheel 安装所得）；依赖已由 uv.lock 同步，--no-deps 跳过解析
+COPY dist/ /tmp/wheels/
+# 项目本体从 wheel 安装（= 用户 uvx wheel 安装所得）；依赖已由 uv.lock 同步，--no-deps 跳过解析；
+# 五 wheel（mflowy 聚合 + 四子包）顺序无关
 RUN UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
-    uv pip install --python /app/.venv/bin/python --no-deps /tmp/mflowy-${VERSION}-py3-none-any.whl
+    uv pip install --python /app/.venv/bin/python --no-deps /tmp/wheels/*.whl
 
 # 可选定制：额外插件包（空格分隔，如 "mflowy-extra==0.1"）。
 # 装进镜像后其 mflowy.plugins entry points 随 discover 自动生效，运行期零配置
