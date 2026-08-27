@@ -14,6 +14,7 @@ from typing import Annotated
 import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 from mflowy.builtin_plugins.middlewares import (
     GetMultiModelTestPredictions,
@@ -26,7 +27,7 @@ from mflowy.builtin_plugins.model.types import TASKTYPE
 from mflowy.driver.context import Context
 from mflowy.driver.handler import handler
 
-from ...base import *
+from ...base import OKABE_ITO_PALETTE
 from ._taylor_diagram_copin import TaylorDiagram
 
 _MARKERS_POOL = ["o", "s", "^", "v", "d", "p", "h", "*", "P", "X"]

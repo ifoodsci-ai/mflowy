@@ -16,7 +16,7 @@ import seaborn as sns
 from mflowy.builtin_plugins.middlewares import filter_numerical_cols, inject_df, log_plot
 from mflowy.driver.handler import handler
 
-from ..base import *
+from ..base import OKABE_ITO_PALETTE
 
 logger = logging.getLogger(__name__)
 

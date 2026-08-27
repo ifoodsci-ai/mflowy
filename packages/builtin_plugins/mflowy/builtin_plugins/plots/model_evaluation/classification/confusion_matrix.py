@@ -14,7 +14,6 @@ from mflowy.builtin_plugins.middlewares import inject_plot_data, log_plot
 from mflowy.driver.context import Context
 from mflowy.driver.handler import handler
 
-from ...base import *
 from ...utils import build_multi_model_long_df
 
 

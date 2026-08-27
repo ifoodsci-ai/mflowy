@@ -64,7 +64,7 @@ exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
 # E4/E7/E9/F: pycodestyle 核心错误 + pyflakes；I: import 排序；UP035/UP037: 废弃导入/引号注解
-per-file-ignores = { "packages/builtin_plugins/mflowy/builtin_plugins/plots/**" = ["F403", "F405"], "packages/builtin_plugins/mflowy/builtin_plugins/plots/model_evaluation/regression/_taylor_diagram_copin.py" = ["E741"], "packages/builtin_plugins/hatch_metadata.py" = ["E402"] }  # 后两者：vendored 代码原样保留 / hook 类定义需在扫描器之后
+per-file-ignores = { "packages/builtin_plugins/mflowy/builtin_plugins/plots/model_evaluation/regression/_taylor_diagram_copin.py" = ["E741"], "packages/builtin_plugins/hatch_metadata.py" = ["E402"] }  # 后两者：vendored 代码原样保留 / hook 类定义需在扫描器之后
 select = ["E4", "E7", "E9", "F", "I", "UP035", "UP037"]
 
 [tool.ruff.format]

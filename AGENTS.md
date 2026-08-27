@@ -38,7 +38,7 @@ uv workspace 五 distribution（PEP 420 namespace，`mflowy` 聚合包 + 四子�
 | Plugins     | `packages/builtin_plugins/mflowy/builtin_plugins/` | 内置能力 + 注入器（`middlewares/`：Get*/inject*/log_*）+ 第三方插件的活参考实现 |
 | Utils       | `packages/utils/mflowy/utils/`   | mlflow/optuna/jinja/日志/捕获工具层    |
 
-依赖方向单向：utils ← driver ← builtin_plugins ← mcp；**driver/utils/mcp 不得 import builtin_plugins**（测试断言）。
+依赖方向单向：utils ← driver ← builtin_plugins ← mcp；**driver/utils 不得 import builtin_plugins**（内核/底座对插件零感知，测试断言；mcp 是编排层，合法消费插件包公开清单如 `extras.py` 可用性标注）。
 
 工具三分：建模类 4 种（modeling / explanation / predict / inverse_optimization）经 JobProvider 委派；分析类 3 种（data_profile / eda / infer_task_type_by_statistic）与 info/mlflow 组始终本地执行。
 

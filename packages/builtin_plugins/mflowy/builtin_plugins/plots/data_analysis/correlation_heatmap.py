@@ -16,7 +16,7 @@ from mflowy.driver.handler import handler
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from scipy import stats
 
-from ..base import *
+from ..base import CMAP_DIVERGING
 
 
 def _corr_method(method: str):

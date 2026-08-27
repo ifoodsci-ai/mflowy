@@ -17,7 +17,7 @@ from matplotlib import figure
 from matplotlib.gridspec import GridSpec
 from scipy import stats as sp_stats
 
-from ...base import *
+from ...base import OKABE_ITO_PALETTE
 
 
 def error_distribution(

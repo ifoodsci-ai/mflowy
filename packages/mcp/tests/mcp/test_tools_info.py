@@ -95,3 +95,28 @@ def test_get_module_info_required_param_default_is_none():
 def test_get_module_info_unknown_module():
     with pytest.raises(ModuleNotFoundError):
         get_module_info("model", "NoSuchModule")
+
+
+def test_list_modules_annotates_builtin_requires():
+    """内置模块带 requires 标注（base 环境可见装哪个 extra 可用）"""
+    entries = list_modules(step="model")
+    assert entries[0]["requires"]["XGB"] == "modeling"
+    # data_analysis 图表属 stats（目录边界）
+    plot = list_modules(step="plot")
+    requires = plot[0]["requires"]
+    assert requires["correlation_heatmap"] == "stats"
+    assert requires["shap_summary"] == "modeling"  # plots 二级目录细分
+
+
+def test_get_module_info_unavailable_reports_extra(monkeypatch):
+    """缺 extra 环境加载失败 → 结构化 available=false + 所需 extra，而非裸 ImportError"""
+    import mflowy.driver.discover as discover_mod
+
+    def _missing_dep(step, module):
+        raise ModuleNotFoundError("No module named 'torch'", name="torch")
+
+    monkeypatch.setattr(discover_mod, "_load_fn", _missing_dep)
+    info = get_module_info("model", "XGB")
+    assert info["available"] is False
+    assert info["requires"] == "modeling"
+    assert "[modeling]" in info["reason"]

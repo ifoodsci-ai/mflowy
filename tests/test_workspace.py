@@ -29,13 +29,14 @@ def test_namespace_no_init(pkg):
 
 
 def test_member_import_boundaries():
-    """包依赖方向铁律：driver/utils/mcp 不得 import builtin_plugins（插件实现不是 SDK 依赖；
-    entry point group 名字符串不算 import）"""
+    """包依赖方向铁律：driver/utils 不得 import builtin_plugins（插件实现不是 SDK 依赖，
+    内核/底座必须对插件零感知；mcp 是编排层、pyproject 硬依赖 builtin_plugins，合法消费其
+    公开清单如 extras.py；entry point group 名字符串不算 import）"""
     import re
 
     violators = []
     pat = re.compile(r"^\s*(?:from mflowy\.builtin_plugins|import mflowy\.builtin_plugins)", re.M)
-    for pkg in ("driver", "utils", "mcp"):
+    for pkg in ("driver", "utils"):
         for py in (ROOT / "packages" / pkg / "mflowy").rglob("*.py"):
             if pat.search(py.read_text()):
                 violators.append(str(py.relative_to(ROOT)))

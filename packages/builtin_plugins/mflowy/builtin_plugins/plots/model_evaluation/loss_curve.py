@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 
-from ..base import *
+from ..base import OKABE_ITO_PALETTE, TYPE_COLORS
 
 logger = logging.getLogger(__name__)
 

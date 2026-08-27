@@ -17,7 +17,7 @@ MFlowy 全部内置 ML 能力，同时是**第三方 `mflowy.plugins` 插件包�
 | `plot` | → yield `(df, fig)` | 数据分析：`correlation_heatmap` `numeric_quality_kde_hist` `numeric_scale_box` `target_trend_by_numeric` `target_effect_by_category` `target_association_by_category` `target_separation_by_numeric`；模型评估：`taylor_diagram` `prediction_scatter` `confusion_matrix`；可解释性：`shap_summary` `shap_dependence` `sample_waterfall` |
 | `statistic` | → schema DataFrame | `profile`（数据画像）`effect_size`（效应量） |
 
-依赖分层：`load.csv/excel/parquet` 与 `clean`/`x_transformer` 等属 `[stats]` extra；`model.*` 训练族与 `plot` 评估族属 `[modeling]` extra（含 stats）。缺 extra 的环境模块照常出现在目录中，解析时才暴露不可导入。
+依赖分层（`extras.py` 目录级标注，构建期守卫全覆盖）：load/clean/X_y/statistic 与 data_analysis/model_evaluation 图表属 `[stats]` extra；x_transformer/cross_validate/model 与 SHAP 图表属 `[modeling]` extra（含 stats）。缺 extra 的环境模块照常出现在目录中——`list_modules` 带 `requires` 标注、`get_module_info` 返回 `available=false` + 所需 extra，而非裸 ImportError。
 
 ## 注入器契约（middlewares/）
 

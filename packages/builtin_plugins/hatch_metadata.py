@@ -88,6 +88,15 @@ def _collect(root: Path) -> dict[str, str]:
 
     if not entries:
         raise ValueError("未扫描到任何 @handler——entry points 生成失败，请检查扫描根目录")
+
+    # extras 全覆盖守卫：每个插件必须标注所属 extra（extras.py 漏配目录即构建失败）
+    ns: dict = {}
+    exec((root / _PKG_ROOT / _COMPUTE / "extras.py").read_text(encoding="utf-8"), ns)  # 纯 dict 模块，构建期安全 exec
+    extra_of = ns["extra_of"]
+    missing = [name for name, value in entries.items() if extra_of(value) is None]
+    if missing:
+        raise ValueError(f"以下插件未标注所属 extra（extras.py: _EXTRA_OF_DIR 漏配目录）: {missing}")
+
     return entries
 
 

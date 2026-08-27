@@ -87,6 +87,18 @@ def file_hash(
     }
 
 
+def _requires(step: str, module: str) -> str | None:
+    """内置模块的 extra 标注（纯 dict 零 import）；第三方插件无标注返 None。"""
+    from mflowy.driver.discover import GROUPS, discover
+
+    ep = discover().get(step, {}).get(module)
+    if ep is None or ep.group != GROUPS[0]:
+        return None
+    from mflowy.builtin_plugins.extras import extra_of
+
+    return extra_of(ep.value)
+
+
 def list_modules(
     step: Annotated[
         str | None,
@@ -98,12 +110,19 @@ def list_modules(
     何时使用 list_modules：
     - 编写 modeling YAML 前盘点可用模块
     - 确认某 step 下有哪些模块可选
+    - 查看 requires 标注——当前环境缺 extra 时先装（如 `uv pip install "mflowy[modeling]"`）
     """
     from mflowy.driver.module import list_modules as _list
 
     step = step or None
-    step_modules = _list(step)
-    return [asdict(s) for s in step_modules]
+    result = []
+    for s in _list(step):
+        d = asdict(s)
+        requires = {m: r for m in d["modules"] if (r := _requires(d["step"], m))}
+        if requires:
+            d["requires"] = requires
+        result.append(d)
+    return result
 
 
 def get_module_info(
@@ -115,10 +134,29 @@ def get_module_info(
     何时使用 get_module_info：
     - 选定模块后查看参数与 YAML 写法
     - 校对参数拼写、类型、默认值
+    - 当前环境缺 extra 依赖时返回 available=false 与所需 extra（参数详情不可得）
     """
     from mflowy.driver.module import get_module_info as _get
 
-    return asdict(_get(step, module))
+    requires = _requires(step, module)
+    try:
+        info = asdict(_get(step, module))
+    except ImportError as e:
+        if requires is None:
+            raise  # 与 extra 无关的导入失败（或模块不存在），维持原报错
+        return {
+            "name": f"{step}.{module}",
+            "step": step,
+            "module": module,
+            "description": "",
+            "parameters": [],
+            "requires": requires,
+            "available": False,
+            "reason": f'当前环境缺少 [{requires}] extra 依赖（{e}）；安装如：uv pip install "mflowy[{requires}]"',
+        }
+    if requires:
+        info["requires"] = requires
+    return info
 
 
 def validate_modeling_steps(

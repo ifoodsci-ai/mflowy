@@ -22,7 +22,6 @@ from mflowy.builtin_plugins.middlewares import (
 )
 from mflowy.driver.handler import handler
 
-from ..base import *
 from ._grid import band_grid
 from .correlation_heatmap import _corr_method
 

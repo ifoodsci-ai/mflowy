@@ -21,7 +21,7 @@ from mflowy.builtin_plugins.middlewares import (
 )
 from mflowy.driver.handler import handler
 
-from ..base import *
+from ..base import OKABE_ITO_PALETTE
 from ._grid import band_grid
 
 

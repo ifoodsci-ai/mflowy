@@ -17,6 +17,8 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
+from ...base import CMAP_DIVERGING
+
 if TYPE_CHECKING:
     from shap import Explanation
 
@@ -26,7 +28,6 @@ from mflowy.builtin_plugins.middlewares import inject_plot_data, log_plot
 from mflowy.driver.handler import handler
 from mflowy.utils.constants import RANDOM_STATE
 
-from ...base import *
 from ...utils import compute_shap_explanation, rank_features, shap_explanation_to_df
 
 logger = logging.getLogger(__name__)

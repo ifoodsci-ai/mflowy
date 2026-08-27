@@ -20,7 +20,6 @@ from mflowy.builtin_plugins.middlewares import inject_plot_data, log_plot
 from mflowy.driver.handler import handler
 from mflowy.utils.constants import RANDOM_STATE
 
-from ...base import *
 from ...utils import compute_shap_explanation, shap_explanation_to_df
 
 logger = logging.getLogger(__name__)

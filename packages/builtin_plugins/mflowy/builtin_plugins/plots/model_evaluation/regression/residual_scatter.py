@@ -15,7 +15,7 @@ from matplotlib.gridspec import GridSpec
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from statsmodels.nonparametric.smoothers_lowess import lowess
 
-from ...base import *
+from ...base import OKABE_ITO_PALETTE
 
 
 def residual_scatter(

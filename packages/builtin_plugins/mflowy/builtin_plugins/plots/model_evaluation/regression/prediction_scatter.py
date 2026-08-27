@@ -18,7 +18,7 @@ from mflowy.driver.handler import handler
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from sklearn.metrics import r2_score, root_mean_squared_error
 
-from ...base import *
+from ...base import TYPE_COLORS
 from ...utils import build_multi_model_long_df
 
 
