@@ -1,4 +1,4 @@
-.PHONY: install build build-whl test lint fmt precommit clean help e2e-info e2e-statistic e2e ui
+.PHONY: install build build-whl test lint fmt precommit clean help e2e-info e2e-statistic e2e-mcp e2e ui
 
 # 默认目标
 help:
@@ -68,6 +68,7 @@ precommit:
 e2e-info:
 	uv run cmd list_modules
 	uv run cmd list_modules '{"step": "model"}'
+	uv run cmd file_hash '{"path": "$(abspath examples/diabetes/diabetes.yaml)"}'
 	uv run cmd get_module_info '{"step": "load", "module": "python"}'
 	uv run cmd get_module_info '{"step": "clean", "module": "drop_missing"}'
 	uv run cmd get_module_info '{"step": "X_y", "module": "x_y"}'
@@ -82,7 +83,11 @@ e2e-statistic:
 	uv run --extra stats cmd eda '{"file_path": "$(abspath examples/house_prices/house_prices.py:load)", "target": "SalePrice", "corr_method": "pearson", "top_k": 5, "cat_cols": ["HouseStyle", "Neighborhood"]}'
 	uv run --extra stats cmd infer_task_type_by_statistic '{"file_path": "$(abspath examples/house_prices/house_prices.py:load)", "target": "SalePrice"}'
 
-e2e: e2e-info e2e-statistic
+# MCP stdio 入口冒烟（三入口之一）：握手 → tools/list → tools/call
+e2e-mcp:
+	uv run python scripts/_e2e_mcp.py
+
+e2e: e2e-info e2e-statistic e2e-mcp
 	uv run --extra modeling cmd modeling '{"modeling_steps_yaml": "$(abspath examples/diabetes/diabetes.yaml)", "name": "糖尿病多模型对比", "desc": "standard_scaler → cv(8:1:1) → XGBoost/LightGBM/CatBoost/RF/MLP"}'
 	@set -e; \
 	out=$$(uv run python scripts/_e2e_gen.py); \
@@ -95,7 +100,7 @@ e2e: e2e-info e2e-statistic
 	uv run cmd list_run_artifacts '{"run_id": "'$$run_id'"}'; \
 	echo "== SHAP 解释（$$model）=="; \
 	uv run --extra modeling cmd explanation '{"modeling_steps_yaml": "$(abspath examples/diabetes/diabetes.yaml)", "model": "'$$model'", "name": "糖尿病 SHAP 解释", "desc": "XGB SHAP 全量样本"}'; \
-	echo "== 预测（load_X 10 行采样）=="; \
+	echo "== 预测（全量 X 442 行）=="; \
 	uv run --extra modeling cmd predict '{"data": "$(abspath examples/diabetes/diabetes.py:load_X)", "model": "'$$model'"}'; \
 	echo "== 逆向设计（target minimize, 200 trials）=="; \
 	uv run --extra modeling cmd inverse_optimization '{"data": "$(abspath examples/diabetes/diabetes.py:load_X)", "model": "'$$model'", "direction": {"target": "minimize"}, "n_trials": 200}'
