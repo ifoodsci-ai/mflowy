@@ -16,7 +16,6 @@ import numpy as np
 import pandas as pd
 from scipy import stats as scipy_stats
 
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
 from mflowy.middlewares.data_inject import inject_df
 from mflowy.middlewares.log_prediction import log_prediction
@@ -72,7 +71,7 @@ def ensemble_predict(model_loader: ModelLoader, X: pd.DataFrame) -> dict[str, np
     return result
 
 
-@handler(StepType.MODEL, inject_df, log_prediction)
+@handler(inject_df, log_prediction)
 def predict(
     df: pd.DataFrame,
     flavor: Annotated[Literal["XGB", "LGBM", "CAT", "RF", "MLP"], "模型模块名（训练时 @handler 注册的函数名）"],

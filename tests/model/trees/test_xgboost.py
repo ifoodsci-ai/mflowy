@@ -131,7 +131,6 @@ def test_xgboost_with_validation_set(sample_data):
 def test_xgboost_handler_registered():
     """测试 XGBoost handler 已注册到 TRAINING"""
     import mflowy.compute.model.xgboost  # noqa: F401
-    from mflowy.driver.config import StepType
-    from mflowy.driver.handler import has
+    from mflowy.driver import discover
 
-    assert has(StepType.MODEL, "XGB")
+    assert discover.has("model", "XGB")

@@ -5,7 +5,6 @@ from typing import Annotated, Literal
 
 import pandas as pd
 
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
 from mflowy.middlewares.data_inject import inject_df
 from mflowy.middlewares.log_df_diff import df_diff
@@ -19,7 +18,7 @@ type _MISSING_STRATEGY = Literal[
 EMPTY_GROUPY_BY = ValueError("缺失值填充策略 fill_grouped_mode 的分组列为空")
 
 
-@handler(StepType.CLEAN, inject_df, df_diff)
+@handler(inject_df, df_diff)
 def fill_missing(
     df: pd.DataFrame,
     *,

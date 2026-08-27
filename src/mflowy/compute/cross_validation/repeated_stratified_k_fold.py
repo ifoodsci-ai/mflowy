@@ -5,7 +5,6 @@ from typing import Annotated
 import pandas as pd
 from sklearn.model_selection import RepeatedStratifiedKFold
 
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
 from mflowy.middlewares.data_inject import inject_X_y
 from mflowy.middlewares.log_cv import log_cv
@@ -16,7 +15,7 @@ from .types import Indices
 logger = logging.getLogger(__name__)
 
 
-@handler(StepType.CROSS_VALIDATE, inject_X_y, log_cv)
+@handler(inject_X_y, log_cv)
 def repeated_stratified_k_fold(
     X: pd.DataFrame,
     y: pd.DataFrame | None,

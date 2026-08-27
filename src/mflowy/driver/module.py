@@ -1,7 +1,7 @@
 """模块注册表
 
-读取 handler._REGISTRY 提供模块列表和参数查询。
-实体通过 @handler() 装饰器直接注册，此模块仅提供查询接口。
+读取 discover 目录提供模块列表和参数查询。能力通过 @handler 装饰器标记、
+entry points 声明，此模块仅提供查询接口。
 """
 
 import inspect
@@ -12,8 +12,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Annotated, Any, get_args, get_origin
 
-from .config import StepType, parse_enum
-from .handler import _REGISTRY, get
+from . import discover
+from .discover import get
 
 logger = logging.getLogger(__name__)
 
@@ -24,22 +24,14 @@ class StepModulesInfo:
     modules: list[str]
 
 
-def list_modules(step: StepType | None = None) -> list[StepModulesInfo]:
-    """列出已注册模块，按 StepType 分组"""
-    from .discover import ensure_discovered
-
-    ensure_discovered()
-    result = {}
-    for _step, module in _REGISTRY:
-        if step and _step != step:
-            continue
-        result.setdefault(_step, StepModulesInfo(_step, [])).modules.append(module)
-
-    if step and step not in result:
-        available = [name for (t, name) in _REGISTRY if t == step]
-        raise ModuleNotFoundError(f"Module '{step}' not found. Available: {available}")
-
-    return list(result.values())
+def list_modules(step: str | None = None) -> list[StepModulesInfo]:
+    """列出已注册模块，按 step 分组（零 import，纯元数据）"""
+    table = discover.discover()
+    if step is not None:
+        if step not in table:
+            raise ModuleNotFoundError(f"Step '{step}' not found. Available: {sorted(table)}")
+        return [StepModulesInfo(step, sorted(table[step]))]
+    return [StepModulesInfo(s, sorted(modules)) for s, modules in table.items()]
 
 
 @dataclass
@@ -66,8 +58,6 @@ def get_module_info(step: str, module: str) -> ModuleInfo:
     约定：handler 签名中带 Annotated[T, "描述"] 的参数为用户可配参数，
     裸类型标注的参数为 middleware 注入参数，自动排除。
     """
-    step = parse_enum(StepType, step)
-
     wrapped = get(step, module).__wrapped__
     doc = wrapped.__doc__
 
@@ -121,7 +111,7 @@ def get_module_info(step: str, module: str) -> ModuleInfo:
 
     return ModuleInfo(
         f"{step}.{module}",
-        step.value,
+        step,
         module,
         (doc or "").strip().splitlines()[0] if doc and doc.strip() else "",
         parameters,

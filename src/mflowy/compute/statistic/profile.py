@@ -4,13 +4,12 @@ from typing import Annotated
 
 import pandas as pd
 
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
 from mflowy.middlewares.data_inject import inject_df
 from mflowy.middlewares.log_statistic import log_statistic
 
 
-@handler(StepType.STATISTIC, inject_df, log_statistic)
+@handler(inject_df, log_statistic)
 def profile(
     df: pd.DataFrame,
     datetime_format: Annotated[str, "统一日期格式"] = "%Y-%m-%d %H:%M:%S",

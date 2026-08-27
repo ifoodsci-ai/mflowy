@@ -18,10 +18,9 @@ class TestCSVLoaderBasic:
 
     def test_handler_is_registered(self):
         """测试 csv 在 handler registry 中注册"""
-        from mflowy.driver.config import StepType
-        from mflowy.driver.handler import _REGISTRY
+        from mflowy.driver import discover
 
-        assert (StepType.LOAD, "csv") in _REGISTRY
+        assert discover.has("load", "csv")
 
     def test_load_basic(self, sample_csv):
         """测试基本加载"""

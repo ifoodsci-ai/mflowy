@@ -2,9 +2,9 @@
 
 from pathlib import Path
 
+import pytest
+
 from mflowy.driver.builder import Builder
-from mflowy.driver.config import StepType
-from mflowy.driver.handler import _REGISTRY
 from mflowy.driver.workflow import Workflow
 
 
@@ -14,13 +14,15 @@ def _dummy_handler(ctx):
 
 # 各步骤类型的有效模块名
 _MODULES = {
-    StepType.LOAD: "csv",
-    StepType.CLEAN: "common_filter",
-    StepType.X_TRANSFORMER: "standard_scaler",
-    StepType.CROSS_VALIDATE: "simple_cv",
-    StepType.MODEL: "XGBoost",
-    StepType.PLOT: "correlation_heatmap",
+    "load": "csv",
+    "clean": "common_filter",
+    "x_transformer": "standard_scaler",
+    "cross_validate": "simple_cv",
+    "model": "XGBoost",
+    "plot": "correlation_heatmap",
 }
+
+_STEPS = tuple(_MODULES) + ("X_y", "statistic")
 
 
 def _print_dag(workflow, title="DAG Structure"):
@@ -57,20 +59,16 @@ def _print_dag(workflow, title="DAG Structure"):
 class TestDAGScenarios:
     """测试各种DAG拓扑场景"""
 
-    def setup_method(self):
-        from mflowy.driver.discover import ensure_discovered
-
-        ensure_discovered()  # 惰性扫描：先补全真实注册表，再覆盖 dummy
-        self.original_registry = _REGISTRY.copy()
-        # 注册测试中使用的模块名
-        _module_names = ["csv", "common_filter", "standard_scaler", "XGBoost", "correlation_heatmap", "test"]
-        for step_type in StepType:
-            for name in _module_names:
-                _REGISTRY[(step_type, name)] = _dummy_handler
-
-    def teardown_method(self):
-        _REGISTRY.clear()
-        _REGISTRY.update(self.original_registry)
+    @pytest.fixture(autouse=True)
+    def _fill_dummy_plugins(self, fake_plugins):
+        """注册测试中使用的模块名"""
+        for step in _STEPS:
+            fake_plugins.setdefault(step, {}).update(
+                {
+                    name: _dummy_handler
+                    for name in ("csv", "common_filter", "standard_scaler", "XGBoost", "correlation_heatmap", "test")
+                }
+            )
 
     def _build_yaml(self, steps_yaml):
         config = f"workflow:\n  steps:\n{steps_yaml}"
@@ -309,13 +307,9 @@ class TestDAGScenarios:
 class TestExecutionOrderLIFO:
     """测试 LIFO 拓扑序调度的执行顺序：深度优先，避免层级长尾"""
 
-    def setup_method(self):
-        from mflowy.driver.discover import ensure_discovered
-
-        ensure_discovered()  # 惰性扫描：先补全真实注册表，再覆盖 recording handler
-        self.original_registry = _REGISTRY.copy()
+    @pytest.fixture(autouse=True)
+    def _fill_recording_plugins(self, fake_plugins):
         self.order: list[str] = []
-
         from mflowy.middlewares.mlflow_log import mlflow_log
         from mflowy.middlewares.stop_on_error import stop_on_error
 
@@ -328,13 +322,13 @@ class TestExecutionOrderLIFO:
 
             return stop_on_error(ctx, lambda c: mlflow_log(c, record))
 
-        for step_type in StepType:
-            for name in ("csv", "common_filter", "standard_scaler", "XGBoost", "correlation_heatmap"):
-                _REGISTRY[(step_type, name)] = recording_chain
-
-    def teardown_method(self):
-        _REGISTRY.clear()
-        _REGISTRY.update(self.original_registry)
+        for step in _STEPS:
+            fake_plugins.setdefault(step, {}).update(
+                {
+                    name: recording_chain
+                    for name in ("csv", "common_filter", "standard_scaler", "XGBoost", "correlation_heatmap")
+                }
+            )
 
     def test_lifo_unblocks_downstream_chain_immediately(self, monkeypatch, tmp_path):
         """LIFO：encoder 完成后 RF 立即执行，不等同层 XGB/LGBM/CAT

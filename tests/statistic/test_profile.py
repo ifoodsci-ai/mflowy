@@ -6,18 +6,18 @@ from unittest.mock import patch
 import pandas as pd
 import pytest
 
-from mflowy.driver import handler
-from mflowy.driver.config import StepConf, StepType
+from mflowy.driver import discover
+from mflowy.driver.config import StepConf
 from mflowy.driver.context import Context
 
 
 def _make_ctx(**params):
-    conf = StepConf(name="test-inspect", type=StepType.STATISTIC, params=params)
+    conf = StepConf(name="test-inspect", type="statistic", params=params)
     return Context(conf=conf)
 
 
 def _make_load_prev(df: pd.DataFrame) -> Context:
-    prev_conf = StepConf(name="load", type=StepType.LOAD, params={"module": "csv"})
+    prev_conf = StepConf(name="load", type="load", params={"module": "csv"})
     prev_ctx = Context(conf=prev_conf)
     prev_ctx.result = df
     return prev_ctx
@@ -26,7 +26,7 @@ def _make_load_prev(df: pd.DataFrame) -> Context:
 class TestProfileHandler:
     def test_schema_per_column(self):
         """每个数据列产生一行 schema，字段包含 name/dtype/missing。"""
-        h = handler.get(StepType.STATISTIC, "profile")
+        h = discover.get("statistic", "profile")
 
         df = pd.DataFrame({"a": [1, 2, 3], "b": [4.0, 5.0, 6.0]})
         ctx = Context(_make_ctx().conf, prevs=[_make_load_prev(df)])
@@ -43,7 +43,7 @@ class TestProfileHandler:
 
     def test_no_load_prev_raises(self):
         """无 LOAD 前置步骤时 inject_df 抛 PreviousContextNotFoundError。"""
-        h = handler.get(StepType.STATISTIC, "profile")
+        h = discover.get("statistic", "profile")
 
         ctx = _make_ctx()
 
@@ -56,7 +56,7 @@ class TestProfileHandler:
 
     def test_logs_stats_to_mlflow(self):
         """log_statistic middleware 将 schema 记录到 mlflow。"""
-        h = handler.get(StepType.STATISTIC, "profile")
+        h = discover.get("statistic", "profile")
 
         df = pd.DataFrame({"a": [1, 2, 3], "b": [4.0, 5.0, 6.0]})
         ctx = Context(_make_ctx().conf, prevs=[_make_load_prev(df)])

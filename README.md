@@ -16,21 +16,21 @@ MFlowy 不内置 agent；它提供让 agent 自主运转的四个阶段，每个
 
 | 阶段 | 工具 | agent 用它做什么 |
 | ---- | ---- | --------------- |
-| 发现 | `list_modules` / `get_module_info` | 枚举 `(StepType, module)` 能力目录；参数契约由函数签名内省进 inputSchema，拿到即会用 |
+| 发现 | `list_modules` / `get_module_info` | 枚举 `step.module` 能力目录（entry points 插件注册）；参数契约由函数签名内省进 inputSchema，拿到即会用 |
 | 组装 | `validate_modeling_steps` | 预检 LLM 生成的 YAML DAG——模块名、图结构错误在编译期抓出，通过后再执行 |
 | 执行 | `modeling` / `data_profile` / `eda` / `predict` … | 运行单能力或整图；结构化 `WorkflowResult` 逐节点回报 run_id/状态/输出 |
 | 读回 | `list_runs` / `get_run` / `list_run_artifacts` | 查 MLflow 实验记录：对比历史 run、定位产物，据实决定下一步 |
 
-回路可靠运转的两块基石：封闭 StepType 词表让 LLM 与人共享同一图语言，YAML 可序列化往返、生成图可被工具改写复用；复用旧结果是显式 run_id 引用、不做静默缓存——agent 的控制流永远可预测。
+回路可靠运转的两块基石：可枚举的 `step.module` 插件词表（内置 entry points + 第三方 `mflowy.plugins` 组）让 LLM 与人共享同一图语言，YAML 可序列化往返、生成图可被工具改写复用；复用旧结果是显式 run_id 引用、不做静默缓存——agent 的控制流永远可预测。
 
 研究方法论（划分先行 / 基线参照 / 单一变更等五律）见 [docs/research-flow.md](docs/research-flow.md)，可直接作为 agent 的工作规约。
 
 ## 核心特性
 
 - **MCP-native，三入口同源**：全部能力以 MCP 工具（pyfunc）暴露，MCP server（stdio）、JSON runner CLI（`cmd`）、直接 import（宿主内嵌）共享同一套实现与执行委派
-- **能力目录，零手工注册**：能力 = 纯函数 + `@handler(StepType.X)` 装饰器，import 即注册进 `(StepType, module)` 目录，新增能力只需一个 `.py` 文件；MCP schema 由函数签名内省自动生成
-- **YAML 工作流是一等工件**：steps 串行 / branches 并行组成 DAG；封闭 StepType 词表让 LLM 与人共享同一图语言，图可序列化往返、跨工具改写复用
-- **边按类型寻址**：节点按 StepType 检索最近上游而非点名引用——替换模块（如 XGB→LGBM）不需要改下游连线
+- **能力目录，零手工注册**：能力 = 纯函数 + `@handler` 装饰器，构建期扫描生成 entry points 目录（`step.module` 即身份），新增能力只需一个 `.py` 文件；第三方包声明 `mflowy.plugins` entry points 即成插件；MCP schema 由函数签名内省自动生成
+- **YAML 工作流是一等工件**：steps 串行 / branches 并行组成 DAG；可枚举的 step 词表让 LLM 与人共享同一图语言，图可序列化往返、跨工具改写复用
+- **边按类型寻址**：节点按 step 检索最近上游而非点名引用——替换模块（如 XGB→LGBM）不需要改下游连线
 - **实验即记录**：每次运行必留痕——结构化 `WorkflowResult`（逐节点 run_id/状态/输出）+ MLflow 全量追踪（参数/指标/模型/产物）+ 血缘 tag（`mflowy.input_steps`）；复用旧结果是显式 run_id 引用，不做静默缓存
 - **中间件责任链**：数据注入、领域日志、mlflow 记录、错误即停在注册期一次性织入
 - **执行环境可委派**：JobProvider 契约抽象 compute 工具的执行环境，内置本地实现，远程执行由自定义实现接入（见 [docs/REMOTE_MODELING.md](docs/REMOTE_MODELING.md)）

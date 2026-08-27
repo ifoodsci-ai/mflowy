@@ -23,10 +23,9 @@ def sample_parquet(tmp_path):
 
 def test_handler_is_registered():
     """测试 parquet 在 handler registry 中注册"""
-    from mflowy.driver.config import StepType
-    from mflowy.driver.handler import _REGISTRY
+    from mflowy.driver import discover
 
-    assert (StepType.LOAD, "parquet") in _REGISTRY
+    assert discover.has("load", "parquet")
 
 
 def test_parquet_loader_load_basic(sample_parquet):

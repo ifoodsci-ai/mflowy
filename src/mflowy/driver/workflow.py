@@ -11,9 +11,9 @@ from mlflow.entities import Experiment
 from mflowy.utils.capture import capture_prints
 from mflowy.utils.mlflow import get_artifact_uri, set_active_experiment, setup
 
+from . import discover
 from .config import WorkflowConf
 from .context import Context
-from .handler import get as get_handler
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,7 @@ class Workflow:
         finished = 0
         while ready:
             task = ready.pop()  # LIFO：深度优先，刚解锁的下游优先
-            handler = get_handler(task.conf.type, task.conf.module)
+            handler = discover.get(task.conf.type, task.conf.module)
             node = NodeResult(
                 step=f"{task.conf.type}.{task.conf.module}",
                 name=task.conf.name,
@@ -176,7 +176,7 @@ class Workflow:
             return n
 
         def _label(step) -> str:
-            if step.type.is_placeholder():
+            if step.is_placeholder():
                 return step.name
             return f"[{step.type}] {step.name}"
 
@@ -186,7 +186,7 @@ class Workflow:
                 connector = "└── " if last else "├── "
                 child_prefix = prefix + ("    " if last else "│   ")
                 tag = ""
-                if s.type.is_placeholder():
+                if s.is_placeholder():
                     tag = " (并行)" if s.branches else " (串行)"
                 lines.append(f"{prefix}{connector}{_label(s)}{tag}")
                 children = s.steps or s.branches

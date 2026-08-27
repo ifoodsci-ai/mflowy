@@ -15,7 +15,6 @@ from matplotlib.gridspec import GridSpec
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from sklearn.metrics import r2_score, root_mean_squared_error
 
-from mflowy.driver.config import StepType
 from mflowy.driver.context import Context
 from mflowy.driver.handler import handler
 from mflowy.middlewares import log_plot
@@ -39,7 +38,7 @@ def _subplot_label(i: int) -> str:
     return f"({i + 1})"
 
 
-@handler(StepType.PLOT, inject_plot_data(_get_prediction_scatter_data), log_plot)
+@handler(inject_plot_data(_get_prediction_scatter_data), log_plot)
 def prediction_scatter(
     plot_data: pd.DataFrame,
     title: Annotated[str | None, "图表标题"] = None,

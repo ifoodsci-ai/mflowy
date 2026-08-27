@@ -13,7 +13,6 @@ import numpy as np
 import pandas as pd
 from matplotlib.figure import Figure
 
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
 from mflowy.middlewares import log_plot
 from mflowy.middlewares.data_inject import inject_df
@@ -109,7 +108,7 @@ def _build_scatter_dfs(
         yield scatter_df
 
 
-@handler(StepType.PLOT, inject_df, log_plot)
+@handler(inject_df, log_plot)
 def target_trend_by_numeric(
     df: pd.DataFrame,
     targets: Annotated[str | list[str] | set[str], "目标特征列（必填）"],

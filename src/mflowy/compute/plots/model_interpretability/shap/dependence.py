@@ -22,7 +22,6 @@ if TYPE_CHECKING:
 
 import logging
 
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
 from mflowy.middlewares import log_plot
 from mflowy.middlewares.data_inject import inject_plot_data
@@ -76,7 +75,7 @@ def _find_turn_point(x: np.ndarray, y: np.ndarray) -> tuple[float, float] | None
     return best[0], best[1]
 
 
-@handler(StepType.PLOT, inject_plot_data(compute_shap_explanation), log_plot)
+@handler(inject_plot_data(compute_shap_explanation), log_plot)
 def shap_dependence(
     plot_data: Iterator[tuple[str, Explanation, list[str]]],
     feature: Annotated[str | None, "目标特征名"] = None,

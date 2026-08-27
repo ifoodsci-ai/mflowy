@@ -3,7 +3,7 @@ from collections.abc import Callable
 
 from mflowy.utils.mlflow import search_experiment_model_run_ids
 
-from .config import StepConf, StepType
+from .config import StepConf
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +70,7 @@ def prune_model_step(experiment_id: str, model: str | None = None) -> BuilderOpt
     run_id_map = _resolve_run_id_map(experiment_id, target_module, explicit_run_id)
 
     def option(step: StepConf) -> StepConf:
-        if not step.enabled or step.type is not StepType.MODEL or step.module == "loader":
+        if not step.enabled or step.type != "model" or step.module == "loader":
             return step
         if target_module and step.module != target_module:
             step.enabled = False
@@ -106,7 +106,7 @@ def resume_model_step(experiment_id: str) -> BuilderOption:
     run_id_map = search_experiment_model_run_ids(experiment_id)
 
     def option(step: StepConf) -> StepConf:
-        if not step.enabled or step.type is not StepType.MODEL or step.module == "loader":
+        if not step.enabled or step.type != "model" or step.module == "loader":
             return step
         rid = run_id_map.get(step.module)
         if not rid:
@@ -119,7 +119,7 @@ def resume_model_step(experiment_id: str) -> BuilderOption:
 
 
 def prune_x_transformer_step(branches: bool, conf: StepConf, nexts: tuple[StepConf, ...]) -> bool:
-    if conf.type is not StepType.X_TRANSFORMER:
+    if conf.type != "x_transformer":
         return False
     next_not_need_x_transformer = True
 
@@ -130,6 +130,6 @@ def prune_x_transformer_step(branches: bool, conf: StepConf, nexts: tuple[StepCo
         candidates = (nexts[0],)
 
     for ca in candidates:
-        next_not_need_x_transformer &= ca.type is not StepType.MODEL or ca.module in ("loader", "predict")
+        next_not_need_x_transformer &= ca.type != "model" or ca.module in ("loader", "predict")
 
     return next_not_need_x_transformer

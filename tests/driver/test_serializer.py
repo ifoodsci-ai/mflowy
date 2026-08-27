@@ -2,7 +2,7 @@
 
 import yaml
 
-from mflowy.driver.config import StepConf, StepType
+from mflowy.driver.config import StepConf
 from mflowy.driver.serializer import step_to_dict, steps_to_yaml
 
 
@@ -15,34 +15,34 @@ class TestStepToDict:
         assert d["name"] == "container"
 
     def test_normal_step_emits_type_module(self):
-        s = StepConf(name="load", type=StepType.LOAD, module="csv")
+        s = StepConf(name="load", type="load", module="csv")
         d = step_to_dict(s)
         assert d["type"] == "load"
         assert d["module"] == "csv"
 
     def test_params_emitted_when_non_empty(self):
-        s = StepConf(name="load", type=StepType.LOAD, module="csv", params={"source": "data.csv"})
+        s = StepConf(name="load", type="load", module="csv", params={"source": "data.csv"})
         d = step_to_dict(s)
         assert d["params"] == {"source": "data.csv"}
 
     def test_stop_on_error_false_is_serialized(self):
-        s = StepConf(name="x", type=StepType.PLOT, module="taylor", stop_on_error=False)
+        s = StepConf(name="x", type="plot", module="taylor", stop_on_error=False)
         d = step_to_dict(s)
         assert d["stop_on_error"] is False
 
     def test_stop_on_error_true_omitted(self):
         """默认 True 时不序列化（避免冗余），保持 YAML 简洁"""
-        s = StepConf(name="x", type=StepType.PLOT, module="taylor", stop_on_error=True)
+        s = StepConf(name="x", type="plot", module="taylor", stop_on_error=True)
         d = step_to_dict(s)
         assert "stop_on_error" not in d
 
     def test_enabled_false_is_serialized(self):
-        s = StepConf(name="x", type=StepType.PLOT, module="taylor", enabled=False)
+        s = StepConf(name="x", type="plot", module="taylor", enabled=False)
         d = step_to_dict(s)
         assert d["enabled"] is False
 
     def test_enabled_true_omitted(self):
-        s = StepConf(name="x", type=StepType.PLOT, module="taylor")
+        s = StepConf(name="x", type="plot", module="taylor")
         d = step_to_dict(s)
         assert "enabled" not in d
 
@@ -50,8 +50,8 @@ class TestStepToDict:
         s = StepConf(
             name="root",
             branches=(
-                StepConf(name="A", type=StepType.MODEL, module="XGB"),
-                StepConf(name="B", type=StepType.MODEL, module="LGBM", stop_on_error=False),
+                StepConf(name="A", type="model", module="XGB"),
+                StepConf(name="B", type="model", module="LGBM", stop_on_error=False),
             ),
         )
         d = step_to_dict(s)
@@ -61,9 +61,9 @@ class TestStepToDict:
     def test_nested_steps_recursively_serialized(self):
         s = StepConf(
             name="container",
-            type=StepType.X_TRANSFORMER,
+            type="x_transformer",
             module="scaler",
-            steps=(StepConf(name="inner", type=StepType.MODEL, module="MLP"),),
+            steps=(StepConf(name="inner", type="model", module="MLP"),),
         )
         d = step_to_dict(s)
         assert d["steps"][0]["module"] == "MLP"
@@ -74,7 +74,7 @@ class TestStepToDict:
 
         s = StepConf(
             name="x",
-            type=StepType.MODEL,
+            type="model",
             module="XGB",
             params={
                 "param_space": {"lr": ContinuousSpace(0.01, 0.3), "depth": DiscreteSpace([3, 5])},
@@ -90,7 +90,7 @@ class TestStepToDict:
 
         s = StepConf(
             name="x",
-            type=StepType.MODEL,
+            type="model",
             module="XGB",
             params={"param_space": {"lr": ContinuousSpace(0.01, 0.3), "depth": DiscreteSpace([3, 5])}},
         )
@@ -103,7 +103,7 @@ class TestStepsToYamlRoundTrip:
     """序列化 → YAML → 反序列化 → StepConf 应保留 stop_on_error/enabled"""
 
     def test_round_trip_preserves_stop_on_error_false(self):
-        original = (StepConf(name="x", type=StepType.PLOT, module="taylor", stop_on_error=False),)
+        original = (StepConf(name="x", type="plot", module="taylor", stop_on_error=False),)
         yaml_text = steps_to_yaml(original)
         parsed = yaml.safe_load(yaml_text)
         assert parsed[0]["stop_on_error"] is False
@@ -112,7 +112,7 @@ class TestStepsToYamlRoundTrip:
         assert restored.stop_on_error is False
 
     def test_round_trip_preserves_enabled_false(self):
-        original = (StepConf(name="x", type=StepType.PLOT, module="taylor", enabled=False),)
+        original = (StepConf(name="x", type="plot", module="taylor", enabled=False),)
         yaml_text = steps_to_yaml(original)
         parsed = yaml.safe_load(yaml_text)
         assert parsed[0]["enabled"] is False
@@ -121,7 +121,7 @@ class TestStepsToYamlRoundTrip:
 
     def test_round_trip_default_values_stay_default(self):
         """默认值不序列化，反序列化时使用 StepConf 默认"""
-        original = (StepConf(name="x", type=StepType.PLOT, module="taylor"),)
+        original = (StepConf(name="x", type="plot", module="taylor"),)
         yaml_text = steps_to_yaml(original)
         parsed = yaml.safe_load(yaml_text)
         assert "stop_on_error" not in parsed[0]

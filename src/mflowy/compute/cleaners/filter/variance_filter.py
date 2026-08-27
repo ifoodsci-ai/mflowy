@@ -8,7 +8,6 @@ from typing import Annotated
 
 import pandas as pd
 
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
 from mflowy.middlewares.data_inject import inject_df
 from mflowy.middlewares.log_df_diff import df_diff
@@ -16,7 +15,7 @@ from mflowy.middlewares.log_df_diff import df_diff
 logger = logging.getLogger(__name__)
 
 
-@handler(StepType.CLEAN, inject_df, df_diff)
+@handler(inject_df, df_diff)
 def variance_filter(
     df: pd.DataFrame,
     *,

@@ -138,7 +138,6 @@ def test_catboost_custom_params():
 
 def test_catboost_handler_registered():
     import mflowy.compute.model.catboost  # noqa: F401
-    from mflowy.driver.config import StepType
-    from mflowy.driver.handler import has
+    from mflowy.driver import discover
 
-    assert has(StepType.MODEL, "CAT")
+    assert discover.has("model", "CAT")

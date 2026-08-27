@@ -10,7 +10,6 @@ import mlflow
 import pandas as pd
 
 from mflowy.compute.model.types import TASKTYPE
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
 from mflowy.middlewares.data_inject import inject_df
 from mflowy.utils import mlflow as mlflow_util
@@ -18,7 +17,7 @@ from mflowy.utils import mlflow as mlflow_util
 logger = logging.getLogger(__name__)
 
 
-@handler(StepType.XY, inject_df)
+@handler(inject_df)
 def x_y(
     df: pd.DataFrame,
     targets: Annotated[str | list[str], "目标列"],

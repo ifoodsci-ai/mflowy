@@ -19,7 +19,6 @@ if TYPE_CHECKING:
 
 import logging
 
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
 from mflowy.middlewares import log_plot
 from mflowy.middlewares.data_inject import inject_plot_data
@@ -69,7 +68,7 @@ def _density_jitter(values: np.ndarray, width: float, rng: np.random.Generator) 
     return jitter
 
 
-@handler(StepType.PLOT, inject_plot_data(compute_shap_explanation), log_plot)
+@handler(inject_plot_data(compute_shap_explanation), log_plot)
 def shap_summary(
     plot_data: Iterator[tuple[str, Explanation, list[str]]],
     max_display: Annotated[int, "最大显示特征数"] = SHAP_MAX_DISPLAY,

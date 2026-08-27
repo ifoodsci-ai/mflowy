@@ -6,6 +6,10 @@ build-backend = "hatchling.build"
 # 标准 src 布局：src/mflowy/ — 目录含 src 层（不进 import 路径），包名 = 发布名
 packages = ["src/mflowy"]
 
+[tool.hatch.metadata.hooks.custom]
+# 构建期扫描 mflowy.compute.** 的 @handler 生成内置插件 entry points（见 hatch_metadata.py）
+path = "hatch_metadata.py"
+
 [project]
 name = "mflowy"
 version = "0.1.2"
@@ -13,6 +17,8 @@ description = "MCP-native ML capability layer for autonomous data-analysis / mod
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
+# entry-points 由 hatch_metadata.py 构建期生成（内置插件目录）
+dynamic = ["entry-points"]
 authors = [{ name = "lincode7", email = "15587025323@163.com" }]
 keywords = ["mcp", "machine-learning", "workflow", "mlflow", "data-analysis", "yaml"]
 classifiers = [
@@ -117,7 +123,7 @@ exclude = ["*.ipynb"]
 [tool.ruff.lint]
 # E4/E7/E9/F: pycodestyle 核心错误 + pyflakes；I: import 排序；UP035/UP037: 废弃导入/引号注解
 select = ["E4", "E7", "E9", "F", "I", "UP035", "UP037"]
-per-file-ignores = { "src/mflowy/compute/plots/**" = ["F403", "F405"], "src/mflowy/compute/plots/model_evaluation/regression/_taylor_diagram_copin.py" = ["E741"] }  # 后者：vendored 第三方代码（public domain），原样保留
+per-file-ignores = { "src/mflowy/compute/plots/**" = ["F403", "F405"], "src/mflowy/compute/plots/model_evaluation/regression/_taylor_diagram_copin.py" = ["E741"], "hatch_metadata.py" = ["E402"] }  # 后两者：vendored 代码原样保留 / hook 类定义需在扫描器之后
 
 [tool.ruff.format]
 exclude = ["*.ipynb"]

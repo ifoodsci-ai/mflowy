@@ -3,7 +3,6 @@ from typing import Annotated
 import pandas as pd
 from sklearn.decomposition import PCA
 
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
 from mflowy.middlewares.data_inject import inject_X_y
 from mflowy.utils.constants import RANDOM_STATE
@@ -11,7 +10,7 @@ from mflowy.utils.constants import RANDOM_STATE
 from ..utils import resolve_cols
 
 
-@handler(StepType.X_TRANSFORMER, inject_X_y)
+@handler(inject_X_y)
 def pca_reducer(
     X: pd.DataFrame,
     y: pd.DataFrame,

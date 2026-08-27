@@ -5,19 +5,19 @@
 
 import pandas as pd
 
-from mflowy.driver.config import StepConf, StepType
+from mflowy.driver.config import StepConf
 from mflowy.driver.context import Context
 
 # ========== helpers ==========
 
 
-def _make_ctx_with_prev(step_type: StepType, module: str, result, **extra_params):
+def _make_ctx_with_prev(step_type: str, module: str, result, **extra_params):
     """构造包含一个前置节点结果的 Context"""
     prev_conf = StepConf(name="prev", type=step_type, module=module)
     prev_ctx = Context(prev_conf)
     prev_ctx.result = result
 
-    ctx_conf = StepConf(name="current", type=StepType.PLOT, module="test", params=extra_params)
+    ctx_conf = StepConf(name="current", type="plot", module="test", params=extra_params)
     return Context(ctx_conf, prevs=[prev_ctx])
 
 
@@ -39,7 +39,7 @@ def _make_ctx_with_two_prevs(
     prev2_ctx = Context(prev2_conf)
     prev2_ctx.result = prev2_result
 
-    ctx_conf = StepConf(name="current", type=StepType.PLOT, module="test", params=extra_params)
+    ctx_conf = StepConf(name="current", type="plot", module="test", params=extra_params)
     return Context(ctx_conf, prevs=[prev1_ctx, prev2_ctx])
 
 
@@ -52,7 +52,7 @@ class TestInjectDF:
         from mflowy.middlewares.data_inject import inject_df
 
         df = pd.DataFrame({"a": [1, 2, 3]})
-        ctx = _make_ctx_with_prev(StepType.LOAD, "csv", df)
+        ctx = _make_ctx_with_prev("load", "csv", df)
         captured = {}
         inject_df(ctx, lambda c, **kw: captured.update(kw))
         assert "df" in captured
@@ -65,10 +65,10 @@ class TestInjectDF:
         load_df = pd.DataFrame({"a": [1]})
         clean_df = pd.DataFrame({"a": [2]})
         ctx = _make_ctx_with_two_prevs(
-            StepType.LOAD,
+            "load",
             "csv",
             load_df,
-            StepType.CLEAN,
+            "clean",
             "drop_missing",
             clean_df,
         )
@@ -84,7 +84,7 @@ class TestGetXPreprocessors:
     def test_no_pre_processor_returns_none(self):
         from mflowy.middlewares.data_inject import GetXPreprocessors
 
-        ctx_conf = StepConf(name="current", type=StepType.MODEL, module="XGBoost")
+        ctx_conf = StepConf(name="current", type="model", module="XGBoost")
         ctx = Context(ctx_conf, prevs=[])
         assert GetXPreprocessors(ctx) is None
 
@@ -97,15 +97,15 @@ class TestGetXPreprocessors:
         pp1 = ("scaler", StandardScaler(), ["num_col"])
         pp2 = ("encoder", OneHotEncoder(), ["cat_col"])
 
-        prev1_conf = StepConf(name="prev1", type=StepType.X_TRANSFORMER, module="standard_scaler")
+        prev1_conf = StepConf(name="prev1", type="x_transformer", module="standard_scaler")
         prev1_ctx = Context(prev1_conf)
         prev1_ctx.result = pp1
 
-        prev2_conf = StepConf(name="prev2", type=StepType.X_TRANSFORMER, module="onehot_encoder")
+        prev2_conf = StepConf(name="prev2", type="x_transformer", module="onehot_encoder")
         prev2_ctx = Context(prev2_conf)
         prev2_ctx.result = pp2
 
-        ctx_conf = StepConf(name="current", type=StepType.MODEL, module="XGBoost")
+        ctx_conf = StepConf(name="current", type="model", module="XGBoost")
         ctx = Context(ctx_conf, prevs=[prev1_ctx, prev2_ctx])
 
         ct = GetXPreprocessors(ctx)
@@ -127,7 +127,7 @@ class TestInjectPlotData:
         def my_plot_data(ctx):
             yield (df,)
 
-        ctx_conf = StepConf(name="test", type=StepType.PLOT, module="test")
+        ctx_conf = StepConf(name="test", type="plot", module="test")
         ctx = Context(ctx_conf, prevs=[])
         captured = {}
         inject_plot_data(my_plot_data)(ctx, lambda c, **kw: captured.update(kw))
@@ -147,7 +147,7 @@ class TestInjectPlotData:
         def my_plot_data(ctx):
             yield (df1, df2)
 
-        ctx_conf = StepConf(name="test", type=StepType.PLOT, module="test")
+        ctx_conf = StepConf(name="test", type="plot", module="test")
         ctx = Context(ctx_conf, prevs=[])
         captured = {}
         inject_plot_data(my_plot_data)(ctx, lambda c, **kw: captured.update(kw))
@@ -165,7 +165,7 @@ class TestInjectPlotData:
             received_ctx.append(ctx)
             yield (pd.DataFrame({"x": [1]}),)
 
-        ctx_conf = StepConf(name="test", type=StepType.PLOT, module="test")
+        ctx_conf = StepConf(name="test", type="plot", module="test")
         ctx = Context(ctx_conf, prevs=[])
         captured = {}
         inject_plot_data(my_plot_data)(ctx, lambda c, **kw: captured.update(kw))
@@ -187,7 +187,7 @@ class TestInjectPlotData:
             yield (df2,)
             yield (df3,)
 
-        ctx_conf = StepConf(name="test", type=StepType.PLOT, module="test")
+        ctx_conf = StepConf(name="test", type="plot", module="test")
         ctx = Context(ctx_conf, prevs=[])
         captured = {}
         inject_plot_data(my_plot_data)(ctx, lambda c, **kw: captured.update(kw))

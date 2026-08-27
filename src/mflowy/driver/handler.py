@@ -1,3 +1,14 @@
+"""@handler 装饰器：把 compute 函数装配为可调度能力。
+
+不持有注册表——插件身份在 entry point name（``step.module``，见 discover.py），
+可执行性与参数转换在函数属性上：
+
+- ``fn.handler``：织入中间件的调度链（``chain(ctx, **kwargs)``），``chain.__wrapped__`` 回指原函数
+- ``fn.convert_params``：从函数签名构建的 YAML 值 → 类型实例转换器
+
+装饰器返回原函数（直调不受影响），插件被 discover 加载时以双属性为 marker 校验。
+"""
+
 import logging
 from collections.abc import Callable
 from enum import Enum
@@ -5,16 +16,14 @@ from typing import Annotated, Concatenate, get_args, get_origin, get_type_hints
 
 from mflowy.compute.model.types import TASKTYPE
 
-from .config import StepType, parse_enum
+from .config import parse_enum
 from .context import Context
 
 logger = logging.getLogger(__name__)
 
 type Handler[R] = Callable[Concatenate[Context, ...], R]
 type Middleware[R] = Callable[[Context, Handler], R]
-_REGISTRY: dict[tuple[StepType, str], Handler] = {}
 type ParamsPostInit = Callable[[dict[str, object]], dict[str, object]]
-_POST_INIT_REGISTRY: dict[tuple[StepType, str], ParamsPostInit] = {}
 
 
 def _build_params_converter(fn) -> ParamsPostInit:
@@ -66,42 +75,12 @@ def _build_params_converter(fn) -> ParamsPostInit:
     return convert
 
 
-def get_post_init(step: StepType, module: str) -> ParamsPostInit | None:
-    from mflowy.driver.discover import ensure_discovered
+def handler[R](*middlewares: Middleware):
+    """不影响原函数调用，附加 .handler 调度链与 .convert_params 参数转换器
 
-    ensure_discovered()
-    return _POST_INIT_REGISTRY.get((step, module))
-
-
-def get(step: StepType, module: str) -> Handler:
-    from mflowy.driver.discover import ensure_discovered
-
-    ensure_discovered()
-    if (step, module) not in _REGISTRY:
-        available = [name for (t, name) in _REGISTRY if t == step]
-        raise ModuleNotFoundError(f"Module '{module}' not found for step '{step}'. Available: {available}")
-    return _REGISTRY[(step, module)]
-
-
-def has(step: StepType, module: str) -> bool:
-    from mflowy.driver.discover import ensure_discovered
-
-    ensure_discovered()
-    return (step, module) in _REGISTRY
-
-
-def list_all() -> dict[StepType, list[str]]:
-    from mflowy.driver.discover import ensure_discovered
-
-    ensure_discovered()
-    result: dict[StepType, list[str]] = {}
-    for t, name in _REGISTRY:
-        result.setdefault(t, []).append(name)
-    return result
-
-
-def handler[R](step: StepType, *middlewares: Middleware):
-    """不影响原函数调用，附加 .handler 闭包支持 Workflow 调度 DAG"""
+    中间件按声明序织入，mlflow_log 和 stop_on_error 作为默认尾中间件，
+    确保所有 handler 都在 mlflow run 内执行。
+    """
 
     def decorator(fn: Callable[..., R]):
         def handler_wrapper(ctx: Context, **kwargs) -> R:
@@ -116,7 +95,7 @@ def handler[R](step: StepType, *middlewares: Middleware):
 
             return middleware_wrapper
 
-        # mlflow_log 和 stop_on_error 作为默认尾中间件，确保所有 handler 都在 mlflow run 内执行
+        # mlflow_log 和 stop_on_error 延迟导入，避免装饰器定义期触发 middlewares 包循环导入
         from mflowy.middlewares import mlflow_log, stop_on_error
 
         for mw in (*middlewares, mlflow_log, stop_on_error):
@@ -124,10 +103,8 @@ def handler[R](step: StepType, *middlewares: Middleware):
 
         handler_chain.__wrapped__ = fn  # type: ignore
 
-        if (step, fn.__name__) in _REGISTRY:
-            raise ValueError(f"Duplicate handler registration: ({step}, {fn.__name__}). Already registered.")
-        _REGISTRY[(step, fn.__name__)] = handler_chain
-        _POST_INIT_REGISTRY[(step, fn.__name__)] = _build_params_converter(fn)
+        fn.handler = handler_chain  # type: ignore
+        fn.convert_params = _build_params_converter(fn)  # type: ignore
         return fn
 
     return decorator

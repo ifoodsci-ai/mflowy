@@ -5,7 +5,6 @@ import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.preprocessing import LabelEncoder
 
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
 from mflowy.middlewares.data_inject import inject_X_y
 
@@ -42,7 +41,7 @@ class _MultiColumnLabelEncoder(BaseEstimator, TransformerMixin):
         return np.array(input_features)
 
 
-@handler(StepType.X_TRANSFORMER, inject_X_y)
+@handler(inject_X_y)
 def label_encoder(
     X: pd.DataFrame,
     y: pd.DataFrame,

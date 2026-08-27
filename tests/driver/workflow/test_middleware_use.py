@@ -1,19 +1,12 @@
 """测试 @handler 装饰器的中间件链"""
 
-from mflowy.driver.config import StepConf, StepType
+from mflowy.driver.config import StepConf
 from mflowy.driver.context import Context
-from mflowy.driver.handler import _REGISTRY, handler
+from mflowy.driver.handler import handler
 
 
 class TestMiddlewareUse:
     """测试 @handler 装饰器注入中间件"""
-
-    def setup_method(self):
-        self.original_registry = _REGISTRY.copy()
-
-    def teardown_method(self):
-        _REGISTRY.clear()
-        _REGISTRY.update(self.original_registry)
 
     def test_use_custom_middleware(self):
         """测试通过 @handler 注入自定义中间件"""
@@ -25,12 +18,12 @@ class TestMiddlewareUse:
             execution_log.append(f"after: {task.conf.name}")
             return result
 
-        @handler(StepType.LOAD, custom_middleware)
+        @handler(custom_middleware)
         def dummy_handler(**kwargs):
             return "test_result"
 
-        task = Context(StepConf(name="test_task", type=StepType.LOAD, module="test"), [])
-        result = _REGISTRY[(StepType.LOAD, "dummy_handler")](task)
+        task = Context(StepConf(name="test_task", type="load", module="test"), [])
+        result = dummy_handler.handler(task)
 
         assert "before: test_task" in execution_log
         assert "after: test_task" in execution_log
@@ -52,13 +45,13 @@ class TestMiddlewareUse:
             execution_order.append("B_after")
             return result
 
-        @handler(StepType.LOAD, middleware_a, middleware_b)
+        @handler(middleware_a, middleware_b)
         def dummy_handler(**kwargs):
             execution_order.append("handler")
             return "result"
 
-        task = Context(StepConf(name="test_task", type=StepType.LOAD, module="test"), [])
-        _REGISTRY[(StepType.LOAD, "dummy_handler")](task)
+        task = Context(StepConf(name="test_task", type="load", module="test"), [])
+        dummy_handler.handler(task)
 
         # wrap 顺序: a→b→mlflow_log→stop_on_error，每层包在外面
         # 可见顺序（系统中间件不写 log）: B → A → handler → A → B
@@ -82,13 +75,13 @@ class TestMiddlewareUse:
             execution_log.append("cache_miss")
             return next_handler(task)
 
-        @handler(StepType.LOAD, cache_middleware)
+        @handler(cache_middleware)
         def dummy_handler(**kwargs):
             execution_log.append("handler_executed")
             return "handler_result"
 
-        task = Context(StepConf(name="cached_task", type=StepType.LOAD, module="test"), [])
-        result = _REGISTRY[(StepType.LOAD, "dummy_handler")](task)
+        task = Context(StepConf(name="cached_task", type="load", module="test"), [])
+        result = dummy_handler.handler(task)
 
         assert "cache_check" in execution_log
         assert "cache_hit" in execution_log

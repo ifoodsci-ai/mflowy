@@ -116,7 +116,6 @@ def test_lightgbm_with_validation_set(sample_data):
 
 def test_lightgbm_handler_registered():
     import mflowy.compute.model.lightgbm  # noqa: F401
-    from mflowy.driver.config import StepType
-    from mflowy.driver.handler import has
+    from mflowy.driver import discover
 
-    assert has(StepType.MODEL, "LGBM")
+    assert discover.has("model", "LGBM")

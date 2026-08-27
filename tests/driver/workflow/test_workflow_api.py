@@ -1,8 +1,8 @@
 """测试 Workflow 的公开 API - 验证调度执行一体化"""
 
-from mflowy.driver.config import StepType, WorkflowConf
-from mflowy.driver.handler import _REGISTRY
-from mflowy.driver.handler import get as get_handler
+from mflowy.driver.config import WorkflowConf
+from mflowy.driver.discover import get as discover_get
+from mflowy.driver.discover import has
 from mflowy.driver.workflow import Workflow, WorkflowResult
 
 
@@ -30,5 +30,5 @@ class TestWorkflowAPI:
     def test_run_executes_handlers(self):
         """测试 Workflow.run() 执行已注册的 handler"""
         # csv 已在 loaders 模块中注册，直接验证
-        assert get_handler(StepType.LOAD, "csv") is not None
-        assert (StepType.LOAD, "csv") in _REGISTRY
+        assert discover_get("load", "csv") is not None
+        assert has("load", "csv")

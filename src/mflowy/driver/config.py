@@ -1,5 +1,7 @@
+"""工作流配置模型。step 词表无枚举——身份即 entry point name 前缀，词表 = 运行期注册表。"""
+
 from dataclasses import dataclass, field
-from enum import Enum, StrEnum
+from enum import Enum
 from typing import Any
 
 
@@ -20,26 +22,14 @@ def parse_enum[E: Enum](cls: type[E], raw: str) -> E:
         ) from None
 
 
-class StepType(StrEnum):
-    PLACEHOLDER = "placeholder"
-    LOAD = "load"
-    CLEAN = "clean"
-    XY = "X_y"
-    X_TRANSFORMER = "x_transformer"
-    CROSS_VALIDATE = "cross_validate"
-    MODEL = "model"
-    PLOT = "plot"
-    STATISTIC = "statistic"
-    SAMPLER = "sampler"
-
-    def is_placeholder(self):
-        return self is StepType.PLACEHOLDER
+# 分组结构标记：placeholder 不是能力，仅作 steps/branches 容器（见 WorkflowConf._simplify_placeholders）
+PLACEHOLDER = "placeholder"
 
 
 @dataclass
 class StepConf:
     name: str = "placeholder"
-    type: StepType = StepType.PLACEHOLDER
+    type: str = PLACEHOLDER
     module: str = "N/A"
     params: dict[str, Any] = field(default_factory=dict)
     enabled: bool = True
@@ -49,8 +39,6 @@ class StepConf:
 
     # 除上述字段外，也会为不同步骤的扩展字段动态创建字段成员
     def __post_init__(self) -> None:
-        if isinstance(self.type, str):
-            object.__setattr__(self, "type", StepType(self.type))
         if isinstance(self.steps, list):
             object.__setattr__(
                 self,
@@ -64,11 +52,14 @@ class StepConf:
                 tuple(StepConf(**s) if isinstance(s, dict) else s for s in self.branches),
             )
 
-        from .handler import get_post_init
+        from .discover import get_post_init
 
         post_init = get_post_init(self.type, self.module)
         if post_init and self.params:
             object.__setattr__(self, "params", post_init(self.params))
+
+    def is_placeholder(self) -> bool:
+        return self.type == PLACEHOLDER
 
 
 @dataclass
@@ -101,7 +92,7 @@ class WorkflowConf:
         # 递归简化 placeholder 嵌套
         self.steps = self._simplify_placeholders(self.steps)
 
-    def _simplify_placeholders(self, confs: tuple[StepConf, ...]) -> tuple[StepConf]:
+    def _simplify_placeholders(self, confs: tuple[StepConf, ...]) -> tuple[StepConf, ...]:
         """递归简化 placeholder 嵌套
 
         规则：
@@ -120,7 +111,7 @@ class WorkflowConf:
                 conf.branches = self._simplify_placeholders(conf.branches)
 
             # 2. 检查是否可以优化
-            if conf.type is StepType.PLACEHOLDER:
+            if conf.is_placeholder():
                 # 场景1：空的 placeholder
                 if not conf.steps and not conf.branches:
                     # 过滤该 conf
@@ -129,15 +120,15 @@ class WorkflowConf:
                 # 场景2：只有 steps，且只有一个 placeholder
                 if conf.steps and not conf.branches and len(conf.steps) == 1:
                     inner = conf.steps[0]
-                    if inner.type is StepType.PLACEHOLDER:
+                    if inner.is_placeholder():
                         # 提升内层 placeholder（忽略外层其他属性）
                         simplified.append(inner)
                         continue
 
-                # 场景3：只有 branches，且只有一个 placeholder
+                # 场景3：只有 branches，且 branches 下只有一个 placeholder
                 if conf.branches and not conf.steps and len(conf.branches) == 1:
                     inner = conf.branches[0]
-                    if inner.type is StepType.PLACEHOLDER:
+                    if inner.is_placeholder():
                         # 提升内层 placeholder（忽略外层其他属性）
                         simplified.append(inner)
                         continue

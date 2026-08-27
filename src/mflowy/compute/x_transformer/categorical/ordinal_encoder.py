@@ -3,14 +3,13 @@ from typing import Annotated, Literal
 import pandas as pd
 from sklearn.preprocessing import OrdinalEncoder
 
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
 from mflowy.middlewares.data_inject import inject_X_y
 
 from ..utils import resolve_cols
 
 
-@handler(StepType.X_TRANSFORMER, inject_X_y)
+@handler(inject_X_y)
 def ordinal_encoder(
     X: pd.DataFrame,
     y: pd.DataFrame,

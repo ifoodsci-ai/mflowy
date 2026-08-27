@@ -17,7 +17,6 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from mflowy.compute.model.types import TASKTYPE
-from mflowy.driver.config import StepType
 from mflowy.driver.context import Context
 from mflowy.driver.handler import handler
 from mflowy.middlewares import log_plot
@@ -62,7 +61,7 @@ def _compute_taylor_stats(group: pd.DataFrame) -> tuple[float, float, float, flo
     return sigma_ratio, R, rmse_norm, bias_norm, rmse_total_norm
 
 
-@handler(StepType.PLOT, inject_plot_data(_get_taylor_data), log_plot)
+@handler(inject_plot_data(_get_taylor_data), log_plot)
 def taylor_diagram(
     plot_data: pd.DataFrame,
     title: Annotated[str | None, "图表标题"] = None,

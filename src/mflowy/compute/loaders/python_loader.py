@@ -6,7 +6,6 @@ from typing import Annotated
 
 import pandas as pd
 
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
 from mflowy.middlewares.log_load_profile import log_load_profile
 from mflowy.utils.file import read_text
@@ -18,7 +17,7 @@ from . import report_loaded
 logger = logging.getLogger(__name__)
 
 
-@handler(StepType.LOAD, log_load_profile)
+@handler(log_load_profile)
 def python(
     source: Annotated[str | None, "python脚本路径，支持 file.py:func 指定入口函数（默认 load）"] = None,
     **kwargs,

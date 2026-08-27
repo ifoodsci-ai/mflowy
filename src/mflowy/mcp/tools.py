@@ -29,7 +29,6 @@ from typing import Annotated, Literal
 from mcp.server.mcpserver import Context
 from pydantic import Field
 
-from mflowy.driver.config import StepType, parse_enum
 from mflowy.driver.workflow import WorkflowResult
 from mflowy.utils.file import exists
 from mflowy.utils.path import set_task_dir, split_path_to_py_with_target
@@ -99,7 +98,7 @@ def list_modules(
     """
     from mflowy.driver.module import list_modules as _list
 
-    step = parse_enum(StepType, step) if step else None  # 值/名双形式（load / LOAD）
+    step = step or None
     step_modules = _list(step)
     return [asdict(s) for s in step_modules]
 

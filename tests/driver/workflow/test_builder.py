@@ -2,10 +2,10 @@
 
 from pathlib import Path
 
+import pytest
+
 from mflowy.driver.builder import Builder
-from mflowy.driver.config import StepType
 from mflowy.driver.context import Context
-from mflowy.driver.handler import _REGISTRY
 
 
 def _dummy_handler(ctx):
@@ -50,21 +50,16 @@ def _print_mermaid_dag(workflow):
     print()
 
 
+_STEPS = ("load", "clean", "X_y", "x_transformer", "cross_validate", "model", "plot", "statistic")
+_MODULE_NAMES = ["csv", "common_filter", "standard_scaler", "XGBoost", "correlation_heatmap", "test"]
+
+
 class TestBuilder:
-    def setup_method(self):
-        from mflowy.driver.discover import ensure_discovered
-
-        ensure_discovered()  # 惰性扫描：先补全真实注册表，再覆盖 dummy
-        self.original_registry = _REGISTRY.copy()
-        # 注册足够多的模块名以覆盖测试中使用的 YAML 配置
-        _module_names = ["csv", "common_filter", "standard_scaler", "XGBoost", "correlation_heatmap", "test"]
-        for step_type in StepType:
-            for name in _module_names:
-                _REGISTRY[(step_type, name)] = _dummy_handler
-
-    def teardown_method(self):
-        _REGISTRY.clear()
-        _REGISTRY.update(self.original_registry)
+    @pytest.fixture(autouse=True)
+    def _fill_dummy_plugins(self, fake_plugins):
+        """注册足够多的模块名以覆盖测试中使用的 YAML 配置"""
+        for step in _STEPS:
+            fake_plugins.setdefault(step, {}).update({name: _dummy_handler for name in _MODULE_NAMES})
 
     def test_builder_builds_task_tree_with_prevs(self):
         """测试 Builder 构建 Task 树并建立 prevs 链"""

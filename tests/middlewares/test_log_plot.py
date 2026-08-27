@@ -13,14 +13,14 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import pytest
 
-from mflowy.driver.config import StepConf, StepType
+from mflowy.driver.config import StepConf
 from mflowy.driver.context import Context
 
 
 def _make_ctx(**extra_params):
     conf = StepConf(
         name="test_plot",
-        type=StepType.PLOT,
+        type="plot",
         module="test_module",
         params=extra_params,
     )

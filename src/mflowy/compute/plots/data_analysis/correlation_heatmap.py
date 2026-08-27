@@ -14,7 +14,6 @@ from matplotlib.patches import FancyBboxPatch
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from scipy import stats
 
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
 from mflowy.middlewares import log_plot
 from mflowy.middlewares.data_inject import inject_df
@@ -155,7 +154,7 @@ def _pval_marker(p: float) -> str:
     return ""
 
 
-@handler(StepType.PLOT, inject_df, log_plot)
+@handler(inject_df, log_plot)
 def correlation_heatmap(
     df: pd.DataFrame,
     targets: Annotated[str | list[str] | set[str] | None, "目标特征列"] = None,

@@ -12,7 +12,6 @@ import pandas as pd
 import seaborn as sns
 from matplotlib.figure import Figure
 
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
 from mflowy.middlewares import log_plot
 from mflowy.middlewares.data_inject import inject_df
@@ -39,7 +38,7 @@ def _plot_cell(ax, df: pd.DataFrame, target_col: str, cat_col: str):
     sns.despine(ax=ax, top=False, right=False)
 
 
-@handler(StepType.PLOT, inject_df, log_plot)
+@handler(inject_df, log_plot)
 def target_association_by_category(
     df: pd.DataFrame,
     targets: Annotated[str | list[str] | set[str], "分类目标列（必填，低基数）"],

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **插件化架构：词表从 StepType 枚举改为 entry points 目录**（BREAKING）：
+  - 删除 `driver/config.py: StepType`，`StepConf.type` 改为 `str`，YAML 值不变（load/clean/X_y/...）
+  - `@handler` 删除首参 step（签名变为 `@handler(*middlewares)`），身份由 entry point name `step.module` 声明；`handler.py` 注册表 `_REGISTRY`/`_POST_INIT_REGISTRY` 删除，改为函数属性挂载（`.handler` 调度链 + `.convert_params` 转换器）
+  - `discover.py` 重写：读取 `mflowy.builtin_plugins`（内置，`hatch_metadata.py` 构建期 AST 扫描生成）与 `mflowy.plugins`（第三方，安装即注册，后组覆盖前组）两组 entry points；目录查询零 import，加载惰性且坏声明 fail-loud——旧扫描机制“缺 extra 静默丢模块”问题随之解决
+  - 第三方插件：以 mflowy 为 base 依赖，声明 `[project.entry-points."mflowy.plugins"]` 即可；镜像支持 `make build MFLOWY_EXTRA_MODULES="pkg==ver"` 定制插件包
+  - 注意：editable 安装下新增 compute 模块需重跑 `uv sync` 刷新 entry points 元数据
+
 ### Added
 
 - **file_hash MCP 工具**: 文件指纹（sha256/md5/sha1，分块流式），供 agent 核验

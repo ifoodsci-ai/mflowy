@@ -11,10 +11,9 @@ class TestExcelLoader:
 
     def test_handler_is_registered(self):
         """测试 excel 在 handler registry 中注册"""
-        from mflowy.driver.config import StepType
-        from mflowy.driver.handler import _REGISTRY
+        from mflowy.driver import discover
 
-        assert (StepType.LOAD, "excel") in _REGISTRY
+        assert discover.has("load", "excel")
 
     def test_load_basic_xlsx(self, tmp_path):
         """测试加载基本 xlsx 文件"""

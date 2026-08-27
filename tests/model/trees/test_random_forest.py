@@ -123,7 +123,6 @@ def test_random_forest_loss_curve_empty_before_fit(sample_data):
 def test_random_forest_handler_registered():
     # 触发实体注册（@handler 装饰器在导入时注册）
     import mflowy.compute.model.random_forest  # noqa: F401
-    from mflowy.driver.config import StepType
-    from mflowy.driver.handler import has
+    from mflowy.driver import discover
 
-    assert has(StepType.MODEL, "RF")
+    assert discover.has("model", "RF")

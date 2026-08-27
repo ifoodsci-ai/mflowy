@@ -68,15 +68,8 @@ def test_list_modules_filter_by_step():
     assert [i["step"] for i in data] == ["model"]
 
 
-def test_list_modules_step_accepts_name_form():
-    """枚举名（MODEL）与枚举值（model）都应命中"""
-    assert [i["step"] for i in list_modules(step="MODEL")] == ["model"]
-    assert [i["step"] for i in list_modules(step="X_y")] == ["X_y"]
-    assert [i["step"] for i in list_modules(step="XY")] == ["X_y"]
-
-
 def test_list_modules_invalid_step_lists_valid_options():
-    with pytest.raises(ValueError, match="StepType"):
+    with pytest.raises(ModuleNotFoundError, match="nope"):
         list_modules(step="nope")
 
 

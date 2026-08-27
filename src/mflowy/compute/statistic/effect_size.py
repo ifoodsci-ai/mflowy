@@ -7,7 +7,6 @@ import numpy as np
 import pandas as pd
 from scipy import stats as scipy_stats
 
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
 from mflowy.middlewares.data_inject import inject_df
 from mflowy.middlewares.log_statistic import log_statistic
@@ -64,7 +63,7 @@ def _categorical_effect(target: pd.Series, group: pd.Series) -> dict:
     return result
 
 
-@handler(StepType.STATISTIC, inject_df, log_statistic)
+@handler(inject_df, log_statistic)
 def effect_size(
     df: pd.DataFrame,
     targets: Annotated[str | list[str] | set[str], "目标特征列（必填）"],

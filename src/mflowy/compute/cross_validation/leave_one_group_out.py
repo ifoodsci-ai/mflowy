@@ -5,7 +5,6 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import LeaveOneGroupOut
 
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
 from mflowy.middlewares.data_inject import inject_X_y
 from mflowy.middlewares.log_cv import log_cv
@@ -15,7 +14,7 @@ from .types import Indices
 logger = logging.getLogger(__name__)
 
 
-@handler(StepType.CROSS_VALIDATE, inject_X_y, log_cv)
+@handler(inject_X_y, log_cv)
 def leave_one_group_out(
     X: pd.DataFrame,
     y: pd.DataFrame | None,

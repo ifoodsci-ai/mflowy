@@ -9,7 +9,6 @@ from mflowy.compute.loaders.csv_loader import csv
 from mflowy.compute.loaders.excel_loader import excel
 from mflowy.compute.loaders.parquet_loader import parquet
 from mflowy.compute.loaders.python_loader import python
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
 from mflowy.middlewares.log_load_profile import log_load_profile
 from mflowy.utils.path import split_path_to_py_with_target
@@ -25,7 +24,7 @@ LOADER_MAP = {
 }
 
 
-@handler(StepType.LOAD, log_load_profile)
+@handler(log_load_profile)
 def file(
     file_path: Annotated[str, "文件路径"],
     **kwargs,

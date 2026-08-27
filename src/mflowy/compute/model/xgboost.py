@@ -7,7 +7,6 @@ from typing import Annotated
 from sklearn.compose import ColumnTransformer
 
 from mflowy.compute.cross_validation.types import DatasetLoader
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
 from mflowy.middlewares.data_inject import inject_dataset_loader, inject_x_preprocessors
 from mflowy.utils.constants import RANDOM_STATE
@@ -21,7 +20,7 @@ from .utils import extract_search_spaces, infer_metric
 logger = logging.getLogger(__name__)
 
 
-@handler(StepType.MODEL, inject_dataset_loader, inject_x_preprocessors)
+@handler(inject_dataset_loader, inject_x_preprocessors)
 def XGB(
     task: TASKTYPE,
     x_preprocessors: ColumnTransformer | None,

@@ -14,7 +14,6 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
 from mflowy.middlewares import log_plot
 from mflowy.middlewares.data_inject import inject_df
@@ -25,7 +24,7 @@ from ..base import *
 logger = logging.getLogger(__name__)
 
 
-@handler(StepType.PLOT, inject_df, log_plot)
+@handler(inject_df, log_plot)
 def numeric_scale_box(
     df: pd.DataFrame,
     numerical_cols: Annotated[str | list[str] | set[str] | None, "指定数值特征列"] = None,

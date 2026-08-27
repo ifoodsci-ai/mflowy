@@ -6,7 +6,6 @@ from typing import Annotated
 
 import pandas as pd
 
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
 from mflowy.middlewares.log_load_profile import log_load_profile
 from mflowy.utils.file import read_bytes
@@ -17,7 +16,7 @@ from . import report_loaded
 logger = logging.getLogger(__name__)
 
 
-@handler(StepType.LOAD, log_load_profile)
+@handler(log_load_profile)
 def csv(
     source: Annotated[str, "文件路径"],
     delimiter: Annotated[str, "字段分隔符"] = ",",

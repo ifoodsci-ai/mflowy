@@ -14,7 +14,6 @@ import seaborn as sns
 from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
 
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
 from mflowy.middlewares import log_plot
 from mflowy.middlewares.data_inject import inject_df
@@ -23,7 +22,7 @@ from mflowy.utils.df_columns import filter_numerical_cols
 from ..base import *
 
 
-@handler(StepType.PLOT, inject_df, log_plot)
+@handler(inject_df, log_plot)
 def numeric_quality_kde_hist(
     df: pd.DataFrame,
     numerical_cols: Annotated[str | list[str] | set[str] | None, "数值特征列"] = None,

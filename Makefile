@@ -21,6 +21,7 @@ help:
 	@echo "镜像覆盖（可选）:"
 	@echo "  make build IMAGE_TAG=v1.0.0"
 	@echo "  make build IMAGE_REGISTRY=localhost:5000"
+	@echo "  make build MFLOWY_EXTRA_MODULES=\"mflowy-extra==0.1\"  定制插件包"
 
 # 安装全部依赖
 install:
@@ -42,13 +43,19 @@ WHL_VERSION ?= $(shell sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)
 # 构建 Docker 镜像（全部依赖）
 IMAGE          = training-job:latest
 
+# 额外插件包（空格分隔，如 make build MFLOWY_EXTRA_MODULES="mflowy-extra==0.1"）
+MFLOWY_EXTRA_MODULES ?=
+
 build: test build-whl
-	docker build --build-arg VERSION=$(WHL_VERSION) -t $(IMAGE) -f docker/Dockerfile .
+	docker build \
+		--build-arg VERSION=$(WHL_VERSION) \
+		--build-arg MFLOWY_EXTRA_MODULES="$(MFLOWY_EXTRA_MODULES)" \
+		-t $(IMAGE) -f docker/Dockerfile .
 
 # 运行 ruff 检查
 lint:
 	uv run ruff check .
-	ruff format --check
+	uv run ruff format --check
 
 # 运行 ruff 格式化
 fmt:

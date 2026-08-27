@@ -16,7 +16,6 @@ if TYPE_CHECKING:
 
 import logging
 
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
 from mflowy.middlewares import log_plot
 from mflowy.middlewares.data_inject import inject_plot_data
@@ -28,7 +27,7 @@ from ...utils import compute_shap_explanation, shap_explanation_to_df
 logger = logging.getLogger(__name__)
 
 
-@handler(StepType.PLOT, inject_plot_data(compute_shap_explanation), log_plot)
+@handler(inject_plot_data(compute_shap_explanation), log_plot)
 def sample_waterfall(
     plot_data: Iterator[tuple[str, Explanation, list[str]]],
     sample_idx: Annotated[int, "指定样本索引"] = 0,

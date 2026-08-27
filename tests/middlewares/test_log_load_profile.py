@@ -10,13 +10,13 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from mflowy.driver.config import StepConf, StepType
+from mflowy.driver.config import StepConf
 from mflowy.driver.context import Context
 from mflowy.middlewares.log_load_profile import log_load_profile
 
 
 def _make_ctx():
-    return Context(StepConf(name="test_load", type=StepType.LOAD, module="csv", params={}))
+    return Context(StepConf(name="test_load", type="load", module="csv", params={}))
 
 
 # ========== 多行 df：常量列应被删除（保留原行为）==========

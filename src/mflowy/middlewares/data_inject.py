@@ -18,7 +18,6 @@ if TYPE_CHECKING:
 
 from mflowy.compute.cross_validation.types import DatasetLoader, Indices, X_y
 from mflowy.compute.model.types import TASKTYPE, ModelLoader
-from mflowy.driver.config import StepType
 from mflowy.driver.context import Context, PreviousContextNotFoundError
 from mflowy.driver.handler import Handler
 from mflowy.utils.logging import is_verbose
@@ -28,23 +27,23 @@ from mflowy.utils.logging import is_verbose
 
 def GetLoadDF(context: Context) -> pd.DataFrame:
     """从 LOAD 步获取原始 DataFrame"""
-    df = next(context.prev(StepType.LOAD)).result
+    df = next(context.prev("load")).result
     return df
 
 
 def GetDF(context: Context, fallback_load: bool = True) -> pd.DataFrame:
     """获取清洗的 DataFrame，优先 CLEAN 步，回退 LOAD 步"""
     try:
-        return next(context.prev(StepType.CLEAN)).result
+        return next(context.prev("clean")).result
     except PreviousContextNotFoundError as e:
         if not fallback_load:
             raise
-        return next(context.prev(StepType.LOAD, e=e)).result
+        return next(context.prev("load", e=e)).result
 
 
 def GetXy(context: Context) -> tuple[pd.DataFrame, pd.DataFrame, TASKTYPE]:
     """从 XY 步获取 (X, y)"""
-    X, y, task = next(context.prev(StepType.XY)).result
+    X, y, task = next(context.prev("X_y")).result
     return X, y, task
 
 
@@ -53,7 +52,7 @@ def GetXPreprocessors(context: Context) -> None | ColumnTransformer:
     from sklearn.base import clone
     from sklearn.compose import ColumnTransformer
 
-    pre_processors = list(ctx.result for ctx in context.prev(StepType.X_TRANSFORMER, required=False))
+    pre_processors = list(ctx.result for ctx in context.prev("x_transformer", required=False))
     if not pre_processors:
         return None
     ct = clone(
@@ -70,7 +69,7 @@ def GetXPreprocessors(context: Context) -> None | ColumnTransformer:
 
 def GetCrossValidationIndices(context: Context) -> Iterator[Indices]:
     """合并所有 CV prev 的 folds，物化为 list 避免生成器耗尽。"""
-    cv_ctx = next(context.prev(StepType.CROSS_VALIDATE))
+    cv_ctx = next(context.prev("cross_validate"))
     result: Iterator[Indices] | list[Indices] = cv_ctx.result
     if isinstance(result, list):
         yield from result
@@ -132,14 +131,14 @@ def GetTestLoader(context: Context) -> Callable[[], Iterator[X_y]]:
 
 def GetModel(context: Context) -> tuple[Context, ModelLoader]:
     """逐fold返回单一模型实例（前置 MODEL 步：训练步或 model.loader 加载步）"""
-    model_ctx = next(context.prev(StepType.MODEL))
+    model_ctx = next(context.prev("model"))
     assert isinstance(model_ctx.result, ModelLoader)
     return model_ctx, model_ctx.result
 
 
 def GetMultiModel(context: Context) -> tuple[tuple[Context, ModelLoader], ...]:
     """逐fold返回对比模型实例（前置 MODEL 步：训练步或 model.loader 加载步）"""
-    multi_model_ctx = tuple(context.prev(StepType.MODEL))
+    multi_model_ctx = tuple(context.prev("model"))
     multi_model_ctx_with_model_loader: list[tuple[Context, ModelLoader]] = []
     for model_ctx in multi_model_ctx:
         assert isinstance(model_ctx.result, ModelLoader)
@@ -219,7 +218,7 @@ def inject_plot_data[
     """工厂中间件：接收 plot_data 生成器函数，调用 plot_data(ctx) 获取绘图 DataFrame 元组生成器。
 
     用法：
-        @handler(StepType.PLOT, inject_plot_data(_get_data), log_plot, mlflow_log(), stop_on_error)
+        @handler("plot", inject_plot_data(_get_data), log_plot, mlflow_log(), stop_on_error)
         def correlation_heatmap(plot_data, title, ..., **params):
             for corr_df, pval_df in plot_data:
                 fig = render(corr_df, pval_df=pval_df, ...)

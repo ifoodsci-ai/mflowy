@@ -9,7 +9,6 @@ from urllib.parse import urlparse
 
 import pandas as pd
 
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
 from mflowy.middlewares.log_load_profile import log_load_profile
 
@@ -18,7 +17,7 @@ from . import report_loaded
 logger = logging.getLogger(__name__)
 
 
-@handler(StepType.LOAD, log_load_profile)
+@handler(log_load_profile)
 def http(
     url: Annotated[str, "网络地址"],
     method: Annotated[str, "请求方法"] = "GET",

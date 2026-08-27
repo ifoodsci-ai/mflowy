@@ -15,6 +15,12 @@ RUN UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     uv pip install --python /app/.venv/bin/python --no-deps /tmp/mflowy-${VERSION}-py3-none-any.whl
 
+# 可选定制：额外插件包（空格分隔，如 "mflowy-extra==0.1"）。
+# 装进镜像后其 mflowy.plugins entry points 随 discover 自动生效，运行期零配置
+ARG MFLOWY_EXTRA_MODULES=""
+RUN if [ -n "$MFLOWY_EXTRA_MODULES" ]; then \
+    uv pip install --python /app/.venv/bin/python $MFLOWY_EXTRA_MODULES; fi
+
 # ========== 阶段 2：运行时 ==========
 FROM python:3.12-slim-bookworm
 

@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
 from mflowy.middlewares.data_inject import inject_X_y
 
@@ -59,7 +58,7 @@ class _Wrapper(BaseEstimator, TransformerMixin):
         return np.array(self.cols)
 
 
-@handler(StepType.X_TRANSFORMER, inject_X_y)
+@handler(inject_X_y)
 def log_transformer(
     X: pd.DataFrame,
     y: pd.DataFrame,

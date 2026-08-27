@@ -11,11 +11,10 @@ import yaml
 from mflowy.utils.file import read_text
 from mflowy.utils.jinja import get_yaml_template_env
 
+from . import discover
 from .builder_options import BuilderOption, prune_x_transformer_step
 from .config import Conf, StepConf, WorkflowConf
 from .context import Context
-from .handler import get as handler_get
-from .handler import list_all
 from .workflow import Workflow
 
 logger = logging.getLogger(__name__)
@@ -196,14 +195,14 @@ class Builder:
 
     def _create_task(self, conf: StepConf, prevs: list[Context]) -> Context | None:
         """根据 StepConf 创建 Task 实例"""
-        if conf.type.is_placeholder():
+        if conf.is_placeholder():
             return None
 
         # 校验模块是否已注册
         try:
-            handler_get(conf.type, conf.module)
+            discover.get(conf.type, conf.module)
         except ModuleNotFoundError:
-            available = list_all().get(conf.type, [])
+            available = discover.list_all().get(conf.type, [])
             raise ModuleNotFoundError(f"Module '{conf.type}.{conf.module}' not found. Available: {available}")
         return Context(conf, prevs)
 

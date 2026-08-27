@@ -17,7 +17,6 @@ from typing import Annotated, Any, Literal
 import numpy as np
 import pandas as pd
 
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
 from mflowy.middlewares.inject_df_or_none import inject_df_or_none
 from mflowy.middlewares.log_search_input import log_search_input
@@ -101,7 +100,7 @@ def _load_rules_validator(cross_rules_source: str) -> Callable[[pd.DataFrame], b
     return validate_fn  # type: ignore
 
 
-@handler(StepType.MODEL, inject_df_or_none, log_search_input)
+@handler(inject_df_or_none, log_search_input)
 def search_input(
     df: pd.DataFrame | None,
     flavor: Annotated[Literal["XGB", "LGBM", "CAT", "RF", "MLP"], "模型模块名（训练时 @handler 注册的函数名）"],

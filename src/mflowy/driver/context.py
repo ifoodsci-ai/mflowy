@@ -10,7 +10,7 @@ from typing import Any
 
 from mflowy.utils import mlflow as mlflow_util
 
-from .config import StepConf, StepType
+from .config import StepConf
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ class Context:
         return self._id
 
     def prev(
-        self, step: StepType, *, required: bool = True, max_depth: int = 20, e: Exception | None = None
+        self, step: str, *, required: bool = True, max_depth: int = 20, e: Exception | None = None
     ) -> Iterator[Context]:
         from collections import deque
 
@@ -86,5 +86,5 @@ class Context:
 
 
 class PreviousContextNotFoundError(Exception):
-    def __init__(self, *task_type: StepType) -> None:
+    def __init__(self, *task_type: str) -> None:
         super().__init__(f"缺少 {' | '.join(task_type)} 前置节点")

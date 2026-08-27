@@ -1,6 +1,6 @@
 """通用模型加载 handler。
 
-``flavor`` 入参为训练任务 model 步骤选择的 module 名称，即 ``@handler(StepType.MODEL, ...)``
+``flavor`` 入参为训练任务 model 步骤选择的 module 名称，即 ``@handler(...)``
 装饰的函数名（XGBoost / LightGBM / CatBoost / RandomForest / MLP）。内部映射到对应
 wrapper 类，复用 ``wrapper.__name__.lower()`` 命名约定定位 mlflow logged model：
 
@@ -16,7 +16,6 @@ from typing import Annotated, Literal
 
 import mlflow
 
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
 
 from .types import FoldModel, ModelLoader, TrainableModel
@@ -40,11 +39,11 @@ def _get_wrapper(flavor: str) -> type[TrainableModel]:
         raise KeyError(f"不支持的模型类型 {flavor}, 支持以下模型：{list(_FLAVOR_TO_WRAPPER.keys())}") from e
 
 
-@handler(StepType.MODEL)
+@handler()
 def loader(
     flavor: Annotated[
         Literal["XGB", "LGBM", "CAT", "RF", "MLP"],
-        "训练任务 model 步骤的 module 名称（@handler(StepType.MODEL) 装饰的函数名）",
+        "训练任务 model 步骤的 module 名称（@handler() 装饰的函数名）",
     ],
     run_id: Annotated[str, "训练 model 步骤所在 Run 的 id，e.g. <RunInfo: ..., run-id=xxx>"],
 ):

@@ -2,17 +2,16 @@
 
 import pytest
 
-from mflowy.driver.config import StepConf, StepType, WorkflowConf
+from mflowy.driver.config import PLACEHOLDER, StepConf, WorkflowConf
 
 
-class TestStepType:
-    """测试 StepType 枚举"""
+class TestPlaceholder:
+    """placeholder 是分组结构标记，不是能力词表成员"""
 
     def test_is_placeholder(self):
-        """测试 is_placeholder 方法"""
-        assert StepType.PLACEHOLDER.is_placeholder() is True
-        assert StepType.LOAD.is_placeholder() is False
-        assert StepType.CLEAN.is_placeholder() is False
+        assert StepConf(type=PLACEHOLDER).is_placeholder() is True
+        assert StepConf(type="load").is_placeholder() is False
+        assert StepConf(type="clean").is_placeholder() is False
 
 
 class TestStepConf:
@@ -23,7 +22,7 @@ class TestStepConf:
         conf = StepConf()
 
         assert conf.name == "placeholder"
-        assert conf.type is StepType.PLACEHOLDER
+        assert conf.type == PLACEHOLDER
         assert conf.module == "N/A"
         assert conf.params == {}
         assert conf.enabled is True
@@ -43,7 +42,7 @@ class TestStepConf:
         )
 
         assert conf.name == "test_step"
-        assert conf.type is StepType.LOAD
+        assert conf.type == "load"
         assert conf.module == "csv_loader"
         assert conf.params == {"path": "data.csv"}
         assert conf.enabled is False

@@ -7,7 +7,7 @@ from enum import Enum
 
 import yaml
 
-from .config import StepConf, StepType
+from .config import StepConf
 
 
 def _plain(v):
@@ -26,8 +26,8 @@ def _plain(v):
 def step_to_dict(step: StepConf) -> dict:
     """StepConf → dict，placeholder 节点省略 type 和 module；非默认字段显式写出以避免往返丢失。"""
     d: dict = {"name": step.name}
-    if step.type is not StepType.PLACEHOLDER:
-        d["type"] = step.type.value
+    if step.type != "placeholder":
+        d["type"] = step.type
         d["module"] = step.module
     if step.params:
         d["params"] = _plain(step.params)
