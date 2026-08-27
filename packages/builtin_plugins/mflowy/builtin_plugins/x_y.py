@@ -1,6 +1,6 @@
 """XY 步骤：声明 targets 并将 df 拆分为 (X, y)
 
-下游 :func:`src.middlewares.data_inject.GetXy` 直接拿本步骤输出，无需重复拆分。
+下游 :func:`mflowy.builtin_plugins.middlewares.getters.GetXy` 直接拿本步骤输出，无需重复拆分。
 """
 
 import logging

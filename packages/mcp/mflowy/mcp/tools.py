@@ -28,13 +28,18 @@ from typing import Annotated, Literal
 
 from mflowy.driver.workflow import WorkflowResult
 from mflowy.utils.file import exists
-from mflowy.utils.path import set_task_dir, split_path_to_py_with_target
 from pydantic import Field
 
 from mcp.server.mcpserver import Context
 
-from .job_provider import get_job_provider
-from .job_provider.local import DATA_PROFILE_TEMPLATE, EDA_TEMPLATE, INFER_TASK_TYPE_TEMPLATE
+from ._lib import (
+    DATA_PROFILE_TEMPLATE,
+    EDA_TEMPLATE,
+    INFER_TASK_TYPE_TEMPLATE,
+    count_model_steps,
+    resolve_data_ref,
+)
+from .job_provider import get_job_provider as _get_job_provider
 
 # ── info 工具（始终本地执行） ─────────────────────────────────────────────
 
@@ -85,9 +90,7 @@ def file_hash(
 def list_modules(
     step: Annotated[
         str | None,
-        Field(
-            description="可选，过滤 step（load/clean/X_y/x_transformer/cross_validate/model/plot/statistic/sampler）"
-        ),
+        Field(description="可选，过滤 step（load/clean/X_y/x_transformer/cross_validate/model/plot/statistic）"),
     ] = None,
 ) -> list[dict]:
     """查询 mflowy 已注册的步骤模块，按 step 分组。
@@ -136,11 +139,7 @@ def validate_modeling_steps(
     template = Path(__file__).parent / "templates" / "modeling.yaml.j2"
     steps_text = read_text(modeling_steps_yaml)
 
-    # 统计 model 步骤数
-    import yaml as yaml_lib
-
-    parsed = yaml_lib.safe_load(steps_text)
-    multi_model = _count_models(parsed) > 1 if isinstance(parsed, list) else False
+    multi_model = count_model_steps(steps_text) > 1
 
     builder = Builder(
         task_yaml=template,
@@ -149,18 +148,6 @@ def validate_modeling_steps(
     workflow = builder.build(preview="mermaid")
 
     return {"valid": True, "graph": str(workflow)}
-
-
-def _count_models(items: list) -> int:
-    def _count(step: dict) -> int:
-        c = 1 if step.get("type") == "model" else 0
-        for key in ("branches", "steps"):
-            for child in step.get(key) or []:
-                if isinstance(child, dict):
-                    c += _count(child)
-        return c
-
-    return sum(_count(s) for s in items if isinstance(s, dict))
 
 
 # ── mlflow 工具（始终本地执行，base 含 mlflow SDK） ────────────────────────
@@ -283,19 +270,15 @@ async def data_profile(
     - 首次拿到数据的整体概览(形状/缺失/分布)
     - 不指定目标列的通览；围绕 target 分析改用 eda
     """
-    _path, func = split_path_to_py_with_target(file_path)
 
     def _run():
         from mflowy.driver.builder import Builder
 
-        set_task_dir(_path)
-        file_path = _path.absolute().as_posix()
-        if func:
-            file_path = f"{file_path}:{func}"
+        _path, ref = resolve_data_ref(file_path)
         builder = Builder(
             task_yaml=DATA_PROFILE_TEMPLATE,
             env={
-                "path_to_data": file_path,
+                "path_to_data": ref,
                 "dataset_tag": _path.stem,
                 "sheet": sheet,
                 "skip": skip,
@@ -325,23 +308,19 @@ async def eda(
     - 已明确目标列，看特征与 target 的相关性/分组差异
     - 特征筛选前识别强相关特征
     """
-    _path, func = split_path_to_py_with_target(file_path)
 
     def _run():
         from mflowy.driver.builder import Builder
 
+        _path, ref = resolve_data_ref(file_path)
         if not _path.exists():
             raise FileNotFoundError(f"错误: 文件不存在: {_path}")
-        set_task_dir(_path)
-        file_path = _path.absolute().as_posix()
-        if func:
-            file_path = f"{file_path}:{func}"
         targets = [target] if isinstance(target, str) else target
         cat_cols_list = [cat_cols] if isinstance(cat_cols, str) else cat_cols
         builder = Builder(
             task_yaml=EDA_TEMPLATE,
             env={
-                "path_to_data": file_path,
+                "path_to_data": ref,
                 "dataset_tag": _path.stem,
                 "sheet": sheet,
                 "skip": skip,
@@ -368,23 +347,19 @@ async def infer_task_type_by_statistic(
     何时使用 infer_task_type_by_statistic：
     - 不确定 target 按回归还是分类建模
     """
-    _path, func = split_path_to_py_with_target(file_path)
 
     def _run():
         from mflowy.driver.builder import Builder
 
+        _path, ref = resolve_data_ref(file_path)
         if not _path.exists():
             raise FileNotFoundError(f"错误: 文件不存在: {_path}")
-        set_task_dir(_path)
-        file_path = _path.absolute().as_posix()
-        if func:
-            file_path = f"{file_path}:{func}"
         targets = target if isinstance(target, list) else [target]
         target_param = targets[0] if len(targets) == 1 else targets
         builder = Builder(
             task_yaml=INFER_TASK_TYPE_TEMPLATE,
             env={
-                "path_to_data": file_path,
+                "path_to_data": ref,
                 "dataset_tag": _path.stem,
                 "sheet": sheet,
                 "skip": skip,
@@ -416,7 +391,7 @@ async def modeling(
     - modeling_steps_yaml 验证通过后执行训练
     - 传 experiment_id 复用已训模型，配 prune_missing 跳过重训
     """
-    return await get_job_provider().modeling(
+    return await _get_job_provider().modeling(
         modeling_steps_yaml=modeling_steps_yaml,
         name=name,
         desc=desc,
@@ -439,7 +414,7 @@ async def explanation(
     何时使用 explanation：
     - 训练完成后解释特征贡献与依赖关系
     """
-    return await get_job_provider().explanation(
+    return await _get_job_provider().explanation(
         modeling_steps_yaml=modeling_steps_yaml,
         model=model,
         name=name,
@@ -459,12 +434,12 @@ async def predict(
     何时使用 predict：
     - 用已训模型(flavor=run_id)对新增数据出预测值
     """
-    return await get_job_provider().predict(data=data, model=model, headers=ctx.request_context.meta if ctx else None)
+    return await _get_job_provider().predict(data=data, model=model, headers=ctx.request_context.meta if ctx else None)
 
 
 async def inverse_optimization(
     data: Annotated[str, Field(description="数据文件路径（推断搜索空间）")],
-    model: Annotated[str, Field(description="flavor=run_id（如 XGB=abc123）")] = "",
+    model: Annotated[str, Field(description="flavor=run_id（如 XGB=abc123）")],
     direction: Annotated[
         dict[str, str] | None,
         Field(description='y→direction 映射（如 {"price": "maximize"}）'),
@@ -483,7 +458,7 @@ async def inverse_optimization(
     何时使用 inverse_optimization：
     - 回答"什么输入让输出最优/满足约束"
     """
-    return await get_job_provider().inverse_optimization(
+    return await _get_job_provider().inverse_optimization(
         data=data,
         model=model,
         direction=direction,

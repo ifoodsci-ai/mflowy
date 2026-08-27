@@ -6,8 +6,15 @@ from importlib.metadata import EntryPoint
 import pytest
 from mflowy.driver import discover as discover_mod
 from mflowy.driver.discover import discover, get, get_post_init, has, list_all
+from mflowy.driver.handler import handler
 
 _STEPS = ("load", "clean", "X_y", "x_transformer", "cross_validate", "model", "plot", "statistic")
+
+
+@handler()
+def _fake_plugin(**kwargs):
+    """本地插件替身：契约测试的加载目标——driver 测试不 import builtin_plugins（纯内核 CI 可独立跑）"""
+    return "ok"
 
 
 # ========== 真实元数据（依赖 uv sync 后的 editable 安装） ==========
@@ -15,8 +22,10 @@ _STEPS = ("load", "clean", "X_y", "x_transformer", "cross_validate", "model", "p
 
 class TestCatalog:
     def test_catalog_has_all_steps(self):
-        """内置插件目录覆盖全部能力族"""
+        """内置插件目录覆盖全部能力族（driver-only 环境无插件时跳过）"""
         all_modules = list_all()
+        if not all_modules:
+            pytest.skip("无插件安装（driver-only 环境），内置目录断言不适用")
         for step in _STEPS:
             assert step in all_modules, f"{step} has no registered modules"
             module = all_modules[step][0]
@@ -108,5 +117,5 @@ class TestLoadContract:
         assert get_post_init("load", "nope") is None
 
     def test_get_post_init_returns_converter(self, fake_entry_points):
-        fake_entry_points.append(_ep("X_y.x_y", "mflowy.builtin_plugins.x_y:x_y"))
-        assert callable(get_post_init("X_y", "x_y"))
+        fake_entry_points.append(_ep("load.fake", f"{__name__}:_fake_plugin"))
+        assert callable(get_post_init("load", "fake"))

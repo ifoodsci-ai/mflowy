@@ -1,4 +1,4 @@
-"""测试 src/compute/model/_pipeline.py 的 evaluate 指标计算"""
+"""测试 model/_pipeline.py 的 evaluate 指标计算"""
 
 import mlflow
 import numpy as np

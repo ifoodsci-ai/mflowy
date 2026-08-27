@@ -48,7 +48,7 @@ class JobProvider(Protocol):
         self,
         *,
         data: str,
-        model: str = "",
+        model: str,
         direction: dict[str, str] | None = None,
         constraint: dict[str, list | dict] | None = None,
         cross_rules: str | None = None,

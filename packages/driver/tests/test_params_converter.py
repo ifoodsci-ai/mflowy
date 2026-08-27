@@ -6,10 +6,19 @@
 - ``dict[K, ParameterSearchSpace]`` + dict 值 → 逐值 dict=连续 / list=离散 / 其他=warning
 """
 
+from enum import StrEnum
 from typing import Annotated
 
+import pytest
 from mflowy.driver.handler import _build_params_converter
 from mflowy.utils.study import ContinuousSpace, DiscreteSpace, ParameterSearchSpace
+
+
+class _DummyTask(StrEnum):
+    """本地枚举替身——converter 的 Enum 泛化对任意 StrEnum 等价，driver 测试不依赖 builtin_plugins 的 TASKTYPE"""
+
+    REGRESSION = "regressor"
+    CLASSIFICATION = "classification"
 
 
 def _h_cont(x: Annotated[float | ContinuousSpace[float] | None, "连续"] = None):
@@ -85,32 +94,24 @@ class TestDictOfSpace:
 
 
 class TestTaskTypeDualForm:
-    """yaml 值（regression）与枚举名（REGRESSION）都应转换为 TASKTYPE"""
+    """yaml 值（regression）与枚举名（REGRESSION）都应转换（dummy StrEnum 等价 TASKTYPE 路径）"""
 
     def _conv(self):
         from typing import Annotated
 
-        from mflowy.builtin_plugins.model.types import TASKTYPE
-
-        def _h(task: Annotated[TASKTYPE | None, "任务类型"] = None):
+        def _h(task: Annotated[_DummyTask | None, "任务类型"] = None):
             return task
 
         return _build_params_converter(_h)
 
     def test_value_form(self):
         out = self._conv()({"task": "regressor"})
-        from mflowy.builtin_plugins.model.types import TASKTYPE
-
-        assert out["task"] is TASKTYPE.REGRESSION
+        assert out["task"] is _DummyTask.REGRESSION
 
     def test_name_form(self):
         out = self._conv()({"task": "CLASSIFICATION"})
-        from mflowy.builtin_plugins.model.types import TASKTYPE
-
-        assert out["task"] is TASKTYPE.CLASSIFICATION
+        assert out["task"] is _DummyTask.CLASSIFICATION
 
     def test_invalid_raises_with_options(self):
-        import pytest
-
-        with pytest.raises(ValueError, match="TASKTYPE"):
+        with pytest.raises(ValueError, match="_DummyTask"):
             self._conv()({"task": "nope"})

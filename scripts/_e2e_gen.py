@@ -8,6 +8,8 @@ modeling 命令仍接 --experiment-id 走批量自动查询；shap-explanation �
 强制显式 run_id，所以脚本侧直接吐 preformatted 字符串，Makefile 不再拼。
 """
 
+import sys
+
 import mlflow
 from mflowy.utils.mlflow import search_experiment_model_run_ids, setup
 from mflowy.utils.path import set_task_dir
@@ -23,7 +25,7 @@ def main() -> None:
         max_results=1,
     )
     if not exps:
-        print("ERROR: 未找到 糖尿病多模型对比 实验", flush=True)
+        print("ERROR: 未找到 糖尿病多模型对比 实验", file=sys.stderr, flush=True)
         exit(1)
 
     exp_id = exps[0].experiment_id
@@ -32,7 +34,7 @@ def main() -> None:
     run_id_map = search_experiment_model_run_ids(exp_id)
     xgb_run_id = run_id_map.get("XGB")
     if not xgb_run_id:
-        print(f"ERROR: 实验 {exp_id} 中未找到 model.XGB 的 FINISHED run", flush=True)
+        print(f"ERROR: 实验 {exp_id} 中未找到 model.XGB 的 FINISHED run", file=sys.stderr, flush=True)
         exit(1)
     print(f"XGB={xgb_run_id}")
 

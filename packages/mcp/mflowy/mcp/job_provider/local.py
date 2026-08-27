@@ -8,24 +8,22 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
-from pathlib import Path
 
-import yaml
 from mflowy.driver.builder import Builder
 from mflowy.driver.builder_options import prune_model_step
 from mflowy.driver.serializer import steps_to_yaml
 from mflowy.driver.workflow import WorkflowResult
 from mflowy.utils.file import exists, read_text
-from mflowy.utils.path import set_task_dir, split_path_to_py_with_target
+from mflowy.utils.path import set_task_dir
 
-TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
-DATA_PROFILE_TEMPLATE = TEMPLATES_DIR / "data_profile.yaml.j2"
-EDA_TEMPLATE = TEMPLATES_DIR / "eda.yaml.j2"
-INFER_TASK_TYPE_TEMPLATE = TEMPLATES_DIR / "infer_task_type.yaml.j2"
-MODELING_TEMPLATE = TEMPLATES_DIR / "modeling.yaml.j2"
-EXPLANATION_TEMPLATE = TEMPLATES_DIR / "explanation.yaml.j2"
-PREDICT_TEMPLATE = TEMPLATES_DIR / "predict.yaml.j2"
-INVERSE_OPTIMIZATION_TEMPLATE = TEMPLATES_DIR / "inverse_optimization.yaml.j2"
+from .._lib import (
+    EXPLANATION_TEMPLATE,
+    INVERSE_OPTIMIZATION_TEMPLATE,
+    MODELING_TEMPLATE,
+    PREDICT_TEMPLATE,
+    count_model_steps,
+    resolve_data_ref,
+)
 
 
 def _validate_model_arg(v: str) -> str:
@@ -64,23 +62,6 @@ def _build_modeling_steps(
     return steps_to_yaml(builder.config.workflow.steps)
 
 
-def _count_model_steps(steps_yaml: str) -> int:
-    """统计 modeling_steps 中 type=model 的步骤数（递归 branches/steps）。"""
-    parsed = yaml.safe_load(steps_yaml)
-    if not isinstance(parsed, list):
-        return 0
-    return sum(_count_in_step(s) for s in parsed if isinstance(s, dict))
-
-
-def _count_in_step(step: dict) -> int:
-    count = 1 if step.get("type") == "model" else 0
-    for key in ("branches", "steps"):
-        for child in step.get(key) or []:
-            if isinstance(child, dict):
-                count += _count_in_step(child)
-    return count
-
-
 class LocalJobProvider:
     """完全体直调：编排逻辑 + compute 全部原地执行（[modeling] extra 环境）。
 
@@ -110,7 +91,7 @@ class LocalJobProvider:
             set_task_dir(modeling_steps_yaml)
 
             steps_text = read_text(modeling_steps_yaml)
-            multi_model = _count_model_steps(steps_text) > 1
+            multi_model = count_model_steps(steps_text) > 1
 
             options: tuple = ()
             if experiment_id:
@@ -178,11 +159,7 @@ class LocalJobProvider:
             from mflowy.driver.builder import Builder
 
             _validate_model_arg(model)
-            _path, func = split_path_to_py_with_target(data)
-            set_task_dir(_path)
-            data_path = _path.absolute().as_posix()
-            if func:
-                data_path = f"{data_path}:{func}"
+            _, data_path = resolve_data_ref(data)
 
             flavor, run_id = (s.strip() for s in model.split("=", 1))
             builder = Builder(
@@ -203,7 +180,7 @@ class LocalJobProvider:
         self,
         *,
         data: str,
-        model: str = "",
+        model: str,
         direction: dict[str, str] | None = None,
         constraint: dict[str, list | dict] | None = None,
         cross_rules: str | None = None,
@@ -215,12 +192,7 @@ class LocalJobProvider:
             from mflowy.driver.builder import Builder
 
             _validate_model_arg(model)
-            data_path = data
-            _path, func = split_path_to_py_with_target(data)
-            set_task_dir(_path)
-            data_path = _path.absolute().as_posix()
-            if func:
-                data_path = f"{data_path}:{func}"
+            _, data_path = resolve_data_ref(data)
 
             flavor, run_id = (s.strip() for s in model.split("=", 1))
             directions = direction or {}
