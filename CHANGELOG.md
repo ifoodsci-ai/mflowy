@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **布局去 src 层 + 组件文档随包**：
+  - 包内 `src/mflowy/<pkg>` 收敛为 `mflowy/<pkg>`（namespace wheel 与真 editable 行为不变，spike 验证）
+  - 组件文档迁入 `packages/<pkg>/README.md`（随 wheel 分发）：driver = 技术架构文档（重写，含设计哲学谱系与架构图）、builtin_plugins = 能力目录 catalog、mcp = 工具三分 + JobProvider + 遥测（合并原 REMOTE_MODELING/TELEMETRY）、utils = 职责概览；`docs/` 仅留跨组件专题（research-flow / roadmap）
+
 - **workspace 组件化：单包拆为五 distribution（uv workspace + PEP 420 namespace，BREAKING 内部结构）**：
   - `mflowy`（聚合包，PyPI 入口与 extras 透传不变）+ `mflowy-utils` / `mflowy-driver` / `mflowy-builtin-plugins` / `mflowy-mcp`，版本锁步（`tests/test_workspace.py` 断言）
   - `mflowy.compute` 更名 `mflowy.builtin_plugins`（包名 = entry point 组名）；`mflowy.middlewares` 拆解：`mlflow_log`/`stop_on_error` → `mflowy.driver.builtin_middleware`，`data_inject` 拆为 `middlewares/getters.py`（Get*）+ `middlewares/inject.py`（inject_*），`log_*` 与 `df_columns` 随迁 `mflowy.builtin_plugins.middlewares`

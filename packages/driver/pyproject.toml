@@ -20,10 +20,11 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 # namespace 包（PEP 420）：src/mflowy 只剥 src 前缀，产出 mflowy/<portion>；
 # editable 经 pth 指向 src，多成员 portion 合成，零拷贝真 editable
-packages = ["src/mflowy"]
+packages = ["mflowy"]
+dev-mode-dirs = ["."]
 
 [tool.hatch.build.targets.sdist]
-include = ["src", "pyproject.toml"]
+include = ["mflowy", "pyproject.toml"]
 
 [tool.uv.sources]
 mflowy-utils = { workspace = true }

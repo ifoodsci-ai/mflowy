@@ -8,17 +8,17 @@
 
 | 能力域   | 覆盖                                                                                          | 代码位置                              |
 | -------- | --------------------------------------------------------------------------------------------- | ------------------------------------- |
-| 数据载入 | CSV / Excel / Parquet / HTTP / 本地文件 / Python 脚本                                          | `packages/builtin_plugins/src/mflowy/builtin_plugins/loaders/`                |
-| 数据清洗 | 缺失值（删除/填充）、异常值（Z-score / IQR）、特征过滤（方差/相关性/通用）、单位清洗、自定义 Python | `packages/builtin_plugins/src/mflowy/builtin_plugins/cleaners/`               |
-| 特征工程 | 类别编码 ×5、数值变换 ×8（缩放/对数/幂/分箱/PCA/交互特征等）                                   | `packages/builtin_plugins/src/mflowy/builtin_plugins/x_transformer/`          |
-| CV 策略  | Simple / K / Stratified / Group / StratifiedGroup K-Fold、Repeated(K/Stratified)、LeaveOneOut、LeaveOneGroupOut | `packages/builtin_plugins/src/mflowy/builtin_plugins/cross_validation/`       |
-| 模型算法 | XGBoost、LightGBM、CatBoost、RandomForest、PyTorch MLP（回归/分类/多分类）                     | `packages/builtin_plugins/src/mflowy/builtin_plugins/model/`                  |
-| 超参优化 | Optuna TPE 自动调参                                                                            | `packages/utils/src/mflowy/utils/study.py`                  |
-| 评估指标 | 回归 4（MAE/RMSE/R²/MAPE）+ 分类 7（Accuracy/Precision/Recall/F1/AUC/LogLoss/MLogLoss）        | `packages/builtin_plugins/src/mflowy/builtin_plugins/model/types.py`          |
-| 可视化   | 数据分析 / 模型评估 / SHAP 可解释性三族图表                                          | `packages/builtin_plugins/src/mflowy/builtin_plugins/plots/`                  |
-| 反向搜索 | 输入寻优（目标最大化/最小化、范围约束、跨列规则）                                               | `packages/builtin_plugins/src/mflowy/builtin_plugins/model/search_input.py`   |
-| 统计     | 数据画像、效应量                                                                                | `packages/builtin_plugins/src/mflowy/builtin_plugins/statistic/`              |
-| 实验追踪 | MLflow 全量记录（参数/指标/模型/图表）+ 数据血缘 tag（`mflowy.input_steps`）                    | `packages/builtin_plugins/src/mflowy/builtin_plugins/middlewares/mlflow_log.py`       |
+| 数据载入 | CSV / Excel / Parquet / HTTP / 本地文件 / Python 脚本                                          | `packages/builtin_plugins/mflowy/builtin_plugins/loaders/`                |
+| 数据清洗 | 缺失值（删除/填充）、异常值（Z-score / IQR）、特征过滤（方差/相关性/通用）、单位清洗、自定义 Python | `packages/builtin_plugins/mflowy/builtin_plugins/cleaners/`               |
+| 特征工程 | 类别编码 ×5、数值变换 ×8（缩放/对数/幂/分箱/PCA/交互特征等）                                   | `packages/builtin_plugins/mflowy/builtin_plugins/x_transformer/`          |
+| CV 策略  | Simple / K / Stratified / Group / StratifiedGroup K-Fold、Repeated(K/Stratified)、LeaveOneOut、LeaveOneGroupOut | `packages/builtin_plugins/mflowy/builtin_plugins/cross_validation/`       |
+| 模型算法 | XGBoost、LightGBM、CatBoost、RandomForest、PyTorch MLP（回归/分类/多分类）                     | `packages/builtin_plugins/mflowy/builtin_plugins/model/`                  |
+| 超参优化 | Optuna TPE 自动调参                                                                            | `packages/utils/mflowy/utils/study.py`                  |
+| 评估指标 | 回归 4（MAE/RMSE/R²/MAPE）+ 分类 7（Accuracy/Precision/Recall/F1/AUC/LogLoss/MLogLoss）        | `packages/builtin_plugins/mflowy/builtin_plugins/model/types.py`          |
+| 可视化   | 数据分析 / 模型评估 / SHAP 可解释性三族图表                                          | `packages/builtin_plugins/mflowy/builtin_plugins/plots/`                  |
+| 反向搜索 | 输入寻优（目标最大化/最小化、范围约束、跨列规则）                                               | `packages/builtin_plugins/mflowy/builtin_plugins/model/search_input.py`   |
+| 统计     | 数据画像、效应量                                                                                | `packages/builtin_plugins/mflowy/builtin_plugins/statistic/`              |
+| 实验追踪 | MLflow 全量记录（参数/指标/模型/图表）+ 数据血缘 tag（`mflowy.input_steps`）                    | `packages/builtin_plugins/mflowy/builtin_plugins/middlewares/mlflow_log.py`       |
 
 ## 规划中
 

@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](pyproject.toml)
-[![MCP](https://img.shields.io/badge/MCP-Server-7B61FF.svg)](packages/mcp/src/mflowy/mcp/server.py)
+[![MCP](https://img.shields.io/badge/MCP-Server-7B61FF.svg)](packages/mcp/mflowy/mcp/server.py)
 
 MFlowy 是 **MCP-native** 的 ML 能力层：把数据分析、模型训练与预测打包成可枚举、可自描述的 MCP 工具目录，供自主 agent（或人）组装成可追溯的实验工作流。agent 不需要读文档——能力发现、图组装预检、执行与结果读回全部经工具完成。
 
@@ -33,11 +33,11 @@ MFlowy 不内置 agent；它提供让 agent 自主运转的四个阶段，每个
 - **边按类型寻址**：节点按 step 检索最近上游而非点名引用——替换模块（如 XGB→LGBM）不需要改下游连线
 - **实验即记录**：每次运行必留痕——结构化 `WorkflowResult`（逐节点 run_id/状态/输出）+ MLflow 全量追踪（参数/指标/模型/产物）+ 血缘 tag（`mflowy.input_steps`）；复用旧结果是显式 run_id 引用，不做静默缓存
 - **中间件责任链**：数据注入、领域日志、mlflow 记录、错误即停在注册期一次性织入
-- **执行环境可委派**：JobProvider 契约抽象 compute 工具的执行环境，内置本地实现，远程执行由自定义实现接入（见 [docs/REMOTE_MODELING.md](docs/REMOTE_MODELING.md)）
+- **执行环境可委派**：JobProvider 契约抽象 compute 工具的执行环境，内置本地实现，远程执行由自定义实现接入（见 [packages/mcp/README.md](packages/mcp/README.md)）
 
 ## 架构与调用方式
 
-MFlowy 以 MCP 为架构主体：`packages/mcp/src/mflowy/mcp/tools.py` 定义全部插件工具，三种入口共享同一套工具。执行按工具类别分流：建模类经 JobProvider 委派执行（内置本地实现由 driver 内核编译调度 `builtin_plugins/` 能力，远程实现接管执行环境），分析类始终本地执行（详见 [docs/REMOTE_MODELING.md](docs/REMOTE_MODELING.md)）：
+MFlowy 以 MCP 为架构主体：`packages/mcp/mflowy/mcp/tools.py` 定义全部插件工具，三种入口共享同一套工具。执行按工具类别分流：建模类经 JobProvider 委派执行（内置本地实现由 driver 内核编译调度 `builtin_plugins/` 能力，远程实现接管执行环境），分析类始终本地执行（详见 [packages/mcp/README.md](packages/mcp/README.md)）：
 
 | 入口                | 命令                         | 场景                                     |
 | ------------------- | ---------------------------- | ---------------------------------------- |
@@ -123,7 +123,7 @@ uv run mcpSrv                                                  # MCP server（st
 
 ## 遥测（Telemetry）
 
-MCP 工具调用诊断采集，同意制、默认 `ask`，端点不可达时完全透明不影响工具调用，仅覆盖 MCP 入口。隐私契约见 [PRIVACY.md](PRIVACY.md)，接入与配置详情见 [docs/TELEMETRY.md](docs/TELEMETRY.md)。
+MCP 工具调用诊断采集，同意制、默认 `ask`，端点不可达时完全透明不影响工具调用，仅覆盖 MCP 入口。隐私契约见 [PRIVACY.md](PRIVACY.md)，接入与配置详情见 [packages/mcp/README.md](packages/mcp/README.md)。
 
 ## 贡献
 
@@ -138,6 +138,7 @@ MCP 工具调用诊断采集，同意制、默认 `ask`，端点不可达时完�
 - [架构与贡献指南](AGENTS.md)
 - [研究流方法论](docs/research-flow.md)（agent 可直接采用的工作规约）
 - [路线图](docs/roadmap.md)
-- [远程执行接入](docs/REMOTE_MODELING.md)
-- [遥测](docs/TELEMETRY.md)
-- [DAG 内核：设计哲学与架构](docs/DRIVER.md)
+- [DAG 内核：设计哲学与架构](packages/driver/README.md)
+- [内置能力目录（含第三方插件指南）](packages/builtin_plugins/README.md)
+- [MCP 层：工具 / 远程执行 / 遥测](packages/mcp/README.md)
+- [共享工具层](packages/utils/README.md)

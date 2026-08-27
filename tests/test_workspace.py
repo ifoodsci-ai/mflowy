@@ -25,7 +25,7 @@ def test_lockstep_versions():
 @pytest.mark.parametrize("pkg", PACKAGES)
 def test_namespace_no_init(pkg):
     """PEP 420 铁律：任何成员不得提供 mflowy/__init__.py（出现即破坏 namespace 合成）"""
-    assert not (ROOT / "packages" / pkg / "src" / "mflowy" / "__init__.py").exists()
+    assert not (ROOT / "packages" / pkg / "mflowy" / "__init__.py").exists()
 
 
 def test_member_import_boundaries():
@@ -36,7 +36,7 @@ def test_member_import_boundaries():
     violators = []
     pat = re.compile(r"^\s*(?:from mflowy\.builtin_plugins|import mflowy\.builtin_plugins)", re.M)
     for pkg in ("driver", "utils", "mcp"):
-        for py in (ROOT / "packages" / pkg / "src").rglob("*.py"):
+        for py in (ROOT / "packages" / pkg / "mflowy").rglob("*.py"):
             if pat.search(py.read_text()):
                 violators.append(str(py.relative_to(ROOT)))
     assert not violators, f"反向依赖: {violators}"

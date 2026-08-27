@@ -58,7 +58,7 @@ def _iter_handler_fns(path: Path):
 def _collect(root: Path) -> dict[str, str]:
     """扫描返回 {entry_point_name: "module.path:fn"}"""
     entries: dict[str, str] = {}
-    compute_dir = root / "src" / _PKG_ROOT / _COMPUTE
+    compute_dir = root / _PKG_ROOT / _COMPUTE
     for py in sorted(compute_dir.rglob("*.py")):
         if py.stem in _EXCLUDED or py.stem.startswith("_"):
             continue
