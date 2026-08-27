@@ -53,3 +53,38 @@ def test_runtime_error_not_masqueraded_as_invalid_args(monkeypatch, capsys):
     err = capsys.readouterr().err
     assert "Invalid arguments" not in err
     assert "runtime type blowup" in err
+
+
+def test_non_json_args_friendly_error(monkeypatch, capsys):
+    """非 JSON 参数（如裸位置参数 load）报友好用法而非裸 traceback，exit 2"""
+    monkeypatch.setattr("sys.argv", ["cmd", "list_modules", "load"])
+    with pytest.raises(SystemExit) as ei:
+        runner.main()
+    assert ei.value.code == 2
+    err = capsys.readouterr().err
+    assert "Invalid JSON arguments" in err
+    assert "cmd list_modules" in err  # 用法示例
+
+
+def test_info_tool_result_echoed(monkeypatch, capsys):
+    """info/查询类工具的返回值即输出，回显 JSON（cmd 作为三入口之一可独立使用）"""
+    monkeypatch.setattr("sys.argv", ["cmd", "query_tool"])
+    monkeypatch.setattr(tools, "query_tool", lambda: [{"step": "load", "modules": ["csv"]}], raising=False)
+    runner.main()
+    out = capsys.readouterr().out
+    assert '"step": "load"' in out
+
+
+def test_workflow_result_not_echoed(monkeypatch, capsys):
+    """建模类工具返回 WorkflowResult，输出由 Workflow 实时 print 上屏，不重复回显"""
+    from mflowy.driver.workflow import WorkflowResult
+
+    monkeypatch.setattr("sys.argv", ["cmd", "modeling_tool"])
+    monkeypatch.setattr(
+        tools,
+        "modeling_tool",
+        lambda: WorkflowResult("e", "1", "d", "finished", "", [], "graph"),
+        raising=False,
+    )
+    runner.main()
+    assert capsys.readouterr().out == ""

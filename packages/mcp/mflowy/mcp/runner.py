@@ -27,7 +27,15 @@ def main() -> None:
         sys.exit(1)
 
     tool_name = sys.argv[1].replace("-", "_")
-    kwargs = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
+    try:
+        kwargs = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
+    except json.JSONDecodeError as e:
+        print(
+            f"Invalid JSON arguments for {tool_name}: {e}\n"
+            f'  参数须为 JSON 对象字符串，如: cmd list_modules \'{{"step": "load"}}\'',
+            file=sys.stderr,
+        )
+        sys.exit(2)
 
     from . import tools
 
@@ -42,15 +50,22 @@ def main() -> None:
         print(f"Invalid arguments for {tool_name}: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # 结果不回显：节点 output 由 Workflow 实时 print 上屏
+    # 建模类工具（返回 WorkflowResult）的输出由 Workflow 实时 print 上屏，不重复回显；
+    # info/查询类工具的返回值即输出，回显 JSON
     try:
         if inspect.iscoroutinefunction(func):
-            asyncio.run(func(**kwargs))
+            result = asyncio.run(func(**kwargs))
         else:
-            func(**kwargs)
+            result = func(**kwargs)
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
+
+    if result is not None:
+        from mflowy.driver.workflow import WorkflowResult
+
+        if not isinstance(result, WorkflowResult):
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 
 
 if __name__ == "__main__":
