@@ -10,13 +10,14 @@ import mlflow
 import pandas as pd
 from mflowy.builtin_plugins.middlewares import inject_df
 from mflowy.builtin_plugins.model.types import TASKTYPE
+from mflowy.builtin_plugins.params_phaser import annotated_params_phaser
 from mflowy.driver.handler import handler
 from mflowy.utils import mlflow as mlflow_util
 
 logger = logging.getLogger(__name__)
 
 
-@handler(inject_df)
+@handler(inject_df, params_phaser=annotated_params_phaser)
 def x_y(
     df: pd.DataFrame,
     targets: Annotated[str | list[str], "目标列"],

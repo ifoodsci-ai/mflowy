@@ -11,7 +11,11 @@ from mflowy.driver.handler import handler
 _STEPS = ("load", "clean", "X_y", "x_transformer", "cross_validate", "model", "plot", "statistic")
 
 
-@handler()
+def _identity_phaser(fn):
+    return lambda params: params
+
+
+@handler(params_phaser=_identity_phaser)
 def _fake_plugin(**kwargs):
     """本地插件替身：契约测试的加载目标——driver 测试不 import builtin_plugins（纯内核 CI 可独立跑）"""
     return "ok"

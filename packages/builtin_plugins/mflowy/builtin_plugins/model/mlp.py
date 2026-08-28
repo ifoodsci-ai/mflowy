@@ -9,6 +9,7 @@ from typing import Annotated
 import pytorch_lightning as pl
 from mflowy.builtin_plugins.cross_validation.types import DatasetLoader
 from mflowy.builtin_plugins.middlewares import inject_dataset_loader, inject_x_preprocessors
+from mflowy.builtin_plugins.params_phaser import annotated_params_phaser
 from mflowy.driver.handler import handler
 from mflowy.utils.constants import RANDOM_STATE
 from sklearn.compose import ColumnTransformer
@@ -20,7 +21,7 @@ from .types import TASKTYPE
 logger = logging.getLogger(__name__)
 
 
-@handler(inject_dataset_loader, inject_x_preprocessors)
+@handler(inject_dataset_loader, inject_x_preprocessors, params_phaser=annotated_params_phaser)
 def MLP(
     task: TASKTYPE,
     x_preprocessors: ColumnTransformer | None,

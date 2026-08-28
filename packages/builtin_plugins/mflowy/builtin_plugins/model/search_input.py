@@ -17,6 +17,7 @@ from typing import Annotated, Any, Literal
 import numpy as np
 import pandas as pd
 from mflowy.builtin_plugins.middlewares import inject_df_or_none, log_search_input
+from mflowy.builtin_plugins.params_phaser import annotated_params_phaser
 from mflowy.driver.handler import handler
 from mflowy.utils.constants import RANDOM_STATE
 from mflowy.utils.file import read_text
@@ -98,7 +99,7 @@ def _load_rules_validator(cross_rules_source: str) -> Callable[[pd.DataFrame], b
     return validate_fn  # type: ignore
 
 
-@handler(inject_df_or_none, log_search_input)
+@handler(inject_df_or_none, log_search_input, params_phaser=annotated_params_phaser)
 def search_input(
     df: pd.DataFrame | None,
     flavor: Annotated[Literal["XGB", "LGBM", "CAT", "RF", "MLP"], "模型模块名（训练时 @handler 注册的函数名）"],

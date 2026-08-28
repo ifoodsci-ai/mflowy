@@ -24,19 +24,6 @@ from mflowy.utils.mlflow import active_experiment_id, workflow_tags
 logger = logging.getLogger(__name__)
 
 
-def _space_to_json(obj: object) -> object:
-    """将 ContinuousSpace 实例转为 JSON 可序列化类型（用于 mlflow.log_params）。
-
-    study 延迟导入：optuna 属 [modeling] extra，模块级导入会让缺 extra 的环境
-    连 load 插件都无法装饰（拆包时修复的 prior bug）。
-    """
-    from mflowy.utils.study import ContinuousSpace
-
-    if isinstance(obj, ContinuousSpace):
-        return asdict(obj)
-    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
-
-
 def _flatten_params(params: dict, _prefix: str = "") -> dict:
     """过滤并展平参数，供 mlflow.log_params 使用。
 
@@ -58,7 +45,7 @@ def _flatten_params(params: dict, _prefix: str = "") -> dict:
         elif isinstance(v, tuple):
             flat[key] = str(v)
         else:
-            flat[key] = json.dumps(v, ensure_ascii=False, default=_space_to_json)
+            flat[key] = json.dumps(v, ensure_ascii=False, default=asdict)
     return flat
 
 
