@@ -1514,7 +1514,7 @@ wheels = [
 
 [[package]]
 name = "mcp"
-version = "2.1.0"
+version = "2.1.1"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
 dependencies = [
     { name = "anyio" },
@@ -1532,22 +1532,22 @@ dependencies = [
     { name = "typing-inspection" },
     { name = "uvicorn", marker = "sys_platform != 'emscripten'" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/c9/3b/3acf4897b934ceeb8d22df7309a435a76c34f94be936b36eee8bb57b29a3/mcp-2.1.0.tar.gz", hash = "sha256:b4407b2890238248795d03e8c17d02d311c600ca9272d023ab12dbfa6ad21c70" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/d4/6e/21fb8e5d579dbe21d96ea4d5034200d46d8bdf2261053b5bd041f3c2f612/mcp-2.1.1.tar.gz", hash = "sha256:50b7ba1ebbe117008ea7bdd288234043e69c20b403d6851d19661e6d431a75ef" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/88/67/b2160b6cf138872860d2552cca2894dbe4d29da7f1c6fae0c21d22782838/mcp-2.1.0-py3-none-any.whl", hash = "sha256:b8acaed6ca4b9376801377463e44246395749363b1c34467ec6243a50be5ed28" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/50/af/8644cc5fa26a59afd2df2e98eeb19e72926887fa4b7441aba4ff661140db/mcp-2.1.1-py3-none-any.whl", hash = "sha256:1c6c31c5d6471c58db76af3af8af67f46d11d01f0a59077d0a308cbdb3d3e915" },
 ]
 
 [[package]]
 name = "mcp-types"
-version = "2.1.0"
+version = "2.1.1"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
 dependencies = [
     { name = "pydantic" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/d8/97/5b1c2e40d6121172c97638a0f1d6240526f5aeebdc9ebea11ddcf2139249/mcp_types-2.1.0.tar.gz", hash = "sha256:16f91064ce33d7ee7a75a7e198a437172215180c16d4bbcfa0e61488ede92c54" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/6a/dd/1c4417dc0b722c23a1669032d5f044e41170fe5d4773b488a50fcce98c32/mcp_types-2.1.1.tar.gz", hash = "sha256:77dcbe48fba73cca71a673f2646a5f037a017b7a0a07ac89cec1113028890eda" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/b6/99/f9041368b5af773de32af6192ff0627a71368c240123e57262439ae5b594/mcp_types-2.1.0-py3-none-any.whl", hash = "sha256:6a65bfb7d057ceaf2418781ee61b3041e1f4b5418199297f8939a4b4ed334c3a" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/71/d0/242e63c510f4a17381f55b1549a3f94f5687a0595984febd2b6f87a687a0/mcp_types-2.1.1-py3-none-any.whl", hash = "sha256:26f9f7f03f2a5730717a5b98e2ab7eb640ac352d05a00cdc725c311864778295" },
 ]
 
 [[package]]
@@ -1613,7 +1613,6 @@ modeling = [
     { name = "lightgbm" },
     { name = "llvmlite" },
     { name = "matplotlib" },
-    { name = "mflowy-driver", extra = ["modeling"] },
     { name = "numba" },
     { name = "numpy" },
     { name = "openpyxl" },
@@ -1653,7 +1652,6 @@ requires-dist = [
     { name = "matplotlib", marker = "extra == 'stats'", specifier = ">=3.11.0" },
     { name = "mflowy-builtin-plugins", extras = ["stats"], marker = "extra == 'modeling'", editable = "packages/builtin_plugins" },
     { name = "mflowy-driver", editable = "packages/driver" },
-    { name = "mflowy-driver", extras = ["modeling"], marker = "extra == 'modeling'", editable = "packages/driver" },
     { name = "numba", marker = "extra == 'modeling'", specifier = ">=0.59.0,<0.61" },
     { name = "numpy", marker = "extra == 'stats'", specifier = ">=2.0.0" },
     { name = "openpyxl", marker = "extra == 'stats'", specifier = ">=3.1.0" },
@@ -1682,18 +1680,11 @@ dependencies = [
     { name = "pyyaml" },
 ]
 
-[package.optional-dependencies]
-modeling = [
-    { name = "mflowy-utils", extra = ["modeling"] },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "mflowy-utils", editable = "packages/utils" },
-    { name = "mflowy-utils", extras = ["modeling"], marker = "extra == 'modeling'", editable = "packages/utils" },
     { name = "pyyaml", specifier = ">=6.0" },
 ]
-provides-extras = ["modeling"]
 
 [[package]]
 name = "mflowy-mcp"
@@ -1725,18 +1716,11 @@ dependencies = [
     { name = "mlflow" },
 ]
 
-[package.optional-dependencies]
-modeling = [
-    { name = "optuna" },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "jinja2", specifier = ">=3.1.0" },
     { name = "mlflow", specifier = ">=3.14" },
-    { name = "optuna", marker = "extra == 'modeling'", specifier = ">=4.8.0" },
 ]
-provides-extras = ["modeling"]
 
 [[package]]
 name = "mlflow"
@@ -2235,15 +2219,15 @@ wheels = [
 
 [[package]]
 name = "plotly"
-version = "6.9.0"
+version = "7.0.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
 dependencies = [
     { name = "narwhals" },
     { name = "packaging" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/96/07/795c79dbce40c39bece88e69d049babbd23ffa95b5d117f248db8ea03abb/plotly-6.9.0.tar.gz", hash = "sha256:967ad33e8c704fed051800d11d985eb206a9c795c14206b30a6f463ed9c67d0d" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/ec/9e/8894e8eae20a5b2a44aa568b1d2d80291e8eea6ce7bc75cdc7a152aef0ac/plotly-7.0.0.tar.gz", hash = "sha256:08b21f1244a97e7a1a699833c4bb2678475aa108b3f1989886ed0b038ebfd849" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/24/18/d8544811ab076f876c4892b3714f5b0dad335e1dc33aef826df431b8325d/plotly-6.9.0-py3-none-any.whl", hash = "sha256:36bebe2f1bb13884774fe61689c329071446f6ce4a8927fb1f0d6fb24f581236" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/e0/2f/6f492108d9955bac97979d9949c1b35eab30fc630b1f22bbdd2c7cacbab4/plotly-7.0.0-py3-none-any.whl", hash = "sha256:78cbf7bd06d1b05bb3b8ec1b709864695229b55151b6f7530fbf55517ead6fdd" },
 ]
 
 [[package]]
@@ -3434,7 +3418,7 @@ wheels = [
 
 [[package]]
 name = "virtualenv"
-version = "21.7.4"
+version = "21.7.5"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
 dependencies = [
     { name = "distlib" },
@@ -3442,9 +3426,9 @@ dependencies = [
     { name = "platformdirs" },
     { name = "python-discovery" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/2d/dc/a6eb1ddfa7f1e390fa599b078453c97edb3f6f846b34fb4eac3e8ea16401/virtualenv-21.7.4.tar.gz", hash = "sha256:c9d960c95fa458171e58222a5ccab7465298e4b6559977865e627c4719f1e825" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/1d/60/fc54e876e34f94dd0cf0185aaecfd4bfa906653f003d9b2fb21428642fca/virtualenv-21.7.5.tar.gz", hash = "sha256:a73c4246fba3c8901ff9717399f466e00eeca5a3834981f1a6ebb4f1e94de2f8" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/40/4c/eb2f52aeeaf30dbd073d315a251a63ae2b8263171ec4428c135140cb0802/virtualenv-21.7.4-py3-none-any.whl", hash = "sha256:376ec93cd6aab3044fa395d7db226db38043b7b5748948044b2a87168525e843" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/ca/d8/401141bf45637be916c86d325bd821c5838c7eff83294b934cd94e774e4f/virtualenv-21.7.5-py3-none-any.whl", hash = "sha256:e36ca889510ab6cb0b1dca93c59e5431dd4422a3c88f487358d470c90af8c07a" },
 ]
 
 [[package]]

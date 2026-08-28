@@ -13,7 +13,7 @@ except (ImportError, OSError) as e:
 # ---------------------------------------------------------------------------
 class TestGetSamplerErrors:
     def test_unknown_sampler_raises(self):
-        from mflowy.utils.study import get_sampler
+        from mflowy.builtin_plugins.model.study import get_sampler
 
         with pytest.raises(KeyError, match="未知的优化方法"):
             get_sampler("nonexistent")

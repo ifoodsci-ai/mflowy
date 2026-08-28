@@ -68,8 +68,21 @@ class TestStepToDict:
         assert d["steps"][0]["module"] == "MLP"
 
     def test_params_dataclass_to_dict(self):
-        """ContinuousSpace（dataclass）参数应序列化为 dict（converter 的 **val 闭环）"""
-        from mflowy.utils.study import ContinuousSpace, DiscreteSpace
+        """dataclass 参数应序列化为 dict、list 子类原样（converter 的 **val 闭环）
+
+        本地 dummy 替身——serializer 对任意 dataclass 通用，driver 测试不 import
+        builtin_plugins 的 study 类型（依赖边界铁律）。
+        """
+        from dataclasses import dataclass
+
+        @dataclass
+        class ContinuousSpace:
+            start: float
+            end: float
+            step: object = None
+
+        class DiscreteSpace(list):
+            pass
 
         s = StepConf(
             name="x",
@@ -84,8 +97,17 @@ class TestStepToDict:
         assert d["params"]["param_space"]["depth"] == [3, 5]
 
     def test_steps_to_yaml_accepts_search_space_params(self):
-        """含 ContinuousSpace/DiscreteSpace 的步骤应能 safe_dump（explanation 复用路径）"""
-        from mflowy.utils.study import ContinuousSpace, DiscreteSpace
+        """含 dataclass/list 子类参数的步骤应能 safe_dump（explanation 复用路径）"""
+        from dataclasses import dataclass
+
+        @dataclass
+        class ContinuousSpace:
+            start: float
+            end: float
+            step: object = None
+
+        class DiscreteSpace(list):
+            pass
 
         s = StepConf(
             name="x",

@@ -13,7 +13,7 @@
 | 特征工程 | 类别编码 ×5、数值变换 ×8（缩放/对数/幂/分箱/PCA/交互特征等）                                   | `packages/builtin_plugins/mflowy/builtin_plugins/x_transformer/`          |
 | CV 策略  | Simple / K / Stratified / Group / StratifiedGroup K-Fold、Repeated(K/Stratified)、LeaveOneOut、LeaveOneGroupOut | `packages/builtin_plugins/mflowy/builtin_plugins/cross_validation/`       |
 | 模型算法 | XGBoost、LightGBM、CatBoost、RandomForest、PyTorch MLP（回归/分类/多分类）                     | `packages/builtin_plugins/mflowy/builtin_plugins/model/`                  |
-| 超参优化 | Optuna TPE 自动调参                                                                            | `packages/utils/mflowy/utils/study.py`                  |
+| 超参优化 | Optuna TPE 自动调参                                                                            | `packages/builtin_plugins/mflowy/builtin_plugins/model/study.py`                  |
 | 评估指标 | 回归 4（MAE/RMSE/R²/MAPE）+ 分类 7（Accuracy/Precision/Recall/F1/AUC/LogLoss/MLogLoss）        | `packages/builtin_plugins/mflowy/builtin_plugins/model/types.py`          |
 | 可视化   | 数据分析 / 模型评估 / SHAP 可解释性三族图表                                          | `packages/builtin_plugins/mflowy/builtin_plugins/plots/`                  |
 | 反向搜索 | 输入寻优（目标最大化/最小化、范围约束、跨列规则）                                               | `packages/builtin_plugins/mflowy/builtin_plugins/model/search_input.py`   |

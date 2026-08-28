@@ -1,7 +1,7 @@
 [project]
 name = "mflowy-utils"
 version = "0.1.2"
-description = "MFlowy shared utilities — mlflow helpers, optuna search spaces, logging, capture"
+description = "MFlowy shared utilities — mlflow helpers, jinja sandbox, logging, capture"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
@@ -13,9 +13,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# study.py（超参搜索空间）属 [modeling] 层；driver 懒加载，缺 extra 时目录查询不受影响
-modeling = ["optuna>=4.8.0"]
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

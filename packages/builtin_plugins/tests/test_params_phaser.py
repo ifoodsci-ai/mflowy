@@ -2,9 +2,9 @@
 
 from typing import Annotated
 
+from mflowy.builtin_plugins.model.study import ContinuousSpace, DiscreteSpace
 from mflowy.builtin_plugins.model.types import TASKTYPE
 from mflowy.builtin_plugins.params_phaser import annotated_params_phaser
-from mflowy.utils.study import ContinuousSpace, DiscreteSpace
 
 
 def _phaser_for(fn):

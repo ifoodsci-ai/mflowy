@@ -1,7 +1,7 @@
 """search_input handler —— Optuna 驱动的输入空间优化（inverse design）。
 
 给定训练好的 model + 搜索空间约束，找出能让预测输出最优的输入特征组合。
-核心抽象（``mflowy.utils.study``）：``ParameterSearchSpace`` / ``get_sampler`` / ``search``。
+核心抽象（``mflowy.builtin_plugins.model.study``）：``ParameterSearchSpace`` / ``get_sampler`` / ``search``。
 模型加载与 ensemble 复用 ``loader`` + ``predict.ensemble_predict``。
 
 设计契约：``model.y_names`` 是训练时定义的目标契约，search_input 优化全部 y_names，
@@ -17,19 +17,19 @@ from typing import Annotated, Any, Literal
 import numpy as np
 import pandas as pd
 from mflowy.builtin_plugins.middlewares import inject_df_or_none, log_search_input
-from mflowy.builtin_plugins.params_phaser import annotated_params_phaser
-from mflowy.driver.handler import handler
-from mflowy.utils.constants import RANDOM_STATE
-from mflowy.utils.file import read_text
-from mflowy.utils.path import split_path_to_py_with_target
-from mflowy.utils.python_script_security_scan import scan_security
-from mflowy.utils.study import (
+from mflowy.builtin_plugins.model.study import (
     ContinuousSpace,
     DiscreteSpace,
     ParameterSearchSpace,
     get_sampler,
     search,
 )
+from mflowy.builtin_plugins.params_phaser import annotated_params_phaser
+from mflowy.driver.handler import handler
+from mflowy.utils.constants import RANDOM_STATE
+from mflowy.utils.file import read_text
+from mflowy.utils.path import split_path_to_py_with_target
+from mflowy.utils.python_script_security_scan import scan_security
 
 from .loader import loader as _loader
 from .predict import ensemble_predict
@@ -165,7 +165,7 @@ def search_input(
         preds = ensemble_predict(model_loader, X_row)
         return tuple(float(np.ravel(preds[y])[0]) for y in y_names)
 
-    # 7. 委托 utils.study.search 跑 study（directions 长度 1 = 单目标，>1 = 多目标）
+    # 7. 委托 model.study.search 跑 study（directions 长度 1 = 单目标，>1 = 多目标）
     study = search(
         param_space=search_space,
         objective=objective,

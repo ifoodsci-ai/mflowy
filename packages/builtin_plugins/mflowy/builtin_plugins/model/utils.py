@@ -9,7 +9,7 @@ import logging
 from typing import Any
 
 import pandas as pd
-from mflowy.utils.study import ContinuousSpace, DiscreteSpace, ParameterSearchSpace
+from mflowy.builtin_plugins.model.study import ContinuousSpace, DiscreteSpace, ParameterSearchSpace
 
 from .types import TASKTYPE, MetricName
 

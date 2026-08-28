@@ -34,7 +34,6 @@ modeling = [
     # 建模编排含 load/clean/plot 全栈，复用 stats extra
     "mflowy-builtin-plugins[stats]",
     # 内核 search space / 超参优化
-    "mflowy-driver[modeling]",
     # 机器学习
     "scikit-learn>=1.9.0",
     # 实验追踪（mlflow 已在 base；此处 postgres 直连）

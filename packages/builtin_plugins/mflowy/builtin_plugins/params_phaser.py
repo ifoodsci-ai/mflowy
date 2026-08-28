@@ -2,7 +2,7 @@
 
 driver 内核对数据结构零感知（@handler 的 ``params_phaser`` 由插件侧自注册）——
 本模块是 builtin 词汇的通用 phaser：内省 ``Annotated[T, "描述"]`` 签名，
-转换 union 中的 Enum（值/名双形式）与 utils.study 的搜索空间类型。
+转换 union 中的 Enum（值/名双形式）与 model.study 的搜索空间类型。
 第三方插件带自有数据结构时，写自己的 phaser 挂进 @handler 即可。
 """
 
@@ -10,7 +10,7 @@ import logging
 from enum import Enum
 from typing import Annotated, get_args, get_origin, get_type_hints
 
-from mflowy.utils.study import ContinuousSpace, DiscreteSpace, ParameterSearchSpace
+from mflowy.builtin_plugins.model.study import ContinuousSpace, DiscreteSpace, ParameterSearchSpace
 
 logger = logging.getLogger(__name__)
 

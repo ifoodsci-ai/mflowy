@@ -42,8 +42,8 @@ from mflowy.builtin_plugins.cross_validation.types import DatasetLoader, X_idx, 
 from mflowy.builtin_plugins.model._evaluation_plots import plot_evaluation
 from mflowy.builtin_plugins.model._names import NamesMixin
 from mflowy.builtin_plugins.model._x_processors import XPreprocessorsMixin
+from mflowy.builtin_plugins.model.study import ParameterSearchSpace, search
 from mflowy.utils.logging import is_verbose
-from mflowy.utils.study import ParameterSearchSpace, search
 
 from ._loss_curve import plot_loss_curve
 from .types import (
@@ -72,7 +72,7 @@ def optimize(
 ):
     """共享的 optuna 优化逻辑
 
-    通过 ``mflowy.utils.study.search`` 执行搜索；objective 收到 trial 上下文，
+    通过 ``mflowy.builtin_plugins.model.study.search`` 执行搜索；objective 收到 trial 上下文，
     trial-level mlflow nested run 直接用 ``trial.number`` 命名。
 
     sampler 默认 None → ``search`` 内部取 tpe + hyperopt_parameters。

@@ -19,7 +19,7 @@ try:
 except (ImportError, OSError) as e:
     pytest.skip(f"PyTorch/Optuna not available: {e}", allow_module_level=True)
 
-from mflowy.utils.study import ContinuousSpace, DiscreteSpace
+from mflowy.builtin_plugins.model.study import ContinuousSpace, DiscreteSpace
 
 # ============================================================
 # Mock 基建（参考 tests/model/test_predict.py 同款模式）
