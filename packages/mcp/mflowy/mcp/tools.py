@@ -21,10 +21,9 @@ JobProvider，无 ctx 形参。
 from __future__ import annotations
 
 import asyncio
-import hashlib
 from dataclasses import asdict
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated
 
 from mflowy.driver.workflow import WorkflowResult
 from mflowy.utils.file import exists, fingerprint_tags, sha256_of
@@ -43,13 +42,9 @@ from .job_provider import get_job_provider as _get_job_provider
 
 # ── info 工具（始终本地执行） ─────────────────────────────────────────────
 
-_CHUNK_SIZE = 8 * 1024 * 1024  # 分块读取，避免大文件整读进内存
-_ALGORITHMS = {"sha256", "md5", "sha1"}  # Literal 之外的直调防线
-
 
 def file_hash(
     path: Annotated[str, Field(description="文件绝对路径")],
-    algorithm: Annotated[Literal["sha256", "md5", "sha1"], Field(description="哈希算法，默认 sha256")] = "sha256",
 ) -> dict | str:
     """为文件当前内容生成稳定指纹。
 
@@ -57,10 +52,6 @@ def file_hash(
     - 上传文件(如CSV)身份核验
     - 跨阶段篡改检测
     """
-    algorithm_lc = algorithm.lower()
-    if algorithm_lc not in _ALGORITHMS:
-        return f"Error: Unsupported algorithm '{algorithm}'. Supported: {', '.join(sorted(_ALGORITHMS))}"
-
     file_path = Path(path)
 
     if not file_path.exists():
@@ -68,25 +59,11 @@ def file_hash(
     if not file_path.is_file():
         return f"Error: Path is not a file: {path}"
 
-    try:
-        if algorithm_lc == "sha256":
-            digest = sha256_of(file_path)
-            size = file_path.stat().st_size
-        else:
-            hasher = hashlib.new(algorithm_lc)
-            size = 0
-            with open(path, "rb") as f:
-                for chunk in iter(lambda: f.read(_CHUNK_SIZE), b""):
-                    hasher.update(chunk)
-                    size += len(chunk)
-            digest = hasher.hexdigest()
-    except (OSError, ValueError) as e:  # ValueError：FIPS 模式下 md5 被禁
-        return f"Error hashing file: {type(e).__name__}: {e}"
-
+    digest = sha256_of(file_path)
+    size = file_path.stat().st_size
     return {
         "path": path,
-        "algorithm": algorithm_lc,
-        "hash": digest,
+        "sha256": digest,
         "size_bytes": size,
     }
 

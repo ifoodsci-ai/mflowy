@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **file_hash 工具收敛为 sha256 单算法**（定位=变更检查），返回形 `{path, sha256, size_bytes}`
+
 - **布局去 src 层 + 组件文档随包**：
   - 包内 `src/mflowy/<pkg>` 收敛为 `mflowy/<pkg>`（namespace wheel 与真 editable 行为不变，spike 验证）
   - 组件文档迁入 `packages/<pkg>/README.md`（随 wheel 分发）：driver = 技术架构文档（重写，含设计哲学谱系与架构图）、builtin_plugins = 能力目录 catalog、mcp = 工具三分 + JobProvider + 遥测（合并原 REMOTE_MODELING/TELEMETRY）、utils = 职责概览；`docs/` 仅留跨组件专题（research-flow / roadmap）
