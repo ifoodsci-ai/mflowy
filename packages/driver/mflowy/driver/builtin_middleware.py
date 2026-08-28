@@ -19,7 +19,7 @@ import mlflow
 from mflowy.driver.context import Context
 from mflowy.driver.handler import Handler
 from mflowy.utils.logging import is_verbose
-from mflowy.utils.mlflow import active_experiment_id
+from mflowy.utils.mlflow import active_experiment_id, workflow_tags
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +71,8 @@ def mlflow_log(ctx: Context, next: Handler):
         step = f"{ctx.conf.type}.{ctx.conf.module}"
         logger.info(f'{step}:<RunInfo: run-name="{run.info.run_name}", run-id="{run.info.run_id}">')
         mlflow.set_tag("mflowy.step", step)
+        if extra := workflow_tags():  # Workflow.run(tags=...) 注入的 run 级指纹（文件哈希等）
+            mlflow.set_tags(extra)
         mlflow.log_params(_flatten_params(ctx.conf.params))
         try:
             result = next(ctx)

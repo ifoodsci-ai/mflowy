@@ -44,6 +44,7 @@ from .inject import (
 )
 from .log_cv import log_cv
 from .log_df_diff import df_diff
+from .log_load_data_fingerprint import log_load_data_fingerprint
 from .log_load_profile import log_load_profile
 from .log_plot import SkipPlotError, log_plot
 from .log_prediction import log_prediction
@@ -86,6 +87,7 @@ __all__ = [
     # log_* 观测中间件
     "log_cv",
     "df_diff",
+    "log_load_data_fingerprint",
     "log_load_profile",
     "log_plot",
     "log_prediction",

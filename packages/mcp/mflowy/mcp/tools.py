@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 from mflowy.driver.workflow import WorkflowResult
-from mflowy.utils.file import exists
+from mflowy.utils.file import exists, fingerprint_tags, sha256_of
 from pydantic import Field
 
 from mcp.server.mcpserver import Context
@@ -69,13 +69,17 @@ def file_hash(
         return f"Error: Path is not a file: {path}"
 
     try:
-        hasher = hashlib.new(algorithm_lc)
-        size = 0
-        with open(path, "rb") as f:
-            for chunk in iter(lambda: f.read(_CHUNK_SIZE), b""):
-                hasher.update(chunk)
-                size += len(chunk)
-        digest = hasher.hexdigest()
+        if algorithm_lc == "sha256":
+            digest = sha256_of(file_path)
+            size = file_path.stat().st_size
+        else:
+            hasher = hashlib.new(algorithm_lc)
+            size = 0
+            with open(path, "rb") as f:
+                for chunk in iter(lambda: f.read(_CHUNK_SIZE), b""):
+                    hasher.update(chunk)
+                    size += len(chunk)
+            digest = hasher.hexdigest()
     except (OSError, ValueError) as e:  # ValueError：FIPS 模式下 md5 被禁
         return f"Error hashing file: {type(e).__name__}: {e}"
 
@@ -322,7 +326,7 @@ async def data_profile(
                 "skip": skip,
             },
         )
-        return builder.build().run()
+        return builder.build().run(tags=fingerprint_tags("data", file_path))
 
     return await asyncio.to_thread(_run)
 
@@ -369,7 +373,7 @@ async def eda(
                 "lowess_frac": lowess_frac,
             },
         )
-        return builder.build().run()
+        return builder.build().run(tags=fingerprint_tags("data", file_path))
 
     return await asyncio.to_thread(_run)
 
@@ -404,7 +408,7 @@ async def infer_task_type_by_statistic(
                 "target_or_targets": target_param,
             },
         )
-        return builder.build().run()
+        return builder.build().run(tags=fingerprint_tags("data", file_path))
 
     return await asyncio.to_thread(_run)
 

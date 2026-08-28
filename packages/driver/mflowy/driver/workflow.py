@@ -7,7 +7,7 @@ from typing import Literal
 
 import mlflow
 from mflowy.utils.capture import capture_prints
-from mflowy.utils.mlflow import get_artifact_uri, set_active_experiment, setup
+from mflowy.utils.mlflow import get_artifact_uri, reset_workflow_tags, set_active_experiment, set_workflow_tags, setup
 from mlflow.entities import Experiment
 
 from . import discover
@@ -51,12 +51,20 @@ class Workflow:
         self.starts = starts
         self._preview = preview
 
-    def run(self) -> WorkflowResult:
-        """运行工作流 - Kahn 拓扑序 + LIFO 就绪栈：深度优先，避免层级长尾。
+    def run(self, *, tags: dict[str, str] | None = None) -> WorkflowResult:
+        """运行工作流；``tags`` 为 run 级指纹（如文件 sha256），经 ContextVar 注入由 mlflow_log
+        应用到本 workflow 的每个 node run——任意 run 可自定位其输入工件。
 
         LIFO 让刚解锁的下游任务（如 RF）立刻压栈顶优先执行，
         独立分支按声明逆序运行；总时间不变（串行求和），但下游结果更早产出。
         """
+        tags_token = set_workflow_tags(tags)
+        try:
+            return self._run()
+        finally:
+            reset_workflow_tags(tags_token)
+
+    def _run(self) -> WorkflowResult:
         logger.info(self)  # 执行头信息
         exp = self._setup_mlflow()
         flow = WorkflowResult(

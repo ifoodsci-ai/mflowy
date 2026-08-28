@@ -15,6 +15,20 @@ logger = logging.getLogger(__name__)
 # mlflow fluent 的 _active_experiment_id 是进程级全局，MCP server 并发分发
 # 多 workflow 时会互相覆盖；start_run 必须显式携带本值。
 _experiment_id_var: ContextVar[str | None] = ContextVar("mflowy_experiment_id", default=None)
+_workflow_tags_var: ContextVar[dict[str, str] | None] = ContextVar("mflowy_workflow_tags", default=None)
+
+
+def set_workflow_tags(tags: dict[str, str] | None):
+    """Workflow.run 期注入 run 级指纹 tags；返回 token 供 reset（并发 workflow 经 ContextVar 隔离）。"""
+    return _workflow_tags_var.set(tags)
+
+
+def reset_workflow_tags(token) -> None:
+    _workflow_tags_var.reset(token)
+
+
+def workflow_tags() -> dict[str, str]:
+    return _workflow_tags_var.get() or {}
 
 
 def set_active_experiment(experiment_id: str) -> None:
@@ -87,6 +101,10 @@ def log_figure(fig, filename: str, dpi: int = 300):
 def get_artifact_uri() -> str:
     """返回 MLflow artifact 目录 URI（本地路径），由 _setup_mlflow 调用。"""
     return (task_dir() / ".mlruns").as_uri()
+
+
+def set_tags(tags: dict):
+    mlflow.set_tags(tags)
 
 
 def append_tag(run_id: str, key: str, value: str):

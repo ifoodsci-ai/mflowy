@@ -1,22 +1,21 @@
 """python 脚本数据载入器"""
 
 import logging
-from pathlib import Path
 from typing import Annotated
 
 import pandas as pd
-from mflowy.builtin_plugins.middlewares import log_load_profile
+from mflowy.builtin_plugins.middlewares import log_load_data_fingerprint, log_load_profile
 from mflowy.driver.handler import handler
-from mflowy.utils.file import read_text
 from mflowy.utils.path import split_path_to_py_with_target
 from mflowy.utils.python_script_security_scan import scan_security
 
 from . import report_loaded
+from .utils import set_data_fingerprint
 
 logger = logging.getLogger(__name__)
 
 
-@handler(log_load_profile)
+@handler(log_load_data_fingerprint, log_load_profile)
 def python(
     source: Annotated[str | None, "python脚本路径，支持 file.py:func 指定入口函数（默认 load）"] = None,
     **kwargs,
@@ -26,9 +25,8 @@ def python(
         raise ValueError("需要一个python脚本文件地址")
     path, func = split_path_to_py_with_target(source)
     func = func or "load"
-    if not path.exists():
-        raise FileNotFoundError(f"文件不存在: {path}")
-    code = read_text(Path(path))
+    set_data_fingerprint(path.as_posix())
+    code = path.read_text()
     scan_security(code, func_name=func, returns=pd.DataFrame)
 
     # 构造一个受限的全局命名空间，提供必要的模块和内置对象

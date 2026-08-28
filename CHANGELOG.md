@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **文件指纹 tags**：`Workflow.run(tags=...)` 经 ContextVar 注入、`mlflow_log` 应用到每个 node run——
+  MCP 层为两类文件打指纹（`mflowy.{kind}_sha256` + `mflowy.{kind}_file`）：分析/predict/inverse 的
+  数据文件（`data`）与 modeling 族的 `modeling_yaml`；`py:target` 引用哈希代码文件，远程/缺失
+  引用静默跳过
+- **load 步运行期数据指纹**：文件型 loader（csv/excel/parquet/python；file 按后缀委派继承）
+  解析绝对路径后显式 `set_data_fingerprint`，`log_load_data_fingerprint` 中间件把更新后的
+  workflow_tags 补写到 load 自身 run——modeling_yaml 内部 load 步的数据文件指纹全覆盖
+  （多 load 步 `_n` 后缀，同文件幂等，远程引用跳过）；指纹函数（`sha256_of`/`fingerprint_tags`）
+  归位 `mflowy.utils.file`
+
 ### Changed
 
 - **布局去 src 层 + 组件文档随包**：

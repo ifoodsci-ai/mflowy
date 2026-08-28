@@ -8,7 +8,7 @@ from mflowy.builtin_plugins.loaders.csv_loader import csv
 from mflowy.builtin_plugins.loaders.excel_loader import excel
 from mflowy.builtin_plugins.loaders.parquet_loader import parquet
 from mflowy.builtin_plugins.loaders.python_loader import python
-from mflowy.builtin_plugins.middlewares import log_load_profile
+from mflowy.builtin_plugins.middlewares import log_load_data_fingerprint, log_load_profile
 from mflowy.driver.handler import handler
 from mflowy.utils.path import split_path_to_py_with_target
 
@@ -23,7 +23,7 @@ LOADER_MAP = {
 }
 
 
-@handler(log_load_profile)
+@handler(log_load_data_fingerprint, log_load_profile)
 def file(
     file_path: Annotated[str, "文件路径"],
     **kwargs,

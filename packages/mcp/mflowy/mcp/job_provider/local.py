@@ -13,7 +13,7 @@ from mflowy.driver.builder import Builder
 from mflowy.driver.builder_options import prune_model_step
 from mflowy.driver.serializer import steps_to_yaml
 from mflowy.driver.workflow import WorkflowResult
-from mflowy.utils.file import exists, read_text
+from mflowy.utils.file import exists, fingerprint_tags, read_text
 from mflowy.utils.path import set_task_dir
 
 from .._lib import (
@@ -108,7 +108,7 @@ class LocalJobProvider:
                     "multi_model": multi_model,
                 },
             )
-            return builder.build().run()
+            return builder.build().run(tags=fingerprint_tags("modeling_yaml", modeling_steps_yaml))
 
         return await asyncio.to_thread(_run)
 
@@ -142,7 +142,7 @@ class LocalJobProvider:
                     "lowess_frac": lowess_frac,
                 },
             )
-            return builder.build().run()
+            return builder.build().run(tags=fingerprint_tags("modeling_yaml", modeling_steps_yaml))
 
         return await asyncio.to_thread(_run)
 
@@ -170,7 +170,7 @@ class LocalJobProvider:
                     "run_id": run_id,
                 },
             )
-            return builder.build().run()
+            return builder.build().run(tags=fingerprint_tags("data", data))
 
         return await asyncio.to_thread(_run)
 
@@ -210,6 +210,6 @@ class LocalJobProvider:
                     "random_seed": seed,
                 },
             )
-            return builder.build().run()
+            return builder.build().run(tags=fingerprint_tags("data", data))
 
         return await asyncio.to_thread(_run)
