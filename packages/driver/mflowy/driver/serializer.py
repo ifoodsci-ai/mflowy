@@ -11,7 +11,7 @@ from .config import StepConf
 
 
 def _plain(v):
-    """Enum → 枚举名（与 handler params converter 的 TASKTYPE[名] 闭环）；dataclass → dict（ContinuousSpace 等，与 converter 的 **val 闭环）；容器递归。"""
+    """Enum → 枚举名、dataclass → dict（与插件侧 params_phaser 的 **val 构造闭环）；容器递归。"""
     if isinstance(v, Enum):
         return v.name
     if is_dataclass(v) and not isinstance(v, type) and not isinstance(v, (list, tuple)):  # DiscreteSpace 走 list 分支

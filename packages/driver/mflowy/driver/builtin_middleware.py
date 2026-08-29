@@ -31,7 +31,7 @@ def _flatten_params(params: dict, _prefix: str = "") -> dict:
     - 标量类型（str/int/float/bool）原样保留
     - dict 递归展平，用 . 连接键名
     - tuple 保持圆括号用 str() 转换
-    - 其他复杂类型 json.dumps 序列化（ContinuousSpace 由本模块 _space_to_json 处理）
+    - 其他复杂类型 json.dumps 序列化（dataclass 由标准库 asdict 兜底）
     """
     flat = {}
     for k, v in params.items():
