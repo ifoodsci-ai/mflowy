@@ -50,7 +50,6 @@ from .log_plot import SkipPlotError, log_plot
 from .log_prediction import log_prediction
 from .log_search_input import log_search_input
 from .log_statistic import log_statistic
-from .log_X_y import log_X_y
 
 __all__ = [
     # mlflow helper 薄委托
@@ -93,5 +92,4 @@ __all__ = [
     "log_prediction",
     "log_search_input",
     "log_statistic",
-    "log_X_y",
 ]
