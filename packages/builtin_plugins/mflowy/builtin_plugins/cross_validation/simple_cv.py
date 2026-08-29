@@ -4,9 +4,9 @@ from typing import Annotated
 
 import numpy as np
 import pandas as pd
+from mflowy.builtin_plugins.constants import RANDOM_STATE
 from mflowy.builtin_plugins.middlewares import inject_X_y, log_cv
 from mflowy.driver.handler import handler
-from mflowy.utils.constants import RANDOM_STATE
 from sklearn.model_selection import train_test_split
 
 from .types import Indices

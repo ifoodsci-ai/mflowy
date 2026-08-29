@@ -21,9 +21,9 @@ if TYPE_CHECKING:
 
 import logging
 
+from mflowy.builtin_plugins.constants import RANDOM_STATE
 from mflowy.builtin_plugins.middlewares import inject_plot_data, log_plot
 from mflowy.driver.handler import handler
-from mflowy.utils.constants import RANDOM_STATE
 
 from ...utils import SHAP_MAX_DISPLAY, compute_shap_explanation, shap_explanation_to_df
 

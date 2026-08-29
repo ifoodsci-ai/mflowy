@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 import logging
 
-from mflowy.utils.constants import RANDOM_STATE
+from mflowy.builtin_plugins.constants import RANDOM_STATE
 
 logger = logging.getLogger(__name__)
 

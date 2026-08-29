@@ -3,9 +3,9 @@ from collections.abc import Iterator
 from typing import Annotated
 
 import pandas as pd
+from mflowy.builtin_plugins.constants import RANDOM_STATE
 from mflowy.builtin_plugins.middlewares import inject_X_y, log_cv
 from mflowy.driver.handler import handler
-from mflowy.utils.constants import RANDOM_STATE
 from sklearn.model_selection import RepeatedKFold
 
 from .types import Indices

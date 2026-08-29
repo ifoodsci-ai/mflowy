@@ -12,8 +12,8 @@ import shap
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from mflowy.builtin_plugins.constants import RANDOM_STATE
 from mflowy.builtin_plugins.cross_validation.types import X_y
-from mflowy.utils.constants import RANDOM_STATE
 from pytorch_lightning.callbacks import EarlyStopping
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from torch.utils.data import DataLoader, Dataset

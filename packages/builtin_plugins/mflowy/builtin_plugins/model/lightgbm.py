@@ -6,12 +6,12 @@ import logging
 from collections.abc import Callable
 from typing import Annotated
 
+from mflowy.builtin_plugins.constants import RANDOM_STATE
 from mflowy.builtin_plugins.cross_validation.types import DatasetLoader
 from mflowy.builtin_plugins.middlewares import inject_dataset_loader, inject_x_preprocessors
 from mflowy.builtin_plugins.model.study import ContinuousSpace, DiscreteSpace
 from mflowy.builtin_plugins.params_phaser import annotated_params_phaser
 from mflowy.driver.handler import handler
-from mflowy.utils.constants import RANDOM_STATE
 from mflowy.utils.logging import is_verbose
 from sklearn.compose import ColumnTransformer
 

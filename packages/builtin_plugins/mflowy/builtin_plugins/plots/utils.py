@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 
 import logging
 
+from mflowy.builtin_plugins.constants import RANDOM_STATE
 from mflowy.builtin_plugins.middlewares import (
     GetDatasetLoader,
     GetModel,
@@ -21,7 +22,6 @@ from mflowy.builtin_plugins.middlewares import (
 )
 from mflowy.builtin_plugins.model.types import TASKTYPE, Explainable
 from mflowy.driver.context import Context
-from mflowy.utils.constants import RANDOM_STATE
 
 logger = logging.getLogger(__name__)
 

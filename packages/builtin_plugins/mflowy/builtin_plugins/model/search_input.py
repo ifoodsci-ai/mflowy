@@ -16,6 +16,7 @@ from typing import Annotated, Any, Literal
 
 import numpy as np
 import pandas as pd
+from mflowy.builtin_plugins.constants import RANDOM_STATE
 from mflowy.builtin_plugins.middlewares import inject_df_or_none, log_search_input
 from mflowy.builtin_plugins.model.study import (
     ContinuousSpace,
@@ -26,7 +27,6 @@ from mflowy.builtin_plugins.model.study import (
 )
 from mflowy.builtin_plugins.params_phaser import annotated_params_phaser
 from mflowy.driver.handler import handler
-from mflowy.utils.constants import RANDOM_STATE
 from mflowy.utils.file import read_text
 from mflowy.utils.path import split_path_to_py_with_target
 from mflowy.utils.python_script_security_scan import scan_security

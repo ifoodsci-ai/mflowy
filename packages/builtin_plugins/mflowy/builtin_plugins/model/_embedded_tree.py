@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pandas as pd
-from mflowy.utils.constants import RANDOM_STATE
+from mflowy.builtin_plugins.constants import RANDOM_STATE
 from sklearn.inspection import permutation_importance
 
 from ._feature_importance import FeatureImportanceMixin

@@ -1,9 +1,9 @@
 from typing import Annotated
 
 import pandas as pd
+from mflowy.builtin_plugins.constants import RANDOM_STATE
 from mflowy.builtin_plugins.middlewares import inject_X_y
 from mflowy.driver.handler import handler
-from mflowy.utils.constants import RANDOM_STATE
 from sklearn.decomposition import PCA
 
 from ..utils import resolve_cols
