@@ -138,14 +138,14 @@ def get_tag(run_id: str, key: str) -> str:
 def search_experiment_model_run_ids(experiment_id: str) -> dict[str, str]:
     """批量查询实验中所有 ``tags.mflowy.step LIKE 'model.%'`` 的 FINISHED run_id。
 
-    一次 MLflow 查询返回 {module: run_id} 字典，供 BuilderOption 闭包消费——
+    一次 MLflow 查询返回 {module: run_id} 字典，供 model 族 step_options 闭包消费——
     避免 option 逐 step 触发 N 次查询。
 
     - 实验不存在（或已删除）时 logger.warning 提示并返回空 dict
     - ``mflowy.step`` 取点分后缀作为 module 名（如 ``model.XGB`` → ``XGB``）
     - 仅返回 ``status='FINISHED'`` 的 run，避免拿到 FAILED/KILLED 的废 run_id
     - 同 module 多条 FINISHED run 时取 start_time 最早的一条（order_by ASC + dict 覆盖语义）
-    - 包含 ``model.loader``（prune/resume/shap 产生的 loader run）——BuilderOption 内部用
+    - 包含 ``model.loader``（prune/resume/shap 产生的 loader run）——step_options 内部用
       ``step.module == 'loader'`` 跳过，dict 中 ``loader`` entry 自然不被消费
 
     Args:
@@ -157,7 +157,7 @@ def search_experiment_model_run_ids(experiment_id: str) -> dict[str, str]:
 
     Example:
         >>> run_id_map = search_experiment_model_run_ids("123")
-        >>> # run_id_map 供 builder_options.prune_model_step / resume_model_step 工厂消费
+        >>> # run_id_map 供 model/step_options 的 prune_model_step / resume_model_step 工厂消费
     """
     setup()
     try:

@@ -189,7 +189,7 @@ def super_csv(df, **params): ...
 | 新插件（内置） | `packages/builtin_plugins/mflowy/builtin_plugins/<step>/**` 建 `.py` + `@handler(...)`，零配置，`uv sync` 后生效 |
 | 新能力族（新 step） | `hatch_metadata.py: _STEP_OF_DIR` 加目录→step 映射 + 为该族写 `Get*/inject*` 注入器对（`middlewares/getters.py` 范本） |
 | 第三方插件 | 声明 `[project.entry-points."mflowy.plugins"]`，name 格式 `step.module`（见「插件 SDK 速览」） |
-| 修改/剪枝配置 | `builder_options.py` 写 `BuilderOption`，`Builder(..., opt)` 传入 |
+| 修改/剪枝配置 | 写 `BuilderOption`（`StepConf → StepConf`），`Builder(..., opt)` 传入；结构剪枝（看下游）走 `StructuralRule`，`Builder(..., structural_rules=...)` 传入——契约在内核，实现随词汇主人（builtin 的 model/step_options.py 是范本） |
 | 新横切关注点 | builtin_plugins `middlewares/` 建 `log_*` 或功能中间件，装饰器引用 |
 | 查询已注册能力 | `discover.py: list_all()/has()` / MCP info 工具（list_modules / get_module_info） |
 | 复用/改写另一工具的 steps 片段 | Builder 解析 + BuilderOption 改写 + `serializer.steps_to_yaml` 再注入（见「模板与片段组合」） |

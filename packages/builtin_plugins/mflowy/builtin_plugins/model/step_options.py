@@ -1,13 +1,18 @@
-import logging
-from collections.abc import Callable
+"""model 族步骤改写工厂（复用旧实验）与 x_transformer 结构剪枝规则。
 
+知识归属：rewrite recipe 知道 type=="model" / module=="loader" 的参数契约
+（flavor/run_id 注入）与 ("loader","predict") 不消费 transformer 的拓扑——
+这是 model 族 loader 插件的自描述知识，随词汇主人居住。契约（BuilderOption /
+StructuralRule）在 driver；装配（何时 prune/resume）在 mcp。
+"""
+
+import logging
+
+from mflowy.driver.builder import BuilderOption
+from mflowy.driver.config import StepConf
 from mflowy.utils.mlflow import search_experiment_model_run_ids
 
-from .config import StepConf
-
 logger = logging.getLogger(__name__)
-
-type BuilderOption = Callable[[StepConf], StepConf]
 
 
 def _parse_model_arg(model: str | None) -> tuple[str, str]:

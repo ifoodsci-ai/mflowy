@@ -30,6 +30,13 @@ MFlowy 全部内置 ML 能力，同时是**第三方 `mflowy.plugins` 插件包�
 
 内核默认尾链（mlflow_log / stop_on_error）在 [mflowy-driver](../driver/README.md) 的 `builtin_middleware.py`，不随插件演化。
 
+## 复用旧实验（model/step_options.py）
+
+`prune_model_step`（未命中即剪枝）/ `resume_model_step`（未命中继续训练）把 FINISHED 的
+`model.*` run 改写为 `model.loader` 步——loader 参数契约（flavor/run_id 注入）随词汇主人
+居住于此；`prune_x_transformer_step` 是 `StructuralRule`（无消费者的特征工程剪枝）。
+契约在 driver，装配在 mcp。
+
 ## 写一个第三方插件包
 
 ```toml

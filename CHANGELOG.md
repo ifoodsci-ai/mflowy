@@ -24,6 +24,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **深度扫描六批次**（组件依赖解耦 / 代码错位 / 同形收编）：
+  - 删除死中间件 `log_X_y`（全仓零消费）
+  - `format_param_type` 泛化：去 ContinuousSpace/DiscreteSpace 类名特判，dataclass/list 子类
+    通用自描述（schema 输出逐位兼容）
+  - `RANDOM_STATE` 迁 `builtin_plugins/constants.py`（utils/constants.py 删除）
+  - driver 新增 `iter_step_dicts` 原始步骤遍历器（mcp 不再掏字典结构）
+  - **builder_options 三层分家**：契约（`BuilderOption`/`StructuralRule` + Builder 注入点）在
+    driver；prune/resume 工厂与 x_transformer 结构规则迁 `builtin_plugins/model/step_options.py`
+    （loader 参数契约随词汇主人）；mcp 只做策略装配
+
 - **`mflowy.utils.study` → `mflowy.builtin_plugins.model.study`**（BREAKING）：超参搜索空间与
   Optuna 编排归位 model 能力族——生产消费方 100% 在 builtin_plugins，utils 回归纯通用工具；
   `mflowy-utils`/`mflowy-driver` 的 modeling extra（optuna）随之移除，optuna 唯一归宿为

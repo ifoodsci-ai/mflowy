@@ -160,9 +160,12 @@ def validate_modeling_steps(
 
     multi_model = count_model_steps(steps_text) > 1
 
+    from mflowy.builtin_plugins.model.step_options import prune_x_transformer_step
+
     builder = Builder(
         task_yaml=template,
         env={"name": "validate", "description": "", "modeling_steps": steps_text, "multi_model": multi_model},
+        structural_rules=(prune_x_transformer_step,),
     )
     workflow = builder.build(preview="mermaid")
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
@@ -11,7 +12,6 @@ from mflowy.utils.file import read_text
 from mflowy.utils.jinja import get_yaml_template_env
 
 from . import discover
-from .builder_options import BuilderOption, prune_x_transformer_step
 from .config import Conf, StepConf, WorkflowConf
 from .context import Context
 from .workflow import Workflow
@@ -20,6 +20,11 @@ logger = logging.getLogger(__name__)
 
 type TaskEndpoints = tuple[Context, list[Context]]  # (起点任务, 终点任务列表)
 
+type BuilderOption = Callable[[StepConf], StepConf]
+# 结构剪枝规则：(branches, conf, nexts) → 是否剪枝——"看下游"的规则形态
+# （如 x_transformer 无消费者即剪）。契约在内核，规则实现随词汇主人（能力族/编排层）。
+type StructuralRule = Callable[[bool, StepConf, tuple[StepConf, ...]], bool]
+
 
 class Builder:
     def __init__(
@@ -27,10 +32,12 @@ class Builder:
         task_yaml: str | Path,
         *options: BuilderOption,
         env: dict[str, Any] | None = None,
+        structural_rules: tuple[StructuralRule, ...] = (),
     ):
         self.task_yaml = Path(task_yaml)
         self.render_context = env or {}
         self.options = options
+        self.structural_rules = structural_rules
         self.config = self._parse_yaml()
 
     def build(self, *, preview: Literal["name", "tree", "mermaid"] = "mermaid") -> Workflow:
@@ -111,7 +118,7 @@ class Builder:
         conf.branches = self._parse_step_dicts(child_branches, True)
         nexts = self._parse_step_dicts(steps, branches)
 
-        if prune_x_transformer_step(branches, conf, nexts):
+        if any(rule(branches, conf, nexts) for rule in self.structural_rules):
             return nexts
 
         return (conf, *nexts)

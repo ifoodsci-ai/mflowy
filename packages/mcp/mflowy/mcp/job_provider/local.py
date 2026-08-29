@@ -9,8 +9,8 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping
 
+from mflowy.builtin_plugins.model.step_options import prune_model_step, prune_x_transformer_step
 from mflowy.driver.builder import Builder
-from mflowy.driver.builder_options import prune_model_step
 from mflowy.driver.serializer import steps_to_yaml
 from mflowy.driver.workflow import WorkflowResult
 from mflowy.utils.file import exists, fingerprint_tags, read_text
@@ -58,6 +58,7 @@ def _build_modeling_steps(
             "modeling_steps": steps_text,
             "multi_model": False,
         },
+        structural_rules=(prune_x_transformer_step,),
     )
     return steps_to_yaml(builder.config.workflow.steps)
 
@@ -81,8 +82,8 @@ class LocalJobProvider:
         headers: Mapping[str, str] | None = None,
     ) -> WorkflowResult:
         def _run():
+            from mflowy.builtin_plugins.model.step_options import resume_model_step
             from mflowy.driver.builder import Builder
-            from mflowy.driver.builder_options import prune_model_step, resume_model_step
 
             if not exists(modeling_steps_yaml):
                 raise FileNotFoundError(f"错误: 文件不存在: {modeling_steps_yaml}")
@@ -107,6 +108,7 @@ class LocalJobProvider:
                     "modeling_steps": steps_text,
                     "multi_model": multi_model,
                 },
+                structural_rules=(prune_x_transformer_step,),
             )
             return builder.build().run(tags=fingerprint_tags("modeling_yaml", modeling_steps_yaml))
 

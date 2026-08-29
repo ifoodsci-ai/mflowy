@@ -1,14 +1,15 @@
-"""BuilderOption 工厂测试：prune_model_step / resume_model_step / _parse_model_arg"""
+"""model 族 step_options 测试：prune_model_step / resume_model_step / _parse_model_arg（词汇主人侧）"""
 
 from unittest.mock import patch
 
 import pytest
-from mflowy.driver.builder import Builder
-from mflowy.driver.builder_options import (
+from mflowy.builtin_plugins.model.step_options import (
     _parse_model_arg,
     prune_model_step,
+    prune_x_transformer_step,
     resume_model_step,
 )
+from mflowy.driver.builder import Builder
 
 # ---------- _parse_model_arg ----------
 
@@ -64,7 +65,7 @@ steps:
         yaml_file.write_text(self._yaml_with_branches(["XGB", "LGBM"]))
 
         with patch(
-            "mflowy.driver.builder_options.search_experiment_model_run_ids",
+            "mflowy.builtin_plugins.model.step_options.search_experiment_model_run_ids",
             return_value={"XGB": "run_xgb", "LGBM": "run_lgbm"},
         ):
             builder = Builder(str(yaml_file), prune_model_step("exp1"))
@@ -77,7 +78,7 @@ steps:
         yaml_file.write_text(self._yaml_with_branches(["XGB", "LGBM"]))
 
         with patch(
-            "mflowy.driver.builder_options.search_experiment_model_run_ids",
+            "mflowy.builtin_plugins.model.step_options.search_experiment_model_run_ids",
             return_value={"XGB": "run_xgb"},  # LGBM 缺失
         ):
             with caplog.at_level("WARNING"):
@@ -93,10 +94,12 @@ steps:
         yaml_file.write_text(self._yaml_with_branches(["XGB", "LGBM"]))
 
         with patch(
-            "mflowy.driver.builder_options.search_experiment_model_run_ids",
+            "mflowy.builtin_plugins.model.step_options.search_experiment_model_run_ids",
             return_value={"XGB": "run_xgb", "LGBM": "run_lgbm"},
         ):
-            builder = Builder(str(yaml_file), prune_model_step("exp1", model="XGB"))
+            builder = Builder(
+                str(yaml_file), prune_model_step("exp1", model="XGB"), structural_rules=(prune_x_transformer_step,)
+            )
         placeholder = builder.config.workflow.steps[0]
         # 只保留 XGB→loader
         assert len(placeholder.branches) == 1
@@ -107,7 +110,7 @@ steps:
         yaml_file = tmp_path / "test.yaml"
         yaml_file.write_text(self._yaml_with_branches(["XGB"]))
 
-        with patch("mflowy.driver.builder_options.search_experiment_model_run_ids") as mock_search:
+        with patch("mflowy.builtin_plugins.model.step_options.search_experiment_model_run_ids") as mock_search:
             builder = Builder(str(yaml_file), prune_model_step("exp1", model="XGB=abc"))
             mock_search.assert_not_called()
         placeholder = builder.config.workflow.steps[0]
@@ -126,7 +129,7 @@ steps:
             "      run_id: existing\n"
         )
         with patch(
-            "mflowy.driver.builder_options.search_experiment_model_run_ids",
+            "mflowy.builtin_plugins.model.step_options.search_experiment_model_run_ids",
             return_value={"XGB": "new_run"},
         ):
             builder = Builder(str(yaml_file), prune_model_step("exp1"))
@@ -154,10 +157,12 @@ steps:
             '      - name: "XGB"\n        type: model\n        module: XGB\n'
         )
         with patch(
-            "mflowy.driver.builder_options.search_experiment_model_run_ids",
+            "mflowy.builtin_plugins.model.step_options.search_experiment_model_run_ids",
             return_value={"XGB": "run_xgb", "MLP": "run_mlp", "RF": "run_rf"},
         ):
-            builder = Builder(str(yaml_file), prune_model_step("exp1", model="XGB"))
+            builder = Builder(
+                str(yaml_file), prune_model_step("exp1", model="XGB"), structural_rules=(prune_x_transformer_step,)
+            )
         placeholder = builder.config.workflow.steps[2]
         # 被剪枝的 model 所在分支的特征工程节点被清空（MLP_branch/RF_branch 的 steps 为空）
         xgb = next(b for b in placeholder.branches if b.module == "loader")
@@ -183,10 +188,12 @@ steps:
             '      - name: "XGB"\n        type: model\n        module: XGB\n'
         )
         with patch(
-            "mflowy.driver.builder_options.search_experiment_model_run_ids",
+            "mflowy.builtin_plugins.model.step_options.search_experiment_model_run_ids",
             return_value={"MLP": "run_mlp", "XGB": "run_xgb"},
         ):
-            builder = Builder(str(yaml_file), prune_model_step("exp1", model="MLP"))
+            builder = Builder(
+                str(yaml_file), prune_model_step("exp1", model="MLP"), structural_rules=(prune_x_transformer_step,)
+            )
         placeholder = builder.config.workflow.steps[2]
         mlp_branch = next(b for b in placeholder.branches if b.name == "MLP_branch")
         # scaler 被向上弹出，仅保留 loader（MLP 已命中）
@@ -208,10 +215,12 @@ steps:
             '      - name: "XGB"\n        type: model\n        module: XGB\n'
         )
         with patch(
-            "mflowy.driver.builder_options.search_experiment_model_run_ids",
+            "mflowy.builtin_plugins.model.step_options.search_experiment_model_run_ids",
             return_value={"XGB": "run_xgb"},
         ):
-            builder = Builder(str(yaml_file), prune_model_step("exp1", model="XGB"))
+            builder = Builder(
+                str(yaml_file), prune_model_step("exp1", model="XGB"), structural_rules=(prune_x_transformer_step,)
+            )
         placeholder = builder.config.workflow.steps[2]
         xgb = next(b for b in placeholder.branches if b.module == "loader")
         assert xgb.params == {"flavor": "XGB", "run_id": "run_xgb"}
@@ -237,10 +246,10 @@ steps:
             self._yaml_with_branches(["XGB", "LGBM"]) + '  - name: "evaluation"\n    type: plot\n    module: taylor\n'
         )
         with patch(
-            "mflowy.driver.builder_options.search_experiment_model_run_ids",
+            "mflowy.builtin_plugins.model.step_options.search_experiment_model_run_ids",
             return_value={"XGB": "run_xgb"},  # LGBM 缺失
         ):
-            builder = Builder(str(yaml_file), resume_model_step("exp1"))
+            builder = Builder(str(yaml_file), resume_model_step("exp1"), structural_rules=(prune_x_transformer_step,))
         steps = builder.config.workflow.steps
         placeholder = steps[0]
         xgb = next(b for b in placeholder.branches if b.module == "loader")
@@ -261,10 +270,10 @@ steps:
             "    params: {flavor: XGB, run_id: existing}\n"
         )
         with patch(
-            "mflowy.driver.builder_options.search_experiment_model_run_ids",
+            "mflowy.builtin_plugins.model.step_options.search_experiment_model_run_ids",
             return_value={"XGB": "new"},
         ):
-            builder = Builder(str(yaml_file), resume_model_step("exp1"))
+            builder = Builder(str(yaml_file), resume_model_step("exp1"), structural_rules=(prune_x_transformer_step,))
         step = builder.config.workflow.steps[0]
         assert step.module == "loader"
         assert step.params == {"flavor": "XGB", "run_id": "existing"}
@@ -285,10 +294,10 @@ steps:
             '      - name: "LGBM"\n        type: model\n        module: LGBM\n'
         )
         with patch(
-            "mflowy.driver.builder_options.search_experiment_model_run_ids",
+            "mflowy.builtin_plugins.model.step_options.search_experiment_model_run_ids",
             return_value={"MLP": "run_mlp"},  # LGBM 未 FINISHED，保持训练
         ):
-            builder = Builder(str(yaml_file), resume_model_step("exp1"))
+            builder = Builder(str(yaml_file), resume_model_step("exp1"), structural_rules=(prune_x_transformer_step,))
         placeholder = builder.config.workflow.steps[2]
         mlp_branch = next(b for b in placeholder.branches if b.name == "MLP_branch")
         # scaler 被向上弹出，仅保留 loader

@@ -24,6 +24,21 @@ _MODULES = {
 _STEPS = tuple(_MODULES) + ("X_y", "statistic")
 
 
+def _orphan_transformer_rule(branches, conf, nexts):
+    """x_transformer 孤儿剪枝规则替身——driver 测试不 import builtin（依赖边界铁律），
+    只测 Builder 的规则注入机制与 DAG 拓扑；真实域规则行为在 builtin test_step_options 覆盖。"""
+    if conf.type != "x_transformer":
+        return False
+    if branches:
+        candidates = (conf.steps[:1] if conf.steps else ()) + conf.branches
+    else:
+        candidates = (nexts[0],) if nexts else ()
+    return all(c.type != "model" or c.module in ("loader", "predict") for c in candidates)
+
+
+_RULES = (_orphan_transformer_rule,)
+
+
 def _print_dag(workflow, title="DAG Structure"):
     """打印DAG结构"""
     print(f"\n=== {title} ===")
@@ -89,7 +104,7 @@ class TestDAGScenarios:
         task_yaml = Path("tests/test_scenario_1.yaml")
         task_yaml.write_text(config)
         try:
-            builder = Builder(str(task_yaml))
+            builder = Builder(str(task_yaml), structural_rules=_RULES)
             workflow = builder.build()
 
             assert len(workflow.starts) == 1
@@ -126,7 +141,7 @@ class TestDAGScenarios:
         task_yaml = Path("tests/test_scenario_2.yaml")
         task_yaml.write_text(config)
         try:
-            workflow = Builder(str(task_yaml)).build()
+            workflow = Builder(str(task_yaml), structural_rules=_RULES).build()
             assert len(workflow.starts) == 1
             a = workflow.starts[0]
             # A2 (x_transformer) 为无子节点的孤儿分支，按规则剪除；剩 A1、A3
@@ -159,7 +174,7 @@ class TestDAGScenarios:
         task_yaml = Path("tests/test_scenario_3.yaml")
         task_yaml.write_text(config)
         try:
-            workflow = Builder(str(task_yaml)).build()
+            workflow = Builder(str(task_yaml), structural_rules=_RULES).build()
             assert len(workflow.starts) == 1
             a = workflow.starts[0]
             # A2 (x_transformer) 为无子节点的孤儿分支，按规则剪除；只剩 A1
@@ -192,7 +207,7 @@ class TestDAGScenarios:
         task_yaml = Path("tests/test_scenario_3b.yaml")
         task_yaml.write_text(config)
         try:
-            workflow = Builder(str(task_yaml)).build()
+            workflow = Builder(str(task_yaml), structural_rules=_RULES).build()
             # A2 (x_transformer) 为无子节点的孤儿分支，按规则剪除；placeholder 退化为单分支，A1 直接做起点
             assert len(workflow.starts) == 1
             start_names = {s.conf.name for s in workflow.starts}
@@ -233,7 +248,7 @@ class TestDAGScenarios:
         task_yaml = Path("tests/test_scenario_4.yaml")
         task_yaml.write_text(config)
         try:
-            workflow = Builder(str(task_yaml)).build()
+            workflow = Builder(str(task_yaml), structural_rules=_RULES).build()
             assert len(workflow.starts) >= 1
 
             all_tasks = set()
@@ -284,7 +299,7 @@ class TestDAGScenarios:
         task_yaml = Path("tests/test_scenario_5.yaml")
         task_yaml.write_text(config)
         try:
-            workflow = Builder(str(task_yaml)).build()
+            workflow = Builder(str(task_yaml), structural_rules=_RULES).build()
             assert len(workflow.starts) == 1
 
             a = workflow.starts[0]
@@ -374,7 +389,7 @@ class TestExecutionOrderLIFO:
         task_yaml = tmp_path / "test_lifo.yaml"
         task_yaml.write_text(config)
 
-        workflow = Builder(str(task_yaml)).build()
+        workflow = Builder(str(task_yaml), structural_rules=_RULES).build()
         workflow.run()
 
         assert self.order == ["load", "cv", "encoder", "RF", "CAT", "LGBM", "XGB", "plot"], (

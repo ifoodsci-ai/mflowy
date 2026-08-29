@@ -50,6 +50,21 @@ def _print_mermaid_dag(workflow):
 
 
 _STEPS = ("load", "clean", "X_y", "x_transformer", "cross_validate", "model", "plot", "statistic")
+
+
+def _orphan_transformer_rule(branches, conf, nexts):
+    """x_transformer 孤儿剪枝规则替身——driver 测试不 import builtin（依赖边界铁律），
+    只测 Builder 的规则注入机制与 DAG 拓扑；真实域规则行为在 builtin test_step_options 覆盖。"""
+    if conf.type != "x_transformer":
+        return False
+    if branches:
+        candidates = (conf.steps[:1] if conf.steps else ()) + conf.branches
+    else:
+        candidates = (nexts[0],) if nexts else ()
+    return all(c.type != "model" or c.module in ("loader", "predict") for c in candidates)
+
+
+_RULES = (_orphan_transformer_rule,)
 _MODULE_NAMES = ["csv", "common_filter", "standard_scaler", "XGBoost", "correlation_heatmap", "test"]
 
 
@@ -83,7 +98,7 @@ workflow:
         task_yaml.write_text(config_content)
 
         try:
-            builder = Builder(str(task_yaml))
+            builder = Builder(str(task_yaml), structural_rules=_RULES)
             workflow = builder.build()
 
             _print_mermaid_dag(workflow)
