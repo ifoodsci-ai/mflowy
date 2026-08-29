@@ -4,6 +4,7 @@
 entry points 声明，此模块仅提供查询接口。
 """
 
+import dataclasses
 import inspect
 import logging
 import types as std_types
@@ -136,8 +137,11 @@ def format_param_type(t):
 
     name = origin.__name__ if origin else t.__name__
     inner = ", ".join(format_param_type(a) for a in args)
-    if name == "ContinuousSpace":
-        return f"{name}[{inner}](start, end, step)"
-    if name == "DiscreteSpace":
+    # 通用泛化（零类名知识）：dataclass 附字段名清单，list 子类附 choices——
+    # 搜索空间等插件数据结构的 schema 自描述由此免费获得
+    cls = origin or t
+    if isinstance(cls, type) and dataclasses.is_dataclass(cls):
+        return f"{name}[{inner}]({', '.join(f.name for f in dataclasses.fields(cls))})"
+    if isinstance(cls, type) and issubclass(cls, list):
         return f"{name}[{inner}](choices)"
     return f"{name}[{inner}]"
