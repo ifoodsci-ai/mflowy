@@ -150,3 +150,25 @@ class TestStepsToYamlRoundTrip:
         restored = StepConf(**parsed[0])
         assert restored.stop_on_error is True
         assert restored.enabled is True
+
+
+class TestIterStepDicts:
+    def test_recursive_and_skips_non_dict(self):
+        from mflowy.driver.config import iter_step_dicts
+
+        raw = [
+            {"type": "load"},
+            "noise-string",
+            {
+                "type": "placeholder",
+                "steps": [{"type": "clean"}],
+                "branches": [{"type": "model", "steps": [{"type": "plot"}]}],
+            },
+        ]
+        assert [s["type"] for s in iter_step_dicts(raw)] == ["load", "placeholder", "clean", "model", "plot"]
+
+    def test_empty(self):
+        from mflowy.driver.config import iter_step_dicts
+
+        assert list(iter_step_dicts([])) == []
+        assert list(iter_step_dicts(None)) == []

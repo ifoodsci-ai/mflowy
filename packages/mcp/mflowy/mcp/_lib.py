@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
+from mflowy.driver.config import iter_step_dicts
 from mflowy.utils.path import set_task_dir, split_path_to_py_with_target
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -23,19 +24,10 @@ INVERSE_OPTIMIZATION_TEMPLATE = TEMPLATES_DIR / "inverse_optimization.yaml.j2"
 
 def count_model_steps(steps_yaml: str) -> int:
     """统计 modeling_steps 中 type=model 的步骤数（递归 branches/steps）。"""
-
-    def _count(step: dict) -> int:
-        count = 1 if step.get("type") == "model" else 0
-        for key in ("branches", "steps"):
-            for child in step.get(key) or []:
-                if isinstance(child, dict):
-                    count += _count(child)
-        return count
-
     parsed = yaml.safe_load(steps_yaml)
     if not isinstance(parsed, list):
         return 0
-    return sum(_count(s) for s in parsed if isinstance(s, dict))
+    return sum(1 for s in iter_step_dicts(parsed) if s.get("type") == "model")
 
 
 def resolve_data_ref(data: str) -> tuple[Path, str]:

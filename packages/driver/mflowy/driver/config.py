@@ -1,5 +1,6 @@
 """工作流配置模型。step 词表无枚举——身份即 entry point name 前缀，词表 = 运行期注册表。"""
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -24,6 +25,20 @@ def parse_enum[E: Enum](cls: type[E], raw: str) -> E:
 
 # 分组结构标记：placeholder 不是能力，仅作 steps/branches 容器（见 WorkflowConf._simplify_placeholders）
 PLACEHOLDER = "placeholder"
+
+
+def iter_step_dicts(raw_steps: list) -> "Iterator[dict]":
+    """递归遍历局部 steps 列表中的每个步骤字典（含 steps/branches 嵌套）。
+
+    StepConf 的原始同构形态：解析前对步骤树做只读扫描（计数/校验）经此走，
+    消费方不掏字典结构（"steps"/"branches" 键名是 driver 的解析形状知识）。
+    """
+    for step in raw_steps or []:
+        if not isinstance(step, dict):
+            continue
+        yield step
+        for key in ("steps", "branches"):
+            yield from iter_step_dicts(step.get(key) or [])
 
 
 @dataclass
