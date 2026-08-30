@@ -13,17 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   解析绝对路径后显式 `set_data_fingerprint`，`log_load_data_fingerprint` 中间件把更新后的
   workflow_tags 补写到 load 自身 run——modeling_yaml 内部 load 步的数据文件指纹全覆盖
   （多 load 步 `_n` 后缀，同文件幂等，远程引用跳过）
+- **文件指纹 tags**：`Workflow.run(tags=...)` 经 ContextVar 注入、`mlflow_log` 应用到每个 node run——
+  MCP 层为两类文件打指纹（`mflowy.{kind}_sha256` + `mflowy.{kind}_file`）：分析/predict/inverse 的
+  数据文件（`data`）与 modeling 族的 `modeling_yaml`；`py:target` 引用哈希代码文件，远程/缺失
+  引用静默跳过。指纹函数归位 `mflowy.utils.file`（`sha256_of`/`fingerprint_tags`）
 - **params_phaser 插件 SDK**：`@handler(params_phaser=...)` 注册转换器工厂（fn → dict→dict
   转换器），driver 内核对数据结构零感知；builtin 词汇的签名内省转换器迁居
   `builtin_plugins/params_phaser.py`（x_y + model 族 7 模块挂接）
 
-- **文件指纹 tags**：`Workflow.run(tags=...)` 经 ContextVar 注入、`mlflow_log` 应用到每个 node run——
-  MCP 层为两类文件打指纹（`mflowy.{kind}_sha256` + `mflowy.{kind}_file`）：分析/predict/inverse 的
-  数据文件（`data`）与 modeling 族的 `modeling_yaml`；`py:target` 引用哈希代码文件，远程/缺失
-  引用静默跳过。指纹函数归位 `mflowy.utils.file`（`sha256_of`/`fingerprint_tags`）；`file_hash` 工具收敛为 sha256 单算法（定位=变更检查），序列化兜底改用标准库 `asdict`（去 ContinuousSpace 特判）
-
 ### Changed
 
+- **file_hash 工具收敛为 sha256 单算法**（定位=变更检查），返回形 `{path, sha256, size_bytes}`；`_flatten_params` 序列化兜底改用标准库 `asdict`（去 ContinuousSpace 特判）
 - **深度扫描六批次**（组件依赖解耦 / 代码错位 / 同形收编）：
   - 删除死中间件 `log_X_y`（全仓零消费）
   - `format_param_type` 泛化：去 ContinuousSpace/DiscreteSpace 类名特判，dataclass/list 子类

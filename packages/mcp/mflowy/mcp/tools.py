@@ -45,7 +45,7 @@ from .job_provider import get_job_provider as _get_job_provider
 
 def file_hash(
     path: Annotated[str, Field(description="文件绝对路径")],
-) -> dict | str:
+) -> dict:
     """为文件当前内容生成稳定指纹。
 
     何时使用 file_hash：
@@ -53,11 +53,10 @@ def file_hash(
     - 跨阶段篡改检测
     """
     file_path = Path(path)
-
     if not file_path.exists():
-        return f"Error: File not found: {path}"
+        raise FileNotFoundError(f"错误: 文件不存在: {path}")
     if not file_path.is_file():
-        return f"Error: Path is not a file: {path}"
+        raise ValueError(f"错误: 路径不是文件: {path}")
 
     digest = sha256_of(file_path)
     size = file_path.stat().st_size
@@ -66,6 +65,20 @@ def file_hash(
         "sha256": digest,
         "size_bytes": size,
     }
+
+
+def _run_analysis(template: Path, env_extra: dict, file_path: str) -> WorkflowResult:
+    """分析类工具共享编排（本地直调）：引用解析 → Builder 渲染执行，附 data 指纹 tags。"""
+    from mflowy.driver.builder import Builder
+
+    _path, ref = resolve_data_ref(file_path)
+    if not _path.exists():
+        raise FileNotFoundError(f"错误: 文件不存在: {_path}")
+    builder = Builder(
+        task_yaml=template,
+        env={"path_to_data": ref, "dataset_tag": _path.stem, **env_extra},
+    )
+    return builder.build().run(tags=fingerprint_tags("data", file_path))
 
 
 def _requires(step: str, module: str) -> str | None:
@@ -293,22 +306,7 @@ async def data_profile(
     - 不指定目标列的通览；围绕 target 分析改用 eda
     """
 
-    def _run():
-        from mflowy.driver.builder import Builder
-
-        _path, ref = resolve_data_ref(file_path)
-        builder = Builder(
-            task_yaml=DATA_PROFILE_TEMPLATE,
-            env={
-                "path_to_data": ref,
-                "dataset_tag": _path.stem,
-                "sheet": sheet,
-                "skip": skip,
-            },
-        )
-        return builder.build().run(tags=fingerprint_tags("data", file_path))
-
-    return await asyncio.to_thread(_run)
+    return await asyncio.to_thread(_run_analysis, DATA_PROFILE_TEMPLATE, {"sheet": sheet, "skip": skip}, file_path)
 
 
 async def eda(
@@ -331,31 +329,18 @@ async def eda(
     - 特征筛选前识别强相关特征
     """
 
-    def _run():
-        from mflowy.driver.builder import Builder
-
-        _path, ref = resolve_data_ref(file_path)
-        if not _path.exists():
-            raise FileNotFoundError(f"错误: 文件不存在: {_path}")
-        targets = [target] if isinstance(target, str) else target
-        cat_cols_list = [cat_cols] if isinstance(cat_cols, str) else cat_cols
-        builder = Builder(
-            task_yaml=EDA_TEMPLATE,
-            env={
-                "path_to_data": ref,
-                "dataset_tag": _path.stem,
-                "sheet": sheet,
-                "skip": skip,
-                "corr_method": corr_method,
-                "target": targets,
-                "cat_cols": cat_cols_list,
-                "top_k_high_correlated": top_k,
-                "lowess_frac": lowess_frac,
-            },
-        )
-        return builder.build().run(tags=fingerprint_tags("data", file_path))
-
-    return await asyncio.to_thread(_run)
+    targets = [target] if isinstance(target, str) else target
+    cat_cols_list = [cat_cols] if isinstance(cat_cols, str) else cat_cols
+    env_extra = {
+        "sheet": sheet,
+        "skip": skip,
+        "corr_method": corr_method,
+        "target": targets,
+        "cat_cols": cat_cols_list,
+        "top_k_high_correlated": top_k,
+        "lowess_frac": lowess_frac,
+    }
+    return await asyncio.to_thread(_run_analysis, EDA_TEMPLATE, env_extra, file_path)
 
 
 async def infer_task_type_by_statistic(
@@ -370,27 +355,10 @@ async def infer_task_type_by_statistic(
     - 不确定 target 按回归还是分类建模
     """
 
-    def _run():
-        from mflowy.driver.builder import Builder
-
-        _path, ref = resolve_data_ref(file_path)
-        if not _path.exists():
-            raise FileNotFoundError(f"错误: 文件不存在: {_path}")
-        targets = target if isinstance(target, list) else [target]
-        target_param = targets[0] if len(targets) == 1 else targets
-        builder = Builder(
-            task_yaml=INFER_TASK_TYPE_TEMPLATE,
-            env={
-                "path_to_data": ref,
-                "dataset_tag": _path.stem,
-                "sheet": sheet,
-                "skip": skip,
-                "target_or_targets": target_param,
-            },
-        )
-        return builder.build().run(tags=fingerprint_tags("data", file_path))
-
-    return await asyncio.to_thread(_run)
+    targets = target if isinstance(target, list) else [target]
+    target_param = targets[0] if len(targets) == 1 else targets
+    env_extra = {"sheet": sheet, "skip": skip, "target_or_targets": target_param}
+    return await asyncio.to_thread(_run_analysis, INFER_TASK_TYPE_TEMPLATE, env_extra, file_path)
 
 
 # ── modeling 工具（JobProvider 委派） ───────────────────────────────────────

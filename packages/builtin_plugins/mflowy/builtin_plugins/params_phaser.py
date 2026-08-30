@@ -7,6 +7,7 @@ driver 内核对数据结构零感知（@handler 的 ``params_phaser`` 由插件
 """
 
 import logging
+from collections.abc import Callable
 from enum import Enum
 from typing import Annotated, get_args, get_origin, get_type_hints
 
@@ -15,7 +16,7 @@ from mflowy.builtin_plugins.model.study import ContinuousSpace, DiscreteSpace, P
 logger = logging.getLogger(__name__)
 
 
-def annotated_params_phaser(fn) -> "callable":
+def annotated_params_phaser(fn) -> Callable[[dict], dict]:
     """从 handler 函数签名构建参数转换器：``Annotated`` 参数按类型转换，其余透传。"""
     try:
         hints = get_type_hints(fn, include_extras=True)

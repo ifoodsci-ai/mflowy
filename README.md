@@ -40,7 +40,7 @@ System_Boundary(sys, "MFlowy —— uv workspace · PEP 420 namespace · 五 dis
     Container(mcp, "mflowy-mcp", "MCP 层", "全部工具定义（tools.py）· mcpSrv stdio server · cmd JSON runner · JobProvider 执行策略 · 遥测")
     Container(plugins, "mflowy-builtin-plugins", "内置能力插件", "8 个 step 族 × 61 模块（load/clean/X_y/x_transformer/cross_validate/model/plot/statistic）+ Get*·inject*·log_* 注入器 + 构建期扫描 hook")
     Container(driver, "mflowy-driver", "DAG 内核", "Builder YAML 编译 · Context DAG · LIFO 拓扑调度 · discover 插件目录（零 import 查询/惰性加载）· @handler 插件 SDK + mlflow/stop_on_error 默认尾链")
-    Container(utils, "mflowy-utils", "共享工具", "mlflow 封装 · optuna 搜索空间 · jinja 沙箱 · 日志与 stdout 捕获 · 脚本安全门")
+    Container(utils, "mflowy-utils", "共享工具", "mlflow 封装 · jinja 沙箱 · 日志与 stdout 捕获 · 文件指纹 · 脚本安全门")
 }
 
 System_Boundary(eco, "第三方生态") {

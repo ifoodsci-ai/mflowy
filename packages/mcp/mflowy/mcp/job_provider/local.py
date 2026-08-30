@@ -51,9 +51,7 @@ def _build_modeling_steps(
     steps_text = read_text(modeling_steps_yaml)
     builder = Builder(
         MODELING_TEMPLATE,
-        prune_model_step(
-            "", model=model
-        ),  # experiment_id="" 是 dead param：model 严格 module=run_id，_resolve_run_id_map 第一分支早返回
+        prune_model_step(model=model),  # model 严格 module=run_id，_resolve_run_id_map 第一分支早返回不查 MLflow
         env={
             "modeling_steps": steps_text,
             "multi_model": False,
@@ -83,7 +81,6 @@ class LocalJobProvider:
     ) -> WorkflowResult:
         def _run():
             from mflowy.builtin_plugins.model.step_options import resume_model_step
-            from mflowy.driver.builder import Builder
 
             if not exists(modeling_steps_yaml):
                 raise FileNotFoundError(f"错误: 文件不存在: {modeling_steps_yaml}")
@@ -127,7 +124,6 @@ class LocalJobProvider:
         headers: Mapping[str, str] | None = None,
     ) -> WorkflowResult:
         def _run():
-            from mflowy.driver.builder import Builder
 
             _validate_model_arg(model)
             if not exists(modeling_steps_yaml):
@@ -158,7 +154,6 @@ class LocalJobProvider:
         headers: Mapping[str, str] | None = None,
     ) -> WorkflowResult:
         def _run():
-            from mflowy.driver.builder import Builder
 
             _validate_model_arg(model)
             _, data_path = resolve_data_ref(data)
@@ -191,7 +186,6 @@ class LocalJobProvider:
         headers: Mapping[str, str] | None = None,
     ) -> WorkflowResult:
         def _run():
-            from mflowy.driver.builder import Builder
 
             _validate_model_arg(model)
             _, data_path = resolve_data_ref(data)

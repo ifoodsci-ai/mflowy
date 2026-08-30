@@ -307,3 +307,40 @@ steps:
         # LGBM 未命中，保持原状继续训练
         lgbm = next(b for b in placeholder.branches if b.module == "LGBM")
         assert lgbm.enabled is True
+
+
+class TestXTransformerRulePlaceholder:
+    """placeholder 穿透：消费者藏在容器后代里，浅查会误剪（review 修复回归）"""
+
+    def test_serial_transformer_before_placeholder_with_models_kept(self, tmp_path):
+        yaml = tmp_path / "w.yaml"
+        yaml.write_text(
+            """
+workflow:
+  name: t
+  steps:
+    - {name: scaler, type: x_transformer, module: standard_scaler}
+    - name: models
+      steps:
+      - {name: XGB, type: model, module: XGB}
+"""
+        )
+        builder = Builder(str(yaml), structural_rules=(prune_x_transformer_step,))
+        steps = builder.config.workflow.steps
+        assert steps[0].type == "x_transformer"  # 有消费者（placeholder 后代）不剪
+
+    def test_serial_transformer_before_placeholder_with_loaders_pruned(self, tmp_path):
+        yaml = tmp_path / "w.yaml"
+        yaml.write_text(
+            """
+workflow:
+  name: t
+  steps:
+    - {name: scaler, type: x_transformer, module: standard_scaler}
+    - name: reused
+      steps:
+      - {name: m, type: model, module: loader}
+"""
+        )
+        builder = Builder(str(yaml), structural_rules=(prune_x_transformer_step,))
+        assert all(s.type != "x_transformer" for s in builder.config.workflow.steps)

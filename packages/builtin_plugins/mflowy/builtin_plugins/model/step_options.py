@@ -53,7 +53,7 @@ def _resolve_run_id_map(experiment_id: str, module: str, run_id: str) -> dict[st
     return all_model_runs
 
 
-def prune_model_step(experiment_id: str, model: str | None = None) -> BuilderOption:
+def prune_model_step(experiment_id: str | None = None, model: str | None = None) -> BuilderOption:
     """shap-explanation / modeling --prune-missing 用：命中的 model.xxx 替换为 loader，未命中的 enabled=False 剪枝。
 
     Args:
@@ -123,18 +123,25 @@ def resume_model_step(experiment_id: str) -> BuilderOption:
     return option
 
 
+def _consumes_transformer(conf: StepConf) -> bool:
+    """conf 或其后代中存在消费 transformer 的 model 步（非 loader/predict）。
+
+    递归穿透 placeholder 容器——`[scaler, placeholder(branches: [models])]` 形态下
+    消费者藏在容器后代里，浅查会把有消费者的 transformer 误剪（review 修复）。
+    """
+    if conf.type == "model" and conf.module not in ("loader", "predict"):
+        return True
+    return any(_consumes_transformer(c) for c in (*conf.steps, *conf.branches))
+
+
 def prune_x_transformer_step(branches: bool, conf: StepConf, nexts: tuple[StepConf, ...]) -> bool:
     if conf.type != "x_transformer":
         return False
-    next_not_need_x_transformer = True
 
-    candidates = ()
+    candidates: tuple[StepConf, ...] = ()
     if branches:
         candidates = (conf.steps[:1] if conf.steps else ()) + conf.branches
     elif nexts:
         candidates = (nexts[0],)
 
-    for ca in candidates:
-        next_not_need_x_transformer &= ca.type != "model" or ca.module in ("loader", "predict")
-
-    return next_not_need_x_transformer
+    return not any(_consumes_transformer(c) for c in candidates)

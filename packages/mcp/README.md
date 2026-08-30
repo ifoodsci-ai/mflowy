@@ -15,13 +15,13 @@ MFlowy 以 MCP 为架构主体：本包的 `tools.py` 定义全部工具（pyfun
 | info | `list_modules` / `get_module_info` / `validate_modeling_steps` / `file_hash` | 始终本地（base 依赖够用） |
 | 分析 | `data_profile` / `eda` / `infer_task_type_by_statistic` | 始终本地（轻量、无跨环境状态） |
 | 建模 | `modeling` / `explanation` / `predict` / `inverse_optimization` | **JobProvider 委派** |
-| mlflow | `list_runs` / `get_run` / `list_run_artifacts` / `get_more_tools` | 始终本地 |
+| mlflow | `list_runs` / `get_run` / `list_run_artifacts` | 始终本地 |
 
 建模类经 JobProvider 委派：内置 `local` 实现（LocalJobProvider，[modeling] extra 直调 driver 编排），远程实现接管执行环境。
 
 ## JobProvider：接入自定义执行环境
 
-MFlowy 不内置绑定任何远程执行平台。实现 `JobProvider` 协议（`mcp/mcp/job_provider/protocol.py`）的 **4 个类型化方法**（每个方法带 `headers: Mapping[str, str] | None` 透传请求元数据，MCP 客户端经 `call_tool(meta={...})` 携带），即可把建模工具委派到任意执行环境——K8s Job、远程集群、Serverless 均可。方法签名以 protocol.py 为准（本文不复述，防漂移）；契约行为由 `tests/mcp/test_job_provider.py` / `test_tools_headers.py` 锁定。
+MFlowy 不内置绑定任何远程执行平台。实现 `JobProvider` 协议（`mcp/job_provider/protocol.py`）的 **4 个类型化方法**（每个方法带 `headers: Mapping[str, str] | None` 透传请求元数据，MCP 客户端经 `call_tool(meta={...})` 携带），即可把建模工具委派到任意执行环境——K8s Job、远程集群、Serverless 均可。方法签名以 protocol.py 为准（本文不复述，防漂移）；契约行为由 `tests/mcp/test_job_provider.py` / `test_tools_headers.py` 锁定。
 
 启用方式：
 

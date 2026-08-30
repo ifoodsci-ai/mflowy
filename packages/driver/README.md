@@ -88,7 +88,7 @@ sequenceDiagram
 |------|------|------|
 | 模板渲染 | `builder.py: _load_yaml` | `{{ var }}` 注入 `env` 参数；生产入口多为模板而非手写 YAML（见「模板与片段组合」） |
 | 配置解析 | `config.py: StepConf.__post_init__` | 递归 dataclass 化，同时触发该模块的参数类型转换（惰性 `get_post_init`） |
-| 配置变换 | `builder_options.py` | BuilderOption 逐 step 应用，发生在 `Builder.__init__` 解析期 |
+| 配置变换 | `Builder.__init__` 解析期逐 step 应用 `BuilderOption`；结构剪枝经 `structural_rules`（契约见「扩展点速查」） |
 | 验证/简化 | `config.py: validate` | `build()` 触发；空占位删除、单层嵌套提升 |
 | DAG 构建 | `builder.py: _build_tasks` | 前序遍历，串行 `steps` 链接、并行 `branches` 分叉；模块存在性在此校验（对目录，零 import） |
 | 调度执行 | `workflow.py: run` | 见下 |

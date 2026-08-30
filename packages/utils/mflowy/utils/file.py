@@ -19,10 +19,10 @@ def exists(path: str) -> bool:
     return Path(path).exists()
 
 
-def sha256_of(path: Path, chunk: int = 8 * 1024 * 1024) -> str:
+def sha256_of(path: str | Path, chunk: int = 8 * 1024 * 1024) -> str:
     """分块流式 sha256（file_hash 工具与指纹 tags 共用）。"""
     hasher = hashlib.sha256()
-    with open(path, "rb") as f:
+    with open(Path(path), "rb") as f:
         for block in iter(lambda: f.read(chunk), b""):
             hasher.update(block)
     return hasher.hexdigest()

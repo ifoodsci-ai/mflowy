@@ -36,12 +36,19 @@ def test_file_hash_streams_chunks(tmp_path):
     assert result["sha256"] == hashlib.sha256(payload).hexdigest()
 
 
-def test_file_hash_missing_file_returns_error():
-    assert file_hash("/no/such/file.csv").startswith("Error: File not found")
+def test_file_hash_missing_file_raises():
+    """错误契约统一：与 validate 等一致抛异常（runner/MCP 层标准错误通道），不返错误字符串"""
+    import pytest
+
+    with pytest.raises(FileNotFoundError, match="文件不存在"):
+        file_hash("/no/such/file.csv")
 
 
-def test_file_hash_directory_returns_error(tmp_path):
-    assert file_hash(str(tmp_path)).startswith("Error: Path is not a file")
+def test_file_hash_directory_raises(tmp_path):
+    import pytest
+
+    with pytest.raises(ValueError, match="路径不是文件"):
+        file_hash(str(tmp_path))
 
 
 def test_list_modules_groups():

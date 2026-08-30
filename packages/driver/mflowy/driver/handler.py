@@ -20,7 +20,6 @@ logger = logging.getLogger(__name__)
 
 type Handler[R] = Callable[Concatenate[Context, ...], R]
 type Middleware[R] = Callable[[Context, Handler], R]
-type ParamsPostInit = Callable[[dict[str, object]], dict[str, object]]
 
 
 def handler[R](*middlewares: Middleware, params_phaser: Callable | None = None):
