@@ -1,0 +1,42 @@
+[project]
+name = "mflowy-mcp"
+version = "0.2.0"
+description = "MFlowy MCP layer — stdio server, tools, JSON runner, JobProviders"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "mflowy-driver",
+]
+
+[project.optional-dependencies]
+# server 形态：SDK + 遥测（runner 路径零依赖，裸装即用）
+mcp = [
+    # MCP 工具层（server 直接导入 mcp.server.mcpserver，需 SDK ≥2.0）
+    "mcp>=2.0.0",
+    # MCP 遥测采集（agentcat.track 纯 OTLP 模式，懒加载；缺失时遥测降级 off）
+    "agentcat>=2.0.2",
+    # 遥测设备指纹（machine-id，跨平台；仅 Windows 需 winregistry）
+    "py-machineid>=1.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# namespace 包（PEP 420）：mflowy/ 即 portion，wheel 产出 mflowy/<pkg>；
+# editable 经 dev-mode-dirs 指向包根，多成员 portion 合成，零拷贝真 editable
+packages = ["mflowy"]
+dev-mode-dirs = ["."]
+
+[tool.hatch.build.targets.sdist]
+include = ["mflowy", "pyproject.toml"]
+
+[tool.uv.sources]
+mflowy-driver = { workspace = true }
+
+[project.scripts]
+# 双入口重命名：mflowy = CLI（JSON runner，原 cmd）；mflowy-mcp = MCP server（原 mcpSrv）
+mflowy = "mflowy.mcp.runner:main"
+mflowy-mcp = "mflowy.mcp.server:main"

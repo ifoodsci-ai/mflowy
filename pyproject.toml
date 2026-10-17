@@ -1,14 +1,6 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-# 标准 src 布局：src/mflowy/ — 目录含 src 层（不进 import 路径），包名 = 发布名
-packages = ["src/mflowy"]
-
 [project]
 name = "mflowy"
-version = "0.1.2"
+version = "0.2.0"
 description = "MCP-native ML capability layer for autonomous data-analysis / model-training / prediction agents — enumerable MCP tool catalog composed into traceable YAML-DAG experiment workflows"
 readme = "README.md"
 license = "MIT"
@@ -24,25 +16,11 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-
-# base = 仅信息查询能力（list_modules / get_module_info / validate / mlflow queries），不拉数据栈。
-# 数据分析工具（data_profile / eda / infer_task_type_by_statistic）装 [stats] extra；
-# 建模工具（modeling / explanation / predict / inverse_optimization）装 [modeling] extra（含 stats）。
-# 完全体：uvx --from "mflowy[modeling] @ file://<abs_path>" mcpSrv
+# 聚合包：五 distribution 锁步版本（tests/test_workspace.py 断言一致）
 dependencies = [
-    # 配置解析 / 模板
-    "pyyaml>=6.0",
-    "jinja2>=3.1.0",
-    # MCP 工具层（server 直接导入 mcp.server.mcpserver，需 SDK ≥2.0）
-    "mcp>=2.0.0",
-    # mlflow 查询（直调 SDK 连 tracking DB）
-    "mlflow>=3.14",
-    # MCP 遥测采集（agentcat.track 纯 OTLP 模式，懒加载；缺失时遥测降级 off）
-    "agentcat>=2.0.2",
-    # 遥测设备指纹（machine-id，跨平台；仅 Windows 需 winregistry）
-    "py-machineid>=1.0.0",
-    # 工具参数描述注解（Annotated[..., Field]；mcp SDK 传递依赖，因直接 import 显式声明）
-    "pydantic>=2.0",
+    "mflowy-utils",
+    "mflowy-driver",
+    "mflowy-mcp",
 ]
 
 [project.urls]
@@ -50,64 +28,37 @@ Repository = "https://github.com/ifoodsci-ai/mflowy"
 Issues = "https://github.com/ifoodsci-ai/mflowy/issues"
 Documentation = "https://github.com/ifoodsci-ai/mflowy#readme"
 
-[project.scripts]
-# JSON runner — K8s Job 容器 + subprocess 通用入口
-cmd = "mflowy.mcp.runner:main"
-# MCP server — stdio transport
-mcpSrv = "mflowy.mcp.server:main"
-
 [project.optional-dependencies]
-# ─── stats：数据分析工具（data_profile / eda / infer_task_type_by_statistic） ───
-stats = [
-    # http_loader（LOAD 步 HTTP 拉取）
-    "requests>=2.31",
-    # csv/xlsx/parquet 支持
-    "pyarrow>=12.0.0",
-    "openpyxl>=3.1.0",
-    # 数据处理
-    "pandas>=2.2,<3",
-    "numpy>=2.0.0",
-    "scipy>=1.17.0",
-    # 可视化
-    "matplotlib>=3.11.0",
-    "seaborn>=0.13.0",
-    # eda 目标趋势平滑（target_trend_by_numeric 的 lowess）
-    "statsmodels>=0.14.0",
-]
-# ─── modeling：建模工具（modeling / explanation / predict / inverse_optimization） ───
-modeling = [
-    # 建模编排含 load/clean/plot 全栈，复用 stats extra
-    "mflowy[stats]",
-    # 机器学习
-    "scikit-learn>=1.9.0",
-    # 实验追踪（mlflow 已在 base；此处 postgres 直连）
-    "psycopg2-binary>=2.9.0",
-    # 多标签 stratified_k_fold 支持
-    "iterative-stratification>=0.1.9",
-    # 模型框架
-    "torch>=2.12.0",
-    "pytorch-lightning>=2.6.5",
-    "lightgbm>=4.6.0",
-    "xgboost-cpu>=3.0.0",
-    "catboost>=1.2",
-    # 超参优化
-    "optuna>=4.8.0",
-    # 模型解释
-    "shap>=0.52.0",
-    "numba>=0.59.0,<0.61",
-    "llvmlite>=0.42.0",
-]
+# extras = 域选择器（2.0.0 起）：装哪个域包即得哪个域，重栈为域包硬依赖；
+# [deep] = torch 栈（仅 MLP flavor，uvx 需 CPU 索引）；[stats]/[modeling] 已退役
+data = ["mflowy-data"]
+model = ["mflowy-model"]
+mcp = ["mflowy-mcp[mcp]"]
+deep = ["mflowy-model[deep]"]
+
+[tool.uv.workspace]
+members = ["packages/utils", "packages/driver", "packages/builtin_plugins/*", "packages/mcp"]
+
+[tool.uv.sources]
+mflowy-utils = { workspace = true }
+mflowy-driver = { workspace = true }
+mflowy-data = { workspace = true }
+mflowy-model = { workspace = true }
+mflowy-mcp = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# 聚合包无自有代码：README 作 namespace 目录内容占位（PEP 420 禁止 mflowy/__init__.py）
+force-include = { "README.md" = "mflowy/README.md" }
+
+[tool.hatch.build.targets.sdist]
+include = ["README.md", "pyproject.toml"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-addopts = "-v --tb=short"
-filterwarnings = [
-    "ignore::DeprecationWarning",
-    "ignore::FutureWarning",
-]
+testpaths = ["tests", "packages"]
 
 [tool.ruff]
 line-length = 120
@@ -116,8 +67,15 @@ exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
 # E4/E7/E9/F: pycodestyle 核心错误 + pyflakes；I: import 排序；UP035/UP037: 废弃导入/引号注解
-select = ["E4", "E7", "E9", "F", "I", "UP035", "UP037"]
-per-file-ignores = { "src/mflowy/compute/plots/**" = ["F403", "F405"], "src/mflowy/compute/plots/model_evaluation/regression/_taylor_diagram_copin.py" = ["E741"] }  # 后者：vendored 第三方代码（public domain），原样保留
+# B: bugbear 真 bug 面（B905 zip 显式 strict / B904 raise-from / B018 无效表达式等）；RUF: ruff 专属扩展
+select = ["E4", "E7", "E9", "F", "I", "UP035", "UP037", "B", "RUF"]
+ignore = [
+    "RUF001", "RUF002", "RUF003", # 中文文档仓库：docstring/注释/字符串内全角标点为有意用法
+    "B008",                       # 签名即搜索空间：Space(...) 声明式默认值是设计而非缺陷（extract_search_spaces 反射消费）
+]
+# "**/tests/**" RUF059：测试解包惯用法（fixture 三元组取部分）非缺陷；
+# 其余条目：vendored 原样保留 / hatch hook E402 / 段三在飞文件域内命中随其改写收编后移除豁免
+per-file-ignores = { "**/tests/**" = ["RUF059"], "packages/builtin_plugins/model/mflowy/model/plot/model_evaluation/regression/_taylor_diagram_copin.py" = ["E741", "B905"], "packages/builtin_plugins/data/hatch_metadata.py" = ["E402"], "packages/builtin_plugins/model/hatch_metadata.py" = ["E402"], "packages/builtin_plugins/model/mflowy/model/model/mlp.py" = ["B006"], "packages/builtin_plugins/model/mflowy/model/model/_pipeline.py" = ["B905", "RUF007"], "packages/builtin_plugins/model/tests/model/test_model_pipeline.py" = ["B018", "RUF012"], "packages/builtin_plugins/data/mflowy/data/cleaning_session.py" = ["RUF100"], "packages/builtin_plugins/data/mflowy/data/tools.py" = ["RUF013"], "packages/builtin_plugins/model/mflowy/model/model/types.py" = ["RUF100"], "packages/builtin_plugins/model/tests/test_modeling_session.py" = ["RUF043"], "packages/builtin_plugins/model/tests/model/test_study.py" = ["RUF100"], "packages/builtin_plugins/model/tests/model/trees/test_xgboost.py" = ["RUF100"] }
 
 [tool.ruff.format]
 exclude = ["*.ipynb"]
@@ -125,8 +83,8 @@ exclude = ["*.ipynb"]
 [tool.uv]
 index-url = "https://mirrors.aliyun.com/pypi/simple/"
 
-[tool.uv.sources]
-torch = { index = "pytorch-cpu" }
+[tool.uv.sources.torch]
+index = "pytorch-cpu"
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
@@ -138,10 +96,9 @@ dev = [
     "pytest>=7.0",
     "ruff>=0.15.8",
     "pre-commit>=3.0",
+    # 测试面含 telemetry/schema 契约（模块级 import SDK）——dev 环境须带 server 形态
+    "mflowy-mcp[mcp]",
 ]
 jupyter = [
     "nbformat>=5.10.4",
-    "nbconvert>=7.17.1",
-    "ipykernel>=7.2.0",
-    "papermill>=2.7.0",
 ]

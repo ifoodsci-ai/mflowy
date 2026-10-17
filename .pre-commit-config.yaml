@@ -18,12 +18,13 @@ repos:
       - id: check-added-large-files
         # 案例图 1-4MB、visualization.ipynb 8.3MB 为有意提交内容；23MB+ 数据集不入库（见 .gitignore）
         args: [--maxkb=10240]
-  # UT 硬关卡：与 CI 相同的 pytest 入口，提交前本地跑一遍
+  # UT 硬关卡：提交前本地跑一遍——根 tests/=workspace 完整性 + utils/driver 全量（秒级），
+  # 本地门对齐 CI 面；两域包慢测（训练/绘图）仍由 CI 兜底
   - repo: local
     hooks:
       - id: pytest
         name: pytest
-        entry: uv run pytest tests/
+        entry: uv run pytest -q tests/ packages/utils packages/driver
         language: system
         pass_filenames: false
         always_run: true

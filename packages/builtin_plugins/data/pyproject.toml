@@ -1,0 +1,58 @@
+[project]
+name = "mflowy-data"
+version = "0.2.0"
+description = "MFlowy data domain — load / statistic / detect / clean + plot（数据清洗 MDP 的动作域；第三方插件包的活参考）"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+# 2.0.0 起数据栈为硬依赖：装包即得完整数据域（词表=已安装能力）
+dependencies = [
+    "mflowy-driver",
+    # 图表主题门面（plot 子树共享 mflowy.utils.plot；本包自身仍声明 matplotlib/seaborn）
+    "mflowy-utils[plot]",
+    # http_loader（load 步 HTTP 拉取）
+    "requests>=2.31",
+    # csv/xlsx/parquet 支持
+    "pyarrow>=12.0.0",
+    "openpyxl>=3.1.0",
+    # 数据处理
+    "pandas>=2.2,<3",
+    "numpy>=2.0.0",
+    "scipy>=1.17.0",
+    # 可视化
+    "matplotlib>=3.11.0",
+    "seaborn>=0.13.0",
+    # eda 目标趋势平滑（lowess）
+    "statsmodels>=0.14.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# namespace 包（PEP 420）：mflowy/ 即 portion，wheel 产出 mflowy/<pkg>；
+# editable 经 dev-mode-dirs 指向包根，多成员 portion 合成，零拷贝真 editable
+packages = ["mflowy"]
+dev-mode-dirs = ["."]
+
+[tool.hatch.build.targets.sdist]
+include = ["mflowy", "pyproject.toml"]
+
+
+[tool.uv.sources]
+mflowy-driver = { workspace = true }
+mflowy-utils = { workspace = true }
+
+[tool.mflowy.tools]
+# 域工具注册表（手工声明，无装饰器）；hatch 钩子并入 entry points 组 mflowy.tools，
+# 镜像测试断言本表 ≡ mflowy/data/tools.py 公有函数
+data_profile = "mflowy.data.tools:data_profile"
+eda = "mflowy.data.tools:eda"
+propose_questions = "mflowy.data.tools:propose_questions"
+clean_session_start = "mflowy.data.tools:clean_session_start"
+clean_propose = "mflowy.data.tools:clean_propose"
+clean_apply = "mflowy.data.tools:clean_apply"
+clean_rollback = "mflowy.data.tools:clean_rollback"
+clean_finish = "mflowy.data.tools:clean_finish"
+clean_abandon = "mflowy.data.tools:clean_abandon"
