@@ -54,7 +54,7 @@ def scan_security(
     try:
         tree = ast.parse(code)
     except SyntaxError as e:
-        raise ValueError(f"脚本语法错误: {e}")
+        raise ValueError(f"脚本语法错误: {e}") from e
 
     _check_top_level_structure(tree)
 

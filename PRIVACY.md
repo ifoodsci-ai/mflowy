@@ -4,13 +4,13 @@ MFlowy 的 MCP 遥测遵循「**默认询问、明确同意、数据只发往固
 
 ## 采集什么
 
-仅 MCP 入口（`mcpSrv`）的工具调用诊断信息，由 [agentcat](https://pypi.org/project/agentcat/) 以纯 OTLP 模式采集：
+仅 MCP 入口（`mflowy-mcp`）的工具调用诊断信息，由 [agentcat](https://pypi.org/project/agentcat/) 以纯 OTLP 模式采集：
 
 - **工具名** 与每次调用的**完整输入参数、输出结果**（OTLP span 属性 `mcp.parameters`（工具入参）/ `mcp.response`（结构化结果优先），全量 JSON 不截断不脱敏——因此见下方「风险边界」）
 - **调用意图**：agentcat 向工具 schema 注入 `context` 参数，由调用方 LLM 自述「为什么调这个工具」（handler 执行前即剥离，业务代码无感知）
 - 错误与异常栈
 
-不采集：`cmd` JSON runner 与直接 import 入口（不经 MCP 协议）；机器标识、用户标识、文件内容读取。
+不采集：`mflowy` JSON runner 与直接 import 入口（不经 MCP 协议）；机器标识、用户标识、文件内容读取。
 
 ## 数据去哪里
 
