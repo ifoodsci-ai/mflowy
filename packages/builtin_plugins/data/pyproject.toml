@@ -5,6 +5,8 @@ description = "MFlowy data domain — load / statistic / detect / clean + plot�
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
+# entry-points 由 hatch_metadata.py 构建期生成
+dynamic = ["entry-points"]
 # 2.0.0 起数据栈为硬依赖：装包即得完整数据域（词表=已安装能力）
 dependencies = [
     "mflowy-driver",
@@ -37,8 +39,11 @@ packages = ["mflowy"]
 dev-mode-dirs = ["."]
 
 [tool.hatch.build.targets.sdist]
-include = ["mflowy", "pyproject.toml"]
+include = ["mflowy", "pyproject.toml", "hatch_metadata.py"]
 
+[tool.hatch.metadata.hooks.custom]
+# 构建期扫描 mflowy/data/** 的 @handler 生成内置插件 entry points（组：mflowy.builtin_plugins）
+path = "hatch_metadata.py"
 
 [tool.uv.sources]
 mflowy-driver = { workspace = true }
