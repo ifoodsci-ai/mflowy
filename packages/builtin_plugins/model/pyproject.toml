@@ -5,6 +5,8 @@ description = "MFlowy model domain — x_y / cross_validation / x_transformer / 
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
+# entry-points 由 hatch_metadata.py 构建期生成
+dynamic = ["entry-points"]
 # CPU 建模栈为硬依赖；torch 栈隔离进 [deep]（uvx 需 CPU 索引，仅装 MLP 时需要）
 dependencies = [
     "mflowy-data",
@@ -33,8 +35,11 @@ packages = ["mflowy"]
 dev-mode-dirs = ["."]
 
 [tool.hatch.build.targets.sdist]
-include = ["mflowy", "pyproject.toml"]
+include = ["mflowy", "pyproject.toml", "hatch_metadata.py"]
 
+[tool.hatch.metadata.hooks.custom]
+# 构建期扫描 mflowy/model/** 的 @handler 生成内置插件 entry points（组：mflowy.builtin_plugins）
+path = "hatch_metadata.py"
 
 [tool.uv.sources]
 mflowy-data = { workspace = true }

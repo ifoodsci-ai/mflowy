@@ -59,15 +59,6 @@ include = ["README.md", "pyproject.toml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "packages"]
-# 治理③窗口（gov/data merge 点）：data 插件面已就位（load__csv 活，两条摘除），
-# 余下集成测试依赖 model 域词表（x_y/split/XGB/x_transformer）——④ 摘除，⑤ 收口清零。
-addopts = [
-    "--deselect=packages/driver/tests/dag/test_structural_rules.py::TestInteraction::test_rule_sees_post_prune_downstream",
-    "--deselect=packages/driver/tests/dag/test_structural_rules.py::TestInteraction::test_no_rules_keeps_all",
-    "--deselect=packages/driver/tests/test_discover.py::TestCatalog::test_catalog_has_all_steps",
-    "--deselect=packages/driver/tests/test_discover.py::TestDiscoverTable::test_new_plugin_visible_without_cache_reset",
-    "--deselect=packages/driver/tests/test_discover.py::TestDiscoverTable::test_bare_name_lands_in_ungrouped_bucket",
-]
 
 [tool.ruff]
 line-length = 120
