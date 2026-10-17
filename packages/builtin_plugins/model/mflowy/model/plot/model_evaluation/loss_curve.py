@@ -10,8 +10,7 @@ import matplotlib.lines as mlines
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
-
-from ..base import *
+from mflowy.utils.plot import OKABE_ITO_PALETTE, TYPE_COLORS
 
 logger = logging.getLogger(__name__)
 
@@ -28,22 +27,25 @@ def loss_curve(
     """
     types_in_data = sorted(plot_data["type"].unique())
     n_type = len(types_in_data)
+    has_fold = "fold" in plot_data.columns
 
     fig, ax = plt.subplots()
-    sns.lineplot(
-        data=plot_data,
-        x="iteration",
-        y="loss",
-        hue="type",
-        style="type",
-        units="fold",
-        estimator=None,
-        palette=TYPE_COLORS,
-        alpha=0.2,
-        linewidth=1,
-        legend=False,
-        ax=ax,
-    )
+    if has_fold:
+        # 多折细线（半透明）——逐 fold 不聚合
+        sns.lineplot(
+            data=plot_data,
+            x="iteration",
+            y="loss",
+            hue="type",
+            style="type",
+            units="fold",
+            estimator=None,
+            palette=TYPE_COLORS,
+            alpha=0.2,
+            linewidth=1,
+            legend=False,
+            ax=ax,
+        )
 
     sns.lineplot(
         data=plot_data,

@@ -7,26 +7,18 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from typing import TYPE_CHECKING, Annotated
+import logging
+from typing import Annotated
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-
-if TYPE_CHECKING:
-    from shap import Explanation
-
-import logging
-
-from mflowy.driver.config import StepType
+from mflowy.data.middlewares import log_plot
 from mflowy.driver.handler import handler
-from mflowy.middlewares import log_plot
-from mflowy.middlewares.data_inject import inject_plot_data
 from mflowy.utils.constants import RANDOM_STATE
+from mflowy.utils.plot import CMAP_DIVERGING
 
-from ...base import *
-from ...utils import SHAP_MAX_DISPLAY, compute_shap_explanation, shap_explanation_to_df
+from ...utils import SHAP_MAX_DISPLAY, shap_explanation_to_df
 
 logger = logging.getLogger(__name__)
 
@@ -69,9 +61,9 @@ def _density_jitter(values: np.ndarray, width: float, rng: np.random.Generator) 
     return jitter
 
 
-@handler(StepType.PLOT, inject_plot_data(compute_shap_explanation), log_plot)
+@handler(log_plot, namespace="plot")
 def shap_summary(
-    plot_data: Iterator[tuple[str, Explanation, list[str]]],
+    plot_shap_explanation: list[tuple],
     max_display: Annotated[int, "最大显示特征数"] = SHAP_MAX_DISPLAY,
     title: Annotated[str, "图表标题"] = "SHAP Summary Plot",
     bar_alpha: Annotated[float, "条形透明度"] = 0.3,
@@ -83,7 +75,7 @@ def shap_summary(
 
     解读：特征按 mean|SHAP| 排序，条形越长=对模型输出整体影响越大。蜂群散点宽=该 SHAP 值区间样本密集；颜色红=高特征值，蓝=低特征值。看散点偏离零线的方向和颜色梯度判断特征如何推高/拉低预测。
     """
-    for y_name, explanation, categorical_features in plot_data:
+    for y_name, explanation, categorical_features in plot_shap_explanation:
         shap_values = explanation.values
         feature_data = explanation.data
         feature_names = list(explanation.feature_names)

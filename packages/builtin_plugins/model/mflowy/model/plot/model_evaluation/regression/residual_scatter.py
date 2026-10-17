@@ -12,10 +12,9 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib.gridspec import GridSpec
+from mflowy.utils.plot import OKABE_ITO_PALETTE
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from statsmodels.nonparametric.smoothers_lowess import lowess
-
-from ...base import *
 
 
 def residual_scatter(
@@ -33,7 +32,7 @@ def residual_scatter(
 
     prediction_scatter 看整体一致性不暴露条件结构；error_distribution 聚焦误差边缘统计；本图唯一识别"哪段预测范围模型不可靠"。
     """
-    required_cols = ["fold", "y_name", "y_pred", "residual"]
+    required_cols = ["y_name", "y_pred", "residual"]
     if not all(c in plot_data.columns for c in required_cols):
         raise ValueError(f"plot_data 必须包含列：{required_cols}")
 

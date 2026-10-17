@@ -6,9 +6,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+import logging
 from math import ceil
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 
 import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
@@ -16,20 +16,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-
-if TYPE_CHECKING:
-    from shap import Explanation
-
-import logging
-
-from mflowy.driver.config import StepType
+from mflowy.data.middlewares import log_plot
 from mflowy.driver.handler import handler
-from mflowy.middlewares import log_plot
-from mflowy.middlewares.data_inject import inject_plot_data
 from mflowy.utils.constants import RANDOM_STATE
+from mflowy.utils.plot import CMAP_DIVERGING
 
-from ...base import *
-from ...utils import compute_shap_explanation, rank_features, shap_explanation_to_df
+from ...utils import rank_features, shap_explanation_to_df
 
 logger = logging.getLogger(__name__)
 
@@ -76,9 +68,9 @@ def _find_turn_point(x: np.ndarray, y: np.ndarray) -> tuple[float, float] | None
     return best[0], best[1]
 
 
-@handler(StepType.PLOT, inject_plot_data(compute_shap_explanation), log_plot)
+@handler(log_plot, namespace="plot")
 def shap_dependence(
-    plot_data: Iterator[tuple[str, Explanation, list[str]]],
+    plot_shap_explanation: list[tuple],
     feature: Annotated[str | None, "目标特征名"] = None,
     with_fit: Annotated[bool, "是否叠加 LOWESS 拟合线"] = True,
     title: Annotated[str | None, "图表标题"] = None,
@@ -96,7 +88,7 @@ def shap_dependence(
     """
     from statsmodels.nonparametric.smoothers_lowess import lowess
 
-    for y_name, explanation, categorical_features in plot_data:
+    for y_name, explanation, categorical_features in plot_shap_explanation:
         shap_values = explanation.values
         target_features = rank_features(explanation, feature=feature, top_n=top_n)
 

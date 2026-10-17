@@ -14,29 +14,16 @@ from typing import Annotated
 import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
-
-from mflowy.compute.model.types import TASKTYPE
-from mflowy.driver.config import StepType
-from mflowy.driver.context import Context
+from mflowy.data.middlewares import SkipPlotError, log_plot
 from mflowy.driver.handler import handler
-from mflowy.middlewares import log_plot
-from mflowy.middlewares.data_inject import GetMultiModelTestPredictions, GetXy, inject_plot_data
-from mflowy.middlewares.log_plot import SkipPlotError
+from mflowy.model.model.types import TASKTYPE
+from mflowy.utils.plot import OKABE_ITO_PALETTE
 
-from ...base import *
 from ._taylor_diagram_copin import TaylorDiagram
 
 _MARKERS_POOL = ["o", "s", "^", "v", "d", "p", "h", "*", "P", "X"]
-
-
-def _get_taylor_data(ctx: Context) -> pd.DataFrame:
-    """从 ctx 获取多模型测试集预测数据，直接传递给 taylor_diagram 内部计算统计量。"""
-    _, _, task = GetXy(ctx)
-    if task != TASKTYPE.REGRESSION:
-        raise SkipPlotError(f"taylor_diagram 仅适用于回归任务，当前任务类型为 {task.value}，跳过")
-
-    return GetMultiModelTestPredictions(ctx)
 
 
 def _compute_taylor_stats(group: pd.DataFrame) -> tuple[float, float, float, float, float]:
@@ -62,9 +49,9 @@ def _compute_taylor_stats(group: pd.DataFrame) -> tuple[float, float, float, flo
     return sigma_ratio, R, rmse_norm, bias_norm, rmse_total_norm
 
 
-@handler(StepType.PLOT, inject_plot_data(_get_taylor_data), log_plot)
+@handler(log_plot, namespace="plot")
 def taylor_diagram(
-    plot_data: pd.DataFrame,
+    model_test_predictions: tuple,
     title: Annotated[str | None, "图表标题"] = None,
     point_size: Annotated[int, "数据点大小（points）"] = 10,
 ):
@@ -81,6 +68,9 @@ def taylor_diagram(
 
         颜色区分 model（Okabe-Ito 调色板），形状区分 y_name（marker 池），观测参考点固定为黑色。输入格式与 prediction_scatter / confusion_matrix 一致。
     """
+    task, plot_data = model_test_predictions
+    if task != TASKTYPE.REGRESSION:
+        raise SkipPlotError(f"{'仅适用于回归任务'}，当前 {task}，跳过")
     required_cols = ["y_name", "y", "y_pred"]
     if not all(c in plot_data.columns for c in required_cols):
         raise ValueError(f"plot_data 必须包含列：{required_cols}")

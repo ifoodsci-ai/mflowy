@@ -9,27 +9,15 @@ from typing import Annotated
 import matplotlib.lines as mlines
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import seaborn as sns
 from matplotlib.gridspec import GridSpec
+from mflowy.data.middlewares import log_plot
+from mflowy.data.middlewares.log_plot import SkipPlotError
+from mflowy.driver.handler import handler
+from mflowy.model.model.types import TASKTYPE
+from mflowy.utils.plot import TYPE_COLORS
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from sklearn.metrics import r2_score, root_mean_squared_error
-
-from mflowy.driver.config import StepType
-from mflowy.driver.context import Context
-from mflowy.driver.handler import handler
-from mflowy.middlewares import log_plot
-from mflowy.middlewares.data_inject import inject_plot_data
-
-from ...base import *
-from ...utils import build_multi_model_long_df
-
-
-def _get_prediction_scatter_data(ctx: Context) -> pd.DataFrame:
-    """构建 long_df，含 model, fold, type, y_name, y, y_pred 列。"""
-    from mflowy.compute.model.types import TASKTYPE
-
-    return build_multi_model_long_df(ctx, TASKTYPE.REGRESSION, "prediction_scatter")
 
 
 def _subplot_label(i: int) -> str:
@@ -39,9 +27,9 @@ def _subplot_label(i: int) -> str:
     return f"({i + 1})"
 
 
-@handler(StepType.PLOT, inject_plot_data(_get_prediction_scatter_data), log_plot)
+@handler(log_plot, namespace="plot")
 def prediction_scatter(
-    plot_data: pd.DataFrame,
+    model_test_predictions: tuple,
     title: Annotated[str | None, "图表标题"] = None,
     col_wrap: Annotated[int, "每行最多绘制的子图数"] = 3,
     alpha: Annotated[float, "散点透明度"] = 0.6,
@@ -54,7 +42,10 @@ def prediction_scatter(
     当 model 列存在且唯一值 >1 时，同时按 y_name × model 分组子图，col_wrap 固定为模型数；
     否则仅按 y_name 分组，col_wrap 由参数控制。
     """
-    required_cols = ["fold", "y_name", "y", "y_pred"]
+    task, plot_data = model_test_predictions
+    if task != TASKTYPE.REGRESSION:
+        raise SkipPlotError(f"{'仅适用于回归任务'}，当前 {task}，跳过")
+    required_cols = ["y_name", "y", "y_pred"]
     if not all(c in plot_data.columns for c in required_cols):
         raise ValueError(f"plot_data 必须包含列：{required_cols}")
 

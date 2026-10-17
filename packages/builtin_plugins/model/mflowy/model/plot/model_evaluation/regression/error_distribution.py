@@ -15,9 +15,8 @@ import pandas as pd
 import seaborn as sns
 from matplotlib import figure
 from matplotlib.gridspec import GridSpec
+from mflowy.utils.plot import OKABE_ITO_PALETTE
 from scipy import stats as sp_stats
-
-from ...base import *
 
 
 def error_distribution(
@@ -32,9 +31,9 @@ def error_distribution(
     error_distribution 看误差边缘分布的全局统计特性，residual_scatter 看残差 vs 预测值的条件结构（异方差），
     prediction_scatter 看整体校准度。
 
-    df 必须包含列：fold, type, y_name, y, y_pred, error
+    df 必须包含列：type, y_name, y, y_pred, error
     """
-    _REQUIRED = {"fold", "type", "y_name", "y", "y_pred", "error"}
+    _REQUIRED = {"type", "y_name", "y", "y_pred", "error"}
     if missing := _REQUIRED.difference(df.columns):
         raise ValueError(f"df 缺少列：{missing}")
 

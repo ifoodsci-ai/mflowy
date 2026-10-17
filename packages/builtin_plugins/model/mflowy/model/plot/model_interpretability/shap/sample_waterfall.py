@@ -6,31 +6,22 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from typing import TYPE_CHECKING, Annotated
+import logging
+from typing import Annotated
 
 import matplotlib.pyplot as plt
-
-if TYPE_CHECKING:
-    from shap import Explanation
-
-import logging
-
-from mflowy.driver.config import StepType
+from mflowy.data.middlewares import log_plot
 from mflowy.driver.handler import handler
-from mflowy.middlewares import log_plot
-from mflowy.middlewares.data_inject import inject_plot_data
 from mflowy.utils.constants import RANDOM_STATE
 
-from ...base import *
-from ...utils import compute_shap_explanation, shap_explanation_to_df
+from ...utils import shap_explanation_to_df
 
 logger = logging.getLogger(__name__)
 
 
-@handler(StepType.PLOT, inject_plot_data(compute_shap_explanation), log_plot)
+@handler(log_plot, namespace="plot")
 def sample_waterfall(
-    plot_data: Iterator[tuple[str, Explanation, list[str]]],
+    plot_shap_explanation: list[tuple],
     sample_idx: Annotated[int, "指定样本索引"] = 0,
     max_display: Annotated[int, "最大显示特征数"] = 10,
     title: Annotated[str, "图表标题"] = "SHAP Waterfall",
@@ -43,10 +34,10 @@ def sample_waterfall(
     """
     try:
         import shap
-    except ImportError:
-        raise ImportError("shap is required for SHAP plots. Please install it with: pip install shap")
+    except ImportError as e:
+        raise ImportError("shap is required for SHAP plots. Please install it with: pip install shap") from e
 
-    for y_name, explanation, _categorical_features in plot_data:
+    for y_name, explanation, _categorical_features in plot_shap_explanation:
         total = explanation.values.shape[0]
         idx = min(sample_idx, total - 1)
 
