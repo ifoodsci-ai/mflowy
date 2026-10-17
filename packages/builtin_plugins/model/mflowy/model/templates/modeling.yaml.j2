@@ -1,0 +1,27 @@
+name: "{{ name | default('数据建模与分析') }}"
+description: "{{ description | default('[custom](load → clean → cross_validation → pre_process → model)；model handler 内置评估可视化，多模型时叠加对比图') }}"
+flow:
+  {{ modeling_steps | indent(2, blank=True) }}
+
+{% if multi_model %}
+  - plot__prediction_scatter:
+      name: 预测 vs 真实散点图
+
+  - plot__confusion_matrix:
+      name: 混淆矩阵
+
+  - plot__taylor_diagram:
+      name: 模型对比
+
+  - plot__bland_altman:
+      name: Bland-Altman 一致性
+
+  - plot__roc_curve:
+      name: ROC 曲线
+
+  - plot__pr_curve:
+      name: PR 曲线
+
+  - plot__calibration_curve:
+      name: 校准曲线
+{% endif %}

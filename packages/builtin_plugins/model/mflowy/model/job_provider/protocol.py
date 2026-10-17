@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Protocol
 
-from mflowy.driver.workflow import WorkflowResult
+from mflowy.driver.dag import DAGResult
 
 
 class JobProvider(Protocol):
@@ -23,7 +23,7 @@ class JobProvider(Protocol):
         experiment_id: str | None = None,
         prune_missing: bool = False,
         headers: Mapping[str, str] | None = None,
-    ) -> WorkflowResult: ...
+    ) -> DAGResult: ...
 
     async def explanation(
         self,
@@ -34,7 +34,7 @@ class JobProvider(Protocol):
         desc: str,
         lowess_frac: float = 0.3,
         headers: Mapping[str, str] | None = None,
-    ) -> WorkflowResult: ...
+    ) -> DAGResult: ...
 
     async def predict(
         self,
@@ -42,17 +42,17 @@ class JobProvider(Protocol):
         data: str,
         model: str,
         headers: Mapping[str, str] | None = None,
-    ) -> WorkflowResult: ...
+    ) -> DAGResult: ...
 
     async def inverse_optimization(
         self,
         *,
         data: str,
-        model: str = "",
+        model: str,
         direction: dict[str, str] | None = None,
         constraint: dict[str, list | dict] | None = None,
         cross_rules: str | None = None,
         n_trials: int = 10000,
         seed: int = 42,
         headers: Mapping[str, str] | None = None,
-    ) -> WorkflowResult: ...
+    ) -> DAGResult: ...

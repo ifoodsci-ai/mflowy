@@ -1,41 +1,36 @@
 """LocalJobProvider — 完全体直调（[modeling] extra 环境）。
 
 编排逻辑原 lib/cmd/args/*.py 全部迁入此处（lib/cmd/ 已消除）。
-模板从 mflowy/mcp/templates/ 加载。每个方法对应 Protocol 中的一个 compute 工具。
+模板随建模域包居住（mflowy/model/templates/）。每个方法对应 Protocol 中的一个 compute 工具。
 """
 
 from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
-from pathlib import Path
-
-import yaml
 
 from mflowy.driver.builder import Builder
-from mflowy.driver.builder_options import prune_model_step
-from mflowy.driver.serializer import steps_to_yaml
-from mflowy.driver.workflow import WorkflowResult
-from mflowy.utils.file import exists, read_text
-from mflowy.utils.path import set_task_dir, split_path_to_py_with_target
+from mflowy.driver.dag import DAGResult
+from mflowy.driver.serializer import flow_to_yaml
+from mflowy.model.model.step_options import prune_model_step, prune_x_transformer_step
+from mflowy.utils.file import exists, fingerprint_tags, read_text
+from mflowy.utils.path import resolve_data_ref, set_task_dir
 
-TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
-DATA_PROFILE_TEMPLATE = TEMPLATES_DIR / "data_profile.yaml.j2"
-EDA_TEMPLATE = TEMPLATES_DIR / "eda.yaml.j2"
-INFER_TASK_TYPE_TEMPLATE = TEMPLATES_DIR / "infer_task_type.yaml.j2"
-MODELING_TEMPLATE = TEMPLATES_DIR / "modeling.yaml.j2"
-EXPLANATION_TEMPLATE = TEMPLATES_DIR / "explanation.yaml.j2"
-PREDICT_TEMPLATE = TEMPLATES_DIR / "predict.yaml.j2"
-INVERSE_OPTIMIZATION_TEMPLATE = TEMPLATES_DIR / "inverse_optimization.yaml.j2"
+from ..templates import (
+    EXPLANATION_TEMPLATE,
+    INVERSE_OPTIMIZATION_TEMPLATE,
+    MODELING_TEMPLATE,
+    PREDICT_TEMPLATE,
+    count_model_steps,
+)
 
 
 def _validate_model_arg(v: str) -> str:
-    """``model`` 参数校验：必须严格符合 ``module=run_id`` 格式。"""
-    if "=" not in v:
-        raise ValueError(f"必须是 module=run_id 格式（例 XGB=abc123），got: {v!r}")
-    module, rid = v.split("=", 1)
-    if not module.strip() or not rid.strip():
-        raise ValueError(f"module 和 run_id 均不可为空，got: {v!r}")
+    """``model`` 参数校验：必须是裸 ``run_id``（旧 ``flavor=run_id`` 格式已随 flavor 全栈退役废弃）。"""
+    if "=" in v:
+        raise ValueError(f"必须是裸 run_id（flavor 前缀已废弃），got: {v!r}")
+    if not v.strip():
+        raise ValueError(f"run_id 不可为空，got: {v!r}")
     return v
 
 
@@ -47,39 +42,21 @@ def _build_modeling_steps(
 
     Args:
         modeling_steps_yaml: 局部 steps 列表 YAML（与 modeling 工具同一份）
-        model: 单一 model 描述，强制 ``module=run_id`` 格式；
-            传给 prune_model_step 后走 {module: run_id} 早返回分支，不查 MLflow
+        model: 单一 model 的裸 run_id（flavor/module= 前缀已废弃）；
+            prune 工厂经 get_run 解析 module 后走 {module: run_id} 早返回，不查实验 run 列表
     """
     set_task_dir(modeling_steps_yaml)
     steps_text = read_text(modeling_steps_yaml)
     builder = Builder(
         MODELING_TEMPLATE,
-        prune_model_step(
-            "", model=model
-        ),  # experiment_id="" 是 dead param：model 严格 module=run_id，_resolve_run_id_map 第一分支早返回
+        prune_model_step(model=model),  # model = 裸 run_id，工厂期 get_run 一次解析 module
         env={
             "modeling_steps": steps_text,
             "multi_model": False,
         },
+        structural_rules=(prune_x_transformer_step,),
     )
-    return steps_to_yaml(builder.config.workflow.steps)
-
-
-def _count_model_steps(steps_yaml: str) -> int:
-    """统计 modeling_steps 中 type=model 的步骤数（递归 branches/steps）。"""
-    parsed = yaml.safe_load(steps_yaml)
-    if not isinstance(parsed, list):
-        return 0
-    return sum(_count_in_step(s) for s in parsed if isinstance(s, dict))
-
-
-def _count_in_step(step: dict) -> int:
-    count = 1 if step.get("type") == "model" else 0
-    for key in ("branches", "steps"):
-        for child in step.get(key) or []:
-            if isinstance(child, dict):
-                count += _count_in_step(child)
-    return count
+    return flow_to_yaml(builder.config.flow)
 
 
 class LocalJobProvider:
@@ -99,10 +76,9 @@ class LocalJobProvider:
         experiment_id: str | None = None,
         prune_missing: bool = False,
         headers: Mapping[str, str] | None = None,
-    ) -> WorkflowResult:
+    ) -> DAGResult:
         def _run():
-            from mflowy.driver.builder import Builder
-            from mflowy.driver.builder_options import prune_model_step, resume_model_step
+            from mflowy.model.model.step_options import resume_model_step
 
             if not exists(modeling_steps_yaml):
                 raise FileNotFoundError(f"错误: 文件不存在: {modeling_steps_yaml}")
@@ -111,7 +87,7 @@ class LocalJobProvider:
             set_task_dir(modeling_steps_yaml)
 
             steps_text = read_text(modeling_steps_yaml)
-            multi_model = _count_model_steps(steps_text) > 1
+            multi_model = count_model_steps(steps_text) > 1
 
             options: tuple = ()
             if experiment_id:
@@ -127,8 +103,9 @@ class LocalJobProvider:
                     "modeling_steps": steps_text,
                     "multi_model": multi_model,
                 },
+                structural_rules=(prune_x_transformer_step,),
             )
-            return builder.build().run()
+            return builder.build().run(tags=fingerprint_tags("modeling_yaml", modeling_steps_yaml))
 
         return await asyncio.to_thread(_run)
 
@@ -143,9 +120,8 @@ class LocalJobProvider:
         desc: str,
         lowess_frac: float = 0.3,
         headers: Mapping[str, str] | None = None,
-    ) -> WorkflowResult:
+    ) -> DAGResult:
         def _run():
-            from mflowy.driver.builder import Builder
 
             _validate_model_arg(model)
             if not exists(modeling_steps_yaml):
@@ -154,7 +130,7 @@ class LocalJobProvider:
 
             modeling_steps_text = _build_modeling_steps(modeling_steps_yaml, model=model)
             builder = Builder(
-                task_yaml=EXPLANATION_TEMPLATE,
+                dag_yaml=EXPLANATION_TEMPLATE,
                 env={
                     "name": name,
                     "description": desc,
@@ -162,7 +138,7 @@ class LocalJobProvider:
                     "lowess_frac": lowess_frac,
                 },
             )
-            return builder.build().run()
+            return builder.build().run(tags=fingerprint_tags("modeling_yaml", modeling_steps_yaml))
 
         return await asyncio.to_thread(_run)
 
@@ -174,27 +150,21 @@ class LocalJobProvider:
         data: str,
         model: str,
         headers: Mapping[str, str] | None = None,
-    ) -> WorkflowResult:
+    ) -> DAGResult:
         def _run():
-            from mflowy.driver.builder import Builder
 
             _validate_model_arg(model)
-            _path, func = split_path_to_py_with_target(data)
-            set_task_dir(_path)
-            data_path = _path.absolute().as_posix()
-            if func:
-                data_path = f"{data_path}:{func}"
+            _, data_path = resolve_data_ref(data)
 
-            flavor, run_id = (s.strip() for s in model.split("=", 1))
+            run_id = model.strip()
             builder = Builder(
-                task_yaml=PREDICT_TEMPLATE,
+                dag_yaml=PREDICT_TEMPLATE,
                 env={
                     "data_path": data_path,
-                    "flavor": flavor,
                     "run_id": run_id,
                 },
             )
-            return builder.build().run()
+            return builder.build().run(tags=fingerprint_tags("data", data))
 
         return await asyncio.to_thread(_run)
 
@@ -204,32 +174,25 @@ class LocalJobProvider:
         self,
         *,
         data: str,
-        model: str = "",
+        model: str,
         direction: dict[str, str] | None = None,
         constraint: dict[str, list | dict] | None = None,
         cross_rules: str | None = None,
         n_trials: int = 10000,
         seed: int = 42,
         headers: Mapping[str, str] | None = None,
-    ) -> WorkflowResult:
+    ) -> DAGResult:
         def _run():
-            from mflowy.driver.builder import Builder
 
             _validate_model_arg(model)
-            data_path = data
-            _path, func = split_path_to_py_with_target(data)
-            set_task_dir(_path)
-            data_path = _path.absolute().as_posix()
-            if func:
-                data_path = f"{data_path}:{func}"
+            _, data_path = resolve_data_ref(data)
 
-            flavor, run_id = (s.strip() for s in model.split("=", 1))
+            run_id = model.strip()
             directions = direction or {}
             builder = Builder(
-                task_yaml=INVERSE_OPTIMIZATION_TEMPLATE,
+                dag_yaml=INVERSE_OPTIMIZATION_TEMPLATE,
                 env={
                     "data_path": data_path,
-                    "flavor": flavor,
                     "run_id": run_id,
                     "y_names": list(directions.keys()),
                     "directions": directions,
@@ -239,6 +202,6 @@ class LocalJobProvider:
                     "random_seed": seed,
                 },
             )
-            return builder.build().run()
+            return builder.build().run(tags=fingerprint_tags("data", data))
 
         return await asyncio.to_thread(_run)

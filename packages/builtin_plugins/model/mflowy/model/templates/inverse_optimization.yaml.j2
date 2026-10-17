@@ -1,19 +1,15 @@
-workflow:
-  name: "search_input_{{ flavor }}_{{ run_id[:8] }}"
-  description: "逆向设计：搜让 {{ y_names | join(', ') }} 按 directions 最优的输入（model={{ flavor }}={{ run_id }}）"
-  steps:
+name: "search_input_{{ run_id[:8] }}"
+description: "逆向设计：搜让 {{ y_names | join(', ') }} 按 directions 最优的输入（model={{ run_id }}）"
+flow:
 {% if data_path %}
-    - name: 加载参考数据
-      type: load
-      module: file
+  - load__file:
+      name: 加载参考数据
       params:
         file_path: "{{ data_path }}"
 {% endif %}
-    - name: 输入空间优化
-      type: model
-      module: search_input
+  - model__search_input:
+      name: 输入空间优化
       params:
-        flavor: {{ flavor }}
         run_id: {{ run_id }}
         directions:
 {% for y, d in directions.items() %}
@@ -28,5 +24,3 @@ workflow:
 {% if cross_rules_source %}
         cross_rules: "{{ cross_rules_source }}"
 {% endif %}
-        n_trials: {{ n_trials }}
-        random_seed: {{ random_seed }}
