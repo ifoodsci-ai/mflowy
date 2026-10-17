@@ -36,26 +36,30 @@ def _resolve(pattern: str) -> list[str]:
         spec = importlib.util.find_spec(base)
         if not spec or not spec.submodule_search_locations:
             return []
-        base_dir = Path(list(spec.submodule_search_locations)[0])
+        # namespace 包（PEP 420）可能由多个 distribution 各贡献一个 portion——全部遍历，
+        # 只取 [0] 会漏掉后续 portion 的模块（compute 家族拆分后横跨 data/model 两包）
+        base_dirs = [Path(p) for p in spec.submodule_search_locations]
     except (ImportError, ValueError):
         return []
 
     if "**" in parts[glob_idx]:
         result = []
-        for py_file in sorted(base_dir.rglob("*.py")):
-            if py_file.stem in _EXCLUDED or py_file.stem.startswith("_"):
-                continue
-            rel = py_file.relative_to(base_dir).with_suffix("")
-            result.append(f"{base}.{'.'.join(rel.parts)}")
+        for base_dir in base_dirs:
+            for py_file in sorted(base_dir.rglob("*.py")):
+                if py_file.stem in _EXCLUDED or py_file.stem.startswith("_"):
+                    continue
+                rel = py_file.relative_to(base_dir).with_suffix("")
+                result.append(f"{base}.{'.'.join(rel.parts)}")
         return result
     else:
         result = []
-        for d in sorted(base_dir.iterdir()):
-            if d.is_dir() and not d.name.startswith("_"):
-                path = f"{base}.{d.name}"
-                if suffix:
-                    path += f".{suffix}"
-                result.append(path)
+        for base_dir in base_dirs:
+            for d in sorted(base_dir.iterdir()):
+                if d.is_dir() and not d.name.startswith("_"):
+                    path = f"{base}.{d.name}"
+                    if suffix:
+                        path += f".{suffix}"
+                    result.append(path)
         return result
 
 
