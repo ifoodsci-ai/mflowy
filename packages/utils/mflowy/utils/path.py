@@ -15,7 +15,13 @@ _TaskDir: ContextVar[Path | None] = ContextVar("task_dir", default=None)
 
 
 def set_task_dir(task_file: str | Path):
-    _TaskDir.set(Path(task_file).parent.absolute())
+    """设置任务目录；返回 ContextVar token 供调用方恢复（全局态用毕即还）。"""
+    return _TaskDir.set(Path(task_file).parent.absolute())
+
+
+def reset_task_dir(token) -> None:
+    """恢复 set_task_dir 前的任务目录（token 由 set_task_dir 返回）。"""
+    _TaskDir.reset(token)
 
 
 def task_dir() -> Path:
@@ -56,3 +62,13 @@ def split_path_to_py_with_target(source: str | Path) -> tuple[Path, str | None]:
     if sep and target.isidentifier():
         return Path(path), target
     return Path(source), None
+
+
+def resolve_data_ref(data: str) -> tuple[Path, str]:
+    """``path:func`` 引用 → (路径, 绝对引用串)；路径经 set_task_dir 绑定任务目录。"""
+    path, func = split_path_to_py_with_target(data)
+    set_task_dir(path)
+    ref = path.absolute().as_posix()
+    if func:
+        ref = f"{ref}:{func}"
+    return path, ref

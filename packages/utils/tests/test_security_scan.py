@@ -2,7 +2,6 @@
 
 import pandas as pd
 import pytest
-
 from mflowy.utils.python_script_security_scan import scan_security
 
 

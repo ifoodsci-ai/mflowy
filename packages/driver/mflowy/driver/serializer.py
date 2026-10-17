@@ -1,4 +1,4 @@
-"""WorkflowConf StepConf → YAML 序列化工具。"""
+"""Conf NodeConf → YAML 序列化工具（平铺键控叙事：单键映射列表，无嵌套）。"""
 
 from __future__ import annotations
 
@@ -7,11 +7,11 @@ from enum import Enum
 
 import yaml
 
-from .config import StepConf, StepType
+from .config import NodeConf
 
 
 def _plain(v):
-    """Enum → 枚举名（与 handler params converter 的 TASKTYPE[名] 闭环）；dataclass → dict（ContinuousSpace 等，与 converter 的 **val 闭环）；容器递归。"""
+    """Enum → 枚举名、dataclass → dict（validate_call 侧 dict→实例构造的逆向）；容器递归。"""
     if isinstance(v, Enum):
         return v.name
     if is_dataclass(v) and not isinstance(v, type) and not isinstance(v, (list, tuple)):  # DiscreteSpace 走 list 分支
@@ -23,32 +23,27 @@ def _plain(v):
     return v
 
 
-def step_to_dict(step: StepConf) -> dict:
-    """StepConf → dict，placeholder 节点省略 type 和 module；非默认字段显式写出以避免往返丢失。"""
-    d: dict = {"name": step.name}
-    if step.type is not StepType.PLACEHOLDER:
-        d["type"] = step.type.value
-        d["module"] = step.module
-    if step.params:
-        d["params"] = _plain(step.params)
-    if not step.stop_on_error:
-        d["stop_on_error"] = step.stop_on_error
-    if not step.enabled:
-        d["enabled"] = step.enabled
-    if step.branches:
-        d["branches"] = [step_to_dict(b) for b in step.branches]
-    if step.steps:
-        d["steps"] = [step_to_dict(s) for s in step.steps]
-    return d
+def node_to_dict(node: NodeConf) -> dict:
+    """NodeConf → 单键映射 ``{node_key: 配置体}``；非默认字段显式写出以避免往返丢失。"""
+    body: dict = {"name": node.name}
+    if node.params:
+        body["params"] = _plain(node.params)
+    if node.disabled:
+        body["disabled"] = True
+    return {node.node_key: body}
 
 
-def steps_to_yaml(steps: tuple[StepConf, ...]) -> str:
-    """StepConf 序列化为 YAML 文本，供 Jinja2 模板注入。"""
+def flow_to_yaml(flow: tuple[dict[str, NodeConf], ...]) -> str:
+    """节点列表序列化为 YAML 文本，供 Jinja2 模板注入。"""
     return str(
         yaml.safe_dump(
-            [step_to_dict(s) for s in steps],
+            [{k: _body(v) for k, v in n.items()} for n in flow],
             allow_unicode=True,
             default_flow_style=False,
             sort_keys=False,
         )
     )
+
+
+def _body(node: NodeConf) -> dict:
+    return next(iter(node_to_dict(node).values()))

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import ClassVar
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from jinja2.sandbox import SandboxedEnvironment
@@ -19,7 +20,7 @@ class JinjaEnvRegistry:
 
     _instance: JinjaEnvRegistry | None = None
     _initialized: bool = False
-    _yaml_envs: dict[Path, Environment] = {}
+    _yaml_envs: ClassVar[dict[Path, Environment]] = {}
 
     def __new__(cls):
         if cls._instance is None:
@@ -31,7 +32,7 @@ class JinjaEnvRegistry:
             self._yaml_envs = {}
             self._initialized = True
 
-    def get_yaml_env(self, task_yaml: Path) -> Environment:
+    def get_yaml_env(self, dag_yaml: Path) -> Environment:
         """获取 YAML 任务文件模板环境（按目录缓存）
 
         - 动态模板目录: 任务文件所在目录
@@ -40,12 +41,12 @@ class JinjaEnvRegistry:
         - 环境变量通过 CLI ``--env-file`` / ``-e`` 加载，直接展开为模板变量
 
         Args:
-            task_yaml: 任务文件路径，模板搜索路径设为该文件所在目录
+            dag_yaml: 任务文件路径，模板搜索路径设为该文件所在目录
 
         Returns:
             Jinja2 Environment 实例
         """
-        template_dir = task_yaml.parent
+        template_dir = dag_yaml.parent
 
         # 按目录缓存环境
         if template_dir not in self._yaml_envs:
@@ -67,6 +68,6 @@ class JinjaEnvRegistry:
 _jinja_registry = JinjaEnvRegistry()
 
 
-def get_yaml_template_env(task_yaml: Path) -> Environment:
+def get_yaml_template_env(dag_yaml: Path) -> Environment:
     """便捷函数：获取 YAML 配置模板环境"""
-    return _jinja_registry.get_yaml_env(task_yaml)
+    return _jinja_registry.get_yaml_env(dag_yaml)

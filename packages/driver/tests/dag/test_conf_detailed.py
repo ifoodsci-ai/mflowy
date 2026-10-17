@@ -1,136 +1,62 @@
-"""测试 core/workflow/conf.py 模块"""
+"""config 模块测试（平铺键控：NodeConf 无 namespace/node_name 存储字段，派生自 node_key）。"""
 
 import pytest
-
-from mflowy.driver.config import StepConf, StepType, WorkflowConf
-
-
-class TestStepType:
-    """测试 StepType 枚举"""
-
-    def test_is_placeholder(self):
-        """测试 is_placeholder 方法"""
-        assert StepType.PLACEHOLDER.is_placeholder() is True
-        assert StepType.LOAD.is_placeholder() is False
-        assert StepType.CLEAN.is_placeholder() is False
+from mflowy.driver.config import Conf, NodeConf, node_key, split_node_key
 
 
-class TestStepConf:
-    """测试 StepConf 类"""
-
+class TestNodeConf:
     def test_init_default(self):
-        """测试默认初始化"""
-        conf = StepConf()
-
-        assert conf.name == "placeholder"
-        assert conf.type is StepType.PLACEHOLDER
-        assert conf.module == "N/A"
+        conf = NodeConf()
+        assert conf.name == ""
         assert conf.params == {}
-        assert conf.enabled is True
-        assert conf.stop_on_error is True
-        assert conf.branches == ()
-        assert conf.steps == ()
+        assert conf.disabled is False
+        assert conf.node_key == ""
+        assert conf.namespace == "" and conf.node_name == ""  # 空身份的派生
 
-    def test_init_with_custom_values(self):
-        """测试自定义值"""
-        conf = StepConf(
-            name="test_step",
-            type="load",
-            module="csv_loader",
-            params={"path": "data.csv"},
-            enabled=False,
-            stop_on_error=False,
-        )
-
-        assert conf.name == "test_step"
-        assert conf.type is StepType.LOAD
-        assert conf.module == "csv_loader"
+    def test_derived_identity(self):
+        conf = NodeConf(name="test_step", params={"path": "data.csv"}, disabled=True, node_key="load__csv_loader")
+        assert conf.namespace == "load"
+        assert conf.node_name == "csv_loader"
         assert conf.params == {"path": "data.csv"}
-        assert conf.enabled is False
-        assert conf.stop_on_error is False
+        assert conf.disabled is True
 
-    def test_init_with_steps_list(self):
-        """测试设置步骤列表"""
-        conf = StepConf(
-            steps=[
-                {"name": "step1", "type": "load"},
-                {"name": "step2", "type": "clean"},
-            ]
-        )
-
-        assert len(conf.steps) == 2
-        assert conf.steps[0].name == "step1"
-        assert conf.steps[1].name == "step2"
-
-    def test_init_with_branches_list(self):
-        """测试设置分支列表"""
-        conf = StepConf(
-            branches=[
-                {"name": "branch1", "type": "load"},
-                {"name": "branch2", "type": "clean"},
-            ]
-        )
-
-        assert len(conf.branches) == 2
-        assert conf.branches[0].name == "branch1"
-
-    def test_nested_step_conf(self):
-        """测试嵌套步骤配置"""
-        conf = StepConf(
-            steps=[
-                {
-                    "name": "outer",
-                    "type": "clean",
-                    "steps": [{"name": "inner", "type": "x_transformer"}],
-                }
-            ]
-        )
-
-        assert len(conf.steps) == 1
-        assert len(conf.steps[0].steps) == 1
-        assert conf.steps[0].steps[0].name == "inner"
+    def test_node_key_roundtrip(self):
+        assert node_key(*split_node_key("load__csv")) == "load__csv"
+        assert node_key(*split_node_key("x_y")) == "x_y"  # 非归组裸名
+        assert NodeConf(name="x", node_key="load__csv").node_key == "load__csv"
 
 
-class TestWorkflowConf:
-    """测试 WorkflowConf 类"""
-
+class TestConf:
     def test_init_default(self):
-        """测试默认初始化"""
-        conf = WorkflowConf()
-
+        conf = Conf()
         assert conf.name == "N/A"
         assert conf.description == "N/A"
-        assert conf.steps == ()
+        assert conf.flow == ()
 
     def test_init_with_values(self):
-        """测试自定义值"""
-        conf = WorkflowConf(name="Test Workflow", description="Test Description")
-
-        assert conf.name == "Test Workflow"
+        conf = Conf(name="Test DAG", description="Test Description")
+        assert conf.name == "Test DAG"
         assert conf.description == "Test Description"
 
     def test_init_with_steps(self):
-        """测试设置步骤"""
-        conf = WorkflowConf(
-            steps=[
-                {"name": "step1", "type": "load"},
-                {"name": "step2", "type": "clean"},
-            ]
-        )
-
-        assert len(conf.steps) == 2
+        conf = Conf(flow=[{"load__csv": {"name": "s1"}}, {"clean__drop": {"name": "s2"}}])
+        assert len(conf.flow) == 2
+        ((k1, c1),) = conf.flow[0].items()
+        assert k1 == "load__csv" and c1.name == "s1" and c1.node_key == "load__csv"
 
     def test_validate_with_empty_steps(self):
-        """测试 steps 为空时验证失败"""
-        conf = WorkflowConf()
-
+        conf = Conf()
         with pytest.raises(ValueError, match="不能为空"):
             conf.validate()
 
-    def test_validate_with_only_steps(self):
-        """测试只有 steps 时验证成功"""
-        step = StepConf(name="step1", type="load")
-        conf = WorkflowConf(steps=[step])
-
-        # 应该不抛出异常
+    def test_validate_with_steps(self):
+        conf = Conf(flow=[{"x_y": {"name": "s1"}}])
         conf.validate()
+
+    def test_multi_key_item_fails_loud(self):
+        with pytest.raises(ValueError, match="单键映射"):
+            Conf(flow=[{"load__csv": {"name": "a"}, "clean__x": {"name": "b"}}])
+
+    def test_retired_keys_fail_loud(self):
+        with pytest.raises(ValueError, match="退役键"):
+            Conf(flow=[{"load__csv": {"name": "a", "enabled": False}}])
