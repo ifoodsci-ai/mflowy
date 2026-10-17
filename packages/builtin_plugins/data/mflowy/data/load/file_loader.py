@@ -4,14 +4,12 @@ import logging
 from typing import Annotated
 
 import pandas as pd
-
-from mflowy.compute.loaders.csv_loader import csv
-from mflowy.compute.loaders.excel_loader import excel
-from mflowy.compute.loaders.parquet_loader import parquet
-from mflowy.compute.loaders.python_loader import python
-from mflowy.driver.config import StepType
+from mflowy.data.load.csv_loader import csv
+from mflowy.data.load.excel_loader import excel
+from mflowy.data.load.parquet_loader import parquet
+from mflowy.data.load.python_loader import python
+from mflowy.data.middlewares import log_load_data_fingerprint
 from mflowy.driver.handler import handler
-from mflowy.middlewares.log_load_profile import log_load_profile
 from mflowy.utils.path import split_path_to_py_with_target
 
 logger = logging.getLogger(__name__)
@@ -25,7 +23,7 @@ LOADER_MAP = {
 }
 
 
-@handler(StepType.LOAD, log_load_profile)
+@handler(log_load_data_fingerprint, namespace="load")
 def file(
     file_path: Annotated[str, "文件路径"],
     **kwargs,

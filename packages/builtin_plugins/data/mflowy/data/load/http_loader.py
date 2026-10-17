@@ -8,17 +8,14 @@ from typing import Annotated, Any
 from urllib.parse import urlparse
 
 import pandas as pd
-
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
-from mflowy.middlewares.log_load_profile import log_load_profile
 
 from . import report_loaded
 
 logger = logging.getLogger(__name__)
 
 
-@handler(StepType.LOAD, log_load_profile)
+@handler(namespace="load")
 def http(
     url: Annotated[str, "网络地址"],
     method: Annotated[str, "请求方法"] = "GET",
@@ -29,14 +26,14 @@ def http(
 ) -> pd.DataFrame:
     """通过 HTTP/HTTPS 请求加载数据。
 
-    url 必须为 http/https 协议，且解析后的目标 IP 不得落在私有/回环段（127/8、10/8、172.16/12、192.168/16、169.254/16、::1、fc00::/7、fe80::/10），否则抛 ValueError。默认 timeout=30s、allow_redirects=False（防 SSRF 重定向）。响应需为 JSON：顶层 list 直接成表；顶层 dict 自动探测 data/results/items/rows/records/content 中的列表，找不到则整体作为单行。
+    url 必须为 http/https 协议，且解析后的目标 IP 不得落在私有/回环段（127/8、10/8、172.16/12、192.168/16、169.254/16、::1、fc00::/7、fe80::/10），否则抛 ValueError。默认 timeout=30s；allow_redirects 恒为 False（防 SSRF 重定向——公网 302→内网是最经典绕过，不可经 kwargs 重开）。响应需为 JSON：顶层 list 直接成表；顶层 dict 自动探测 data/results/items/rows/records/content 中的列表，找不到则整体作为单行。
 
     用于"对接内部 RESTful API 取结构化数据"场景。body 在 POST/PUT/PATCH 下按 Content-Type 路由到 json 或 form；proxy 透传 http/https 代理。
 
     http 用"远程 API、JSON 响应"场景，csv/excel/parquet 用"本地文件"场景，python_loader 用"API 复杂、需自定义解析"场景。
     """
 
-    import requests  # [stats] 层依赖，lazy 以免 base 环境发现机制崩溃
+    import requests  # lazy：缺依赖的降级环境在词表阶段不崩（extras 降级惯例）
 
     # ── 参数初始化和合并 ──
     headers = headers or {}
@@ -65,7 +62,9 @@ def http(
     if proxy:
         req_kwargs["proxies"] = {"http": proxy, "https": proxy}
 
-    # 合并 kwargs 中支持的标准 requests 参数（覆盖上面的快捷参数）
+    # 合并 kwargs 中支持的标准 requests 参数（覆盖上面的快捷参数）；
+    # allow_redirects 刻意不在白名单——安全默认（False）不可经 kwargs 重开，
+    # 否则公网 URL 经 302 跳私有段即可绕过 _validate_url 的 IP 段封锁
     ALLOWED_REQUESTS_PARAMS = {
         "params",
         "data",
@@ -75,7 +74,6 @@ def http(
         "files",
         "auth",
         "timeout",
-        "allow_redirects",
         "proxies",
         "verify",
         "stream",
@@ -96,12 +94,12 @@ def http(
     logger.info(f"HTTP 请求: {req_kwargs['method']} {url}")
     try:
         resp = requests.request(**req_kwargs)
-    except requests.Timeout:
-        raise TimeoutError(f"请求超时: {url} (timeout={req_kwargs['timeout']}s)")
+    except requests.Timeout as e:
+        raise TimeoutError(f"请求超时: {url} (timeout={req_kwargs['timeout']}s)") from e
     except requests.ConnectionError as e:
-        raise ConnectionError(f"无法连接到服务器 {url}: {e}")
+        raise ConnectionError(f"无法连接到服务器 {url}: {e}") from e
     except requests.RequestException as e:
-        raise RuntimeError(f"HTTP 请求异常: {e}")
+        raise RuntimeError(f"HTTP 请求异常: {e}") from e
 
     # ── 处理响应 ──
     if resp.status_code >= 400:
@@ -113,7 +111,7 @@ def http(
     try:
         data = resp.json()
     except json.JSONDecodeError as e:
-        raise ValueError(f"响应体不是有效的 JSON: {e}")
+        raise ValueError(f"响应体不是有效的 JSON: {e}") from e
 
     # ── 转换为 DataFrame ──
     if isinstance(data, list):
@@ -167,7 +165,7 @@ def _validate_url(url: str) -> None:
     try:
         addrs = socket.getaddrinfo(hostname, None)
     except socket.gaierror as e:
-        raise ValueError(f"无法解析域名 {hostname}: {e}")
+        raise ValueError(f"无法解析域名 {hostname}: {e}") from e
 
     ip_set = {addr[4][0] for addr in addrs}
     for ip_str in ip_set:

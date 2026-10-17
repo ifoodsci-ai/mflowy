@@ -5,11 +5,8 @@ from pathlib import Path
 from typing import Annotated
 
 import pandas as pd
-
-from mflowy.driver.config import StepType
+from mflowy.data.middlewares import df_diff
 from mflowy.driver.handler import handler
-from mflowy.middlewares.data_inject import inject_df
-from mflowy.middlewares.log_df_diff import df_diff
 from mflowy.utils.file import read_text
 from mflowy.utils.path import split_path_to_py_with_target
 from mflowy.utils.python_script_security_scan import scan_security
@@ -17,14 +14,19 @@ from mflowy.utils.python_script_security_scan import scan_security
 logger = logging.getLogger(__name__)
 
 
-@handler(StepType.CLEAN, inject_df, df_diff)
+@handler(df_diff, namespace="clean")
 def python(
-    df: pd.DataFrame,
+    load: pd.DataFrame,
+    clean: pd.DataFrame | None = None,
     *,
     source: Annotated[str | None, "/path/to/py[:<func>]，:<func> 可选，默认为 clean"] = None,
     **kwargs,
 ) -> pd.DataFrame:
-    """执行指定 Python 脚本中的 <func_name>(df: pd.DataFrame) -> pd.DataFrame 自定义清洗逻辑。"""
+    """执行指定 Python 脚本中的 <func_name>(df) -> df 自定义清洗逻辑。
+
+    条件型逃生舱：无对应缺陷 kind，不挂 .repair、不进候选菜单——由 agent 依上下文手调。
+    """
+    df = clean if clean is not None else load
     if not source:
         raise ValueError("需要一个python脚本文件地址")
     path, func = split_path_to_py_with_target(source)
@@ -40,7 +42,7 @@ def python(
     try:
         exec(compile(code, "<python_cleaner>", "exec"), exec_globals)
     except Exception as e:
-        raise RuntimeError(f"执行脚本时出错: {e}")
+        raise RuntimeError(f"执行脚本时出错: {e}") from e
 
     # 提取入口函数（默认 clean，可由 source 的 :func 后缀指定）
     clean_func = exec_globals.get(func_name)
@@ -55,7 +57,7 @@ def python(
     try:
         cleaned_df = clean_func(df)
     except Exception as e:
-        raise RuntimeError(f"调用 clean(df) 时出错: {e}")
+        raise RuntimeError(f"调用 clean(df) 时出错: {e}") from e
 
     # 最终运行时检查以防万一
     if not isinstance(cleaned_df, pd.DataFrame):

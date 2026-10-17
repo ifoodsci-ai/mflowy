@@ -1,24 +1,21 @@
 """python 脚本数据载入器"""
 
 import logging
-from pathlib import Path
 from typing import Annotated
 
 import pandas as pd
-
-from mflowy.driver.config import StepType
+from mflowy.data.middlewares import log_load_data_fingerprint
 from mflowy.driver.handler import handler
-from mflowy.middlewares.log_load_profile import log_load_profile
-from mflowy.utils.file import read_text
 from mflowy.utils.path import split_path_to_py_with_target
 from mflowy.utils.python_script_security_scan import scan_security
 
 from . import report_loaded
+from .utils import set_data_fingerprint
 
 logger = logging.getLogger(__name__)
 
 
-@handler(StepType.LOAD, log_load_profile)
+@handler(log_load_data_fingerprint, namespace="load")
 def python(
     source: Annotated[str | None, "python脚本路径，支持 file.py:func 指定入口函数（默认 load）"] = None,
     **kwargs,
@@ -28,9 +25,8 @@ def python(
         raise ValueError("需要一个python脚本文件地址")
     path, func = split_path_to_py_with_target(source)
     func = func or "load"
-    if not path.exists():
-        raise FileNotFoundError(f"文件不存在: {path}")
-    code = read_text(Path(path))
+    set_data_fingerprint(path.as_posix())
+    code = path.read_text()
     scan_security(code, func_name=func, returns=pd.DataFrame)
 
     # 构造一个受限的全局命名空间，提供必要的模块和内置对象
@@ -41,7 +37,7 @@ def python(
     try:
         exec(compile(code, "<python_loader>", "exec"), exec_globals)
     except Exception as e:
-        raise RuntimeError(f"执行脚本时出错: {e}")
+        raise RuntimeError(f"执行脚本时出错: {e}") from e
 
     # 提取入口函数（默认 load，可由 source 的 :func 后缀指定）
     load_func = exec_globals.get(func)
@@ -54,7 +50,7 @@ def python(
     try:
         df = load_func()
     except Exception as e:
-        raise RuntimeError(f"调用 {func}() 时出错: {e}")
+        raise RuntimeError(f"调用 {func}() 时出错: {e}") from e
 
     # 最终运行时检查以防万一
     if not isinstance(df, pd.DataFrame):

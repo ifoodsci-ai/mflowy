@@ -4,18 +4,16 @@ import logging
 from typing import Annotated
 
 import pandas as pd
-
-from mflowy.driver.config import StepType
+from mflowy.data.middlewares import df_diff
 from mflowy.driver.handler import handler
-from mflowy.middlewares.data_inject import inject_df
-from mflowy.middlewares.log_df_diff import df_diff
 
 logger = logging.getLogger(__name__)
 
 
-@handler(StepType.CLEAN, inject_df, df_diff)
+@handler(df_diff, namespace="clean")
 def strip_units(
-    df: pd.DataFrame,
+    load: pd.DataFrame,
+    clean: pd.DataFrame | None = None,
     *,
     columns: Annotated[dict[str, str], "列名→单位后缀映射，如 {'物料水分': '%'}"],
     **kwargs,
@@ -28,6 +26,7 @@ def strip_units(
 
     strip_units 用"字符串数值带单位"场景，python_cleaner 用"需要任意自定义转换逻辑"场景。
     """
+    df = clean if clean is not None else load
     result = df.copy()
     renamed = {}
 
@@ -47,3 +46,22 @@ def strip_units(
     logger.debug(f"剥离单位: {renamed}")
 
     return result
+
+
+def _repair(errors, card, df):
+    """剥离参数的诚实来源：问卷 unit_hints 优先，缺则取 detect.stringly 证据的
+    众数后缀字符（evidence["suffix"]）——不再默认猜 "%"。"""
+    hints = (card or {}).get("unit_hints") or {}
+    cols: dict[str, str] = {}
+    for e in errors:
+        if not e.column or e.column in cols:
+            continue
+        unit = hints.get(e.column) or (e.evidence or {}).get("suffix")
+        if unit:
+            cols[e.column] = unit
+    if not cols:
+        return []
+    return [({"columns": cols}, f"剥离单位后缀转数值: {cols}")]
+
+
+strip_units.repair = {"stringly_numeric": _repair}
