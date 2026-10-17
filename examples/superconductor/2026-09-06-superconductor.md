@@ -38,7 +38,7 @@ series: 数茧深度案例系列（5 / 5）
 | 输出范围 | 0–150 K |
 | 输出中位数 | 20 K |
 
-![Super 数值特征尺度对比](img/super_numeric_scale_box.png)
+![Super 数值特征尺度对比（现名 plot.violin；图为本案例当时的 boxplot 形态）](img/super_numeric_scale_box.png)
 
 值得注意的事实：**输出中位数仅 20 K，而候选材料可达 60+ K**——"好材料"是稀有品，这正是逆向搜索的价值所在。
 
@@ -56,7 +56,7 @@ series: 数茧深度案例系列（5 / 5）
 
 ![Super 目标-特征 LOWESS 趋势](img/super_target_trend_by_numeric.png)
 
-![Super 数值特征分布质量](img/super_numeric_quality_kde_hist.png)
+![Super 数值特征分布质量（现名 plot.histogram）](img/super_numeric_quality_kde_hist.png)
 
 > 高维 EDA 原则：先建立"什么值得建模"的直觉，深度分析交给模型与 SHAP。
 

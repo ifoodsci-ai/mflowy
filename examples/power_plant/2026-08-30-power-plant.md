@@ -39,7 +39,7 @@ series: 数茧深度案例系列（4 / 5）
 | relative_humidity | 相对湿度 (%) | 25.56–100.16 |
 | **net_hourly_electrical_energy_output** | **净电能输出 (MW)** | **420.26–495.76** |
 
-![Power 数值特征尺度对比](img/power_numeric_scale_box.png)
+![Power 数值特征尺度对比（现名 plot.violin；图为本案例当时的 boxplot 形态）](img/power_numeric_scale_box.png)
 
 ---
 
@@ -59,7 +59,7 @@ series: 数茧深度案例系列（4 / 5）
 
 **③ 数值分布**：4 个参数分布干净、无明显离群，可直接建模。
 
-![Power 数值特征分布质量](img/power_numeric_quality_kde_hist.png)
+![Power 数值特征分布质量（现名 plot.histogram）](img/power_numeric_quality_kde_hist.png)
 
 ---
 

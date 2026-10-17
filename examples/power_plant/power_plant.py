@@ -5,23 +5,19 @@
 - load_X            ：仅特征列（逆向搜索 search_input）
 - load_X_to_predict ：单行最优工况（上线前预测验证 predict）
 
-数据获取：首次调用自动从 UCI 拉取 zip+xlsx 并落盘 power_plant.csv（幂等，
-已存在则跳过），不依赖 notebook 前置准备。路径基于 Path(__file__) 解析（与进程 CWD 解耦）。
+数据获取：读本目录 ``power_plant.csv``（相对路径——与 notebook 运行约定
+cwd=本目录一致）。python 节点安全扫描的导入白名单不含 pathlib/os/urllib，
+执行环境也不注入 ``__file__``，脚本无法自定位/自下载；且 UCI 原始包为
+zip+xlsx，pandas 2.3 的 read_excel URL-zip 通道已不可用。首次使用：从
+UCI 294 下载 zip、解包 Folds5x2_pp.xlsx，按下方 rename 映射另存为本 csv。
 """
-
-from pathlib import Path
 
 import pandas as pd
 
 
-def _ensure_data() -> None:
-    """幂等下载：power_plant.csv 不存在时从 UCI 拉取（zip+xlsx 由 pandas 原生 URL 读取，
-    原始列名 AT/V/AP/RH/PE 一次 rename；不经 requests/zipfile，无需扩展 scan 白名单）。"""
-    data_file = Path(__file__).resolve() / "power_plant.csv"
-    if data_file.exists():
-        return
-    df = pd.read_excel("https://archive.ics.uci.edu/static/public/294/combined+cycle+power+plant.zip")
-    df = df.rename(
+def _load_renamed() -> pd.DataFrame:
+    df = pd.read_csv("power_plant.csv")
+    return df.rename(
         columns={
             "AT": "temperature",
             "V": "exhaust_vacuum",
@@ -30,21 +26,16 @@ def _ensure_data() -> None:
             "PE": "net_hourly_electrical_energy_output",
         }
     )
-    df.to_csv(data_file, index=False)
 
 
 def load() -> pd.DataFrame:
     """全量数据：4 个工况参数 + 净电能输出目标列。"""
-    _ensure_data()
-    return pd.read_csv(Path(__file__).resolve() / "power_plant.csv")
+    return _load_renamed()
 
 
 def load_X() -> pd.DataFrame:
     """仅特征列（不含输出），供逆向搜索推断搜索空间。"""
-    _ensure_data()
-    return pd.read_csv(Path(__file__).resolve() / "power_plant.csv").drop(
-        columns=["net_hourly_electrical_energy_output"]
-    )
+    return _load_renamed().drop(columns=["net_hourly_electrical_energy_output"])
 
 
 def load_X_to_predict() -> pd.DataFrame:

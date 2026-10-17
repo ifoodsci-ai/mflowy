@@ -5,6 +5,9 @@
     env MFLOWY_TELEMETRY=on|off   → 无条件生效（运维逃生舱，K8s/CI 唯一入口）
     env 未设 / ask / 非法值        → 查 settings.json 的 telemetry 键（bool）
     settings 无此键                → 未决，由首次工具调用时 elicitation 询问
+
+端点同理由 env 覆盖（M9）：``MFLOWY_TELEMETRY_ENDPOINT`` → 自建网关（docker/telemetry），
+未设走官方默认——设备注册与 OTLP 导出共用同一解析。
 """
 
 from __future__ import annotations
@@ -19,21 +22,27 @@ from functools import cache
 from pathlib import Path
 from typing import Literal
 
+from mflowy.utils.wraps import silence, synchronized, synchronized_once
+from pydantic import BaseModel
+
 from mcp.server.context import CallNext, HandlerResult, ServerRequestContext
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ElicitResult
-from pydantic import BaseModel
-
-from mflowy.utils.wraps import silence, synchronized, synchronized_once
 
 logger = logging.getLogger(__name__)
 
 ENV_MODE = "MFLOWY_TELEMETRY"
+ENV_ENDPOINT = "MFLOWY_TELEMETRY_ENDPOINT"  # 端点逃生舱（M9）：自建网关可被指向
 VALID_MODES = ("ask", "on", "off")
 DEFAULT_ENDPOINT = "https://telemetry.ifoodsci.com"  # 官方遥测网关；自建部署见 docker/telemetry
 TOKEN_HEADER = "X-Telemetry-Token"
 
 Mode = Literal["on", "off", "ask"]
+
+
+def telemetry_endpoint() -> str:
+    """遥测端点解析（M9 逃生舱）：env MFLOWY_TELEMETRY_ENDPOINT > 官方默认。"""
+    return os.environ.get(ENV_ENDPOINT) or DEFAULT_ENDPOINT
 
 
 @cache
@@ -68,7 +77,7 @@ def register_device_key() -> str | None:
     actor = f"mflowy:{machineid.id()}"
     try:
         resp = requests.post(
-            DEFAULT_ENDPOINT + "/device/register",
+            telemetry_endpoint() + "/device/register",
             json={"raw_key": secret, "name": f"mflowy telemetry {actor}", "actor_id": actor},
             timeout=5,
         )
@@ -168,18 +177,24 @@ async def _resolve_consent(ctx: ServerRequestContext, on_enable: Callable[[], No
 @synchronized_once()
 @silence(lambda e: logger.debug(f"agentcat 接线失败，关闭遥测: {e}"))
 def wire_agentcat(server: MCPServer):
-    """懒加载 agentcat 并以纯 OTLP 模式接线"""
+    """懒加载 agentcat 并以纯 OTLP 模式接线。
+
+    on 模式（同意后）有意注入 session_id / context 参数：session_id 由
+    agentcat mint-back 关联一次任务全程；context 采集调用意图（user_intent）
+    ——elicitation 文案已明示采集范围含“调用意图”。未同意（ask 未决/拒绝）
+    不接线零注入（见 install_consent_middleware）。
+    """
     import agentcat
     from agentcat.types import OTLPExporterConfig
 
     options = agentcat.AgentCatOptions(
         enable_report_missing=True,
-        enable_tool_call_context=True,
+        enable_tool_call_context=True,  # 调用意图采集（user_intent）——同意范围内有意注入
         disable_diagnostics=True,
         exporters={
             "otlp": OTLPExporterConfig(
                 type="otlp",
-                endpoint=DEFAULT_ENDPOINT + "/traces",
+                endpoint=telemetry_endpoint() + "/traces",
                 protocol="http/protobuf",
             )
         },
@@ -297,6 +312,11 @@ def _patch_otlp_exporter() -> None:
     manager = getattr(event_queue, "_telemetry_manager", None)
     exporters = getattr(manager, "exporters", None)
     if not isinstance(exporters, dict):
+        # feature-detect（M9）：上游重构使私有内部缺席时显式告警而非静默失效——
+        # wire_agentcat 为 synchronized_once，本告警进程内天然只发一次
+        logger.warning(
+            "agentcat 内部结构不兼容（_telemetry_manager/exporters 缺席）——遥测退回官方导出面，工具 I/O 属性不可用"
+        )
         return
     for name, exporter in list(exporters.items()):
         if isinstance(exporter, OTLPExporter) and not isinstance(exporter, PatchedOTLPExporter):

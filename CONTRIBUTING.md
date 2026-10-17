@@ -28,7 +28,7 @@ make fmt                            # ruff format
 
 - Open issues in the [issue tracker](https://github.com/ifoodsci-ai/mflowy/issues)
   use canonical labels: `needs-triage`, `needs-info`, `ready-for-agent`,
-  `ready-for-human`, `wontfix` (see [AGENTS.md](AGENTS.md) — Triage Labels).
+  `ready-for-human`, `wontfix` (see [AGENTS.md](AGENTS.md) — Issue Tracker 的 Triage 五标签).
 - Look for issues tagged `ready-for-agent` or `good first issue`.
 - To avoid duplicate work, comment on the issue before starting.
 
@@ -36,7 +36,7 @@ make fmt                            # ruff format
 
 1. **Branch** — `git checkout -b feat/my-change`.
 2. **Code** — follow the project's coding principles
-   ([AGENTS.md](AGENTS.md) — Design Principles):
+   ([AGENTS.md](AGENTS.md) — 分层与词表):
    - Python 3.12, line length 120, ruff lint (`E4/E7/E9/F/I/UP035/UP037`).
    - User-facing configurable params are annotated `Annotated[T, "描述"]`.
    - New compute entities register via the `@handler` decorator — no manual wiring.
@@ -65,16 +65,15 @@ make fmt                            # ruff format
 - [AGENTS.md](AGENTS.md) — architecture, commands, layer model, docs model, agent conventions
 - [docs/research-flow.md](docs/research-flow.md) — methodology guide for users
 - [docs/roadmap.md](docs/roadmap.md) — feature roadmap
-- [docs/DRIVER.md](docs/DRIVER.md) — DAG kernel: design philosophy & architecture (`src/mflowy/driver/`)
-- [docs/REMOTE_MODELING.md](docs/REMOTE_MODELING.md) — remote execution (JobProvider contract)
-- [docs/TELEMETRY.md](docs/TELEMETRY.md) — telemetry setup and configuration
+- [packages/driver/README.md](packages/driver/README.md) — DAG kernel: design philosophy & architecture
+- [packages/mcp/README.md](packages/mcp/README.md) — MCP tools, remote execution (JobProvider) & telemetry
 
 ## Telemetry
 
 MCP tool-call telemetry is **consent-based** (default `ask` via MCP elicitation;
 see [PRIVACY.md](PRIVACY.md)). Instrumentation lives at the protocol layer —
-agentcat wraps the `MCPServer` in `src/mflowy/mcp/server.py` via
-`src/mflowy/mcp/telemetry.py:wire_agentcat` — so **do not** add per-tool wrappers
-or emit telemetry from `src/mflowy/mcp/tools.py`. Any change to what is collected,
+agentcat wraps the `MCPServer` in `packages/mcp/mflowy/mcp/server.py` via
+`packages/mcp/mflowy/mcp/telemetry.py:wire_agentcat` — so **do not** add per-tool wrappers
+or emit telemetry from `packages/mcp/mflowy/mcp/tools.py`. Any change to what is collected,
 where it goes, or how consent works must update [PRIVACY.md](PRIVACY.md) in
 the same PR.
