@@ -1,0 +1,64 @@
+name: EDA Stage 2 - 目标深度分析 · {{ dataset_tag }}
+description: |
+  单变量（typed 列统计 + 规则化 findings + 分布图）与双变量（三路关联 + 分档）+ 判读图族——
+  dive-in 问卷的证据基质；检测是内层 MDP 的观测基质，不进外层编排
+flow:
+  - load__file:
+      name: 导入表格型实验数据
+      params:
+        file_path: {{ path_to_data | tojson }}
+        {% if sheet %}
+        sheet_name: {{ sheet | tojson }}
+        {% endif %}
+        {% if skip %}
+        skiprows: {{skip}}
+        {% endif %}
+
+  - statistic__univariate:
+      name: 单变量分析
+
+  - plot__histogram:
+      name: 数值特征分布直方图
+
+  - plot__violin:
+      name: 数值特征尺度小提琴图
+
+  - statistic__bivariate:
+      name: 双变量分析
+      params:
+        method: {{ corr_method | tojson }}
+
+  - plot__correlation_heatmap:
+      name: 特征-目标相关性热图
+      params:
+        method: {{ corr_method | tojson }}
+        targets: {{ target | tojson }}
+
+  - plot__target_trend_by_numeric:
+      name: 目标-特征趋势 (LOWESS)
+      params:
+        method: {{ corr_method | tojson }}
+        targets: {{ target | tojson }}
+        top_k: {{top_k_high_correlated}}
+        lowess_frac: {{lowess_frac}}
+
+  - plot__target_separation_by_numeric:
+      name: 分类特征目标分离度
+      params:
+        targets: {{ target | tojson }}
+
+  - plot__target_effect_by_category:
+      name: 数值特征分类效应量
+      params:
+        targets: {{ target | tojson }}
+        {% if cat_cols %}
+        categorical_cols: {{ cat_cols | tojson }}
+        {% endif %}
+
+  - plot__target_association_by_category:
+      name: 分类特征-目标交叉关联
+      params:
+        targets: {{ target | tojson }}
+        {% if cat_cols %}
+        categorical_cols: {{ cat_cols | tojson }}
+        {% endif %}

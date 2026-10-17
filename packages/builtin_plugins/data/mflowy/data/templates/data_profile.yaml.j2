@@ -1,0 +1,18 @@
+name: EDA Stage 1 - 数据画像 · {{ dataset_tag }}
+description: |
+  加载并打印 df.info（形状/逐列 dtype/non-null 计数）——warm-up 问卷的证据基质
+  （检测是内层 MDP 的观测基质，永不为外层动作）
+flow:
+  - load__file:
+      name: 导入表格型实验数据
+      params:
+        file_path: {{ path_to_data | tojson }}
+        {% if sheet %}
+        sheet_name: {{ sheet | tojson }}
+        {% endif %}
+        {% if skip %}
+        skiprows: {{skip}}
+        {% endif %}
+
+  - statistic__profile:
+      name: 数据画像
