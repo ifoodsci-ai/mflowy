@@ -2,20 +2,16 @@
 
 from typing import Annotated
 
-import pandas as pd
-from sklearn.preprocessing import MinMaxScaler
-
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
-from mflowy.middlewares.data_inject import inject_X_y
+from mflowy.model.x_y import XySpec
+from sklearn.preprocessing import MinMaxScaler
 
 from ..utils import resolve_cols
 
 
-@handler(StepType.X_TRANSFORMER, inject_X_y)
+@handler(namespace="x_transformer")
 def minmax_scaler(
-    X: pd.DataFrame,
-    y: pd.DataFrame,
+    x_y: XySpec,
     numerical_cols: Annotated[str | list[str] | None, "待缩放的数值列，None 自动检测"] = None,
     feature_range: Annotated[tuple[int, int], "缩放目标范围"] = (0, 1),
     clip: Annotated[bool, "是否裁剪到 feature_range"] = False,
@@ -27,6 +23,7 @@ def minmax_scaler(
 
     standard 用于近似正态、不要求固定区间的场景；robust 用于含离群点的场景。
     """
+    X = x_y[0]
     numerical_cols = resolve_cols(numerical_cols, X, "number")
     scaler = MinMaxScaler(feature_range=feature_range, clip=clip)
     return ("minmax_scaler", scaler, numerical_cols)

@@ -1,14 +1,11 @@
 """对数变换器"""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 import numpy as np
-import pandas as pd
-from sklearn.base import BaseEstimator, TransformerMixin
-
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
-from mflowy.middlewares.data_inject import inject_X_y
+from mflowy.model.x_y import XySpec
+from sklearn.base import BaseEstimator, TransformerMixin
 
 from ..utils import resolve_cols
 
@@ -59,13 +56,12 @@ class _Wrapper(BaseEstimator, TransformerMixin):
         return np.array(self.cols)
 
 
-@handler(StepType.X_TRANSFORMER, inject_X_y)
+@handler(namespace="x_transformer")
 def log_transformer(
-    X: pd.DataFrame,
-    y: pd.DataFrame,
+    x_y: XySpec,
     numerical_cols: Annotated[str | list[str] | None, "待变换的数值列，None 自动检测"] = None,
-    base: Annotated[str, "对数底 (e/10/2)"] = "e",
-    handle_negative: Annotated[str, "非正数处理 (error/shift/clip)"] = "error",
+    base: Annotated[Literal["e", "10", "2"], "对数底 (e/10/2)"] = "e",
+    handle_negative: Annotated[Literal["error", "shift", "clip"], "非正数处理 (error/shift/clip)"] = "error",
     **_,
 ):
     """对数变换：log(x + shift)，base="e" 默认自然对数；handle_negative="error" 默认对非正值直接报错（"shift" 在列含非正值时自动加 |min|+1 平移、正值列不偏移，"clip" 截断到 0）。
@@ -74,10 +70,7 @@ def log_transformer(
 
     power_transformer 用于需自动估计最优 λ（同时处理正负值，无需手调 shift）的场景；standard/minmax 用于已近似正态、仅做尺度对齐的场景。
     """
-    if base not in ("e", "10", "2"):
-        raise ValueError(f"base 必须是 'e', '10' 或 '2'，当前值: '{base}'")
-    if handle_negative not in ("error", "shift", "clip"):
-        raise ValueError(f"handle_negative 必须是 'error', 'shift' 或 'clip'，当前值: '{handle_negative}'")
+    X = x_y[0]
     numerical_cols = resolve_cols(numerical_cols, X, "number")
     return (
         "log_transformer",

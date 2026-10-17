@@ -2,20 +2,16 @@
 
 from typing import Annotated, Literal
 
-import pandas as pd
-from sklearn.preprocessing import OneHotEncoder
-
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
-from mflowy.middlewares.data_inject import inject_X_y
+from mflowy.model.x_y import XySpec
+from sklearn.preprocessing import OneHotEncoder
 
 from ..utils import resolve_cols
 
 
-@handler(StepType.X_TRANSFORMER, inject_X_y)
+@handler(namespace="x_transformer")
 def onehot_encoder(
-    X: pd.DataFrame,
-    y: pd.DataFrame,
+    x_y: XySpec,
     categorical_cols: Annotated[str | list[str] | None, "待编码的分类列，None 自动检测"] = None,
     drop_first: Annotated[bool, "是否删除第一个类别（避免共线性）"] = False,
     handle_unknown: Annotated[Literal["ignore", "error"], "遇到未知类别的处理方式"] = "ignore",
@@ -27,6 +23,7 @@ def onehot_encoder(
 
     label 用于探索阶段的轻量有序编码；ordinal 用于有序类别或下游为树模型的场景；target 用于高基数监督任务的场景（依赖 y，过拟合需 CV）；hash 用于极高基数（>1000）且内存敏感的场景（冲突不可逆）。
     """
+    X = x_y[0]
     categorical_cols = resolve_cols(categorical_cols, X, "category")
     categories = [X[col].dropna().unique().tolist() for col in categorical_cols]
     encoder = OneHotEncoder(

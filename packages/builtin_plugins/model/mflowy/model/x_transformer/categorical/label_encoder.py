@@ -2,12 +2,10 @@ from typing import Annotated
 
 import numpy as np
 import pandas as pd
+from mflowy.driver.handler import handler
+from mflowy.model.x_y import XySpec
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.preprocessing import LabelEncoder
-
-from mflowy.driver.config import StepType
-from mflowy.driver.handler import handler
-from mflowy.middlewares.data_inject import inject_X_y
 
 from ..utils import resolve_cols
 
@@ -42,10 +40,9 @@ class _MultiColumnLabelEncoder(BaseEstimator, TransformerMixin):
         return np.array(input_features)
 
 
-@handler(StepType.X_TRANSFORMER, inject_X_y)
+@handler(namespace="x_transformer")
 def label_encoder(
-    X: pd.DataFrame,
-    y: pd.DataFrame,
+    x_y: XySpec,
     categorical_cols: Annotated[str | list[str] | None, "待编码的分类列，None 自动检测"] = None,
     **_,
 ):
@@ -56,6 +53,7 @@ def label_encoder(
     ordinal 用于需要可配 unknown 策略的生产场景（handle_unknown="error"/"use_encoded_value" + 可配值）；
     onehot 用于低基数无序类别 + 线性模型；target 用于高基数 + 监督场景；hash 用于极高基数 + 内存敏感的场景。
     """
+    X = x_y[0]
     categorical_cols = resolve_cols(categorical_cols, X, "category")
     encoder = _MultiColumnLabelEncoder()
     return ("label", encoder, categorical_cols)

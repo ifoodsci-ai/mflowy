@@ -2,20 +2,16 @@
 
 from typing import Annotated
 
-import pandas as pd
-from sklearn.preprocessing import RobustScaler
-
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
-from mflowy.middlewares.data_inject import inject_X_y
+from mflowy.model.x_y import XySpec
+from sklearn.preprocessing import RobustScaler
 
 from ..utils import resolve_cols
 
 
-@handler(StepType.X_TRANSFORMER, inject_X_y)
+@handler(namespace="x_transformer")
 def robust_scaler(
-    X: pd.DataFrame,
-    y: pd.DataFrame,
+    x_y: XySpec,
     numerical_cols: Annotated[str | list[str] | None, "待缩放的数值列，None 自动检测"] = None,
     with_centering: Annotated[bool, "是否中心化（减中位数）"] = True,
     with_scaling: Annotated[bool, "是否缩放（除 IQR）"] = True,
@@ -28,6 +24,7 @@ def robust_scaler(
 
     standard 用于近似正态 + 无离群点的场景；minmax 用于要求严格 [0,1] 区间且分布干净的场景；power_transformer 用于需要同时修正偏度+方差的场景。
     """
+    X = x_y[0]
     numerical_cols = resolve_cols(numerical_cols, X, "number")
     scaler = RobustScaler(
         with_centering=with_centering,

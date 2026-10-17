@@ -1,19 +1,15 @@
 from typing import Annotated, Literal
 
-import pandas as pd
-from sklearn.preprocessing import OrdinalEncoder
-
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
-from mflowy.middlewares.data_inject import inject_X_y
+from mflowy.model.x_y import XySpec
+from sklearn.preprocessing import OrdinalEncoder
 
 from ..utils import resolve_cols
 
 
-@handler(StepType.X_TRANSFORMER, inject_X_y)
+@handler(namespace="x_transformer")
 def ordinal_encoder(
-    X: pd.DataFrame,
-    y: pd.DataFrame,
+    x_y: XySpec,
     categorical_cols: Annotated[str | list[str] | None, "待编码的分类列，None 自动检测"] = None,
     handle_unknown: Annotated[Literal["error", "use_encoded_value"], "未知类别处理方式"] = "use_encoded_value",
     unknown_value: Annotated[int, "未知类别的编码值"] = -1,
@@ -27,6 +23,7 @@ def ordinal_encoder(
     label 用于零配置探索阶段（LabelEncoder 封装，固定 unknown→-1）；
     onehot 用于低基数无序类别 + 线性模型的场景；target 用于高基数 + 监督任务的场景（按目标均值编码）；hash 用于极高基数（>1000）+ 内存敏感的场景。
     """
+    X = x_y[0]
     categorical_cols = resolve_cols(categorical_cols, X, "category")
     encoder = OrdinalEncoder(
         handle_unknown=handle_unknown,

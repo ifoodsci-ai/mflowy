@@ -1,19 +1,16 @@
 from typing import Annotated, Literal
 
 import pandas as pd
-from sklearn.preprocessing import TargetEncoder
-
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
-from mflowy.middlewares.data_inject import inject_X_y
+from mflowy.model.x_y import XySpec
+from sklearn.preprocessing import TargetEncoder
 
 from ..utils import resolve_cols
 
 
-@handler(StepType.X_TRANSFORMER, inject_X_y)
+@handler(namespace="x_transformer")
 def target_encoder(
-    X: pd.DataFrame,
-    y: pd.DataFrame,
+    x_y: XySpec,
     target: Annotated[str, "目标列"],
     categorical_cols: Annotated[str | list[str] | None, "待编码列，None 自动检测"] = None,
     smooth: Annotated[float | Literal["auto"], "平滑参数，auto 自动选择"] = "auto",
@@ -25,6 +22,7 @@ def target_encoder(
 
     label 用于探索阶段的轻量有序编码；ordinal 用于有序类别或树模型无监督编码的场景；onehot 用于低基数（<10）线性模型的场景；hash 用于极高基数（>1000）且不要求精度可接受哈希冲突的场景。
     """
+    X = x_y[0]
     cols = resolve_cols(categorical_cols, X, "category")
     encoder = _TargetEncoder(target=target, smooth=smooth)
     return ("target_enc", encoder, cols)

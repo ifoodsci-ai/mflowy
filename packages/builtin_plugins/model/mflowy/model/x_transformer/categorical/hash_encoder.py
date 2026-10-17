@@ -1,22 +1,20 @@
 from typing import Annotated
 
 import pandas as pd
+from mflowy.driver.handler import handler
+from mflowy.model.x_y import XySpec
+from pydantic import Field
 from sklearn.feature_extraction import FeatureHasher
 from sklearn.pipeline import FunctionTransformer, Pipeline
-
-from mflowy.driver.config import StepType
-from mflowy.driver.handler import handler
-from mflowy.middlewares.data_inject import inject_X_y
 
 from ..utils import resolve_cols
 
 
-@handler(StepType.X_TRANSFORMER, inject_X_y)
+@handler(namespace="x_transformer")
 def hash_encoder(
-    X: pd.DataFrame,
-    y: pd.DataFrame,
+    x_y: XySpec,
     categorical_cols: Annotated[str | list[str] | None, "高基数分类列，None 自动检测"] = None,
-    n_buckets: Annotated[int, "哈希桶数量"] = 8,
+    n_buckets: Annotated[int, Field(gt=0, description="哈希桶数量")] = 8,
     **_,
 ):
     """哈希编码：将 "列名=值" 字符串经哈希函数投影到固定 n_buckets=8 维向量（FeatureHasher 默认稠密输出），无 fit 字典、常数内存。
@@ -25,8 +23,7 @@ def hash_encoder(
 
     label 用于探索阶段的轻量有序编码；ordinal 用于有序类别/树模型的场景；onehot 用于低基数（<10）+ 需可解释性的场景；target 用于高基数监督任务且能接受 CV 划分开销的场景。
     """
-    if n_buckets <= 0:
-        raise ValueError(f"n_buckets 必须为正整数，当前值: {n_buckets}")
+    X = x_y[0]
     categorical_cols = resolve_cols(categorical_cols, X, "category")
     return (
         "hash",

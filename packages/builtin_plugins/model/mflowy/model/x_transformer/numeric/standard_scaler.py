@@ -2,20 +2,16 @@
 
 from typing import Annotated
 
-import pandas as pd
-from sklearn.preprocessing import StandardScaler
-
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
-from mflowy.middlewares.data_inject import inject_X_y
+from mflowy.model.x_y import XySpec
+from sklearn.preprocessing import StandardScaler
 
 from ..utils import resolve_cols
 
 
-@handler(StepType.X_TRANSFORMER, inject_X_y)
+@handler(namespace="x_transformer")
 def standard_scaler(
-    X: pd.DataFrame,
-    y: pd.DataFrame,
+    x_y: XySpec,
     numerical_cols: Annotated[str | list[str] | None, "待标准化的数值列，None 自动检测"] = None,
     **_,
 ):
@@ -25,5 +21,6 @@ def standard_scaler(
 
     minmax 用于要求严格落在 [0,1] 区间（图像像素/某些 NN 激活）的场景；robust 用于数据含离群点、需用中位数+IQR 抵抗异常值的场景。
     """
+    X = x_y[0]
     numerical_cols = resolve_cols(numerical_cols, X, "number")
     return ("standard_scaler", StandardScaler(), numerical_cols)

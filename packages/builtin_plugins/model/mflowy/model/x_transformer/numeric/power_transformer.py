@@ -1,23 +1,21 @@
 """幂变换器"""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
-import pandas as pd
-from sklearn.preprocessing import PowerTransformer
-
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
-from mflowy.middlewares.data_inject import inject_X_y
+from mflowy.model.x_y import XySpec
+from sklearn.preprocessing import PowerTransformer
 
 from ..utils import resolve_cols
 
 
-@handler(StepType.X_TRANSFORMER, inject_X_y)
+@handler(namespace="x_transformer")
 def power_transformer(
-    X: pd.DataFrame,
-    y: pd.DataFrame,
+    x_y: XySpec,
     numerical_cols: Annotated[str | list[str] | None, "待变换的数值列，None 自动检测"] = None,
-    method: Annotated[str, "变换方法 (yeo-johnson/box-cox)，box-cox 要求数值 > 0"] = "yeo-johnson",
+    method: Annotated[
+        Literal["yeo-johnson", "box-cox"], "变换方法 (yeo-johnson/box-cox)，box-cox 要求数值 > 0"
+    ] = "yeo-johnson",
     standardize: Annotated[bool, "变换后是否标准化为零均值单位方差"] = True,
     **_,
 ):
@@ -27,8 +25,7 @@ def power_transformer(
 
     log_transformer 用于右偏正值且简单稳定的场景（无需估计 λ）；standard/robust 用于仅做尺度对齐、分布形态已可接受的场景。
     """
-    if method not in ("yeo-johnson", "box-cox"):
-        raise ValueError(f"method 必须是 'yeo-johnson' 或 'box-cox'，当前值: '{method}'")
+    X = x_y[0]
     numerical_cols = resolve_cols(numerical_cols, X, "number")
     if method == "box-cox":
         for col in numerical_cols:

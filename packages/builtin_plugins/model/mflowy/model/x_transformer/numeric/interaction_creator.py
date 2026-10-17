@@ -7,11 +7,9 @@ from typing import Annotated, Literal
 
 import numpy as np
 import pandas as pd
-from sklearn.base import BaseEstimator, TransformerMixin
-
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
-from mflowy.middlewares.data_inject import inject_X_y
+from mflowy.model.x_y import XySpec
+from sklearn.base import BaseEstimator, TransformerMixin
 
 from ..utils import validate_cols
 
@@ -41,7 +39,7 @@ class _Wrapper(BaseEstimator, TransformerMixin):
 
     def transform(self, X: pd.DataFrame, **kw):
         out = pd.DataFrame(index=X.index)
-        for (f1, f2), new_name in zip(self.pairs, self.names):
+        for (f1, f2), new_name in zip(self.pairs, self.names, strict=True):
             v1, v2 = X[f1], X[f2]
             if self.handle_missing == "fill":
                 v1, v2 = v1.fillna(0), v2.fillna(0)
@@ -56,10 +54,9 @@ class _Wrapper(BaseEstimator, TransformerMixin):
         return np.array(self.names)
 
 
-@handler(StepType.X_TRANSFORMER, inject_X_y)
+@handler(namespace="x_transformer")
 def interaction_creator(
-    X: pd.DataFrame,
-    y: pd.DataFrame,
+    x_y: XySpec,
     interactions: Annotated[list[list[str]], "交互对列表，每对包含两个特征名"],
     interaction_type: Annotated[Literal["multiply", "divide", "add", "subtract"], "交互运算类型"] = "multiply",
     feature_name_template: Annotated[str, "新特征命名模板，{feature1}/{feature2} 占位"] = "{feature1}_x_{feature2}",
@@ -73,6 +70,7 @@ def interaction_creator(
 
     pca_reducer 用于盲降维、不依赖先验交互假设的场景；numerical_binner 用于把连续值离散化而非构造交叉项的场景；power/log_transformer 用于单变量分布变换而非多变量交互的场景。
     """
+    X = x_y[0]
     if interaction_type not in _DEFAULT_TEMPLATES:
         raise ValueError(
             f"interaction_type 必须是 'multiply', 'divide', 'add' 或 'subtract'，当前值: '{interaction_type}'"

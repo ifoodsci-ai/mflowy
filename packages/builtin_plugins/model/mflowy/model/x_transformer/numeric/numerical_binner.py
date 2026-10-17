@@ -4,11 +4,9 @@ from typing import Annotated, Literal
 
 import numpy as np
 import pandas as pd
-from sklearn.base import BaseEstimator, TransformerMixin
-
-from mflowy.driver.config import StepType
 from mflowy.driver.handler import handler
-from mflowy.middlewares.data_inject import inject_X_y
+from mflowy.model.x_y import XySpec
+from sklearn.base import BaseEstimator, TransformerMixin
 
 from ..utils import resolve_cols
 
@@ -56,7 +54,7 @@ def _compute_bins(strategy, thresholds, labels, data):
     if strategy == "3class":
         th = thresholds or [-5, 5]
         lb = labels or ["RS减少", "RS不变", "RS增加"]
-        return [-np.inf] + th + [np.inf], lb
+        return [-np.inf, *th, np.inf], lb
     elif strategy == "4class":
         q1, q2, q3 = data.quantile(0.25), data.quantile(0.50), data.quantile(0.75)
         lb = labels or ["Q1_大幅减少", "Q2_小幅减少", "Q3_小幅增加", "Q4_大幅增加"]
@@ -68,15 +66,14 @@ def _compute_bins(strategy, thresholds, labels, data):
         if not thresholds:
             raise ValueError("自定义分箱必须提供thresholds参数")
         lb = labels or [f"Class_{i}" for i in range(len(thresholds))]
-        return [-np.inf] + thresholds + [np.inf], lb
+        return [-np.inf, *thresholds, np.inf], lb
     else:
         raise ValueError(f"不支持的分箱策略: {strategy}")
 
 
-@handler(StepType.X_TRANSFORMER, inject_X_y)
+@handler(namespace="x_transformer")
 def numerical_binner(
-    X: pd.DataFrame,
-    y: pd.DataFrame,
+    x_y: XySpec,
     numerical_cols: Annotated[str | list[str] | None, "待分箱的列名，None 自动检测"] = None,
     target: Annotated[bool, "是否用 y 计算分位阈值（结果仍写回 numerical_cols 列）"] = False,
     strategy: Annotated[
@@ -93,6 +90,7 @@ def numerical_binner(
 
     pca_reducer 用于降维而非离散化的场景；interaction_creator 用于构造交互项而非分箱的场景；onehot/ordinal 用于已天然离散的分类列的场景。
     """
+    X = x_y[0]
     if not target:
         numerical_cols = resolve_cols(numerical_cols, X, "number")
     else:
