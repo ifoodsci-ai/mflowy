@@ -44,7 +44,7 @@ series: 数茧深度案例系列（2 / 5）
 
 无缺失值、无 ID 列、无常量列，可直接建模。
 
-![Concrete 数值特征尺度对比](img/concrete_numeric_scale_box.png)
+![Concrete 数值特征尺度对比（现名 plot.violin；图为本案例当时的 boxplot 形态）](img/concrete_numeric_scale_box.png)
 
 ---
 
@@ -60,7 +60,7 @@ series: 数茧深度案例系列（2 / 5）
 
 **③ 数值分布**：矿渣、粉煤灰、减水剂严重右偏（大量样本为 0），建模前需相应预处理。
 
-![Concrete 数值特征分布质量](img/concrete_numeric_quality_kde_hist.png)
+![Concrete 数值特征分布质量（现名 plot.histogram）](img/concrete_numeric_quality_kde_hist.png)
 
 ---
 
