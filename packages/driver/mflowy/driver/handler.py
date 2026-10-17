@@ -1,113 +1,58 @@
+"""@handler 装饰器：把插件函数装配为可调度能力。
+
+不持有注册表——插件身份在 entry point name（``namespace.node_name``，见 discover.py），
+可执行性在函数属性上：
+
+- ``fn.handler``：织入中间件的调度链（``chain(ctx, **kwargs)``），``chain.__wrapped__`` 回指原函数
+
+执行序（单平面）：``*middlewares → mlflow_log → fn``——数据面已参数边化
+（编译期 builder 解析，见 context.py），中间件全部为遥测面。
+
+装饰器内嵌 ``validate_call``：函数签名即约束的单一事实源——``Annotated`` 参数（含
+``Field(gt=..)`` 等约束与旧式 ``Annotated[T, "描述"]`` 字符串约定）在**调用边界**完成
+解析与校验，时机为节点执行期；裸类型参数（参数边域）按 is-instance 直通。
+包装后的函数即模块级名字，直调同样过校验。
+本模块即插件 SDK 的核心入口，破坏性变更受 CHANGELOG 语义化版本约束。
+"""
+
 import logging
 from collections.abc import Callable
-from enum import Enum
-from typing import Annotated, Concatenate, get_args, get_origin, get_type_hints
+from typing import Concatenate
 
-from mflowy.compute.model.types import TASKTYPE
+from pydantic import ConfigDict, validate_call
 
-from .config import StepType, parse_enum
+from .binding import param_edge_names, raise_if_params_collide
+from .config import node_key
 from .context import Context
 
 logger = logging.getLogger(__name__)
 
 type Handler[R] = Callable[Concatenate[Context, ...], R]
 type Middleware[R] = Callable[[Context, Handler], R]
-_REGISTRY: dict[tuple[StepType, str], Handler] = {}
-type ParamsPostInit = Callable[[dict[str, object]], dict[str, object]]
-_POST_INIT_REGISTRY: dict[tuple[StepType, str], ParamsPostInit] = {}
 
 
-def _build_params_converter(fn) -> ParamsPostInit:
-    """从 handler 函数签名构建参数类型转换器。
+def handler[R](*middlewares: Middleware, namespace: str = ""):
+    """不影响原函数调用语义，附加 .handler 调度链并内嵌运行时参数校验。
 
-    检查每个参数的 Annotated 类型：
-    - 顶层 ``X | None`` 中含 ContinuousSpace/DiscreteSpace → list 值转 space 实例
-    - ``dict[str, ParameterSearchSpace]`` 形态 → dict 内部 list values 递归转 space 实例
+    ``*middlewares`` 为遥测面中间件（按声明序，活跃 mlflow run 窗口内执行）。
+    自定义数据结构的 YAML 值转换一律挂在类型的 ``__get_pydantic_core_schema__`` 上
+    （词汇主人侧）。
+
+    ``namespace`` 声明归组（能力族，空串=非归组）——身份声明源，hatch 构建期
+    AST 读取生成 entry point 名（``namespace.node_name`` / 裸 ``node_name``）。
     """
-    from mflowy.utils.study import ContinuousSpace, DiscreteSpace, ParameterSearchSpace
-
-    try:
-        hints = get_type_hints(fn, include_extras=True)
-    except Exception:
-        return lambda params: params
-
-    param_types: dict[str, object] = {}
-    for name, hint in hints.items():
-        if get_origin(hint) is Annotated:
-            param_types[name] = get_args(hint)[0]
-
-    def convert(params: dict[str, object]) -> dict[str, object]:
-        def _convert(val, typ):
-            args = set(get_args(typ) or (typ,))
-            if TASKTYPE in args and isinstance(val, str) and not isinstance(val, Enum):
-                return parse_enum(TASKTYPE, val)
-            if {ContinuousSpace, ContinuousSpace[float], ContinuousSpace[int]} & args and isinstance(val, dict):
-                val = ContinuousSpace(**val)
-            elif {DiscreteSpace, DiscreteSpace[int], DiscreteSpace[float], DiscreteSpace[str]} & args and isinstance(
-                val, list
-            ):
-                val = DiscreteSpace(val)
-            elif dict[str, ParameterSearchSpace] in args and isinstance(val, dict):
-                for k, v in val.items():
-                    if isinstance(v, dict):
-                        val[k] = ContinuousSpace(**v)
-                    elif isinstance(v, list):
-                        val[k] = DiscreteSpace(v)
-                    else:
-                        logger.warning(f"列约束 '{k}' 需编码为 dict(连续) 或 list(离散)，got {v!r}，跳过转换")
-            return val
-
-        for name, typ in param_types.items():
-            if name not in params:
-                continue
-            params[name] = _convert(params[name], typ)
-        return params
-
-    return convert
-
-
-def get_post_init(step: StepType, module: str) -> ParamsPostInit | None:
-    from mflowy.driver.discover import ensure_discovered
-
-    ensure_discovered()
-    return _POST_INIT_REGISTRY.get((step, module))
-
-
-def get(step: StepType, module: str) -> Handler:
-    from mflowy.driver.discover import ensure_discovered
-
-    ensure_discovered()
-    if (step, module) not in _REGISTRY:
-        available = [name for (t, name) in _REGISTRY if t == step]
-        raise ModuleNotFoundError(f"Module '{module}' not found for step '{step}'. Available: {available}")
-    return _REGISTRY[(step, module)]
-
-
-def has(step: StepType, module: str) -> bool:
-    from mflowy.driver.discover import ensure_discovered
-
-    ensure_discovered()
-    return (step, module) in _REGISTRY
-
-
-def list_all() -> dict[StepType, list[str]]:
-    from mflowy.driver.discover import ensure_discovered
-
-    ensure_discovered()
-    result: dict[StepType, list[str]] = {}
-    for t, name in _REGISTRY:
-        result.setdefault(t, []).append(name)
-    return result
-
-
-def handler[R](step: StepType, *middlewares: Middleware):
-    """不影响原函数调用，附加 .handler 闭包支持 Workflow 调度 DAG"""
 
     def decorator(fn: Callable[..., R]):
-        def handler_wrapper(ctx: Context, **kwargs) -> R:
-            return fn(**{**kwargs, **ctx.conf.params})
+        valid_fn = validate_call(fn, config=ConfigDict(arbitrary_types_allowed=True))
+        edge_names = param_edge_names(fn)  # M1 撞名判定装饰期一次（运行期零反射开销）
 
-        # 构建中间件链
+        def handler_wrapper(ctx: Context, **kwargs) -> R:
+            # 运行期防线（M1）：护住绕过编译的直跑路径；判定/文案单源在 binding
+            if ctx.conf.params:
+                raise_if_params_collide(edge_names, ctx.conf.params, f"[{ctx.conf.node_key}]")
+            return valid_fn(**{**kwargs, **ctx.conf.params})
+
+        # 构建中间件链（尾链仅 mlflow_log——stop_on_error 已随 #59 血缘剪枝调度退役）
         handler_chain: Handler = handler_wrapper
 
         def wrap(inner: Handler, mw: Middleware) -> Handler:
@@ -116,18 +61,15 @@ def handler[R](step: StepType, *middlewares: Middleware):
 
             return middleware_wrapper
 
-        # mlflow_log 和 stop_on_error 作为默认尾中间件，确保所有 handler 都在 mlflow run 内执行
-        from mflowy.middlewares import mlflow_log, stop_on_error
+        # 默认尾链在函数体内延迟导入，避免装饰器定义期循环导入
+        from .builtin_middleware import mlflow_log
 
-        for mw in (*middlewares, mlflow_log, stop_on_error):
+        for mw in (*middlewares, mlflow_log):
             handler_chain = wrap(handler_chain, mw)
 
-        handler_chain.__wrapped__ = fn  # type: ignore
-
-        if (step, fn.__name__) in _REGISTRY:
-            raise ValueError(f"Duplicate handler registration: ({step}, {fn.__name__}). Already registered.")
-        _REGISTRY[(step, fn.__name__)] = handler_chain
-        _POST_INIT_REGISTRY[(step, fn.__name__)] = _build_params_converter(fn)
+        fn.handler = handler_chain
+        fn.namespace = namespace
+        fn.node_key = node_key(namespace, fn.__name__)
         return fn
 
     return decorator
