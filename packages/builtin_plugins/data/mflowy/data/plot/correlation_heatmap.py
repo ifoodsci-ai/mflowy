@@ -11,15 +11,11 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib.patches import FancyBboxPatch
+from mflowy.data.middlewares import log_plot
+from mflowy.driver.handler import handler
+from mflowy.utils.plot import CMAP_DIVERGING
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from scipy import stats
-
-from mflowy.driver.config import StepType
-from mflowy.driver.handler import handler
-from mflowy.middlewares import log_plot
-from mflowy.middlewares.data_inject import inject_df
-
-from ..base import *
 
 
 def _corr_method(method: str):
@@ -155,9 +151,10 @@ def _pval_marker(p: float) -> str:
     return ""
 
 
-@handler(StepType.PLOT, inject_df, log_plot)
+@handler(log_plot, namespace="plot")
 def correlation_heatmap(
-    df: pd.DataFrame,
+    load: pd.DataFrame,
+    clean: pd.DataFrame | None = None,
     targets: Annotated[str | list[str] | set[str] | None, "目标特征列"] = None,
     numerical_cols: Annotated[str | list[str] | set[str] | None, "数值特征列"] = None,
     method: Annotated[str, "相关性计算方法 (pearson/spearman/kendall)"] = "spearman",
@@ -172,6 +169,7 @@ def correlation_heatmap(
 
     仅展示两两线性/单调关系；非线性关系和异常点驱动用 target_trend_by_numeric。
     """
+    df = clean if clean is not None else load
     corr_df, pval_df = correlation_heatmap_data(df, method=method, targets=targets, numerical_cols=numerical_cols)
     corr_df.attrs["suffix"] = "_corr"
     pval_df.attrs["suffix"] = "_pval"
@@ -190,12 +188,12 @@ def correlation_heatmap(
                 annot_data[i, j] = "1"
             else:
                 annot_data[i, j] = f"{matrix[i, j]:.2f}"
-    fig, ax = plt.subplots(figsize=(10, 6))
+    _fig, ax = plt.subplots(figsize=(10, 6))
     ax = sns.heatmap(
         matrix,
         mask=mask,
         annot=annot_data if show_values else None,
-        fmt="" if show_values else "",
+        fmt="",
         annot_kws={"size": annot_size} if show_values else None,
         cmap=CMAP_DIVERGING,
         vmin=vmin,

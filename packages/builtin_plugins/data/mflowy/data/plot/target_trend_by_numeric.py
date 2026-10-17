@@ -12,15 +12,15 @@ from typing import Annotated
 import numpy as np
 import pandas as pd
 from matplotlib.figure import Figure
-
-from mflowy.driver.config import StepType
+from mflowy.data.middlewares import (
+    InvalidTargetDtypeError,
+    SkipPlotError,
+    filter_numerical_cols,
+    log_plot,
+    validate_targets,
+)
 from mflowy.driver.handler import handler
-from mflowy.middlewares import log_plot
-from mflowy.middlewares.data_inject import inject_df
-from mflowy.middlewares.log_plot import SkipPlotError
-from mflowy.utils.df_columns import InvalidTargetDtypeError, filter_numerical_cols, validate_targets
 
-from ..base import *
 from ._grid import band_grid
 from .correlation_heatmap import _corr_method
 
@@ -98,9 +98,9 @@ def _build_scatter_dfs(
             X_long[feature_mask]
             .assign(
                 target=target,
-                y=lambda d: y.loc[d.index].values,
-                r=lambda d: d["feature"].map(r_series),
-                p=lambda d: d["feature"].map(p_series),
+                y=lambda d: y.loc[d.index].values,  # noqa: B023 — assign 同步求值，晚期绑定实际安全
+                r=lambda d: d["feature"].map(r_series),  # noqa: B023 — 同上
+                p=lambda d: d["feature"].map(p_series),  # noqa: B023 — 同上
             )
             .dropna(subset=["x", "y"])
         )
@@ -109,9 +109,9 @@ def _build_scatter_dfs(
         yield scatter_df
 
 
-@handler(StepType.PLOT, inject_df, log_plot)
+@handler(log_plot, namespace="plot")
 def target_trend_by_numeric(
-    df: pd.DataFrame,
+    load: pd.DataFrame,
     targets: Annotated[str | list[str] | set[str], "目标特征列（必填）"],
     numerical_cols: Annotated[str | list[str] | set[str] | None, "指定的数值特征列，优先级高于top_k"] = None,
     top_k: Annotated[int, "每个目标最多展示的特征数"] = 9,
@@ -124,6 +124,7 @@ def target_trend_by_numeric(
     min_sample_size: Annotated[int, "最小样本量"] = 20,
     col_wrap: Annotated[int, "每行子图数"] = 3,
     title: Annotated[str | None, "图表标题"] = None,
+    clean: pd.DataFrame | None = None,
 ) -> tuple[tuple[pd.DataFrame, ...], Figure]:
     """对每个数值目标列，计算所有数值特征与它的相关性（pearson/spearman），按 |r| 排序后取 top_k
     绘制散点行带（先遍历 targets、带内特征按 col_wrap 折行，列数 = min(特征数, col_wrap)；每 target 仅 1 个特征时多 target 连续排布共享行，全部 target 同一张 figure），可选叠加 LOWESS 趋势线。
@@ -133,6 +134,7 @@ def target_trend_by_numeric(
     targets 必须是数值列；numerical_cols 显式指定时优先于 top_k 自动排序；分类目标的判别力用 target_separation_by_numeric，全局两两矩阵看 correlation_heatmap。
     产物：每 target 一个 `{module}_{target}.json` + 单张 `{module}.png`。
     """
+    df = clean if clean is not None else load
     try:
         targets = validate_targets(df, targets, dtypes="number")
     except InvalidTargetDtypeError as e:
@@ -152,9 +154,9 @@ def target_trend_by_numeric(
         cell_size=(4.5, 3.5),
     )
 
-    for scatter_df, band in zip(scatter_dfs, bands):
+    for scatter_df, band in zip(scatter_dfs, bands, strict=True):
         target: str = scatter_df["target"].iloc[0]
-        for i, ((feat, subset), ax) in enumerate(zip(scatter_df.groupby("feature", sort=False), band)):
+        for i, ((feat, subset), ax) in enumerate(zip(scatter_df.groupby("feature", sort=False), band, strict=True)):
             x_vals = subset["x"].to_numpy(dtype=float)
             y_vals = subset["y"].to_numpy(dtype=float)
             feat_r = float(subset["r"].iloc[0])

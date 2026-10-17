@@ -9,52 +9,30 @@
 from typing import Annotated
 
 import pandas as pd
-import seaborn as sns
 from matplotlib.figure import Figure
-
-from mflowy.driver.config import StepType
+from mflowy.data.middlewares import (
+    InvalidTargetDtypeError,
+    SkipPlotError,
+    filter_categorical_cols,
+    log_plot,
+    validate_targets,
+)
 from mflowy.driver.handler import handler
-from mflowy.middlewares import log_plot
-from mflowy.middlewares.data_inject import inject_df
-from mflowy.middlewares.log_plot import SkipPlotError
-from mflowy.utils.df_columns import InvalidTargetDtypeError, filter_categorical_cols, validate_targets
 
-from ..base import *
 from ._grid import band_grid
+from ._kde import kde_groups_cell
 
 
-def _plot_cell(ax, df: pd.DataFrame, target_col: str, cat_col: str, show_density_label: bool):
-    groups = df[cat_col].unique()
-    for j, group in enumerate(groups):
-        values = df[df[cat_col] == group][target_col].dropna()
-        if len(values) > 1:
-            sns.kdeplot(
-                x=values,
-                label=str(group),
-                fill=True,
-                alpha=0.2,
-                color=OKABE_ITO_PALETTE[j % len(OKABE_ITO_PALETTE)],
-                common_norm=False,
-                ax=ax,
-            )
-    ax.set_xlabel(target_col)
-    ax.set_ylabel("Density" if show_density_label else "")
-    if len(groups) > 1:
-        ax.legend(title=cat_col, frameon=False)
-    ax.grid(axis="y", alpha=0.3, linestyle="--")
-    ax.set_axisbelow(True)
-    sns.despine(ax=ax, top=False, right=False)
-
-
-@handler(StepType.PLOT, inject_df, log_plot)
+@handler(log_plot, namespace="plot")
 def target_effect_by_category(
-    df: pd.DataFrame,
+    load: pd.DataFrame,
     targets: Annotated[str | list[str] | set[str], "数值目标列（必填）"],
     categorical_cols: Annotated[
         str | list[str] | set[str] | None, "分类特征列，None 时自动选取所有非数值特征列"
     ] = None,
     col_wrap: Annotated[int, "每行子图数"] = 3,
     title: Annotated[str | None, "图表标题"] = None,
+    clean: pd.DataFrame | None = None,
 ) -> tuple[tuple[pd.DataFrame, ...], Figure]:
     """检查分类特征（categorical_cols）各类别在数值 targets 上的组间效应——每格对一个数值 target 按特征类别做 KDE 多组叠加（x 轴为 target 值域）。
 
@@ -65,6 +43,7 @@ def target_effect_by_category(
     targets 必须是数值列；分类目标的类别关联用 target_association_by_category，数值特征的判别力用 target_separation_by_numeric，跨特征两两关系看 correlation_heatmap。
     产物：每 target 一个 `{module}_{target}.json` + 单张 `{module}.png`。
     """
+    df = clean if clean is not None else load
     try:
         targets = validate_targets(df, targets, dtypes="number")
     except InvalidTargetDtypeError as e:
@@ -78,11 +57,11 @@ def target_effect_by_category(
     )
 
     dfs = []
-    for target, band in zip(targets, bands):
-        for i, (cat_col, ax) in enumerate(zip(cat_cols, band)):
+    for target, band in zip(targets, bands, strict=True):
+        for i, (cat_col, ax) in enumerate(zip(cat_cols, band, strict=True)):
             show_density_label = i == 0 or ax.get_subplotspec().colspan.start == 0
-            _plot_cell(ax, df, target, cat_col, show_density_label=show_density_label)
-        band_df = df[[target] + cat_cols]
+            kde_groups_cell(ax, df, value_col=target, group_col=cat_col, show_density_label=show_density_label)
+        band_df = df[[target, *cat_cols]]
         band_df.attrs["suffix"] = f"_{target}"
         dfs.append(band_df)
 

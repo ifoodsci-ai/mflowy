@@ -13,19 +13,15 @@ import pandas as pd
 import seaborn as sns
 from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
-
-from mflowy.driver.config import StepType
+from mflowy.data.middlewares import filter_numerical_cols, log_plot
 from mflowy.driver.handler import handler
-from mflowy.middlewares import log_plot
-from mflowy.middlewares.data_inject import inject_df
-from mflowy.utils.df_columns import filter_numerical_cols
-
-from ..base import *
+from mflowy.utils.plot import OKABE_ITO_PALETTE
 
 
-@handler(StepType.PLOT, inject_df, log_plot)
-def numeric_quality_kde_hist(
-    df: pd.DataFrame,
+@handler(log_plot, namespace="plot")
+def histogram(
+    load: pd.DataFrame,
+    clean: pd.DataFrame | None = None,
     numerical_cols: Annotated[str | list[str] | set[str] | None, "数值特征列"] = None,
     title: Annotated[str | None, "图表标题"] = None,
     col_wrap: Annotated[int, "每行子图数"] = 3,
@@ -34,8 +30,9 @@ def numeric_quality_kde_hist(
 
     数据质量分析：从分布形态识别偏态（需 log/box-cox 变换）、重尾、双峰、离群值等数值特征自身的质量问题；分位线与 IQR 辅助读出集中趋势与离散度。
 
-    仅看单变量分布；变量间关系用 target_trend_by_numeric，分类特征对目标的组间效应用 target_effect_by_category。
+    仅看单变量分布；变量间关系用 target_trend_by_numeric，分类特征对目标的组间效应用 target_effect_by_category，跨特征量级对比看 violin。
     """
+    df = clean if clean is not None else load
     numerical_df = filter_numerical_cols(df, numerical_cols)
     numerical_cols = numerical_df.columns.tolist()
 

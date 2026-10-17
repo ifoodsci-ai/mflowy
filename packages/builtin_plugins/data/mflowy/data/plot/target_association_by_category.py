@@ -11,15 +11,16 @@ from typing import Annotated
 import pandas as pd
 import seaborn as sns
 from matplotlib.figure import Figure
-
-from mflowy.driver.config import StepType
+from mflowy.data.middlewares import (
+    InvalidTargetDtypeError,
+    SkipPlotError,
+    filter_categorical_cols,
+    log_plot,
+    validate_targets,
+)
 from mflowy.driver.handler import handler
-from mflowy.middlewares import log_plot
-from mflowy.middlewares.data_inject import inject_df
-from mflowy.middlewares.log_plot import SkipPlotError
-from mflowy.utils.df_columns import InvalidTargetDtypeError, filter_categorical_cols, validate_targets
+from mflowy.utils.plot import OKABE_ITO_PALETTE
 
-from ..base import *
 from ._grid import band_grid
 
 
@@ -39,15 +40,16 @@ def _plot_cell(ax, df: pd.DataFrame, target_col: str, cat_col: str):
     sns.despine(ax=ax, top=False, right=False)
 
 
-@handler(StepType.PLOT, inject_df, log_plot)
+@handler(log_plot, namespace="plot")
 def target_association_by_category(
-    df: pd.DataFrame,
+    load: pd.DataFrame,
     targets: Annotated[str | list[str] | set[str], "分类目标列（必填，低基数）"],
     categorical_cols: Annotated[
         str | list[str] | set[str] | None, "分类特征列，None 时自动选取所有非数值特征列"
     ] = None,
     col_wrap: Annotated[int, "每行子图数"] = 3,
     title: Annotated[str | None, "图表标题"] = None,
+    clean: pd.DataFrame | None = None,
 ) -> tuple[tuple[pd.DataFrame, ...], Figure]:
     """检查分类特征（categorical_cols）各类别与分类 targets 的关联——每格一张交叉表热力图（行=特征类别、列=target 类别，x 轴统一为 target），单元格标注频数。
 
@@ -57,6 +59,7 @@ def target_association_by_category(
 
     产物：每 target 一个 `{module}_{target}.json` + 单张 `{module}.png`。
     """
+    df = clean if clean is not None else load
     try:
         targets = validate_targets(df, targets, dtypes="category")
     except InvalidTargetDtypeError as e:
@@ -70,10 +73,10 @@ def target_association_by_category(
     )
 
     dfs = []
-    for target, band in zip(targets, bands):
-        for cat_col, ax in zip(cat_cols, band):
+    for target, band in zip(targets, bands, strict=True):
+        for cat_col, ax in zip(cat_cols, band, strict=True):
             _plot_cell(ax, df, target, cat_col)
-        band_df = df[[target] + cat_cols]
+        band_df = df[[target, *cat_cols]]
         band_df.attrs["suffix"] = f"_{target}"
         dfs.append(band_df)
 

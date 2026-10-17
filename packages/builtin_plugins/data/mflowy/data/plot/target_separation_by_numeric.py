@@ -9,50 +9,28 @@
 from typing import Annotated
 
 import pandas as pd
-import seaborn as sns
 from matplotlib.figure import Figure
-
-from mflowy.driver.config import StepType
+from mflowy.data.middlewares import (
+    InvalidTargetDtypeError,
+    SkipPlotError,
+    filter_numerical_cols,
+    log_plot,
+    validate_targets,
+)
 from mflowy.driver.handler import handler
-from mflowy.middlewares import log_plot
-from mflowy.middlewares.data_inject import inject_df
-from mflowy.middlewares.log_plot import SkipPlotError
-from mflowy.utils.df_columns import InvalidTargetDtypeError, filter_numerical_cols, validate_targets
 
-from ..base import *
 from ._grid import band_grid
+from ._kde import kde_groups_cell
 
 
-def _plot_cell(ax, df: pd.DataFrame, feature: str, target: str, show_density_label: bool):
-    classes = df[target].unique()
-    for j, cls in enumerate(classes):
-        values = df[df[target] == cls][feature].dropna()
-        if len(values) > 1:
-            sns.kdeplot(
-                x=values,
-                label=str(cls),
-                fill=True,
-                alpha=0.2,
-                color=OKABE_ITO_PALETTE[j % len(OKABE_ITO_PALETTE)],
-                common_norm=False,
-                ax=ax,
-            )
-    ax.set_xlabel(feature)
-    ax.set_ylabel("Density" if show_density_label else "")
-    if len(classes) > 1:
-        ax.legend(title=target, frameon=False)
-    ax.grid(axis="y", alpha=0.3, linestyle="--")
-    ax.set_axisbelow(True)
-    sns.despine(ax=ax, top=False, right=False)
-
-
-@handler(StepType.PLOT, inject_df, log_plot)
+@handler(log_plot, namespace="plot")
 def target_separation_by_numeric(
-    df: pd.DataFrame,
+    load: pd.DataFrame,
     targets: Annotated[str | list[str] | set[str], "分类目标列（必填，低基数）"],
     numerical_cols: Annotated[str | list[str] | set[str] | None, "数值特征列，None 时自动选取所有数值特征列"] = None,
     col_wrap: Annotated[int, "每行子图数"] = 3,
     title: Annotated[str | None, "图表标题"] = None,
+    clean: pd.DataFrame | None = None,
 ) -> tuple[tuple[pd.DataFrame, ...], Figure]:
     """检查分类目标（targets）各类别在数值特征上的分布分离度——每格对一个数值特征按目标类别做 KDE 多组叠加，目标身份见每格图例标题。
 
@@ -62,6 +40,7 @@ def target_separation_by_numeric(
 
     产物：每 target 一个 `{module}_{target}.json` + 单张 `{module}.png`。
     """
+    df = clean if clean is not None else load
     try:
         targets = validate_targets(df, targets, dtypes="category")
     except InvalidTargetDtypeError as e:
@@ -75,11 +54,11 @@ def target_separation_by_numeric(
     )
 
     dfs = []
-    for target, band in zip(targets, bands):
-        for i, (feature, ax) in enumerate(zip(num_cols, band)):
+    for target, band in zip(targets, bands, strict=True):
+        for i, (feature, ax) in enumerate(zip(num_cols, band, strict=True)):
             show_density_label = i == 0 or ax.get_subplotspec().colspan.start == 0
-            _plot_cell(ax, df, feature, target, show_density_label=show_density_label)
-        band_df = df[[target] + num_cols]
+            kde_groups_cell(ax, df, value_col=feature, group_col=target, show_density_label=show_density_label)
+        band_df = df[[target, *num_cols]]
         band_df.attrs["suffix"] = f"_{target}"
         dfs.append(band_df)
 
