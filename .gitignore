@@ -1,9 +1,12 @@
+.venv
 __pycache__
+node_modules
 .vscode
 superpowers
 .superpowers
 .gstack
 .serena
+.zcode
 .claude/*
 !.claude/settings.json
 
@@ -26,3 +29,8 @@ mlruns/
 *.zip
 *.csv
 *.tar.gz
+out
+docs/research
+examples/2026-10-11-challenge-02-errors-integrity*
+.kaggle/ps-s6e10/SPEC.md
+.zcode-survey/01-starch-extrusion.xlsx
