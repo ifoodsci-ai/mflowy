@@ -4,7 +4,6 @@ import asyncio
 from pathlib import Path
 
 import pytest
-
 from mflowy.utils.path import set_task_dir, task_dir
 
 

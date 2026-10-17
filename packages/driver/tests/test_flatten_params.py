@@ -1,6 +1,6 @@
 """测试 _flatten_params 参数展平"""
 
-from mflowy.middlewares.mlflow_log import _flatten_params
+from mflowy.driver.builtin_middleware import _flatten_params
 
 
 class TestFlattenParams:

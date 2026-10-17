@@ -7,9 +7,8 @@ stdlib 契约：业务代码用 logging.getLogger(__name__)，setup() 只由入�
 
 import logging
 
-import pytest
-
 import mflowy.utils.logging as _logging_mod
+import pytest
 
 
 @pytest.fixture(autouse=True)
