@@ -26,7 +26,8 @@ def test_family_mdp_family_declarations_complete():
     assert set(fams) == {"XGB", "LGBM", "CAT", "RF", "MLP"}
     for fam, entry in fams.items():
         meta = entry["mdp_family"]
-        assert set(meta) == {"structure"}, fam  # 资源标注全退——不再有第二份空间/预算知识
+        # #62 后：structure（相容声明）+ machinery（会话直调的 estimator 机器）；LGBM 另有 fit_params
+        assert {"structure", "machinery"} <= set(meta) and set(meta) <= {"structure", "machinery", "fit_params"}, fam
         st = meta["structure"]
         assert st["cat_support"] in {"native", "encode"}, fam
         assert isinstance(st["scaling_need"], bool), fam

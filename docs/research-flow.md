@@ -17,12 +17,12 @@ flowchart LR
     D["原始数据"] --> S["第一幕 · 画像与建档"]
     S -->|冻结 DomainCard| C["第二幕 · 清洗 MDP"]
     C -->|final_path| B["第三幕 · 建模协议"]
-    B -->|冻结 ProtocolCard| M["第四幕 · 建模 MDP"]
+    B -->|冻结 CVCard| M["第四幕 · 建模 MDP"]
     M --> E["第五幕 · 解释与回流"]
     E -.findings 发现新问题.-> S
 ```
 
-三道冻结门（卡即对局规则，改卡 = 新开一局）：`DomainCard → 清洗 MDP`、`final_path → 建模 MDP`、`ProtocolCard → 建模 MDP`。任何一幕结论不成立，回退上一幕重开，而不是在当前幕硬调。
+三道冻结门（卡即对局规则，改卡 = 新开一局）：`DomainCard → 清洗 MDP`、`final_path → 建模 MDP`、`CVCard → 建模 MDP`。任何一幕结论不成立，回退上一幕重开，而不是在当前幕硬调。
 
 ---
 
@@ -147,7 +147,7 @@ min_row_retention: 0.9      # 过激动作会被引擎拒绝
 
 **U**：目标是**替代三分之二的验证实验**——模型筛掉没希望的工艺组合，只做 promising 的。要可解释，组会要向导师解释每个结论。数据不到 500 行，神经网络就别上了。实验室有个经验公式，R² 大概 0.6。
 
-**A**：ProtocolCard 冻结：`task=regression, metric=r2, cv=5, banned=[MLP], max_mini=24, max_full=1, external_baseline="经验公式 R²≈0.6"`。开局即四门校验：task↔目标 dtype、metric↔task、cv↔数据规模、预算下限——任何一门不过，fail-loud，现在改比开局后改便宜。**test 集在这一刻已被切出、封存**——此后它只被最终评估触碰一次（律一）。
+**A**：CVCard 冻结：`task=regression, metric=r2, cv=5, candidates=[{XGB, baseline}, {RF}], max_steps=8, external_baseline="经验公式 R²≈0.6"`。开局即四门校验：task↔目标 dtype、metric↔task、cv↔数据规模、预算下限——任何一门不过，fail-loud，现在改比开局后改便宜。**test 集在这一刻已被切出、封存**——此后它只被最终评估触碰一次（律一）。
 
 ---
 
@@ -229,7 +229,7 @@ board（inner CV，均值−std）:
 | 术语 | 含义 |
 | --- | --- |
 | 建档卡（DomainCard） | 数据领域先验的冻结档案：目标列 / ID 列 / 合法值域 / 单位约定 / 保留率下限——开局即冻结，改卡 = 新开一局 |
-| 协议卡（ProtocolCard） | 建模对局规则的冻结档案：任务 / 指标 / CV / 预算 / 禁用族 / 外部基线——开局即四门校验 |
+| 协议卡（CVCard） | 建模对局规则的冻结档案：任务 / 指标 / CV / 预算 / 结构化候选（baseline 锚点 + space_hints + seed）/ 外部基线——开局即四门校验 |
 | 画像 | 逐列统计摘要（dtype / 缺失 / 唯一值 / 偏度 / 高频值），`data_profile` 产出 |
 | 哨兵值 | 用特殊常量（−999/9999）表示缺失或异常的记法，须转缺失再处理 |
 | 双源对账 | 先验（用户回答）× 证据（画像/检测）冲突即发现的建档方法——疑似 ≠ 确定 |

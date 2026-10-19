@@ -18,6 +18,10 @@ dependencies = [
     "catboost>=1.2",
     "optuna>=4.8.0",
     "shap>=0.52.0",
+    # 直用科学栈（session/diagnose/report；import 即声明——不靠 sklearn 传递侥幸）
+    "numpy>=2.0.0",
+    "pandas>=2.2,<3",
+    "scipy>=1.17.0",
 ]
 
 [project.optional-dependencies]
@@ -54,7 +58,10 @@ modeling_propose = "mflowy.model.tools:modeling_propose"
 modeling_apply = "mflowy.model.tools:modeling_apply"
 modeling_rollback = "mflowy.model.tools:modeling_rollback"
 modeling_finish = "mflowy.model.tools:modeling_finish"
+modeling_report_findings = "mflowy.model.tools:modeling_report_findings"
+taylor_diagram_report = "mflowy.model.tools:taylor_diagram_report"
 modeling_abandon = "mflowy.model.tools:modeling_abandon"
+hyperparameters_search = "mflowy.model.tools:hyperparameters_search"
 modeling = "mflowy.model.tools:modeling"
 explanation = "mflowy.model.tools:explanation"
 predict = "mflowy.model.tools:predict"

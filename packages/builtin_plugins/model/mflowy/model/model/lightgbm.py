@@ -1,4 +1,4 @@
-"""LightGBM 模型实现 - @handler 实体函数模式"""
+"""LightGBM 模型实现 - @handler 实体函数模式（#62 两行为派生）"""
 
 from __future__ import annotations
 
@@ -12,12 +12,27 @@ from mflowy.utils.constants import RANDOM_STATE
 from mflowy.utils.logging import is_verbose
 from sklearn.compose import ColumnTransformer
 
-from ._model import build_pipeline
-from ._pipeline import training
-from .types import MetricName, ModelPipeline
-from .utils import extract_search_spaces, infer_metric
+from ._pipeline import hyperparameters_search, search_evidence, training
+from .types import MetricName
+from .utils import infer_metric, make_machinery
 
 logger = logging.getLogger(__name__)
+
+
+def _model_cls():
+    from ._lightgbm import model_cls
+
+    return model_cls
+
+
+# 早停经 fit_params 透传（仅最终训练带 eval_set 时生效）——machinery 恒返回缺省档
+_FIT_DEFAULTS = {"early_stopping_rounds": 60}
+
+
+def _fit_params(**overrides) -> dict:
+    fit = dict(_FIT_DEFAULTS)
+    fit.update(overrides)
+    return fit
 
 
 @handler(namespace="model")
@@ -37,7 +52,7 @@ def LGBM(
     colsample_bytree: Annotated[float | ContinuousSpace[float], "每棵树构建时的特征采样比例"] = ContinuousSpace(
         0.5, 1.0
     ),
-    colsample_bynode: Annotated[float | ContinuousSpace[float], "每个分裂节点的特征采样比例"] = 1.0,
+    colsample_bynode: Annotated[float, "每个分裂节点的特征采样比例"] = 1.0,
     min_split_gain: Annotated[float | ContinuousSpace[float], "分裂最小增益"] = ContinuousSpace(0.0, 10.0),
     path_smooth: Annotated[float | ContinuousSpace[float], "叶值平滑（防小样本 leaf 过拟合）"] = ContinuousSpace(
         0.0, 10.0
@@ -45,64 +60,68 @@ def LGBM(
     reg_alpha: Annotated[float | ContinuousSpace[float], "L1 正则化系数"] = ContinuousSpace(1e-8, 10.0, "log"),
     reg_lambda: Annotated[float | ContinuousSpace[float], "L2 正则化系数"] = ContinuousSpace(1e-8, 10.0, "log"),
     scale_pos_weight: Annotated[float, "正类权重倍数（不平衡二分类用，neg/pos）"] = 1.0,
-    early_stopping_rounds: Annotated[int | None, "早停轮数（仅最终训练生效，trial 阶段关闭），None 关闭"] = 60,
+    early_stopping_rounds: Annotated[int | None, "早停轮数（仅最终训练带 eval_set 时生效），None 关闭"] = 60,
     random_state: Annotated[int, "随机种子"] = RANDOM_STATE,
-    evaluate_holdout: Annotated[
-        bool, "会话内部：False = 两段式 run 路径（跳过 holdout 终评，不碰 test）；DAG 用户保持缺省"
-    ] = True,
 ):
     """LightGBM，GBDT 系列基线模型；``num_leaves`` 等参数以搜索空间走 Optuna 调参（默认 tpe / 100 trials）。
 
-    参数空间默认覆盖 num_leaves/max_depth/learning_rate/n_estimators 等 GBDT 核心项；``early_stopping_rounds`` 经 fit_params 透传（仅最终训练带 eval_set 时生效）；``scoring`` 为 None 时按 task 自动推断（回归 MAE / 分类 F1）。
+    两行为派生（#62，``extract_search_spaces`` 空否即判据）：参数含搜索空间 →
+    **hyperparameters_search 行为**（inner CV 选参，不终训不碰 holdout）；全 pin →
+    **training 行为**（全量拟合 + holdout 终评 + loader）。``early_stopping_rounds`` 经
+    fit_params 透传（仅最终训练带 eval_set 时生效）。
 
-    流程：可选 Optuna（cross_val_score 在 train 内选参）→ 全量 train 重训单一 Pipeline（早停时从 train 切 val）→ holdout test 终评一次 → 持久化 name='final'。LightGBM 用 >=10k 高维特征场景（histogram 直方加速）。
+    参数空间默认覆盖 num_leaves/max_depth/learning_rate/n_estimators 等 GBDT 核心项；``scoring`` 为 None 时按 task 自动推断（回归 MAE / 分类 F1）。LightGBM 用 >=10k 高维特征场景（histogram 直方加速）。
     """
     split = train_split
-    from ._lightgbm import model_cls
-
-    task = split.task
-
-    def make_pipe(**params) -> ModelPipeline:
-        return build_pipeline(task, model_cls, x_preprocessors, params)
-
-    initial_params, param_space = extract_search_spaces(
-        {
-            "num_leaves": num_leaves,
-            "max_depth": max_depth,
-            "learning_rate": learning_rate,
-            "n_estimators": n_estimators,
-            "min_child_samples": min_child_samples,
-            "subsample": subsample,
-            "colsample_bytree": colsample_bytree,
-            "colsample_bynode": colsample_bynode,
-            "min_split_gain": min_split_gain,
-            "path_smooth": path_smooth,
-            "reg_alpha": reg_alpha,
-            "reg_lambda": reg_lambda,
-            "verbose": 1 if is_verbose() else -1,
-            "random_state": random_state,
-            "scale_pos_weight": scale_pos_weight,
-        }
+    metric = scoring or infer_metric(split.task)
+    make_pipe, initial_params, param_space = _machinery(
+        split.task,
+        x_preprocessors,
+        seed=random_state,
+        num_leaves=num_leaves,
+        max_depth=max_depth,
+        learning_rate=learning_rate,
+        n_estimators=n_estimators,
+        min_child_samples=min_child_samples,
+        subsample=subsample,
+        colsample_bytree=colsample_bytree,
+        colsample_bynode=colsample_bynode,
+        min_split_gain=min_split_gain,
+        path_smooth=path_smooth,
+        reg_alpha=reg_alpha,
+        reg_lambda=reg_lambda,
+        scale_pos_weight=scale_pos_weight,
     )
-
-    return training(
+    if param_space:  # search 行为：只碰 inner CV，产物 = 搜索证据
+        study = hyperparameters_search(
+            param_space,
+            scoring=metric,
+            n_trials=n_trials,
+            split=split,
+            make_pipe=make_pipe,
+            base_params=initial_params,
+            seed=random_state,
+        )
+        return search_evidence(study, "LGBM", metric)
+    return training(  # training 行为
         split,
         "LGBM",
         make_pipe,
         initial_params,
-        fit_params={"early_stopping_rounds": early_stopping_rounds},
-        param_space=param_space,
-        scoring=scoring or infer_metric(task),
-        n_trials=n_trials,
-        evaluate_holdout=evaluate_holdout,
+        fit_params=_fit_params(early_stopping_rounds=early_stopping_rounds),
+        scoring=scoring,
     )
 
 
 # 结构相容性自声明（知识随词汇主人居住；registry 相容性矩阵的真源）：
 # cat_support = "native" 吃 passthrough 类别列（原生类别支持）/ "encode" 存在类别列时必须编码；
 # scaling_need/min_samples 为建模会话守卫预留的声明位，registry 现消费 cat_support。
+LGBM.regularizers = ("min_split_gain", "reg_alpha", "reg_lambda")  # 正则面自声明（#38 规则的目标参数）
 LGBM.structure = {"cat_support": "native", "scaling_need": False, "min_samples": 30}
 
-# 会话语义元数据（.mdp_family）：目录标记 + structure 相容声明——资源标注已随
-# #33 资源机制全退退役（预算 = 签名参数，π pin 即深）。
-LGBM.mdp_family = {"structure": LGBM.structure}
+# 会话语义元数据（.mdp_family）：目录标记 + structure 相容声明 + machinery
+# （会话直调的 estimator 机器——run_hpo/final_train_test 两动作的消费面）。
+_machinery = make_machinery(
+    LGBM, _model_cls, fixed={"verbose": 1 if is_verbose() else -1}, skip=("early_stopping_rounds",)
+)
+LGBM.mdp_family = {"structure": LGBM.structure, "machinery": _machinery, "fit_params": _fit_params}

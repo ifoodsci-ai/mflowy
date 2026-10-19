@@ -1,8 +1,13 @@
-"""建模域协议卡：对局规则的冻结载体（model-brief 问卷产物，内容命名）。
+"""建模域 CVCard（原 ProtocolCard，#63 全链改名）：评估协议卡的冻结载体。
 
 与 DomainCard（数据先验，mflowy.data.types）对称——两卡都是 episode 内冻结的
 MDP 输入：先验卡管"数据是什么"，协议卡管"对局怎么打"（task/metric/CV/预算/
-候选族/资源先验）。换协议 = board 作废 + test 重触，只能弃局开新 episode。
+结构化候选）。换协议 = board 作废 + test 重触，只能弃局开新 episode。
+
+candidates = ``[{family, baseline: bool, space_hints: {param: 值 | [lo, hi]}, seed}]``
+（research-review 剧本产物）：baseline 恰一（propose 时第一）；space_hints ⊆ 族
+签名声明空间（标量 = pin、区间 = 收窄——文献知识注入搜索起点）；每候选默认随机
+种子（搜索期内冻结——换 seed = 换目标 = study 重开，判据在回路）。
 """
 
 from __future__ import annotations
@@ -11,6 +16,7 @@ from dataclasses import dataclass
 
 from mflowy.data.types import TASKTYPE
 from mflowy.model.model.types import MetricName
+from mflowy.utils.constants import RANDOM_STATE
 
 _TASK_METRICS: dict[str, set[str]] = {
     TASKTYPE.REGRESSION: {"mae", "rmse", "r2", "mape"},
@@ -32,20 +38,49 @@ _TASK_METRICS: dict[str, set[str]] = {
 }
 
 
-@dataclass
-class ProtocolCard:
-    """建模会话的对局规则。字段与 modeling_session_start 的冻结 protocol 分量一一对应。
+def _validate_hints(family: str, hints) -> dict:
+    """hints ⊆ 签名声明空间（fail-loud 带可用面清单）：标量 pin / 区间收窄 → JSON 形态。"""
+    from mflowy.model.model.study import ContinuousSpace, DiscreteSpace
+    from mflowy.model.model.utils import normalize_space, signature_params, space_to_json
+    from mflowy.model.registry import families
 
-    candidate_families 空 = 全部已声明族开放（缺省）；research-review 剧本可产出
-    收窄清单（文献先验第一轮淘汰）。预算 = 单一 max_steps（π 自行分配：跑哪些
-    候选、搜多深——n_trials 是深度旋钮；资源 = 签名参数，#33 资源机制全退）。
+    face = signature_params(families()[family]["pyfunc"])
+    out: dict = {}
+    for param, value in (hints or {}).items():
+        if param not in face:
+            raise ValueError(f"候选 {family} 的 space_hints[{param}] 不在签名声明空间（可用：{sorted(face)}）")
+        declared = face[param]
+        if isinstance(declared, (ContinuousSpace, DiscreteSpace)):
+            out[param] = space_to_json(normalize_space(param, declared, value))
+        elif isinstance(value, (list, tuple, dict)):
+            raise ValueError(
+                f"候选 {family} 的 space_hints[{param}] 缺省是静态常量 {declared!r}——静态面走标量 pin，不可开空间"
+            )
+        elif isinstance(value, (int, float, str, bool)):
+            if param == "random_state":
+                raise ValueError(f"候选 {family} 的 seed 走候选的 seed 字段（搜索环境参数），不是 space_hints")
+            out[param] = value
+        else:
+            raise ValueError(
+                f"候选 {family} 的 space_hints[{param}] 声明非法（标量 = pin / 区间 = 收窄），got {value!r}"
+            )
+    return out
+
+
+@dataclass
+class CVCard:
+    """建模会话的评估协议。字段与 modeling_session_start 的冻结 protocol 分量一一对应。
+
+    candidates 空 = 全部已声明族开放（缺省，字典序、首个为 baseline）；research-review
+    剧本产出收窄清单（文献先验第一轮淘汰 + baseline 锚点 + 空间 hints + 候选 seed）。
+    预算 = 单一 max_steps（π 自行分配：跑哪些候选、搜多深——n_trials 是深度旋钮）。
     """
 
     task: TASKTYPE
     metric: MetricName | None = None  # None = 任务自动选（infer_metric）
     cv: int = 5
-    max_steps: int = 10  # 单一预算：每动作（run/FE）吃一步——FE 实验成本 2 步，缺省上调
-    candidate_families: tuple[str, ...] = ()  # 空 = 全部已声明族开放
+    max_steps: int = 10  # 单一预算：只有计算动作（run_hpo/final_train_test）吃步
+    candidates: tuple[dict, ...] = ()  # 空 = 全部已声明族开放（首个 baseline）
     goal: str = ""  # 建模成功判据（业务口径，区别于 survey 的研究目标）
     external_baseline: str = ""  # 外部基线对标（自由文本，board 对照面）
 
@@ -55,7 +90,7 @@ class ProtocolCard:
             "metric": str(self.metric) if self.metric else None,
             "cv": self.cv,
             "max_steps": self.max_steps,
-            "candidate_families": list(self.candidate_families),
+            "candidates": [dict(c) for c in self.candidates],
             "goal": self.goal,
             "external_baseline": self.external_baseline,
         }
@@ -70,17 +105,17 @@ class ProtocolCard:
         metric: str | None = None,
         cv: int = 5,
         max_steps: int = 10,
-        candidate_families=None,
+        candidates=None,
         goal: str = "",
         external_baseline: str = "",
-    ) -> ProtocolCard:
+    ) -> CVCard:
         """问卷答案 → 协议卡（四类相容校验 fail-loud 的单一事实源）。
 
         ① task↔target dtype（分类目标须低基数/类别、回归目标须数值）；
         ② metric↔task（指标任务域匹配，None 自动选）；
         ③ cv↔数据事实（2–10 折；分类时 cv ≤ 最小类计数）；
-        ④ 预算与候选机械校验（max_steps ≥ 1；候选 ⊆ 已声明族目录）——
-        引擎不判断先验的科学性。
+        ④ 预算与候选机械校验（max_steps ≥ 1；候选 ⊆ 已声明族目录、baseline 恰一、
+        hints ⊆ 签名声明空间）——引擎不判断先验的科学性。
         """
         import pandas as pd
 
@@ -96,7 +131,7 @@ class ProtocolCard:
         is_num = pd.api.types.is_numeric_dtype(y)
         if t == TASKTYPE.CLASSIFICATION and is_num and y.nunique() > 20:
             raise ValueError(
-                f"分类目标 `{target}` 为连续数值列（nunique={y.nunique()}）——分类目标应为低基数/类别列，或改答 regression"
+                f"分类目标 `{target}` 为连续数值列（nunique={y.nunique()})——分类目标应为低基数/类别列，或改答 regression"
             )
         if t == TASKTYPE.REGRESSION and not is_num:
             raise ValueError(
@@ -121,22 +156,45 @@ class ProtocolCard:
                 raise ValueError(f"cv={cv} 超过最小类计数 {min_cls}（分层折切不出）——降低折数或补数据")
 
         if max_steps < 1:
-            raise ValueError(f"预算 max_steps 须 ≥ 1（每 run 吃一步，π 自行分配），got {max_steps}")
+            raise ValueError(f"预算 max_steps 须 ≥ 1（只有计算动作吃步，π 自行分配），got {max_steps}")
 
         from mflowy.model.registry import families
 
         catalog = families()
-        candidates = tuple(candidate_families or ())
-        unknown = [f for f in candidates if f not in catalog]
-        if unknown:
-            raise ValueError(f"candidate_families {unknown} 不在已声明族目录 {sorted(catalog)}（.mdp_family 声明者）")
+        raw_cands = (
+            list(candidates)
+            if candidates
+            else [{"family": f, "baseline": i == 0} for i, f in enumerate(sorted(catalog))]
+        )
+        if not raw_cands:
+            raise ValueError(f"candidates 不可为空清单（可用族目录：{sorted(catalog)}）")
+        normalized: list[dict] = []
+        for c in raw_cands:
+            fam = c.get("family")
+            if fam not in catalog:
+                raise ValueError(f"候选 {fam!r} 不在已声明族目录 {sorted(catalog)}（.mdp_family 声明者）")
+            entry = {
+                "family": fam,
+                "baseline": bool(c.get("baseline", False)),
+                "space_hints": _validate_hints(fam, c.get("space_hints")),
+                "seed": c.get("seed", RANDOM_STATE),
+            }
+            if not isinstance(entry["seed"], int) or isinstance(entry["seed"], bool):
+                raise ValueError(f"候选 {fam} 的 seed 须为 int（搜索环境参数），got {entry['seed']!r}")
+            normalized.append(entry)
+        n_baseline = sum(1 for c in normalized if c["baseline"])
+        if n_baseline != 1:
+            raise ValueError(
+                f"baseline 恰一（research-review 标记锚点候选——propose 时第一），实得 {n_baseline} 个"
+                f"（候选：{[c['family'] for c in normalized]}）"
+            )
 
         return cls(
             task=t,
             metric=m,
             cv=cv,
             max_steps=max_steps,
-            candidate_families=candidates,
+            candidates=tuple(normalized),
             goal=goal,
             external_baseline=external_baseline,
         )

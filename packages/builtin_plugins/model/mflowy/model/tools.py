@@ -85,7 +85,32 @@ def validate_modeling_steps(
     return {"valid": True, "graph": str(workflow)}
 
 
-# ── modeling 工具（JobProvider 委派） ───────────────────────────────────────
+# ── modeling 工具（JobProvider 委派；#62 拆分：search 与 training 两入口） ───
+
+
+async def hyperparameters_search(
+    modeling_steps_yaml: Annotated[
+        str,
+        Field(
+            description="搜索步骤 YAML 路径（load→clean→x_y→cv→model，model 步带搜索空间）；内容为顶层步骤列表片段（- name: 开头），不含 name/description/flow 外壳"
+        ),
+    ],
+    name: Annotated[str, Field(description="任务名称")],
+    desc: Annotated[str, Field(description="任务描述")],
+    ctx: Context | None = None,
+) -> DAGResult:
+    """提交超参搜索任务并等待完成（search-only：model 步只碰 inner CV，不终训不碰 holdout）。
+
+    何时使用 hyperparameters_search：
+    - 候选扫描期：多族/多空间并排出 θ* 与 u_inner 证据（交付集外不白付终训）
+    - 扫描后用 modeling 工具传全 pin 参数（θ* 落地）做终训交付
+    """
+    return await _get_job_provider().hyperparameters_search(
+        modeling_steps_yaml=modeling_steps_yaml,
+        name=name,
+        desc=desc,
+        headers=ctx.request_context.meta if ctx else None,
+    )
 
 
 async def modeling(
@@ -104,10 +129,10 @@ async def modeling(
     prune_missing: Annotated[bool, Field(description="配合 experiment_id — 未命中 model 剪枝不重训")] = False,
     ctx: Context | None = None,
 ) -> DAGResult:
-    """提交 mflowy 建模任务并等待完成。
+    """提交 mflowy 终训任务并等待完成（training 行为：model 步全 pin → 全量拟合 + holdout 终评）。
 
     何时使用 modeling：
-    - modeling_steps_yaml 验证通过后执行训练
+    - hyperparameters_search 扫出 θ* 后，把 best_params 全 pin 进 model 步再终训交付
     - 传 experiment_id 复用已训模型，配 prune_missing 跳过重训
     """
     return await _get_job_provider().modeling(
@@ -195,33 +220,37 @@ async def inverse_optimization(
 
 
 # ── 建模会话工具（环境面在 model/session，π 在调用方 LLM） ───────────────────
-# 协议谈判在剧本层（model-brief + research-review skill）；start(protocol_card)
-# 唯一主通道直进 run 动作面。
+# 协议谈判在剧本层（model-brief + research-review skill）；start(cv_card)
+# 唯一主通道直进八动作面（#62：配置编辑 + 计算动作；done = finish）。
 
 
 def modeling_session_start(
     file_path: Annotated[str, Field(description="数据文件绝对路径（清洗会话终态 parquet/csv）")],
-    protocol_card: Annotated[
+    cv_card: Annotated[
         dict,
         Field(
-            description="ProtocolCard（model-brief 剧本产物）：task/metric/cv/max_steps/candidate_families/resource_priors，episode 内冻结"
+            description="CVCard（model-brief/research-review 剧本产物）：task/metric/cv/max_steps/candidates"
+            "=[{family, baseline, space_hints, seed}]，episode 内冻结（baseline 恰一、hints ⊆ 签名空间）"
         ),
     ],
     card: Annotated[dict | None, Field(description="DomainCard（survey 产物）：target/id_columns 等")] = None,
-    max_steps: Annotated[int | None, Field(description="预算覆盖（缺省取协议卡；每 run 吃一步，π 自行分配）")] = None,
+    max_steps: Annotated[
+        int | None, Field(description="预算覆盖（缺省取协议卡；预算 = 实验数，只有计算动作吃步）")
+    ] = None,
 ) -> dict:
-    """开局建模会话：x_y+split 物化冻结 D + 候选面就位（协议不进动作空间）。
+    """开局建模会话：x_y+split 物化冻结 D + 光标就位（协议不进动作空间）。
 
     何时使用 modeling_session_start：
-    - model-brief 问卷（含 research-review 候选收窄）编译过 ProtocolCard 后开局回合循环
+    - model-brief 问卷（含 research-review 结构化候选）编译过 CVCard 后开局回合循环
     """
     from . import session
 
-    return session.start_session(file_path, card=card, protocol_card=protocol_card, max_steps=max_steps)
+    return session.start_session(file_path, card=card, cv_card=cv_card, max_steps=max_steps)
 
 
 def modeling_propose(session_id: Annotated[str, Field(description="会话 ID")]) -> list[dict]:
-    """候选生成：未跑候选（带空间摘要/资源轴/昂贵度）+ 已跑候选的加深搜索题。
+    """候选生成（单源谓词机器）：select_model 候选（未跑在前/已训降级末位带 θ*/u_inner/u_full）
+    + 计算动作（run_hpo/final_train_test）+ 配置编辑动作（set_hp/set_hp_space/set_seed/select_FE）。
 
     何时使用 modeling_propose：
     - 每步决策前看可选动作（你只做选择与参数化；空间摘要见 evidence——
@@ -237,26 +266,28 @@ def modeling_apply(
     node: Annotated[
         str,
         Field(
-            description="动作节点：model 族名（run 语义，如 RF/XGB）或 FE 节点名（如 ordinal_encoder——pipeline 槽位语义）"
+            description="动作面名（八动作面）：select_model/set_hp/set_hp_space/set_seed/select_FE（配置编辑，"
+            "零步费）或 run_hpo/final_train_test（计算动作，吃步）；done = modeling_finish"
         ),
     ],
     params: Annotated[
         dict | None,
         Field(
-            description="节点参数（与 clean_apply 同形）：族节点 = pin 常量/收窄 range + n_trials（深度旋钮）+ partial"
-            "（资源覆盖）；FE 节点 = 空。未知参数即报错（签名即约束）"
+            description="动作参数：select_model={family}；set_hp={param: 值}；set_hp_space={param: [lo,hi]|[v1,v2,…]}；"
+            "set_seed={seed}；select_FE={node}；run_hpo={n_trials}；final_train_test={}。未知参数即报错"
         ),
     ] = None,
 ) -> dict:
-    """执行回合动作（与 clean_apply 同形）：model 族 = run（SH 两段式：search @partial → θ* + u_inner
-    → 终训 @full → loader 落盘）；FE 节点 = 设置/覆盖 pipeline 槽位（模型选定后、leader 非冗余槽）。
+    """执行回合动作（八动作面）：配置编辑只改光标（零步费零奖励，生效于下一次 run_hpo）；
+    run_hpo = 增量搜索 + OOF 观察面（reward = Δu_inner）；final_train_test = 先搜后店 +
+    holdout 终评恰一次 + combo 冻结（reward = 0）。
 
-    响应自带 reward（= u_inner）与 state_digest——直接读数决策；run 全程不碰
-    holdout（test 读只在 finish，每交付模型恰一次）；board 键 = (family, FE 组合)。
+    run_hpo 全程不碰 holdout（no-peeking choke point 在 final_train_test）；账本键 =
+    (family, FE 组合)；study sqlite 落会话目录增量续跑（空间变继续，seed/scoring 变重开）。
 
     何时使用 modeling_apply：
-    - 从候选中选定族后提交 run；重跑同族 = 加深搜索（各吃一步预算）
-    - FE 换档（同槽覆盖）后重跑出新板面条目；自由参数化：pin 常量收窄 range 都是合法走法
+    - select_model 定光标候选 → run_hpo 出首条账本 → final_train_test 终训交付
+    - 加深/收窄/pin/换 FE 都是合法走法（配置编辑不吃预算）
     """
     from . import session
 
@@ -264,10 +295,10 @@ def modeling_apply(
 
 
 def modeling_rollback(session_id: Annotated[str, Field(description="会话 ID")]) -> dict:
-    """回退 models/board 到上一快照（决策日志保留；预算不回补）。
+    """回退光标到上一快照（决策日志保留；预算不回补；账本与盘上 study 永不回退）。
 
     何时使用 modeling_rollback：
-    - run 后 board 更差 / 想撤销最近一次模型账本变动时弹回上一版本
+    - 配置编辑走错（pin/收窄/FE 换档）时弹回上一光标版本
     """
     from . import session
 
@@ -276,24 +307,70 @@ def modeling_rollback(session_id: Annotated[str, Field(description="会话 ID")]
 
 def modeling_finish(
     session_id: Annotated[str, Field(description="会话 ID")],
-    deliver_keys: Annotated[
-        list[str] | None, Field(description="交付集选择（缺省 = 全部已训练候选；未交付模型保留在盘不删）")
+    pdf: Annotated[
+        str | None,
+        Field(
+            description="π 产终局报告文件路径（preview 素材 + 图分析后你撰写的报告——LaTeX/PDF 等；"
+            "引擎收编进 deliverables，不编译不验内容）；None = preview（零副作用拿素材）"
+        ),
     ] = None,
-    preview: Annotated[
-        bool, Field(description="只读探针：只看 inner 证据（board/搜索证据/预算），不碰 holdout、零副作用")
-    ] = False,
 ) -> dict:
-    """收局：每交付模型 holdout 评估恰一次 → terminal_utility + findings + rank 一致性 + 可重放计划。
+    """收局（done，两段式——报告是 π 的产物）：pdf=None = preview——聚合产物清单
+    （OOF 图集/预测长表/指标）+ 泰勒 + decision_log/board 素材（宿主多模态读取后
+    撰写终局报告）；pdf=... = 收编报告进 deliverables + verdict（u_full/findings/
+    rank_consistency 是 SH 赌注的出账）→ 可重放 plan。
 
-    accepted 恒真（无拒收——test 读即终局）；重入 = 幂等重导出缓存 verdict。
+    accepted 恒真（holdout 读在 final_train_test 恰一次，finish 只聚合）；重入 =
+    幂等重导出（交付报告不可变更——重写须弃局重开）。
 
     何时使用 modeling_finish：
-    - 预算耗尽 / 候选面跑完 / board 平台期时收局；先 preview=true 审视再真收局
-    - 多模型交付用 deliver_keys 选交付集；rank_consistency 是 SH 赌注的出账
+    - 预算耗尽 / 交付面冻结完 / board 平台期时收局：先 preview 拿素材，写完
+      「为什么是这个模型」的终局报告后带 pdf 路径真收局
     """
     from . import session
 
-    return session.finish_session(session_id, deliver_keys=deliver_keys, preview=preview)
+    return session.finish_session(session_id, pdf=pdf)
+
+
+def taylor_diagram_report(
+    session_id: Annotated[str, Field(description="建模会话 ID（泰勒图的预测长表与 split 都随会话居住）")],
+    run_ids: Annotated[
+        list[str], Field(description="final_train_test 的 run_id 清单（账本 entry.run_id；≥2 个才有对比面）")
+    ],
+) -> dict:
+    """多 run holdout 终训预测 fan-in 聚合：每 run 的 (correlation, σ_ratio, rmse) 统计 +
+    泰勒图落会话目录（reference = y_true）。用 holdout 终训预测、不用 OOF——θ* 在 inner
+    CV 上选出，OOF@θ* 带选择性乐观偏差且跨模型不均匀。
+
+    何时使用 taylor_diagram_report：
+    - finish(preview) 前后对比多个已终训模型的误差结构（终局排名的证据面）
+    - 单模型不出图（多模型对比图）；缺 holdout 产物 fail-loud 带可用 run 清单
+    """
+    from . import session
+
+    return session.taylor_report(session_id, run_ids)
+
+
+def modeling_report_findings(
+    session_id: Annotated[str, Field(description="会话 ID")],
+    key: Annotated[str, Field(description="账本键（family|cat|num——models 键，run_hpo 响应可见）")],
+    findings: Annotated[
+        list[dict],
+        Field(
+            description="LLM findings 清单（ErrorReport schema）：{kind, severity ∈ [0,1], evidence?, message?}"
+            "——kind ⊆ 词表（error_concentrated/slice_collapse/fold_std/complexity_edge/overfit_gap）"
+        ),
+    ],
+) -> dict:
+    """LLM findings 落诊（#36 控制面）：不可机械化诊断进 models[key]——schema 校验、
+    决策日志审计、与规则 findings 均匀聚合（modeling_propose 消费不区分来源）。
+
+    何时使用 modeling_report_findings：
+    - 读 OOF 图集/产物清单后形成的人读诊断（规则算子覆盖不了的判断）落盘供出题与审计
+    """
+    from . import session
+
+    return session.report_findings(session_id, key, findings)
 
 
 def modeling_abandon(

@@ -1,4 +1,4 @@
-"""CatBoost 模型实现 - @handler 实体函数模式"""
+"""CatBoost 模型实现 - @handler 实体函数模式（#62 两行为派生）"""
 
 from __future__ import annotations
 
@@ -11,12 +11,17 @@ from mflowy.model.model.study import ContinuousSpace, DiscreteSpace
 from mflowy.utils.constants import RANDOM_STATE
 from sklearn.compose import ColumnTransformer
 
-from ._model import build_pipeline
-from ._pipeline import training
-from .types import MetricName, ModelPipeline
-from .utils import extract_search_spaces, infer_metric
+from ._pipeline import hyperparameters_search, search_evidence, training
+from .types import MetricName
+from .utils import infer_metric, make_machinery
 
 logger = logging.getLogger(__name__)
+
+
+def _model_cls():
+    from ._catboost import model_cls
+
+    return model_cls
 
 
 @handler(namespace="model")
@@ -41,58 +46,54 @@ def CAT(
     early_stopping_rounds: Annotated[int | None, "早停轮数（仅最终训练生效，trial 阶段关闭），None 关闭早停"] = 60,
     random_state: Annotated[int, "随机种子"] = RANDOM_STATE,
     verbose: Annotated[bool, "是否输出训练日志"] = False,
-    evaluate_holdout: Annotated[
-        bool, "会话内部：False = 两段式 run 路径（跳过 holdout 终评，不碰 test）；DAG 用户保持缺省"
-    ] = True,
 ):
     """CatBoost，GBDT 系列基线模型；``grow_policy`` 默认 SymmetricTree，``bootstrap_type`` 默认 Bayesian 配合 ``bagging_temperature``。
 
-    参数空间覆盖 depth/grow_policy/learning_rate/iterations/l2_leaf_reg/border_count 等；``scoring`` 为 None 时按 task 自动推断（回归 MAE / 分类 F1）。
+    两行为派生（#62，``extract_search_spaces`` 空否即判据）：参数含搜索空间 →
+    **hyperparameters_search 行为**（inner CV 选参，不终训不碰 holdout）；全 pin →
+    **training 行为**（全量拟合 + holdout 终评 + loader）。
 
-    流程：可选 Optuna（cross_val_score 在 train 内选参）→ 全量 train 重训单一 Pipeline（早停时从 train 切 val）→ holdout test 终评一次 → 持久化 name='final'。CatBoost 用 SymmetricTree + Bayesian bootstrap 的稳健场景（对小规模数据方差小）。
+    参数空间覆盖 depth/grow_policy/learning_rate/iterations/l2_leaf_reg/border_count 等；``scoring`` 为 None 时按 task 自动推断（回归 MAE / 分类 F1）。CatBoost 用 SymmetricTree + Bayesian bootstrap 的稳健场景（对小规模数据方差小）。
     """
     split = train_split
-    from ._catboost import model_cls
-
-    task = split.task
-
-    def make_pipe(**params) -> ModelPipeline:
-        return build_pipeline(task, model_cls, x_preprocessors, params)
-
-    initial_params, param_space = extract_search_spaces(
-        {
-            "depth": depth,
-            "grow_policy": grow_policy,
-            "learning_rate": learning_rate,
-            "iterations": iterations,
-            "l2_leaf_reg": l2_leaf_reg,
-            "random_strength": random_strength,
-            "bagging_temperature": bagging_temperature,
-            "bootstrap_type": bootstrap_type,
-            "border_count": border_count,
-            "early_stopping_rounds": early_stopping_rounds,
-            "random_seed": random_state,  # CatBoost 用 random_seed（非 random_state）
-            "verbose": verbose,
-        }
+    metric = scoring or infer_metric(split.task)
+    make_pipe, initial_params, param_space = _machinery(
+        split.task,
+        x_preprocessors,
+        seed=random_state,
+        depth=depth,
+        grow_policy=grow_policy,
+        learning_rate=learning_rate,
+        iterations=iterations,
+        l2_leaf_reg=l2_leaf_reg,
+        random_strength=random_strength,
+        bagging_temperature=bagging_temperature,
+        bootstrap_type=bootstrap_type,
+        border_count=border_count,
+        early_stopping_rounds=early_stopping_rounds,
+        verbose=verbose,
     )
-
-    return training(
-        split,
-        "CAT",
-        make_pipe,
-        initial_params,
-        param_space=param_space,
-        scoring=scoring or infer_metric(task),
-        n_trials=n_trials,
-        evaluate_holdout=evaluate_holdout,
-    )
+    if param_space:  # search 行为：只碰 inner CV，产物 = 搜索证据
+        study = hyperparameters_search(
+            param_space,
+            scoring=metric,
+            n_trials=n_trials,
+            split=split,
+            make_pipe=make_pipe,
+            base_params=initial_params,
+            seed=random_state,
+        )
+        return search_evidence(study, "CAT", metric)
+    return training(split, "CAT", make_pipe, initial_params, scoring=scoring)  # training 行为
 
 
 # 结构相容性自声明（知识随词汇主人居住；registry 相容性矩阵的真源）：
 # cat_support = "native" 吃 passthrough 类别列（原生类别支持）/ "encode" 存在类别列时必须编码；
 # scaling_need/min_samples 为建模会话守卫预留的声明位，registry 现消费 cat_support。
+CAT.regularizers = ("l2_leaf_reg",)  # 正则面自声明（#38 规则的目标参数）
 CAT.structure = {"cat_support": "native", "scaling_need": False, "min_samples": 30}
 
-# 会话语义元数据（.mdp_family）：目录标记 + structure 相容声明——资源标注已随
-# #33 资源机制全退退役（预算 = 签名参数，π pin 即深）。
-CAT.mdp_family = {"structure": CAT.structure}
+# 会话语义元数据（.mdp_family）：目录标记 + structure 相容声明 + machinery
+# （会话直调的 estimator 机器——run_hpo/final_train_test 两动作的消费面）。
+_machinery = make_machinery(CAT, _model_cls, seed_key="random_seed")
+CAT.mdp_family = {"structure": CAT.structure, "machinery": _machinery}

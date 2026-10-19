@@ -8,6 +8,7 @@ import yaml
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 MODELING_TEMPLATE = TEMPLATES_DIR / "modeling.yaml.j2"
+HYPERPARAMETERS_SEARCH_TEMPLATE = TEMPLATES_DIR / "hyperparameters_search.yaml.j2"
 EXPLANATION_TEMPLATE = TEMPLATES_DIR / "explanation.yaml.j2"
 PREDICT_TEMPLATE = TEMPLATES_DIR / "predict.yaml.j2"
 INVERSE_OPTIMIZATION_TEMPLATE = TEMPLATES_DIR / "inverse_optimization.yaml.j2"

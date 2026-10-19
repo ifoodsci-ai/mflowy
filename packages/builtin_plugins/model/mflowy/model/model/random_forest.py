@@ -1,4 +1,4 @@
-"""RandomForest 模型实现 - @handler 实体函数模式"""
+"""RandomForest 模型实现 - @handler 实体函数模式（#62 两行为派生）"""
 
 from __future__ import annotations
 
@@ -12,12 +12,17 @@ from mflowy.utils.constants import RANDOM_STATE
 from mflowy.utils.logging import is_verbose
 from sklearn.compose import ColumnTransformer
 
-from ._model import build_pipeline
-from ._pipeline import training
-from .types import MetricName, ModelPipeline
-from .utils import extract_search_spaces, infer_metric
+from ._pipeline import hyperparameters_search, search_evidence, training
+from .types import MetricName
+from .utils import infer_metric, make_machinery
 
 logger = logging.getLogger(__name__)
+
+
+def _model_cls():
+    from ._random_forest import model_cls
+
+    return model_cls
 
 
 @handler(namespace="model")
@@ -39,56 +44,52 @@ def RF(
     ccp_alpha: Annotated[float | ContinuousSpace[float], "最小成本复杂度剪枝参数"] = ContinuousSpace(0.0, 0.1),
     max_samples: Annotated[float | None, "bootstrap 采样比例"] = 0.8,
     random_state: Annotated[int, "随机种子"] = RANDOM_STATE,
-    evaluate_holdout: Annotated[
-        bool, "会话内部：False = 两段式 run 路径（跳过 holdout 终评，不碰 test）；DAG 用户保持缺省"
-    ] = True,
 ):
     """RandomForest，bagging 系列基线模型；``oob_score=True`` 固定启用袋外评估，无 eval_set/loss_curve 概念。
 
-    参数空间覆盖 n_estimators/max_depth/min_samples_split/min_samples_leaf/max_features/ccp_alpha/max_samples；``scoring`` 为 None 时按 task 自动推断（回归 MAE / 分类 F1）；``max_samples`` 默认 0.8 bootstrap 采样比例。
+    两行为派生（#62，``extract_search_spaces`` 空否即判据）：参数含搜索空间 →
+    **hyperparameters_search 行为**——inner CV 选参（θ*/u_inner 证据，不终训不碰
+    holdout，配 hyperparameters_search 工具做候选扫描）；全 pin（空间空）→
+    **training 行为**——全量拟合 + holdout 终评 + loader（modeling 工具/plan 重放的生产路径）。
 
-    流程：可选 Optuna（cross_val_score 在 train 内选参）→ 全量 train 重训单一 Pipeline → holdout test 终评一次（oob_score 随训练打印）→ 持久化 name='final'。RandomForest 用低中规模 + 不需早停/曲线诊断场景。
+    参数空间覆盖 n_estimators/max_depth/min_samples_split/min_samples_leaf/max_features/ccp_alpha/max_samples；``scoring`` 为 None 时按 task 自动推断（回归 MAE / 分类 F1）；``max_samples`` 默认 0.8 bootstrap 采样比例。
     """
     split = train_split
-    from ._random_forest import model_cls
-
-    task = split.task
-
-    def make_pipe(**params) -> ModelPipeline:
-        return build_pipeline(task, model_cls, x_preprocessors, params)
-
-    initial_params, param_space = extract_search_spaces(
-        {
-            "n_estimators": n_estimators,
-            "max_depth": max_depth,
-            "min_samples_split": min_samples_split,
-            "min_samples_leaf": min_samples_leaf,
-            "max_features": max_features,
-            "ccp_alpha": ccp_alpha,
-            "max_samples": max_samples,
-            "oob_score": True,
-            "random_state": random_state,
-            "verbose": int(is_verbose()),
-        }
+    metric = scoring or infer_metric(split.task)
+    make_pipe, initial_params, param_space = _machinery(
+        split.task,
+        x_preprocessors,
+        seed=random_state,
+        n_estimators=n_estimators,
+        max_depth=max_depth,
+        min_samples_split=min_samples_split,
+        min_samples_leaf=min_samples_leaf,
+        max_features=max_features,
+        ccp_alpha=ccp_alpha,
+        max_samples=max_samples,
     )
-
-    return training(
-        split,
-        "RF",
-        make_pipe,
-        initial_params,
-        param_space=param_space,
-        scoring=scoring or infer_metric(task),
-        n_trials=n_trials,
-        evaluate_holdout=evaluate_holdout,
-    )
+    if param_space:  # search 行为：只碰 inner CV，产物 = 搜索证据
+        study = hyperparameters_search(
+            param_space,
+            scoring=metric,
+            n_trials=n_trials,
+            split=split,
+            make_pipe=make_pipe,
+            base_params=initial_params,
+            seed=random_state,
+        )
+        return search_evidence(study, "RF", metric)
+    return training(split, "RF", make_pipe, initial_params, scoring=scoring)  # training 行为
 
 
 # 结构相容性自声明（知识随词汇主人居住；registry 相容性矩阵的真源）：
 # cat_support = "native" 吃 passthrough 类别列（原生类别支持）/ "encode" 存在类别列时必须编码；
 # scaling_need/min_samples 为建模会话守卫预留的声明位，registry 现消费 cat_support。
+RF.regularizers = ("ccp_alpha",)  # 正则面自声明（#38 规则的目标参数——知识随词汇主人居住）
 RF.structure = {"cat_support": "encode", "scaling_need": False, "min_samples": 30}
 
-# 会话语义元数据（.mdp_family）：目录标记 + structure 相容声明——资源标注已随
-# #33 资源机制全退退役（预算 = 签名参数，π pin 即深）。
-RF.mdp_family = {"structure": RF.structure}
+# 会话语义元数据（.mdp_family）：目录标记 + structure 相容声明 + machinery
+# （会话直调的 estimator 机器——run_hpo/final_train_test 两动作的消费面）。
+# 两行为共享的 estimator 机器：缺省 = 签名（单一真源）∪ 机器参数；seed 归一 random_state
+_machinery = make_machinery(RF, _model_cls, fixed={"oob_score": True, "verbose": int(is_verbose())})
+RF.mdp_family = {"structure": RF.structure, "machinery": _machinery}

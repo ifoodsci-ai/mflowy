@@ -1,0 +1,4 @@
+name: "{{ name | default('超参搜索') }}"
+description: "{{ description | default('[search](load → clean → cross_validation → pre_process → model@search 行为)；model 步只碰 inner CV，不终训不碰 holdout') }}"
+flow:
+  {{ modeling_steps | indent(2, blank=True) }}

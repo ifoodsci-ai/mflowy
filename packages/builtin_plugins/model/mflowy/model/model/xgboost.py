@@ -1,3 +1,5 @@
+"""XGBoost 模型实现 - @handler 实体函数模式（#62 两行为派生）"""
+
 from __future__ import annotations
 
 import logging
@@ -10,12 +12,17 @@ from mflowy.utils.constants import RANDOM_STATE
 from mflowy.utils.logging import is_verbose
 from sklearn.compose import ColumnTransformer
 
-from ._model import build_pipeline
-from ._pipeline import training
-from .types import MetricName, ModelPipeline
-from .utils import extract_search_spaces, infer_metric
+from ._pipeline import hyperparameters_search, search_evidence, training
+from .types import MetricName
+from .utils import infer_metric, make_machinery
 
 logger = logging.getLogger(__name__)
+
+
+def _model_cls():
+    from ._xgboost import model_cls
+
+    return model_cls
 
 
 @handler(namespace="model")
@@ -47,63 +54,57 @@ def XGB(
     early_stopping_rounds: Annotated[int | None, "早停轮数（仅最终训练生效，trial 阶段关闭），None 关闭早停"] = 60,
     scale_pos_weight: Annotated[float, "正类权重倍数（不平衡二分类用，neg/pos）"] = 1.0,
     random_state: Annotated[int, "随机种子"] = RANDOM_STATE,
-    evaluate_holdout: Annotated[
-        bool, "会话内部：False = 两段式 run 路径（跳过 holdout 终评，不碰 test）；DAG 用户保持缺省"
-    ] = True,
 ):
     """XGBoost，GBDT 系列基线模型；``enable_categorical=True`` 固定开启原生类别特征支持。
 
-    参数空间覆盖 max_depth/min_child_weight/subsample/colsample_bytree/gamma/reg_alpha/reg_lambda/learning_rate/n_estimators/grow_policy/max_leaves；``grow_policy=lossguide`` 需配 ``max_leaves``；``scoring`` 为 None 时按 task 自动推断。
+    两行为派生（#62，``extract_search_spaces`` 空否即判据）：参数含搜索空间 →
+    **hyperparameters_search 行为**——inner CV 选参（θ*/u_inner 证据，不终训不碰
+    holdout）；全 pin（空间空）→ **training 行为**——全量拟合 + holdout 终评 + loader。
 
-    流程：可选 Optuna（cross_val_score 在 train 内选参）→ 全量 train 重训单一 Pipeline（早停时从 train 切 val）→ holdout test 终评一次 → 持久化 name='final'。XGBoost 用任意规模表格基线场景，LightGBM 用 >=10k 高维特征场景，CatBoost 用 SymmetricTree + Bayesian bootstrap 场景；``<1k`` 数据规模建议调高 gamma/reg_lambda 强正则化。
+    参数空间覆盖 max_depth/min_child_weight/subsample/colsample_bytree/gamma/reg_alpha/reg_lambda/learning_rate/n_estimators/grow_policy/max_leaves；``grow_policy=lossguide`` 需配 ``max_leaves``；``scoring`` 为 None 时按 task 自动推断。
     """
     split = train_split
-    from ._xgboost import model_cls
-
-    task = split.task
-
-    def make_pipe(**params) -> ModelPipeline:
-        return build_pipeline(task, model_cls, x_preprocessors, params)
-
-    initial_params, param_space = extract_search_spaces(
-        {
-            "learning_rate": learning_rate,
-            "max_depth": max_depth,
-            "min_child_weight": min_child_weight,
-            "subsample": subsample,
-            "colsample_bytree": colsample_bytree,
-            "colsample_bylevel": colsample_bylevel,
-            "gamma": gamma,
-            "reg_alpha": reg_alpha,
-            "reg_lambda": reg_lambda,
-            "n_estimators": n_estimators,
-            "grow_policy": grow_policy,
-            "max_leaves": max_leaves,
-            "early_stopping_rounds": early_stopping_rounds,
-            "scale_pos_weight": scale_pos_weight,
-            "verbosity": int(is_verbose()),
-            "enable_categorical": True,  # 激活内置自动处理分类特征的特性
-            "random_state": random_state,
-        }
+    metric = scoring or infer_metric(split.task)
+    make_pipe, initial_params, param_space = _machinery(
+        split.task,
+        x_preprocessors,
+        seed=random_state,
+        max_depth=max_depth,
+        min_child_weight=min_child_weight,
+        subsample=subsample,
+        colsample_bytree=colsample_bytree,
+        colsample_bylevel=colsample_bylevel,
+        gamma=gamma,
+        reg_alpha=reg_alpha,
+        reg_lambda=reg_lambda,
+        learning_rate=learning_rate,
+        n_estimators=n_estimators,
+        grow_policy=grow_policy,
+        max_leaves=max_leaves,
+        early_stopping_rounds=early_stopping_rounds,
+        scale_pos_weight=scale_pos_weight,
     )
-
-    return training(
-        split,
-        "XGB",
-        make_pipe,
-        initial_params,
-        param_space=param_space,
-        scoring=scoring or infer_metric(task),
-        n_trials=n_trials,
-        evaluate_holdout=evaluate_holdout,
-    )
+    if param_space:  # search 行为：只碰 inner CV，产物 = 搜索证据
+        study = hyperparameters_search(
+            param_space,
+            scoring=metric,
+            n_trials=n_trials,
+            split=split,
+            make_pipe=make_pipe,
+            base_params=initial_params,
+            seed=random_state,
+        )
+        return search_evidence(study, "XGB", metric)
+    return training(split, "XGB", make_pipe, initial_params, scoring=scoring)  # training 行为
 
 
 # 结构相容性自声明（知识随词汇主人居住；registry 相容性矩阵的真源）：
 # cat_support = "native" 吃 passthrough 类别列（原生类别支持）/ "encode" 存在类别列时必须编码；
 # scaling_need/min_samples 为建模会话守卫预留的声明位，registry 现消费 cat_support。
+XGB.regularizers = ("gamma", "reg_alpha", "reg_lambda")  # 正则面自声明（#38 规则的目标参数）
 XGB.structure = {"cat_support": "native", "scaling_need": False, "min_samples": 30}
 
-# 会话语义元数据（.mdp_family）：目录标记 + structure 相容声明——资源标注已随
-# #33 资源机制全退退役（预算 = 签名参数，π pin 即深）。
-XGB.mdp_family = {"structure": XGB.structure}
+# 会话语义元数据（.mdp_family）：目录标记 + structure 相容声明 + machinery
+# （会话直调的 estimator 机器——run_hpo/final_train_test 两动作的消费面）。
+_machinery = make_machinery(XGB, _model_cls, fixed={"enable_categorical": True, "verbosity": int(is_verbose())})
+XGB.mdp_family = {"structure": XGB.structure, "machinery": _machinery}

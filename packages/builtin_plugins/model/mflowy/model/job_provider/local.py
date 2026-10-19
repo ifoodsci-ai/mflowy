@@ -18,6 +18,7 @@ from mflowy.utils.path import resolve_data_ref, set_task_dir
 
 from ..templates import (
     EXPLANATION_TEMPLATE,
+    HYPERPARAMETERS_SEARCH_TEMPLATE,
     INVERSE_OPTIMIZATION_TEMPLATE,
     MODELING_TEMPLATE,
     PREDICT_TEMPLATE,
@@ -64,6 +65,32 @@ class LocalJobProvider:
 
     headers 形参满足 Protocol 契约但本地模式不消费。
     """
+
+    # ── hyperparameters_search（#62 应用层拆分：search-only 工作负载） ──────
+
+    async def hyperparameters_search(
+        self,
+        *,
+        modeling_steps_yaml: str,
+        name: str,
+        desc: str,
+        headers: Mapping[str, str] | None = None,
+    ) -> DAGResult:
+        """搜索-only DAG：model 步带搜索空间 → search 行为（inner CV 选参，不终训不碰 holdout）。"""
+
+        def _run():
+            if not exists(modeling_steps_yaml):
+                raise FileNotFoundError(f"错误: 文件不存在: {modeling_steps_yaml}")
+            set_task_dir(modeling_steps_yaml)
+            steps_text = read_text(modeling_steps_yaml)
+            builder = Builder(
+                HYPERPARAMETERS_SEARCH_TEMPLATE,
+                env={"name": name, "description": desc, "modeling_steps": steps_text},
+                structural_rules=(prune_x_transformer_step,),
+            )
+            return builder.build().run(tags=fingerprint_tags("modeling_yaml", modeling_steps_yaml))
+
+        return await asyncio.to_thread(_run)
 
     # ── modeling ─────────────────────────────────────────────────────────
 

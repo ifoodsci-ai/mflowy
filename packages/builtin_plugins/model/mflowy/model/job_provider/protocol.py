@@ -14,6 +14,15 @@ from mflowy.driver.dag import DAGResult
 class JobProvider(Protocol):
     """Modeling 工具的执行策略接口。"""
 
+    async def hyperparameters_search(
+        self,
+        *,
+        modeling_steps_yaml: str,
+        name: str,
+        desc: str,
+        headers: Mapping[str, str] | None = None,
+    ) -> DAGResult: ...
+
     async def modeling(
         self,
         *,

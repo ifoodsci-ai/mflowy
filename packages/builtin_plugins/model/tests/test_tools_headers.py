@@ -1,11 +1,11 @@
 """JobProvider headers 透传契约 — 请求 _meta → provider.headers。
 
 契约：
-- 仅 compute（modeling/explanation/predict/inverse_optimization）经 JobProvider 委派；
+- 仅 compute（hyperparameters_search/modeling/explanation/predict/inverse_optimization）经 JobProvider 委派；
   ctx（Context | None）由 SDK 注入（不进 input schema），ctx.request_context.meta
   （客户端 call_tool(meta=...) 直传）原样透传给 JobProvider 同名 headers 形参
 - _meta 缺失 / JSON runner 直调（无 ctx）→ headers=None
-- Protocol 与 LocalJobProvider 的 4 个委派方法均带 headers 形参
+- Protocol 与 LocalJobProvider 的 5 个委派方法均带 headers 形参
 - 本地分析工具住数据域（mflowy.data.tools），无 ctx 契约见 data 侧测试
 """
 
@@ -20,6 +20,7 @@ import pytest
 from mflowy.model import tools
 
 DELEGATED_TOOLS = {
+    "hyperparameters_search": {"modeling_steps_yaml": "a.yaml", "name": "n", "desc": "d"},
     "modeling": {"modeling_steps_yaml": "a.yaml", "name": "n", "desc": "d"},
     "explanation": {"modeling_steps_yaml": "a.yaml", "model": "XGB=abc", "name": "n", "desc": "d"},
     "predict": {"data": "a.csv", "model": "XGB=abc"},
@@ -27,6 +28,7 @@ DELEGATED_TOOLS = {
 }
 
 PROVIDER_METHODS = [
+    "hyperparameters_search",
     "modeling",
     "explanation",
     "predict",
@@ -37,6 +39,10 @@ PROVIDER_METHODS = [
 class RecordingProvider:
     def __init__(self):
         self.calls: list[dict] = []
+
+    async def hyperparameters_search(self, **kw):
+        self.calls.append(kw)
+        return "ok"
 
     async def modeling(self, **kw):
         self.calls.append(kw)
