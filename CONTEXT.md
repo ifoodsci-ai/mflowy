@@ -90,7 +90,7 @@ MDP 的环境面载体：转移/观测/奖励/预算在域包，π 在调用方�
 "steps"（YAML 控制结构旧称）不同物。
 _Avoid_: 环境引擎（与 runner 混淆）
 
-**先验卡（DomainCard）/ 协议卡（ProtocolCard）**:
+**先验卡（DomainCard）/ 协议卡（CVCard）**:
 两个 MDP 的冻结输入：先验卡 = 数据域先验（target/id_columns/单位/范围/protected，survey
 问卷经 compile_survey 编译）；协议卡 = 建模域对局规则（task/metric/CV/预算/约束，
 model-brief 问卷经 compile_model_brief 编译）。命名按内容不按过程；换协议 = board 作废

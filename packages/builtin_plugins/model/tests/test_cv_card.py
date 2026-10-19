@@ -1,0 +1,170 @@
+"""#63 CVCard（原 ProtocolCard 改名）+ candidates 结构化。
+
+- 卡的核心是评估协议（task/metric/cv/预算），名字直说；全链改名（工具 schema、
+  session start 签名、skills）
+- candidates = [{family, baseline: bool, space_hints: {param: 值|[lo,hi]}, seed}]：
+  research-review 标记恰一个 baseline（propose 时第一）；每候选默认随机种子
+  （搜索期内冻结——换 seed = 换目标 = study 重开）
+- 开局校验 fail-loud 带候选清单：hints ⊆ 签名声明空间；baseline 恰一
+- hints 作为缺省 pins/narrowing 注入（select_model 时进光标），π 回合内可覆盖
+"""
+
+import json
+
+import numpy as np
+import pandas as pd
+import pytest
+from mflowy.driver.mdp_session import verify_observation
+from mflowy.model import session as ms
+from mflowy.model.protocol import CVCard
+
+
+@pytest.fixture(autouse=True)
+def isolate_tracking(tmp_path, monkeypatch):
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", f"sqlite:///{tmp_path}/tracking.db")
+
+
+@pytest.fixture
+def sessions_root(tmp_path, monkeypatch):
+    root = tmp_path / "modeling_sessions"
+    monkeypatch.setenv("MFLOWY_MODELING_SESSIONS", str(root))
+    return root
+
+
+@pytest.fixture
+def reg_csv(tmp_path) -> str:
+    n = 120
+    rng = np.random.default_rng(4)
+    x = rng.normal(size=n)
+    df = pd.DataFrame({"x": x, "target": 2.0 * x + 0.1 * rng.normal(size=n)})
+    p = tmp_path / "reg.csv"
+    df.to_csv(p, index=False)
+    return str(p)
+
+
+def _cv_card(**over):
+    base = {
+        "target": "target",
+        "task": "regression",
+        "metric": "mae",
+        "cv": 3,
+        "max_steps": 8,
+        "candidates": [
+            {"family": "RF", "baseline": True},
+            {"family": "XGB", "baseline": False, "space_hints": {"max_depth": [3, 6]}, "seed": 7},
+        ],
+    }
+    base.update(over)
+    return base
+
+
+def _start(root, csv, card=None, cv_card=None):
+    return ms.start_session(csv, card=card or {"domain": "t", "target": "target"}, cv_card=cv_card or _cv_card())
+
+
+# ── 卡校验（fail-loud 带候选清单） ─────────────────────────────────────────
+
+
+def test_cv_card_build_validates_candidates(reg_csv):
+    df = pd.read_csv(reg_csv)
+    card = CVCard.build(df, **_cv_card())
+    d = card.as_dict()
+    assert d["candidates"][0] == {"family": "RF", "baseline": True, "space_hints": {}, "seed": 42}
+    assert d["candidates"][1]["space_hints"] == {"max_depth": {"kind": "continuous", "lo": 3, "hi": 6, "step": None}}
+    assert d["candidates"][1]["seed"] == 7
+
+
+def test_baseline_exactly_one(reg_csv):
+    df = pd.read_csv(reg_csv)
+    for cands in (
+        [{"family": "RF", "baseline": False}, {"family": "XGB", "baseline": False}],  # 零个
+        [{"family": "RF", "baseline": True}, {"family": "XGB", "baseline": True}],  # 多个
+    ):
+        with pytest.raises(ValueError, match="baseline 恰一"):
+            CVCard.build(df, **_cv_card(candidates=cands))
+
+
+def test_unknown_family_fail_loud(reg_csv):
+    df = pd.read_csv(reg_csv)
+    with pytest.raises(ValueError, match="NO_SUCH"):
+        CVCard.build(df, **_cv_card(candidates=[{"family": "RF", "baseline": True}, {"family": "NO_SUCH"}]))
+
+
+def test_bad_hints_fail_loud(reg_csv):
+    df = pd.read_csv(reg_csv)
+    with pytest.raises(ValueError, match="空间"):
+        CVCard.build(df, **_cv_card(candidates=[{"family": "RF", "baseline": True, "space_hints": {"nope": 1}}]))
+    with pytest.raises(ValueError, match="越出"):
+        CVCard.build(
+            df, **_cv_card(candidates=[{"family": "RF", "baseline": True, "space_hints": {"max_depth": [2, 99]}}])
+        )
+    with pytest.raises(ValueError, match="静态"):
+        CVCard.build(
+            df, **_cv_card(candidates=[{"family": "RF", "baseline": True, "space_hints": {"n_estimators": [10, 20]}}])
+        )
+
+
+# ── 开局：candidates 落 manifest + 工具面改名 ───────────────────────────────
+
+
+def test_start_takes_cv_card_and_stores_candidates(sessions_root, reg_csv):
+    s = _start(sessions_root, reg_csv)
+    verify_observation(s)
+    m = json.loads((sessions_root / s["session_id"] / "manifest.json").read_text(encoding="utf-8"))
+    assert [c["family"] for c in m["candidates"]] == ["RF", "XGB"]
+    assert m["candidates"][0]["baseline"] is True
+
+
+def test_start_rejects_old_protocol_card_name(sessions_root, reg_csv):
+    """BREAKING：protocol_card 形参退役——协议卡全链改名 cv_card。"""
+    with pytest.raises(TypeError, match="protocol_card"):
+        ms.start_session(reg_csv, card={"domain": "t", "target": "target"}, protocol_card=_cv_card())
+
+
+# ── hints 注入与 π 覆盖 ─────────────────────────────────────────────────────
+
+
+def test_hints_seed_cursor_on_select(sessions_root, reg_csv):
+    """select_model 注入该候选的 hints（缺省 pins/narrowing）与 seed。"""
+    s = _start(sessions_root, reg_csv)
+    r = ms.apply_action(s["session_id"], "select_model", {"family": "XGB"})
+    assert r["cursor"]["h_space"] == {"max_depth": {"kind": "continuous", "lo": 3, "hi": 6, "step": None}}
+    assert r["cursor"]["seed"] == 7
+    m = json.loads((sessions_root / s["session_id"] / "manifest.json").read_text(encoding="utf-8"))
+    assert m["cursor"]["seed"] == 7  # 有效种子随候选缺省落光标
+
+
+def test_pi_override_wins_over_hints(sessions_root, reg_csv):
+    """卡是先验不是边界：π set_hp/set_hp_space/set_seed 覆盖 hint 缺省。"""
+    s = _start(sessions_root, reg_csv)
+    ms.apply_action(s["session_id"], "select_model", {"family": "XGB"})
+    r = ms.apply_action(s["session_id"], "set_hp_space", {"max_depth": [4, 5]})
+    assert r["cursor"]["h_space"]["max_depth"] == {"kind": "continuous", "lo": 4, "hi": 5, "step": None}
+    r2 = ms.apply_action(s["session_id"], "set_seed", {"seed": 123})
+    assert r2["cursor"]["seed"] == 123
+
+
+def test_scalar_hint_pins(sessions_root, reg_csv):
+    """标量 hint = pin（初始空间决策：文献知识注入搜索起点）。"""
+    s = _start(
+        sessions_root,
+        reg_csv,
+        cv_card=_cv_card(
+            candidates=[
+                {"family": "RF", "baseline": True, "space_hints": {"n_estimators": 50}},
+            ]
+        ),
+    )
+    r = ms.apply_action(s["session_id"], "select_model", {"family": "RF"})
+    assert r["cursor"]["H"] == {"n_estimators": 50}
+
+
+# ── 菜单：baseline 第一 ─────────────────────────────────────────────────────
+
+
+def test_propose_baseline_first(sessions_root, reg_csv):
+    s = _start(sessions_root, reg_csv)
+    props = ms.propose_actions(s["session_id"])
+    sel = [p for p in props if p["action"] == "select_model"]
+    assert sel[0]["params"]["family"] == "RF" and sel[0]["evidence"]["baseline"] is True
+    assert sel[1]["params"]["family"] == "XGB" and sel[1]["evidence"]["baseline"] is False

@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - Unreleased
 
+### BREAKING：modeling MDP 升级收尾——回路状态机重构 + 输入面结构化 + 观察面与终局报告（#62/#63/#64/#34/#35/#36/#38）
+
+- **#62 回路与状态机重构（BREAKING）**：s = 光标（m/H/h_space/seed/F）+ 账本（per
+  (family,F) 条目，真源 = 盘上 sqlite study——append-only）+ history；动作面从「族名
+  apply」改为**八动作面**：`select_model`/`set_hp`/`set_hp_space`/`set_seed`/`select_FE`
+  （配置编辑——零步费零奖励）+ `run_hpo`/`final_train_test`（计算动作——吃步，预算 =
+  实验数）+ `done`（finish 控制面）。`run_hpo` = **search-only** 增量搜索（sqlite study
+  `load_if_exists`；增量判据 = 目标同一性：空间收窄/pin/加深继续、seed/scoring 变重开）+
+  θ* 上 OOF 预测/图集/findings 挂 run（run_id 寻址），reward = **Δu_inner**（新键 =
+  u_inner）；`final_train_test` = **先搜后门店** + holdout 终评恰一次 + **combo 冻结**
+  （掐断用 test 反复挑参），reward = 0。rollback 只回退光标——账本与盘上 study 永不
+  回退（#58 P1 根治）。mlflow 拿血缘认证不拿工件（run tag 补划分身份
+  `mflowy.split_fingerprint`/test_size/group_by）；split.pkl 归会话层（sid 寻址）
+- **#62 节点两行为派生（BREAKING）**：族节点按 `extract_search_spaces` 空否派生
+  hyperparameters_search / training 两行为——参数含空间 → **只做 inner CV 搜索**（θ*
+  证据，不终训不碰 holdout）；全 pin → 全量拟合 + holdout 终评 + loader。`evaluate_holdout`
+  形参全族退役（no-peeking choke point 移交 final_train_test 动作）；`training()` 收敛为
+  纯终训（param_space/n_trials 形参退役）；`.mdp_family` 增 `machinery`（会话直调的
+  estimator 机器，`model/utils.make_machinery` 工厂从签名派生——缺省单一真源）。DAG
+  用户经 modeling 工具传搜索空间的旧「搜索+终训一步走」形态改为：hyperparameters_search
+  扫描 → 全 pin 走 modeling 终训
+- **#62 应用层工具拆分（BREAKING）**：`modeling` 工具与 modeling.yaml.j2 拆为
+  `hyperparameters_search` + `modeling` 两工具两模板（compute 4→5，JobProvider 协议/
+  Local 实现同步）；tools/list 29→31（另含 `modeling_report_findings`/
+  `taylor_diagram_report`）；`modeling_finish` 拒绝无参收局（两段式，见 #64）
+- **#63 CVCard（BREAKING）**：`ProtocolCard` 全链改名 `CVCard`（session start 签名
+  `protocol_card` → `cv_card`、工具 schema、skills/CONTEXT/docs 同步）；
+  `candidate_families: [str]` → **结构化候选** `candidates: [{family, baseline,
+  space_hints, seed}]`——baseline 恰一（propose 时第一）、hints ⊆ 族签名声明空间
+  （标量 pin / 区间收窄——文献知识注入搜索起点）、每候选默认 seed（搜索期内冻结）；
+  select_model 注入候选 hints 缺省（π 回合内可覆盖——卡是先验不是边界）
+- **#35 diagnose 诊断族**：OOF 观察面四算子（`diagnose.py`：error_concentrated /
+  slice_collapse / fold_std / complexity_edge——输出对齐 detect 的 ErrorReport 先例
+  kind/severity/evidence/message）；run_hpo 后自动接线（零步数：findings 落账本 +
+  run 响应浮出）；kind 词表 = #38 规则订阅面（含 overfit_gap——final_train_test 产出）
+- **#36 LLM findings 回路**：`report_findings` 控制面 + `modeling_report_findings` 工具
+  ——schema 校验 fail-loud（kind ⊆ 词表、severity ∈ [0,1]、未知键拒绝）、落诊进
+  models[key]、决策日志审计；propose 对规则与 LLM findings **均匀聚合**（同一 fire 入口）
+- **#64 OOF 观察面与终局报告**：run_hpo 出 **OOF 图集**（model_evaluation 图族指向 OOF
+  源，挂 run 下 run_id 寻址）；**泰勒工具** `taylor_diagram_report`（本地分析类两站点：
+  多 run holdout 终训预测 fan-in → (corr, σ, rmse) + 图落盘；用 holdout 不用 OOF——θ*
+  带选择性乐观偏差）；**finish 两段式（BREAKING）**：`preview` = 聚合产物清单 + 绘泰勒
+  （零副作用，产物列表交给宿主多模态读取）→ `conclusion=...` = verdict + **LaTeX PDF
+  报告**（逐模型分析/泰勒/结论/rank；TeX 引擎缺失优雅降级交付 .tex 源）；conclusion 落
+  verdict（审计）且不可变——`deliver_keys`/无参收局形态退役
+- **#34 evaluate 增 scoring 参数**：`scoring: MetricName | list[MetricName] | None`——
+  None = 全套件（报告面），单值/列表 = 只算所声明子集；K 折 scorer 与 holdout-val
+  trial 传单指标省算力（分类概率族计算大头）；子集不含概率指标时 y_proba 可缺省
+- **#38 propose 规则引擎重写（BREAKING 菜单序）**：菜单 = findings 驱动层（`driver.rule.
+  fire/prioritize`——记分牌 weight×severity 降序、同分 owner/kind 字典序，浮于顶部）+
+  基座谓词机层（策展序：baseline 第一、未跑候选、终训交付、配置动作面）。fold_std →
+  加深从无条件改 **std 门控**（无 `n_trials` 形参的族零加深题——gate 回归防线）；
+  complexity_edge/overfit_gap → 正则收窄/pin（族自声明 `.regularizers`）；slice_collapse
+  → 类别权重提示；error_concentrated → FE 换档（规则挂 x_transformer 词表节点）；
+  **无 leader（S 无模型信息）时 FE 候选零出现**（引擎级 gate 非权重压序）；unconsumed
+  findings 显式报告（无静默丢弃）
+
 ### Added（driver 规则引擎 SDK——#37 决议落地）
 
 - **@rule 节点属性声明**：规则知识随词汇主人居住（`node.rule = {kind: fn}`，与 clean 域

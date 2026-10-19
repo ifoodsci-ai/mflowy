@@ -36,13 +36,13 @@ uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 | ------ | --------------------------------- | ---------------------------------------------------------- |
 | MCP    | `packages/mcp/mflowy/mcp/`        | 工具注册面、stdio server、runner、遥测                     |
 | Data   | `packages/builtin_plugins/data/mflowy/data/`      | 清洗 MDP 动作域（load/statistic/detect/clean/plot + DomainCard） |
-| Model  | `packages/builtin_plugins/model/mflowy/model/`    | 建模 MDP 动作域（x_y/cross_validation/x_transformer/model + plot）+ JobProvider |
+| Model  | `packages/builtin_plugins/model/mflowy/model/`    | 建模 MDP 动作域（x_y/cross_validation/x_transformer/model + plot）+ JobProvider + diagnose/report 观察面 |
 | Driver | `packages/driver/mflowy/driver/`  | YAML→DAG 编译调度、@handler/@edge 插件 SDK、MDP 会话基座、规则引擎 SDK |
 | Utils  | `packages/utils/mflowy/utils/`    | mlflow seam、脚本安全扫描、capture/path/logging/jinja      |
 
 依赖方向保持单向：utils ← driver ← data ← model ← mcp（内核零域感知、两 MDP 域隔离——`tests/test_workspace.py` 断言，改动 import 保持全绿）。模块内相对导入、跨模块绝对导入。
 
-工具五组共 29 个（真源 = `tools/list`）：平台 info 3 + mlflow 运维 5（本地）；分析 3（`data_profile`/`eda`/`propose_questions`，本地）；compute 4（`modeling`/`explanation`/`predict`/`inverse_optimization`，经 JobProvider 委派，协议在 model 包）；MDP 会话 12（`clean_*`×6 + `modeling_*`×6，引擎在两域 session 模块）。
+工具六组共 31 个（真源 = `tools/list`）：平台 8（info 3 + mlflow 观测 4 + 会话回收 1，本地）；本地分析 4（`data_profile`/`eda`/`propose_questions`/`taylor_diagram_report`）；YAML 预检 1（`validate_modeling_steps`）；compute 5（`hyperparameters_search`/`modeling`/`explanation`/`predict`/`inverse_optimization`，经 JobProvider 委派，协议在 model 包）；MDP 会话 13（`clean_*`×6 + `modeling_*`×7——含 `modeling_report_findings`，引擎在两域 session 模块，动作面 = modeling 八动作面）。
 
 插件身份零手工注册：`@handler(namespace=...)` 标记（裸命名参数=参数边，Annotated=用户可配），构建期 `hatch_metadata.py` AST 扫描生成 entry point，运行期 `driver/discover.py` 按元数据解析（`_` 前缀与 `_EXCLUDED` 词干除外）。
 

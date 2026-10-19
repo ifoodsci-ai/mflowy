@@ -55,7 +55,7 @@ class TestSearchDL:
                     raise optuna.TrialPruned()
             return x
 
-        study = search_dl({"x": ContinuousSpace(0.0, 1.0)}, obj, 12, max_resource=8, direction="maximize")
+        study = search_dl({"x": ContinuousSpace(0.0, 1.0)}, obj, 12, max_resource=8, direction="maximize", seed=1)
         assert isinstance(study.sampler, optuna.samplers.TPESampler)
         assert isinstance(study.pruner, optuna.pruners.HyperbandPruner)
         assert pruned, "劣质 trial 应被 Hyperband 剪掉"

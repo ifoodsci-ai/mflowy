@@ -108,9 +108,10 @@ def search[T: float | tuple[float, ...]](
 # ── 场景封装：搜索策略知识的居所（禁止裸调 search） ──────────────────────────
 
 
-def search_ml(param_space, objective, n_trials, *, direction=None, timeout=None):
+def search_ml(param_space, objective, n_trials, *, direction=None, timeout=None, seed: int | None = None):
     """传统 ML 超参搜索：tpe、无 pruner——K 折 trial 无逐折独立中间值，剪枝不诚实
-    （显式 NopPruner：optuna 缺省 MedianPruner 会静默挂载，与"不假装"相悖）。"""
+    （显式 NopPruner：optuna 缺省 MedianPruner 会静默挂载，与"不假装"相悖）。
+    seed 注入 sampler（会话增量 study 的目标同一性分量之一）。"""
     import optuna
     from optuna import samplers
 
@@ -118,18 +119,21 @@ def search_ml(param_space, objective, n_trials, *, direction=None, timeout=None)
         param_space,
         objective,
         n_trials,
-        sampler=samplers.TPESampler(),
+        sampler=samplers.TPESampler(seed=seed),
         pruner=optuna.pruners.NopPruner(),
         direction=direction,
         timeout=timeout,
     )
 
 
-def search_dl(param_space, objective, n_trials, *, max_resource: int, direction=None, timeout=None):
+def search_dl(
+    param_space, objective, n_trials, *, max_resource: int, direction=None, timeout=None, seed: int | None = None
+):
     """资源轴增量评估的长训练（boosting staged / 未来 DL epoch 上报）：tpe + Hyperband 加速。
 
     min_resource 单源取 ``min_resource_of(max_resource)``；调用方须保证 objective
-    沿资源轴上报中间值（无诚实中间值的路径请走 search_ml，不假装）。
+    沿资源轴上报中间值（无诚实中间值的路径请走 search_ml，不假装）。seed 注入
+    sampler（测试确定性——剪枝断言对采样随机性敏感）。
     """
     import optuna
     from optuna import samplers
@@ -139,7 +143,7 @@ def search_dl(param_space, objective, n_trials, *, max_resource: int, direction=
         param_space,
         objective,
         n_trials,
-        sampler=samplers.TPESampler(),
+        sampler=samplers.TPESampler(seed=seed),
         pruner=optuna.pruners.HyperbandPruner(min_resource=lo, max_resource=max_resource),
         direction=direction,
         timeout=timeout,
