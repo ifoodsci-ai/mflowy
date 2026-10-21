@@ -72,7 +72,8 @@ _Avoid_: 环境容器、执行上下文、DI 容器
 
 **域包（domain package）**:
 按 MDP 域切分的能力包：`mflowy-data`（load/statistic/detect/clean + 清洗会话）、
-`mflowy-model`（x_y/cross_validation/x_transformer/model + 建模会话）。依赖单向
+`mflowy-model`（x_y/cv/x_transformer/model + 建模会话——cv 族 = cv.split 参数构建 /
+cv.load 引用加载，下游经 `cv` namespace 参数消费）。依赖单向
 data ← model；安装形态即域选择（`mflowy[data]` / `mflowy[model]`）。两包住分组目录
 `packages/builtin_plugins/`（与 entry points 组 `mflowy.builtin_plugins` 对齐），
 distribution 名与 extras 不含分组路径。
@@ -93,8 +94,10 @@ _Avoid_: 环境引擎（与 runner 混淆）
 **先验卡（DomainCard）/ 协议卡（CVCard）**:
 两个 MDP 的冻结输入：先验卡 = 数据域先验（target/id_columns/单位/范围/protected，survey
 问卷经 compile_survey 编译）；协议卡 = 建模域对局规则（task/metric/CV/预算/约束，
-model-brief 问卷经 compile_model_brief 编译）。命名按内容不按过程；换协议 = board 作废
-+ test 重触，只能 abort 开新 episode。
+model-brief 问卷编译）。协议卡的引擎入参形态（#66）：cv_card = cv.split 配置 yaml
+明文（划分构建参数）+ start 显式参数（target/task/metric/candidates/max_steps/
+id_columns——显式 > card 背景分层缺省），CVCard.build 仍是四类校验的单一事实源。
+命名按内容不按过程；换协议 = board 作废 + test 重触，只能 abort 开新 episode。
 _Avoid_: ExperimentCard、ModelBrief、ModelingCard（协议卡禁用别名）
 
 ### 规则与出题（0.2.0）

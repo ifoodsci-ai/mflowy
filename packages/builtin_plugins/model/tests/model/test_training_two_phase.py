@@ -16,15 +16,9 @@ from mflowy.model.model.study import ContinuousSpace
 from mflowy.model.model.types import TASKTYPE, MetricName
 
 
-@pytest.fixture(autouse=True)
-def isolate_tracking(tmp_path, monkeypatch):
-    """终局链存在 seam 外 fluent 直调（objective→MlflowClient）——隔离到 tmp sqlite。"""
-    monkeypatch.setenv("MLFLOW_TRACKING_URI", f"sqlite:///{tmp_path}/tracking.db")
-
-
 @pytest.fixture
 def reg_split():
-    from mflowy.model.cross_validation import split as split_fn
+    from mflowy.model.cv.split import split as split_fn
     from mflowy.model.model._split import materialize_split
 
     rng = np.random.default_rng(4)
@@ -113,9 +107,31 @@ class TestTrainingBehavior:
 
 class TestHoldoutReport:
     def test_report_shape_and_findings_empty_on_clean_fit(self, reg_split):
-        """holdout_report：verdict 结构面——u_full（归一）+ 全套指标 + findings。"""
+        """holdout_report：verdict 结构面——u（归一，terminal_u 单源）+ 全套指标 + findings。"""
         loader = training(reg_split, "RF", _make_rf_pipe(), {"n_estimators": 10, "random_state": 0})
         report = holdout_report(loader, reg_split, MetricName.MAE)
-        assert isinstance(report["u_full"], float)
+        assert isinstance(report["u"], float) and report["u"] <= 0  # MAE 误差类取负归一
         assert report["metrics"] and "target" in report["metrics"]
         assert report["findings"] == []  # u_inner=None（未搜索）无 overfit 对照
+
+
+class TestNoWindowDiscipline:
+    def test_search_without_window_creates_no_runs(self, reg_split, tmp_path, monkeypatch):
+        """无 active run 的直调形态零 mlflow 写入（守卫修掉孤儿 nested run——回归防线）。"""
+        import mlflow
+
+        uri = f"sqlite:///{tmp_path}/no_window.db"
+        monkeypatch.setenv("MLFLOW_TRACKING_URI", uri)
+        mlflow.set_tracking_uri(uri)
+        study = hyperparameters_search(
+            {"max_depth": ContinuousSpace(2, 5, 1)},
+            scoring=MetricName.MAE,
+            n_trials=2,
+            split=reg_split,
+            make_pipe=_make_rf_pipe(),
+            base_params={"n_estimators": 10, "random_state": 0},
+        )
+        assert len(study.trials) == 2  # 搜索照常
+        client = mlflow.MlflowClient()
+        experiments = [e for e in client.search_experiments() if e.name != "Default"]
+        assert not experiments and not client.search_runs(experiment_ids=["0"])  # 零 run 落盘

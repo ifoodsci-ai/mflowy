@@ -100,3 +100,30 @@ def test_console_scripts():
         "mflowy": "mflowy.mcp.runner:main",
         "mflowy-mcp": "mflowy.mcp.server:main",
     }
+
+
+def test_skill_tool_names_in_tools_list():
+    """M11：剧本层（.agents/skills/**/SKILL.md，全 git 追踪）的反引号调用形引用
+    不超纲——工具名 ⊆ tools/list（平台公有函数 + 域 entry points）、节点 ⊆ 运行期
+    目录、动作面 ⊆ 八动作面词表。改名漂移（SKILL 引用已退役工具/节点）即测试红。"""
+    import re
+    from importlib.metadata import entry_points
+
+    from mflowy.driver.discover import list_all
+    from mflowy.mcp import tools as platform
+    from mflowy.model.session import ACTIONS
+
+    tools_vocab = {n for n, fn in vars(platform).items() if not n.startswith("_") and callable(fn)}
+    tools_vocab |= {ep.name for ep in entry_points(group="mflowy.tools")}
+    nodes_vocab = {name for names in list_all().values() for name in names}
+    # start(...) = start_session 的剧本简写（clean/model 域 SKILL 惯例）
+    allowed = tools_vocab | nodes_vocab | set(ACTIONS) | {"start"}
+
+    skills_dir = ROOT / ".agents" / "skills"
+    assert skills_dir.is_dir(), "M11：skills 须全 git 追踪入仓（.agents/skills/ 缺失即断链）"
+    used: dict[str, str] = {}
+    for skill in skills_dir.rglob("SKILL.md"):
+        for tok in re.findall(r"`([a-z][a-z0-9_]*)\(", skill.read_text(encoding="utf-8")):
+            used.setdefault(tok, str(skill.relative_to(ROOT)))
+    unknown = {t: p for t, p in used.items() if t not in allowed}
+    assert not unknown, f"SKILL 引用不在运行期词表（工具名 ⊆ tools/list 断链）: {unknown}"

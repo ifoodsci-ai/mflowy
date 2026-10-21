@@ -58,8 +58,26 @@ def _cv_card(**over):
     return base
 
 
-def _start(root, csv, card=None, cv_card=None):
-    return ms.start_session(csv, card=card or {"domain": "t", "target": "target"}, cv_card=cv_card or _cv_card())
+CV_CARD = "cv: 3"
+
+
+def _start(root, csv, card=None, candidates=None):
+    return ms.start_session(
+        csv,
+        CV_CARD,
+        card=card or {"domain": "t", "target": "target"},
+        task="regression",
+        metric="mae",
+        max_steps=8,
+        candidates=(
+            candidates
+            if candidates is not None
+            else [
+                {"family": "RF", "baseline": True},
+                {"family": "XGB", "baseline": False, "space_hints": {"max_depth": [3, 6]}, "seed": 7},
+            ]
+        ),
+    )
 
 
 # ── 卡校验（fail-loud 带候选清单） ─────────────────────────────────────────
@@ -91,7 +109,7 @@ def test_cv_card_default_candidates_first_is_baseline(reg_csv):
 
 def test_start_default_candidates_open_all_families(sessions_root, reg_csv):
     """开局不带 candidates（无 research-review 先验）走缺省全族开放面。"""
-    s = _start(sessions_root, reg_csv, cv_card={"target": "target", "task": "regression", "metric": "mae", "cv": 3})
+    s = ms.start_session(reg_csv, CV_CARD, card={"domain": "t", "target": "target"}, task="regression", metric="mae")
     assert s["candidates"] == sorted(s["candidates"]) and s["candidates"]
 
 
@@ -136,10 +154,12 @@ def test_start_takes_cv_card_and_stores_candidates(sessions_root, reg_csv):
     assert m["candidates"][0]["baseline"] is True
 
 
-def test_start_rejects_old_protocol_card_name(sessions_root, reg_csv):
-    """BREAKING：protocol_card 形参退役——协议卡全链改名 cv_card。"""
-    with pytest.raises(TypeError, match="protocol_card"):
-        ms.start_session(reg_csv, card={"domain": "t", "target": "target"}, protocol_card=_cv_card())
+def test_start_rejects_dict_cv_card(sessions_root, reg_csv):
+    """BREAKING：cv_card 收窄为 cv.split 配置 yaml 明文——dict 协议卡形态退役（校验门 fail-loud）。"""
+    with pytest.raises((ValueError, TypeError)):
+        ms.start_session(reg_csv, {"cv": 3, "task": "regression"}, card={"domain": "t", "target": "target"})
+    with pytest.raises(TypeError):
+        ms.start_session(reg_csv, card={"domain": "t", "target": "target"}, protocol_card="cv: 3")  # 旧名退役
 
 
 # ── hints 注入与 π 覆盖 ─────────────────────────────────────────────────────
@@ -149,7 +169,7 @@ def test_hints_seed_cursor_on_select(sessions_root, reg_csv):
     """select_model 注入该候选的 hints（缺省 pins/narrowing）与 seed。"""
     s = _start(sessions_root, reg_csv)
     r = ms.apply_action(s["session_id"], "select_model", {"family": "XGB"})
-    assert r["cursor"]["h_space"] == {"max_depth": {"kind": "continuous", "lo": 3, "hi": 6, "step": None}}
+    assert r["cursor"]["H"] == {"max_depth": {"kind": "continuous", "lo": 3, "hi": 6, "step": None}}
     assert r["cursor"]["seed"] == 7
     m = json.loads((sessions_root / s["session_id"] / "manifest.json").read_text(encoding="utf-8"))
     assert m["cursor"]["seed"] == 7  # 有效种子随候选缺省落光标
@@ -160,7 +180,7 @@ def test_pi_override_wins_over_hints(sessions_root, reg_csv):
     s = _start(sessions_root, reg_csv)
     ms.apply_action(s["session_id"], "select_model", {"family": "XGB"})
     r = ms.apply_action(s["session_id"], "set_hp_space", {"max_depth": [4, 5]})
-    assert r["cursor"]["h_space"]["max_depth"] == {"kind": "continuous", "lo": 4, "hi": 5, "step": None}
+    assert r["cursor"]["H"]["max_depth"] == {"kind": "continuous", "lo": 4, "hi": 5, "step": None}
     r2 = ms.apply_action(s["session_id"], "set_seed", {"seed": 123})
     assert r2["cursor"]["seed"] == 123
 
@@ -170,11 +190,7 @@ def test_scalar_hint_pins(sessions_root, reg_csv):
     s = _start(
         sessions_root,
         reg_csv,
-        cv_card=_cv_card(
-            candidates=[
-                {"family": "RF", "baseline": True, "space_hints": {"n_estimators": 50}},
-            ]
-        ),
+        candidates=[{"family": "RF", "baseline": True, "space_hints": {"n_estimators": 50}}],
     )
     r = ms.apply_action(s["session_id"], "select_model", {"family": "RF"})
     assert r["cursor"]["H"] == {"n_estimators": 50}

@@ -6,7 +6,8 @@ import numpy as np
 import pandas as pd
 import pytest
 from mflowy.data.fingerprint import fingerprint
-from mflowy.model.cross_validation import SplitSpec, split
+from mflowy.model.cross_validation import SplitSpec
+from mflowy.model.cv.split import split
 from mflowy.model.model._split import materialize_split
 from mflowy.model.x_y import XySpec
 from sklearn.model_selection import (
@@ -57,7 +58,7 @@ def _run_chain(X, y, **params) -> SplitSpec:
     from mflowy.driver.config import NodeConf
     from mflowy.driver.context import Context
 
-    ctx = Context(NodeConf(name="split_t", node_key="split"))
+    ctx = Context(NodeConf(name="split_t", node_key="cv__split"))
     return split.handler(ctx, x_y=_xy(X, y), **params)
 
 
@@ -295,7 +296,7 @@ class TestValidation:
         """监督学习契约：y 恒非空（签名层面无 None 分支）"""
         import inspect
 
-        from mflowy.model.cross_validation import split
+        from mflowy.model.cv.split import split
 
         ann = str(inspect.signature(split).parameters["x_y"].annotation)
         assert "None" not in ann  # 监督学习 y 恒非空：x_y 输出三元组契约（X, y, task）
@@ -303,4 +304,4 @@ class TestValidation:
     def test_handler_registered(self):
         from mflowy.driver import discover
 
-        assert discover.entry("split") is not None  # 非归组（G4）
+        assert discover.entry("cv__split") is not None  # cv 族（namespace="cv"——构建/引用分家）

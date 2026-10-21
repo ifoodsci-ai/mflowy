@@ -265,6 +265,52 @@ def log_dict(dictionary, artifact_file: str):
     print(f"Saved: {_artifact_local_path(artifact_file)}")
 
 
+def log_pickle(obj, artifact_file: str):
+    """对象 pickle 直写 active run 工件树（如 split.pkl——#66 节点副产物）。
+
+    ``pickle.dumps`` 内存序列化 + 直写 run ``artifact_uri`` 终路径——无 tmp 暂存、
+    无 log_artifact 二次拷贝（工件树即正典居所）。非 file:// artifact 根 fail-loud：
+    直写只对本地工件树成立，远程 store 出现时再议上传路径。
+    """
+    import pickle
+    from urllib.parse import unquote, urlparse
+
+    import mlflow
+
+    run = mlflow.active_run()
+    if run is None:
+        raise RuntimeError("log_pickle 须在 active run 窗口内调用（工件落 run——无窗口即无居所）")
+    uri = f"{run.info.artifact_uri}/{artifact_file}"
+    parsed = urlparse(uri)
+    # 本地工件树两种形态：file:// URI 或裸路径（sqlite tracking 缺省 artifact root）；
+    # 远程 scheme（s3/http…）fail-loud——出现时再议上传路径
+    if parsed.scheme == "file":
+        local = Path(unquote(parsed.path))
+    elif parsed.scheme == "":
+        local = Path(uri)
+    else:
+        raise ValueError(f"artifact 根非本地（{uri}）——log_pickle 直写只支持本地工件树")
+    local.parent.mkdir(parents=True, exist_ok=True)
+    local.write_bytes(pickle.dumps(obj))
+    print(f"Saved: {local}")
+
+
+def run_artifacts(run_id: str) -> list[str]:
+    """按 run_id 列工件路径（薄封装——域侧 fail-loud 清单的检索面）。"""
+    import mlflow
+
+    setup()
+    return [a.path for a in mlflow.MlflowClient().list_artifacts(run_id)]
+
+
+def download_run_artifact(run_id: str, artifact_file: str) -> str:
+    """按 run_id 取回工件本地路径（副产物的读回入口）。"""
+    import mlflow
+
+    setup()
+    return mlflow.artifacts.download_artifacts(run_id=run_id, artifact_path=artifact_file)
+
+
 def log_figure(fig, filename: str, dpi: int = 300):
     """mlflow.log_figure + print 绝对路径（进 NodeResult.output）。"""
     import mlflow

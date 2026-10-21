@@ -1,14 +1,17 @@
-"""#64 终局观察面：OOF 图集 / 泰勒聚合——finish 侧工件的家。
+"""#64/#66 终局观察面：OOF 图集 / 泰勒聚合 / 报告素材——finish 侧工件的家。
 
 - **OOF 图集**：run_hpo 观察面指向 OOF 源（cross_val_predict × train 侧 y_true），
   复用 model_evaluation 族的 plot pyfunc 直调出图，产物挂 run 下（run_id 寻址）
-- **泰勒聚合**：多 run 的 holdout 终训预测 fan-in（无节点间数据流——j2 循环渲染
-  load 边是用 DAG 机器做 20 行代码的事，故走本地分析类工具两站点）。泰勒用
+- **泰勒聚合**（#66 改版）：多终训 run 的节点副产物（X_test/y_test/y_pred parquet，
+  随 final_train_test run 落 mlflow 工件；泰勒只消费 y 面子集）fan-in——``taylor_byproducts``
+  边函数（edges ns 注册）收集多模型副产物、断言各模型 y_test 逐位同一（不同 holdout 进同一张
+  对比图 = 撒谎的图）、产出泰勒长表；统计经 ``_compute_taylor_stats``。泰勒用
   holdout 终训预测、不用 OOF：θ* 在 inner CV 折上最大化选出，OOF@θ* 带选择性
-  乐观偏差且跨模型不均匀；holdout 是全流程后的一次性无偏读。reference = y_true
-- **终局报告不在引擎**：报告是 π（LLM 或人）的产物——preview 发素材（产物清单/
-  decision_log/board），π 分析撰写后 finish(pdf=...) 收编进 deliverables（引擎
-  只做原子落盘与寻址，不编译不验内容——数字权威面是 verdict/board/盘上 study）
+  乐观偏差且跨模型不均匀；holdout 是全流程后的一次性无偏读
+- **终局报告不在引擎**：报告是 π（LLM 或人）的产物——``modeling_report_skeleton``
+  发素材（表格从账本渲染/图片清单/叙事槽样板），π 分析撰写后 finish(pdf) 收编进
+  deliverables（引擎只做原子落盘与寻址，不编译不验内容——数字权威面是
+  verdict/board/盘上 study）
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from mflowy.driver.edge import edge
 from mflowy.model.model.types import TASKTYPE
 
 _TAYLOR_FIGURE = "taylor_diagram.png"
@@ -101,44 +105,74 @@ def oof_plot_album(task, y_true: pd.DataFrame, y_pred: pd.DataFrame, y_proba, ou
     return sorted(written)
 
 
-# ── 泰勒聚合（工具与 finish preview 共用） ─────────────────────────────────
+# ── 泰勒聚合（#66：节点副产物 fan-in——边函数机器 + 工具门面） ──────────────
 
 
-def taylor_for_runs(session_dir: Path, run_ids: list[str], task) -> dict:
-    """多 run holdout 终训预测 fan-in → (corr, σ, rmse) + 泰勒图。
+@edge
+def taylor_byproducts(byproducts: list[tuple[str, pd.DataFrame, pd.DataFrame]]) -> pd.DataFrame:
+    """多模型终训副产物 fan-in：``(label, y_test, y_pred)`` 清单 → 泰勒长表
+    ``(model, y_name, y, y_pred)``。
 
-    单模型不出图（多模型对比图——统计照出）；缺产物 fail-loud 带可选用 run 清单。
-    图落会话目录 ``taylor_diagram.png``（重复绘制覆盖——确定性产物名）。
+    同一性断言（fail-loud）：各模型 y_test 逐位同一——不同 holdout 的预测进同一张
+    对比图是撒谎的图；行位对齐（副产物 parquet 不保索引，y_pred 行序 ≡ y_test 行序）。
     """
-    import pickle
+    if not byproducts:
+        raise ValueError("taylor_byproducts 收到空清单——至少一个终训 run 的副产物")
+    base_label, base_y_test, _ = byproducts[0]
+    for label, y_test, _ in byproducts[1:]:
+        if y_test.shape != base_y_test.shape or not np.array_equal(y_test.to_numpy(), base_y_test.to_numpy()):
+            raise ValueError(
+                f"模型 `{label}` 与 `{base_label}` 的 y_test 不逐位同一（shape {y_test.shape} vs "
+                f"{base_y_test.shape}）——不同 holdout 的预测不可进同一张泰勒对比图"
+            )
+    parts = []
+    for label, y_test, y_pred in byproducts:
+        for col in y_test.columns:
+            parts.append(
+                pd.DataFrame(
+                    {
+                        "model": label,
+                        "y_name": col,
+                        "y": y_test[col].to_numpy(),
+                        "y_pred": y_pred[col].to_numpy(),
+                    }
+                )
+            )
+    return pd.concat(parts, ignore_index=True)
 
-    from mflowy.model.plot.model_evaluation.regression.taylor_diagram import taylor_diagram
+
+def taylor_for_runs(runs: list[tuple[str, str]], task, out_dir: Path) -> dict:
+    """多终训 run 副产物 fan-in → (corr, σ, rmse) + 泰勒图（落 ``out_dir``）。
+
+    ``runs`` = (combo label, run_id) 清单；副产物缺 fail-loud；单模型不出图
+    （多模型对比图——统计照出）；分类任务不出统计面。图名恒 ``taylor_diagram.png``
+    （确定性产物名，重复绘制覆盖）。
+    """
+    from mflowy.model.model._pipeline import HOLDOUT_BYPRODUCTS
+    from mflowy.utils.mlflow import download_run_artifact, run_artifacts
+
+    byproducts: list[tuple[str, pd.DataFrame, pd.DataFrame]] = []
+    for label, rid in runs:
+        arts = run_artifacts(rid)
+        missing = {HOLDOUT_BYPRODUCTS["y_test"], HOLDOUT_BYPRODUCTS["y_pred"]} - set(arts)
+        if missing:
+            raise ValueError(
+                f"run `{rid}`（{label}）缺副产物 {sorted(missing)}（final_train_test 的 training 行为产物）"
+            )
+        y_test = pd.read_parquet(download_run_artifact(rid, HOLDOUT_BYPRODUCTS["y_test"]))
+        y_pred = pd.read_parquet(download_run_artifact(rid, HOLDOUT_BYPRODUCTS["y_pred"]))
+        byproducts.append((label, y_test, y_pred))
+    plot_df = taylor_byproducts(byproducts)
 
     rows: dict[str, dict] = {}
-    long_parts: list[pd.DataFrame] = []
-    with open(session_dir / "split.pkl", "rb") as f:
-        ts = pickle.load(f)
-    for rid in run_ids:
-        pred_path = session_dir / "runs" / rid / "holdout_y_pred.parquet"
-        if not pred_path.exists():
-            available = sorted(p.parent.parent.name for p in (session_dir / "runs").glob("*/holdout_y_pred.parquet"))
-            raise ValueError(f"run `{rid}` 无 holdout_y_pred.parquet（final_train_test 产物）——可用 run：{available}")
-        y_pred = pd.read_parquet(pred_path)
-        y_pred = y_pred.reindex(ts.y_test.index)  # 对齐 y_true（holdout 行序）
-        part = oof_long_df(ts.y_test, y_pred[ts.y_test.columns])
-        part.insert(0, "model", rid)
-        long_parts.append(part)
-    plot_df = pd.concat(long_parts, ignore_index=True)
-
-    figure: Path | None = None
     if TASKTYPE(task) != TASKTYPE.REGRESSION:
         return {"stats": rows, "figure": None, "note": "泰勒图限回归任务——分类交付不出统计面"}
 
     from mflowy.model.plot.model_evaluation.regression.taylor_diagram import _compute_taylor_stats
 
-    for (rid, _), group in plot_df.groupby(["model", "y_name"]):
+    for (label, _), group in plot_df.groupby(["model", "y_name"]):
         sr, corr, _rmse_norm, bias, rmse_total = _compute_taylor_stats(group)
-        rows[rid] = {
+        rows[label] = {
             "correlation": round(corr, 4),
             "sigma_ratio": round(sr, 4),
             "rmse_total_norm": round(rmse_total, 4),
@@ -146,10 +180,13 @@ def taylor_for_runs(session_dir: Path, run_ids: list[str], task) -> dict:
         }
 
     note = ""
+    figure: Path | None = None
     if plot_df["model"].nunique() <= 1:
         note = "单模型无对比面——泰勒为多模型对比图，不出图（统计照出）"
     else:
-        _, fig = taylor_diagram(model_test_predictions=(TASKTYPE(task), plot_df))
-        figure = session_dir / _TAYLOR_FIGURE
+        from mflowy.model.plot.model_evaluation.regression.taylor_diagram import taylor_diagram as taylor_plot
+
+        _, fig = taylor_plot(model_test_predictions=(TASKTYPE(task), plot_df))
+        figure = out_dir / _TAYLOR_FIGURE
         fig.savefig(figure, dpi=150, bbox_inches="tight")
     return {"stats": rows, "figure": figure, "note": note}

@@ -1,12 +1,12 @@
 ---
 name: model-brief
-description: 建模协议问卷(mflowy)。清洗收局后、开始建模前使用——用户要求"建模/训练模型"且清洗已完成时触发。规则预填候选，用户只确认四项必答，剧本层产出 CVCard（评估协议卡）后 modeling_session_start(cv_card) 直进建模 MDP。前置:clean skill 已 finish。
+description: 建模协议问卷(mflowy)。清洗收局后、开始建模前使用——用户要求"建模/训练模型"且清洗已完成时触发。规则预填候选，用户只确认四项必答，剧本层产出开局入参（cv_card = cv.split 配置 yaml 明文 + 显式协议参数）后 modeling_session_start 直进建模 MDP。前置:clean skill 已 finish。
 ---
 
 # Model-Brief Skill：建模协议问卷（剧本层谈判）
 
 三段式研究流第三段的前置：`建档 → 清洗 MDP →(冻结)→ **model-brief 问卷** → 建模 MDP`。
-你的职责：把"对局规则"问清楚、编译成 `CVCard`——**你不做结构决策**，那是建模
+你的职责：把"对局规则"问清楚、编译成开局入参（**cv_card** = cv.split 配置 yaml 明文，如 `cv: 3\ntest_size: 0.2`——划分构建参数之外的协议走 start 显式参数/card 背景）——**你不做结构决策**，那是建模
 MDP 回合里的事（model skill）。
 
 ## 一段式：规则预填 + 用户确认
@@ -33,8 +33,10 @@ research-review 产物即可；无 research 产物时留空（全部已声明族
 
 ## 收口：编译交棒
 
-攒齐必答后在剧本层组装 CVCard 并调
-`modeling_session_start(final_path, card, cv_card)`——start 即四类相容校验
+攒齐必答后在剧本层组装开局入参并调
+`modeling_session_start(final_path, cv_card=<split yaml 明文>, target=, task=,
+candidates=, max_steps=, id_columns=, card=<DomainCard 背景>)`——显式参数 > card
+分层缺省，合并结果冻结进 manifest；start 即四类相容校验
 （task↔target dtype / metric↔task / cv↔数据事实 / 预算与候选机械校验：候选 ⊆ 已声明
 族目录、baseline 恰一、hints ⊆ 签名空间）fail-loud + D 物化冻结 + 预算起算，直进
 八动作面。校验失败把错误**原样**反馈用户修正；开局后协议不可改，改协议 = 新 episode。
@@ -45,7 +47,7 @@ research-review 产物即可；无 research 产物时留空（全部已声明族
 
 - 宁缺勿编：用户答不上来的约束留空（默认全族开放）；
 - 问卷是建模 MDP 的**参数化**（对局规则），不是特征工程决策（那是回合里的事）；
-- 词表：协议卡字段即 modeling_session_start 的冻结分量，不发明字段。
+- 词表：开局冻结分量 = cv_card 键（⊆ cv.split 参数面）+ start 显式参数，不发明字段；多目标 = 每目标各开一个单目标任务会话（三层循环，不进本协议）。
 
 ## 参考
 

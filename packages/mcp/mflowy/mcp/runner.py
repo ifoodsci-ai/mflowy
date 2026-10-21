@@ -2,7 +2,7 @@
 
 用法::
 
-    mflowy modeling '{"modeling_steps_yaml": "...", "name": "...", "desc": "..."}'
+    mflowy modeling '{"modeling_steps": "...", "name": "...", "desc": "..."}'
     python -m mflowy.mcp.runner list_nodes '{"ns": "model"}'
 
 [project.scripts] ``mflowy`` 指向此模块的 main()（CLI 通道）。

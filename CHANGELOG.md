@@ -7,6 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - Unreleased
 
+### BREAKING：modeling 终局协议与工件面收口——finish(pdf) 单动作 + 节点副产物 + 终训走 JobProvider + 光标单表 H（#66）
+
+- **#66 光标单表 H（BREAKING）**：`s.h_space` 成员退役——``H[param]`` 唯一槽位
+  （标量 = pin、dict = 空间收窄），set_hp/set_hp_space 同写 H，last-write-wins
+  显式（decision_log note 记覆盖前后值——同参数不可能同时持有两份来源的值，参数
+  来源冲突结构性消灭）；snapshots/manifest/观察面形状同步迁移
+- **#66 u_full → u（BREAKING）**：终局效用从「多目标均值」改为**代表指标直取**
+  （全套指标中取 scoring 代表指标，`terminal_u` 单源；与 u_inner 同尺）；会话恒
+  **单目标任务**——`x_y` 的 `targets` 收窄为 `target`（多目标 plumbing 退役：推断
+  冲突分支/逐列循环/跨目标均值），并增 `id_columns` 形参（物化期从 X 剔除——划分/
+  搜索/终训/DAG 重放同一数据面，ID 泄漏结构性消失，会话侧二次剔除路径删除）；多
+  目标建模在会话外**三层循环**（多目标 → 多模型 → 单目标任务会话，文献综述阶段输出
+  每目标的模型候选）。ledger/board/verdict/skeleton/findings 全链 `u_full` 键改 `u`
+- **#66 节点副产物契约 + cv 引用加载分家**：族节点 training 行为把 X_test/y_test/y_pred
+  作为 parquet 副产物随 run（run_id 寻址、行位对齐——X_test 与 run 下 final 模型配对，
+  SHAP 解释等下游按 run 引用测试集与模型）；物化划分 split.pkl 随 run 由
+  **log_cv 中间件**落盘（`log_pickle` 直写 run 工件树——无 tmp 暂存无二次拷贝）；
+  新增 **cv 族目录**（`mflowy/model/cv/`——`namespace="cv"`，节点键 `cv__split`/
+  `cv__load`）：`cv.split` 收窄为纯参数构建（`from_run_id` 形参与指纹降级警告分支
+  退役——签名即契约，参数来源冲突结构性不存在）、`cv.load` 按 run 引用加载
+  split.pkl（缺失 fail-loud 带持有清单；消费 run 不重落副产物，holders 清单恒 =
+  生产者）；`cross_validation.py` 瘦身为 SplitSpec 契约模块；下游迁 **cv namespace
+  参数**——`train_split`/`model_test_*` 边的 `split` 参数改 `cv`（cv.split 物化 /
+  cv.load 直通，与 load/clean 族组消费同构）；会话开局物化走**节点中间件链**
+  （mlflow 窗口/log_cv 留痕/print 捕获——M7 通道纪律结构性修复），split run_id 进
+  manifest 作划分身份
+- **#66 开局入参合同（BREAKING）**：`cv_card` 收窄为 **cv.split 配置 yaml 明文**
+  （键 ⊆ split 参数面，fail-loud 带可用键清单）；`modeling_session_start` 显式参数
+  化——target/task/metric/candidates/max_steps/id_columns 显式命名参数 **> card
+  （DomainCard 背景）分层缺省**，合并结果冻结进 manifest（dict 协议卡形态与
+  target 静默 or 链退役）；compute 工具与 validate_modeling_steps 的
+  `modeling_steps_yaml`（文件路径）改为 **`modeling_steps`（yaml 明文）**——MCP
+  边界不假设共享文件系统，数据文件例外保持路径；task_dir 锚定（M10）改从 load 步
+  数据文件目录解析，血缘指纹按文本内容哈希
+- **#66 final_train_test 改走 modeling 工具**：渲染 per-combo 计划（cv.load
+  from_run_id + 证据配置全 pin）→ JobProvider.modeling 跑 DAG（会话引擎同步语境经
+  asyncio 桥调 async provider）→ u/metrics 从 DAGResult 回读（ModelLoader 新增
+  `holdout` 快照面）→ 副产物指针经 run artifacts 清单解析落账（s 自描述）→
+  combo 冻结。**终训即 plan 执行**：交付的 plan_yaml 就是那次终训本身（重放承诺与
+  执行事实同一）；交付恒是搜索时刻**证据配置快照 ∪ θ\***（搜后改 pin 不进唯一一次
+  holdout 读）；holdout findings 机器抽单源 `holdout_findings`（holdout_report 委托）
+- **#66 素材面两工具（BREAKING 改名 + 新增）**：`taylor_diagram_report` 改名
+  **`draw_taylor_diagram`**（本地分析类两站点——终训副产物 fan-in 画泰勒；
+  `taylor_byproducts` 边函数（edges ns）断言各模型 y_test 逐位同一——不同 holdout
+  的预测不进同一张对比图；只绘图不做报告）；新增 **`modeling_report_skeleton`**
+  （tools/list 31→32——只读零副作用：表格从账本渲染（u_inner/θ*/u/**rank**——
+  冻结面名次 + rank_consistency 出账）+ 图片清单 + 叙事槽样板）
+- **#66 finish(pdf) 单动作（BREAKING）**：pdf 必填（preview 分支退役——素材面走
+  draw_taylor_diagram/modeling_report_skeleton 两工具）；收编 = 复制进 deliverables
+  （tmp/rename 原子落盘）+ verdict；缺文件 fail-loud；已收局同 pdf 幂等重导出、
+  不同 pdf 报错（不可变更）；finish 不再画泰勒不再聚合素材（职责外移）
+- **#66 findings 作用域 = combo 键**：propose 组装处过滤（规则与 LLM findings 同
+  粒度）——菜单 rationale 引用的证据不来自另一个 FE 组合
+- **#66 窗口纪律与剧本钉**：`hyperparameters_search` 无 active run 不再建孤儿
+  nested run（objective 窗口判定一次，无窗口裸跑 trial 体——SDK 直调零 mlflow
+  写入）；test_workspace 增 **M11 断言**（SKILL 反引号调用形引用 ⊆ tools/list ∪
+  运行期节点/动作面词表——剧本改名漂移即测试红）
+
 ### BREAKING：modeling MDP 升级收尾——回路状态机重构 + 输入面结构化 + 观察面与终局报告（#62/#63/#64/#34/#35/#36/#38）
 
 - **#62 回路与状态机重构（BREAKING）**：s = 光标（m/H/h_space/seed/F）+ 账本（per

@@ -5,7 +5,7 @@
 - 输出 schema 对齐 detect 的 ErrorReport 先例：``{kind, severity, evidence, message}``
   （severity ∈ (0, 1]；findings 是建议不是边界）
 - kind 词表 = #38 规则引擎的订阅面：error_concentrated / slice_collapse /
-  fold_std / complexity_edge（overfit_gap 由 final_train_test 的 holdout_report
+  fold_std / complexity_edge（overfit_gap 由 final_train_test 的 holdout_findings
   产出——同 schema，证据类不同：holdout 读即终局）
 """
 

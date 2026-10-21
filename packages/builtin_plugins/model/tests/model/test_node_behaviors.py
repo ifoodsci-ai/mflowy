@@ -23,7 +23,7 @@ def isolate_tracking(tmp_path, monkeypatch):
 @pytest.fixture
 def reg_split():
     from mflowy.data.fingerprint import fingerprint
-    from mflowy.model.cross_validation import split as split_fn
+    from mflowy.model.cv.split import split as split_fn
     from mflowy.model.model._split import materialize_split
     from mflowy.model.x_y import XySpec
 

@@ -1,4 +1,5 @@
-"""建模会话入口契约：start(cv_card) 唯一主通道（直进八动作面）、协议四类校验门、越表拒绝。"""
+"""建模会话入口契约：start(cv_card yaml 明文 + 显式参数) 唯一主通道（直进八动作面）、
+协议四类校验门、显式参数 > card 背景的分层缺省、越表拒绝。"""
 
 import json
 
@@ -28,33 +29,44 @@ def reg_csv(tmp_path) -> str:
 
 CARD = {"domain": "测试", "target": "target"}
 
-PROTOCOL = {
-    "target": "target",
-    "task": "regression",
-    "cv": 3,
-    "max_steps": 4,
-    "candidates": [{"family": "RF", "baseline": True}],
-}
+CV_CARD = "cv: 3"  # cv.split 配置 yaml 明文
 
 
-def test_start_without_protocol_rejected(sessions_root, reg_csv):
-    """protocol_card 必填——谈判在剧本层（model-brief），引擎不再提供无协议开局。"""
-    with pytest.raises(ValueError, match="cv_card"):
-        ms.start_session(reg_csv, card=CARD)
+def _start(root, csv, cv_card=CV_CARD, **kw):
+    kw.setdefault("task", "regression")
+    kw.setdefault("candidates", [{"family": "RF", "baseline": True}])
+    kw.setdefault("max_steps", 4)
+    return ms.start_session(csv, cv_card, card=kw.pop("card", CARD), **kw)
+
+
+def test_start_requires_cv_card(sessions_root, reg_csv):
+    """cv_card（split yaml 明文）必填——协议谈判在剧本层（model-brief）。"""
+    with pytest.raises(TypeError):
+        ms.start_session(reg_csv, card=CARD)  # 缺 positional cv_card
+    with pytest.raises(ValueError, match="cv_card 必填"):
+        ms.start_session(reg_csv, "   ", card=CARD, task="regression")
+
+
+def test_start_rejects_non_split_keys(sessions_root, reg_csv):
+    """cv_card 键 ⊆ cv.split 参数面（签名即约束）——划分外协议走显式参数，fail-loud 带可用键。"""
+    with pytest.raises(ValueError, match="不在 cv\\.split 参数面"):
+        _start(sessions_root, reg_csv, cv_card="cv: 3\nmax_steps: 9")
+    with pytest.raises(ValueError, match="yaml 映射明文"):
+        _start(sessions_root, reg_csv, cv_card="just a string")
 
 
 def test_start_with_protocol_enters_run_plane(sessions_root, reg_csv):
-    """start(protocol) 唯一主通道：D 物化冻结、单一预算起算、动作面即 run。"""
-    s = ms.start_session(reg_csv, card=CARD, cv_card=PROTOCOL)
+    """start(cv_card + 显式协议) 唯一主通道：D 物化冻结、单一预算起算、动作面即 run。"""
+    s = _start(sessions_root, reg_csv)
 
     assert s["steps"] == 0 and s["max_steps"] == 4
-    assert s["candidates"]  # 全部已声明族开放（candidate_families 空）
+    assert s["candidates"] == ["RF"]
     assert (sessions_root / s["session_id"] / "split.pkl").exists()
 
 
 def test_control_plane_not_in_vocab(sessions_root, reg_csv):
     """控制面（rollback/finish/abandon）不是词表动作——apply 只收 run。"""
-    s = ms.start_session(reg_csv, card=CARD, cv_card=PROTOCOL)
+    s = _start(sessions_root, reg_csv)
 
     with pytest.raises(ValueError, match="不在词表"):
         ms.apply_action(s["session_id"], "edit", {"cat": "ordinal"})
@@ -67,36 +79,33 @@ def test_control_plane_not_in_vocab(sessions_root, reg_csv):
 def test_start_validates_protocol_fail_loud(sessions_root, reg_csv):
     """start 即四类相容校验（原 commit_protocol 门居所迁移）——坏 metric/坏 cv 当场报。"""
     with pytest.raises(ValueError, match="不相容"):
-        ms.start_session(
-            reg_csv,
-            card=CARD,
-            cv_card={
-                "target": "target",
-                "task": "regression",
-                "metric": "accuracy",
-                "candidates": [{"family": "RF", "baseline": True}],
-            },
-        )
+        _start(sessions_root, reg_csv, metric="accuracy")
     with pytest.raises(ValueError, match="cv"):
-        ms.start_session(
-            reg_csv,
-            card=CARD,
-            cv_card={
-                "target": "target",
-                "task": "regression",
-                "cv": 11,
-                "candidates": [{"family": "RF", "baseline": True}],
-            },
-        )
+        _start(sessions_root, reg_csv, cv_card="cv: 11")
 
 
 def test_start_freezes_validated_protocol(sessions_root, reg_csv):
-    """校验后的协议冻结进 manifest（默认值富化，非原样透传）——metric None 自动选。"""
-    s = ms.start_session(
-        reg_csv,
-        card=CARD,
-        cv_card={"target": "target", "task": "regression", "cv": 3, "candidates": [{"family": "RF", "baseline": True}]},
-    )
+    """校验后的协议冻结进 manifest（默认值富化，非原样透传）——metric None 自动选；
+    split yaml 明文与解析值随协议落盘（审计/重放面）。"""
+    s = _start(sessions_root, reg_csv, metric=None)
     m = json.loads((sessions_root / s["session_id"] / "manifest.json").read_text(encoding="utf-8"))
     assert m["protocol"]["cv"] == 3
     assert m["protocol"]["metric"] in ("mae", "rmse", "r2", "mape")  # None → infer_metric 富化
+    assert m["protocol"]["split_yaml"] == CV_CARD and m["protocol"]["split_params"] == {"cv": 3}
+
+
+def test_explicit_params_override_card_background(sessions_root, reg_csv):
+    """显式参数 > card（DomainCard 背景）分层缺省——覆盖冻结背景状态；
+    两处都无 target/task 即 fail-loud（无静默缺省）。"""
+    s = _start(sessions_root, reg_csv, target="target", id_columns=[])
+    m = json.loads((sessions_root / s["session_id"] / "manifest.json").read_text(encoding="utf-8"))
+    assert m["target"] == "target"  # 显式 > card（CARD.target 同值——形式走显式面）
+
+    s2 = ms.start_session(reg_csv, CV_CARD, task="regression", target="x")  # 显式覆盖 card.target
+    m2 = json.loads((sessions_root / s2["session_id"] / "manifest.json").read_text(encoding="utf-8"))
+    assert m2["target"] == "x"
+
+    with pytest.raises(ValueError, match="target 必填"):
+        ms.start_session(reg_csv, CV_CARD, task="regression", card={"domain": "无 target 背景"})
+    with pytest.raises(ValueError, match="task 必填"):
+        ms.start_session(reg_csv, CV_CARD, card={"domain": "无 task 背景", "target": "target"})

@@ -24,7 +24,7 @@ def _dag(fake_plugins, tmp_path, with_clean: bool):
         nodes.append("- clean__filter:\n    name: C")
 
     fake_plugins.setdefault("", {})["x_y"] = x_y_fn
-    nodes.append("- x_y:\n    name: XY\n    params:\n      targets: y")
+    nodes.append("- x_y:\n    name: XY\n    params:\n      target: y")
     p = tmp_path / "chain.yaml"
     p.write_text("name: t\ndescription: ''\nflow:\n" + "\n".join(nodes) + "\n", encoding="utf-8")
     return Builder(p).build()

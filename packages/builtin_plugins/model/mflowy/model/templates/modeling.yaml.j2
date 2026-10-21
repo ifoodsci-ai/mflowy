@@ -1,5 +1,5 @@
 name: "{{ name | default('数据建模与分析') }}"
-description: "{{ description | default('[custom](load → clean → cross_validation → pre_process → model)；model handler 内置评估可视化，多模型时叠加对比图') }}"
+description: "{{ description | default('[custom](load → clean → x_y → cv.split → x_transformer → model)；model handler 内置评估可视化，多模型时叠加对比图') }}"
 flow:
   {{ modeling_steps | indent(2, blank=True) }}
 

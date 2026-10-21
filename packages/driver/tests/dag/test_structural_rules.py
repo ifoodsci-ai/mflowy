@@ -229,7 +229,7 @@ name: t
 flow:
   - load__csv: {name: data}
   - x_y: {name: xy}
-  - split: {name: cv}
+  - cv__split: {name: cv}
   - x_transformer__standard_scaler: {name: scaler}
   - model__XGB: {name: m}
 """
@@ -246,7 +246,7 @@ flow:
             return None if not any(c.conf.namespace == "model" for c in ctx.nexts) else ctx
 
         wf = Builder(yaml, disable_model, structural_rules=(orphan_transformer,)).build()
-        assert [t.conf.namespace for t in wf.nodes] == ["load", "", ""]  # x_y/split 留存（规则只剪 transformer）
+        assert [t.conf.namespace for t in wf.nodes] == ["load", "", "cv"]  # x_y/cv__split 留存（规则只剪 transformer）
 
     def test_no_rules_keeps_all(self, tmp_path):
         yaml = tmp_path / "w.yaml"
@@ -256,7 +256,7 @@ name: t
 flow:
   - load__csv: {name: a}
   - x_y: {name: xy}
-  - split: {name: cv}
+  - cv__split: {name: cv}
   - clean__drop_missing_rows: {name: b}
 """
         )

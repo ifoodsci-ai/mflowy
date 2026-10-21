@@ -44,18 +44,17 @@ def cat_csv(tmp_path) -> str:
 CARD = {"domain": "测试", "target": "target"}
 
 
-def _card(**over):
-    fams = over.pop("candidate_families", ["RF"])
-    base = {
-        "target": "target",
-        "task": "regression",
-        "metric": "mae",
-        "cv": 3,
-        "max_steps": 8,
-        "candidates": [{"family": f, "baseline": i == 0} for i, f in enumerate(fams)],
-    }
-    base.update(over)
-    return base
+CV_CARD = "cv: 3"
+
+
+def _card(fams=("RF",)):
+    return [{"family": f, "baseline": i == 0} for i, f in enumerate(fams)]
+
+
+def _start(root, csv, fams=("RF",)):
+    return ms.start_session(
+        csv, CV_CARD, card=CARD, task="regression", metric="mae", max_steps=8, candidates=_card(fams)
+    )
 
 
 def _manifest(root, sid):
@@ -65,7 +64,7 @@ def _manifest(root, sid):
 @pytest.fixture
 def searched(sessions_root, cat_csv):
     """首搜后的会话：RF@ordinal 已入账本。"""
-    s = ms.start_session(cat_csv, card=CARD, cv_card=_card())
+    s = _start(sessions_root, cat_csv)
     ms.apply_action(s["session_id"], "select_model", {"family": "RF"})
     ms.apply_action(s["session_id"], "run_hpo", {"n_trials": 2})
     return s
@@ -127,7 +126,7 @@ def test_propose_aggregates_llm_and_rule_findings(searched):
 
 def test_no_leader_no_fe_candidates(sessions_root, cat_csv):
     """无 leader（S 无模型信息）→ FE 候选零出现（引擎级 gate，非权重压序）。"""
-    s = ms.start_session(cat_csv, card=CARD, cv_card=_card())
+    s = _start(sessions_root, cat_csv)
     ms.apply_action(s["session_id"], "select_model", {"family": "RF"})
     # 未 run：无模型账本信息（无 leader）——FE 基座档不出现；error_concentrated findings 也不存在
     props = ms.propose_actions(s["session_id"])

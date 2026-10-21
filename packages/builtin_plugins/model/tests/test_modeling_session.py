@@ -1,7 +1,7 @@
 """#62 建模回路与状态机契约：s 元组（光标+账本）+ 八动作面 + sqlite 增量 study。
 
 - 配置编辑（select_model/set_hp/set_hp_space/set_seed/select_FE）：零步费零奖励，
-  只改光标（m/H/h_space/seed/F）
+  只改光标（m/H/seed/F——#66 单表 H：标量 = pin、dict = 空间收窄，同参数唯一槽位）
 - 计算动作（run_hpo/final_train_test）：吃步；run_hpo = 增量搜索 + OOF 观察
   （reward = Δu_inner）；final_train_test = 先搜后门店 + holdout 终评恰一次 +
   combo 冻结（reward = 0）
@@ -59,22 +59,20 @@ def cat_csv(tmp_path) -> str:
 CARD = {"domain": "测试", "target": "target"}
 
 
-def _card(**over):
-    fams = over.pop("candidate_families", ["RF"])
-    base = {
-        "target": "target",
-        "task": "regression",
-        "metric": "mae",
-        "cv": 3,
-        "max_steps": 8,
-        "candidates": [{"family": f, "baseline": i == 0} for i, f in enumerate(fams)],
-    }
-    base.update(over)
-    return base
+CV_CARD = "cv: 3"  # cv.split 配置 yaml 明文（划分构建参数之外的协议走显式参数）
 
 
-def _start(root, csv, card=CARD, cv_card=None):
-    return ms.start_session(csv, card=card, cv_card=cv_card or _card())
+def _start(root, csv, card=CARD, fams=("RF",), max_steps=8, metric="mae", **kw):
+    return ms.start_session(
+        csv,
+        CV_CARD,
+        card=card,
+        task="regression",
+        metric=metric,
+        max_steps=max_steps,
+        candidates=[{"family": f, "baseline": i == 0} for i, f in enumerate(fams)],
+        **kw,
+    )
 
 
 def _manifest(root, sid):
@@ -99,20 +97,20 @@ def _pdf(tmp_path, name="final_report.pdf") -> str:
 
 
 def test_start_cursor_and_budget(sessions_root, reg_csv):
-    """start：光标空位（m=None/H/h_space/seed 空、F 双 passthrough）+ split 物化。"""
+    """start：光标空位（m=None/H/seed 空、F 双 passthrough——#66 单表 H 无 h_space 成员）+ split 物化。"""
     s = _start(sessions_root, reg_csv)
     verify_observation(s)
     assert s["reward"] is None and s["steps"] == 0 and s["max_steps"] == 8
     assert s["cursor"] == {
         "m": None,
         "H": {},
-        "h_space": {},
         "seed": None,
         "F": {"cat": "passthrough", "num": "passthrough"},
     }
     assert (sessions_root / s["session_id"] / "split.pkl").exists()
     m = _manifest(sessions_root, s["session_id"])
     assert m["split"]["fingerprint"]  # 划分身份（run tag 面板）随 manifest 落盘
+    assert m["split"]["run_id"]  # #66 划分身份 = run_id 引用（终训 plan 的 from_run_id 源）
 
 
 # ── 八动作面：状态转移 ───────────────────────────────────────────────────────
@@ -142,18 +140,44 @@ def test_set_hp_pins_scalar(sessions_root, reg_csv):
 
 
 def test_set_hp_space_narrows_and_switch_clears_pins(sessions_root, reg_csv):
-    s = _start(sessions_root, reg_csv, cv_card=_card(candidate_families=["RF", "XGB"]))
+    s = _start(sessions_root, reg_csv, fams=("RF", "XGB"))
     ms.apply_action(s["session_id"], "select_model", {"family": "RF"})
     r = ms.apply_action(s["session_id"], "set_hp_space", {"max_depth": [3, 5]})
-    assert r["cursor"]["h_space"]["max_depth"] == {"kind": "continuous", "lo": 3, "hi": 5, "step": None}
+    assert r["cursor"]["H"]["max_depth"] == {"kind": "continuous", "lo": 3, "hi": 5, "step": None}
     with pytest.raises(ValueError, match="静态"):
         ms.apply_action(s["session_id"], "set_hp_space", {"n_estimators": [10, 20]})  # RF 缺省静态常量
     # 切族清 pin/空间（另一族签名不适用）；同族重选保留
     ms.apply_action(s["session_id"], "set_hp", {"n_estimators": 25})
     r2 = ms.apply_action(s["session_id"], "select_model", {"family": "RF"})
-    assert r2["cursor"]["H"] == {"n_estimators": 25}
+    assert r2["cursor"]["H"] == {
+        "n_estimators": 25,
+        "max_depth": {"kind": "continuous", "lo": 3, "hi": 5, "step": None},
+    }
     r3 = ms.apply_action(s["session_id"], "select_model", {"family": "XGB"})
-    assert r3["cursor"]["H"] == {} and r3["cursor"]["h_space"] == {}
+    assert r3["cursor"]["H"] == {}
+
+
+def test_cursor_single_table_last_write_wins(sessions_root, reg_csv):
+    """#66 单表 H：set_hp/set_hp_space 写同一槽位——覆盖显式可观测（note 记前后值）、
+    rollback 弹栈回退；同参数不可能同时持有 pin 与空间两份值。"""
+    s = _start(sessions_root, reg_csv)
+    sid = s["session_id"]
+    ms.apply_action(sid, "select_model", {"family": "RF"})
+    ms.apply_action(sid, "set_hp_space", {"max_depth": [3, 5]})
+    r = ms.apply_action(sid, "set_hp", {"max_depth": 4})  # 空间 → pin（显式覆盖）
+    assert r["cursor"]["H"]["max_depth"] == 4  # 唯一槽位，空间值不再并存
+    note = r["decision_log"][-1]["note"]
+    assert "max_depth" in note and "pin 4" in note and "空间" in note  # 覆盖前后值入决策日志
+
+    r2 = ms.apply_action(sid, "set_hp_space", {"max_depth": [4, 6]})  # pin → 空间（显式覆盖）
+    assert r2["cursor"]["H"]["max_depth"] == {"kind": "continuous", "lo": 4, "hi": 6, "step": None}
+    note2 = r2["decision_log"][-1]["note"]
+    assert "pin 4" in note2 and "空间" in note2
+
+    rr = ms.rollback(sid)  # 弹栈回退最后一次写（set_hp_space）
+    assert rr["cursor"]["H"]["max_depth"] == 4
+    manifest = _manifest(sessions_root, sid)
+    assert "h_space" not in manifest["cursor"] and all("h_space" not in snap for snap in manifest["snapshots"])
 
 
 def test_set_seed_updates_cursor(sessions_root, reg_csv):
@@ -192,25 +216,48 @@ def test_run_hpo_returns_delta_reward_and_writes_study(sessions_root, reg_csv):
     oof = m["models"][_K_RF]["oof"]
     assert oof["run_id"] and (sessions_root / s["session_id"] / "runs" / oof["run_id"] / "oof_y_pred.parquet").exists()
     entry = m["models"][_K_RF]
-    assert entry["u_full"] is None and entry["run_id"] is None and not entry["frozen"]  # no-peeking：无 holdout 面
+    assert entry["u"] is None and entry["run_id"] is None and not entry["frozen"]  # no-peeking：无 holdout 面
     assert "holdout_y_pred" not in json.dumps(entry)
 
 
 def test_final_train_test_freezes_and_reads_holdout_once(sessions_root, reg_csv, monkeypatch):
-    """final_train_test：先搜后店 + holdout 恰一次 + combo 冻结（同键不可再搜索）。"""
+    """final_train_test：先搜后店 + holdout 恰一次 + combo 冻结（同键不可再搜索）。
+
+    #66：终训走 modeling 工具（JobProvider DAG）——u_full/副产物指针/plan 同一工件
+    （交付的 plan_yaml 就是那次终训本身，重放承诺与执行事实同一）。"""
     s, _ = _hpo(sessions_root, reg_csv, n_trials=2)
     r = ms.apply_action(s["session_id"], "final_train_test")
     verify_observation(r)
     assert r["reward"] == 0 and r["steps"] == 2
     m = _manifest(sessions_root, s["session_id"])
     entry = m["models"][_K_RF]
-    assert entry["frozen"] and entry["u_full"] is not None and entry["run_id"]
-    holdout_pred = sessions_root / s["session_id"] / "runs" / entry["run_id"] / "holdout_y_pred.parquet"
-    assert holdout_pred.exists()
+    assert entry["frozen"] and entry["u"] is not None and entry["run_id"]
+    # 副产物指针（s 自描述）：X_test/y_test/y_pred parquet 随终训 run 落 mlflow 工件
+    assert entry["byproducts"] == {"X_test": "X_test.parquet", "y_test": "y_test.parquet", "y_pred": "y_pred.parquet"}
+    from mflowy.utils.mlflow import run_artifacts
+
+    arts = run_artifacts(entry["run_id"])
+    assert {"X_test.parquet", "y_test.parquet", "y_pred.parquet"} <= set(arts)
+    assert (sessions_root / s["session_id"] / f"loader_{_K_RF.replace('|', '__')}.pkl").exists()
     with pytest.raises(RuntimeError, match="冻结"):
         ms.apply_action(s["session_id"], "run_hpo", {"n_trials": 1})
     with pytest.raises(RuntimeError, match="冻结"):
         ms.apply_action(s["session_id"], "final_train_test")
+
+
+def test_final_train_test_delivers_search_time_evidence(sessions_root, reg_csv):
+    """story 11：终训交付的恒是被 inner CV 评估过的证据配置——搜后误改 pin 不进
+    唯一一次 holdout 读（final_params = 搜索时刻快照 ∪ θ*，plan 同源）。"""
+    s, _ = _hpo(sessions_root, reg_csv, n_trials=2)
+    sid = s["session_id"]
+    m_before = _manifest(sessions_root, sid)
+    evidence = dict(m_before["models"][_K_RF]["evidence"])
+    ms.apply_action(sid, "set_hp", {"n_estimators": 999})  # 搜后改 pin（噪声注入）
+    ms.apply_action(sid, "final_train_test")
+    entry = _manifest(sessions_root, sid)["models"][_K_RF]
+    assert entry["final_params"]["n_estimators"] == evidence["n_estimators"]  # 快照胜出
+    assert entry["final_params"]["n_estimators"] != 999
+    assert set(entry["final_params"]) >= set(entry["best_params"])  # θ* 并入
 
 
 def test_final_train_test_requires_prior_search(sessions_root, reg_csv):
@@ -223,11 +270,45 @@ def test_final_train_test_requires_prior_search(sessions_root, reg_csv):
         ms.apply_action(_start(sessions_root, reg_csv)["session_id"], "final_train_test")
 
 
+def test_id_columns_same_data_face(sessions_root, reg_csv, tmp_path):
+    """id_columns 同数据面（CR 修订）：x_y 物化期剔除（划分/搜索/终训同一 X），
+    终训 plan 显式携带 id_columns——DAG 重放面与会话面逐位同一，ID 泄漏结构性消失。"""
+    df = pd.read_csv(reg_csv)
+    df.insert(0, "row_id", range(len(df)))  # 泄漏代理列（行号）
+    p = tmp_path / "reg_id.csv"
+    df.to_csv(p, index=False)
+
+    s = ms.start_session(
+        str(p),
+        CV_CARD,
+        card=CARD,
+        task="regression",
+        id_columns=["row_id"],
+        candidates=[{"family": "RF", "baseline": True}],
+        max_steps=8,
+    )
+    sid = s["session_id"]
+    ms.apply_action(sid, "select_model", {"family": "RF"})
+    ms.apply_action(sid, "set_hp", {"n_estimators": 15})
+    ms.apply_action(sid, "run_hpo", {"n_trials": 1})
+    r = ms.apply_action(sid, "final_train_test")
+
+    import pickle as _pkl
+
+    with open(sessions_root / sid / "split.pkl", "rb") as f:
+        ts = _pkl.load(f)
+    assert "row_id" not in ts.X_train.columns and "row_id" not in ts.X_test.columns  # 会话面剔除
+    v = ms.finish_session(sid, pdf=_pdf(tmp_path))
+    yml_text = v["deliverables"][_K_RF]["plan_yaml"]
+    assert "id_columns:" in yml_text and "row_id" in yml_text  # plan 面显式携带（重放同面）
+    assert r["board"][_K_RF]["u"] is not None  # 终训 DAG 正常跑通（x_y 剔除后无 ID 列）
+
+
 # ── 门：预算 / 终态 / 词表 ───────────────────────────────────────────────────
 
 
 def test_budget_only_counts_compute_actions(sessions_root, reg_csv):
-    s = _start(sessions_root, reg_csv, cv_card=_card(max_steps=1))
+    s = _start(sessions_root, reg_csv, max_steps=1)
     ms.apply_action(s["session_id"], "select_model", {"family": "RF"})
     ms.apply_action(s["session_id"], "set_seed", {"seed": 3})  # 零步费——预算不吃
     ms.apply_action(s["session_id"], "run_hpo", {"n_trials": 1})
@@ -339,19 +420,22 @@ def test_finish_delivers_frozen_combos_idempotent(sessions_root, reg_csv, tmp_pa
 
 
 def test_finish_requires_frozen_combo(sessions_root, reg_csv):
-    """无 final_train_test 过的 combo 不可交付——finish 的门 = 冻结面。"""
+    """无 final_train_test 过的 combo 不可交付——finish 的门 = 冻结面（先于文件检查）。"""
     s, _ = _hpo(sessions_root, reg_csv, n_trials=1)
-    ms.finish_session(s["session_id"])  # preview 合法（观察面在场）
     with pytest.raises(RuntimeError, match="final_train_test"):
         ms.finish_session(s["session_id"], pdf="/no/such/report.pdf")
 
 
 def test_finish_plan_replays(sessions_root, reg_csv, tmp_path):
-    """接缝（model→driver）：plan_yaml（pin 常量 + θ* 全 pin）重放走 training 行为。"""
+    """接缝（model→driver）：终训即 plan 执行——交付的 plan_yaml（from_run_id 引用
+    会话划分 + 证据配置全 pin）重放走 training 行为，产物与账本指针同一。"""
     s, _ = _hpo(sessions_root, reg_csv, n_trials=2)
     ms.apply_action(s["session_id"], "final_train_test")
     v = ms.finish_session(s["session_id"], pdf=_pdf(tmp_path))
     yml_text = v["deliverables"][_K_RF]["plan_yaml"]
+    m = _manifest(sessions_root, s["session_id"])
+    assert "- cv__load:" in yml_text and m["split"]["run_id"] in yml_text  # 划分按引用复用
+    assert "target: " in yml_text and "targets:" not in yml_text  # 单目标任务面
 
     from mflowy.driver.builder import Builder
     from mflowy.utils.path import reset_task_dir, set_task_dir
@@ -374,10 +458,30 @@ def test_abandon_closes_all_planes(sessions_root, reg_csv):
     with pytest.raises(RuntimeError, match="终态"):
         ms.apply_action(s["session_id"], "run_hpo", {"n_trials": 1})
     with pytest.raises(RuntimeError, match="不可收局"):
-        ms.finish_session(s["session_id"])
+        ms.finish_session(s["session_id"], pdf="/no/such/report.pdf")
 
 
 # ── propose：单源谓词机器 ────────────────────────────────────────────────────
+
+
+def test_findings_drive_only_same_combo(sessions_root, cat_csv):
+    """#66 story 17：findings 只对本 combo 键出题（规则与 LLM 同粒度）——菜单
+    rationale 引用的证据不来自另一个 FE 组合。"""
+    s = _start(sessions_root, cat_csv)
+    sid = s["session_id"]
+    ms.apply_action(sid, "select_model", {"family": "RF"})
+    ms.apply_action(sid, "run_hpo", {"n_trials": 1})  # RF|ordinal（最小装配）
+    ms.apply_action(sid, "select_FE", {"node": "onehot_encoder"})
+    ms.apply_action(sid, "run_hpo", {"n_trials": 1})  # RF|onehot
+    k_ordinal = "RF|ordinal|passthrough"
+    ms.report_findings(
+        sid, k_ordinal, [{"kind": "fold_std", "severity": 0.9, "evidence": {"cv": 0.5}, "message": "折间不稳-ordinal"}]
+    )
+    props = ms.propose_actions(sid)  # 光标在 RF|onehot
+    assert all("折间不稳" not in (p.get("rationale") or "") for p in props)  # 证据不跨 FE 组合
+    ms.apply_action(sid, "select_FE", {"node": "ordinal_encoder"})  # 光标回 RF|ordinal
+    props2 = ms.propose_actions(sid)
+    assert any("折间不稳" in (p.get("rationale") or "") for p in props2)  # 本键 findings 恢复出题
 
 
 def test_propose_menu_covers_action_faces(sessions_root, reg_csv):

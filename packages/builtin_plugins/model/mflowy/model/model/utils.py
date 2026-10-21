@@ -94,7 +94,7 @@ def make_machinery(fn, model_cls_of, fixed: dict | None = None, seed_key: str = 
 
 
 def space_to_json(space) -> dict:
-    """Space → manifest/卡 JSON 形态（光标 h_space 与卡 hints 共用的持久化格式）。"""
+    """Space → manifest/卡 JSON 形态（光标单表 H 的空间槽位与卡 hints 共用的持久化格式）。"""
     from mflowy.model.model.study import ContinuousSpace, DiscreteSpace
 
     if isinstance(space, ContinuousSpace):
@@ -105,7 +105,7 @@ def space_to_json(space) -> dict:
 
 
 def space_from_json(data: dict):
-    """JSON 形态 → Space 本体（session 光标 h_space 的运行期重建）。"""
+    """JSON 形态 → Space 本体（session 光标单表 H 空间槽位的运行期重建）。"""
     from mflowy.model.model.study import ContinuousSpace, DiscreteSpace
 
     if data["kind"] == "continuous":

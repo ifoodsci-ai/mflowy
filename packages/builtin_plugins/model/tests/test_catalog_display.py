@@ -17,10 +17,11 @@ def _ns(name: str):
 
 
 def test_model_ns_edges_flattened_to_via_metas():
-    """model 族：train_split 边(x_y, split) + 可选 x_preprocessors 边(x_transformer) 展开扁平。"""
+    """model 族：train_split 边（cv namespace 参数——cv.split 物化 / cv.load 引用直通）
+    + 可选 x_preprocessors 边（x_transformer）展开扁平。"""
     expected = [
-        UpstreamMeta("x_y", True, via="train_split", expect="XySpec"),
-        UpstreamMeta("split", True, via="train_split", expect="SplitSpec"),
+        UpstreamMeta("x_y", False, via="train_split", expect="XySpec | None", default="None"),
+        UpstreamMeta("cv", False, "namespace", "train_split", expect="SplitSpec | TrainSplit | None", default="None"),
         UpstreamMeta(
             "x_transformer", False, "namespace", "x_preprocessors", expect="Iterator[tuple] | None", default="None"
         ),
@@ -34,7 +35,7 @@ def test_plot_eval_edges_no_dead_task():
     preds = [
         UpstreamMeta("model", True, "namespace", "model_test_predictions", expect="Iterator[ModelLoader]"),
         UpstreamMeta("x_y", True, via="model_test_predictions", expect="XySpec"),
-        UpstreamMeta("split", True, via="model_test_predictions", expect="SplitSpec"),
+        UpstreamMeta("cv", True, "namespace", "model_test_predictions", expect="SplitSpec | TrainSplit"),
     ]
     assert _bindings("plot", "bland_altman") == preds
     for info in list_nodes():

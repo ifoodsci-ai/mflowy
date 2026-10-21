@@ -165,6 +165,10 @@ class ModelLoader:
     误差类取负）——board/rank 诊断的数据面；``search`` = 搜索证据
     （best_params/n_trials/std）——propose 出题与重跑加深的依据。DAG 路径同样
     附带（信息性，不改变产物契约）。
+
+    ``holdout``（#66）：training 行为的终评快照（``u``/``metrics``——u = 代表指标
+    直取，``terminal_u`` 单源）——final_train_test 经 DAGResult 回读的数值面
+    （指标权威源，报告不重算）。
     """
 
     name: str
@@ -172,6 +176,7 @@ class ModelLoader:
     _model_uri: str | None = field(default=None, repr=False)
     u_inner: float | None = None
     search: dict | None = None
+    holdout: dict | None = None
 
     @property
     def pipe(self) -> ModelPipeline:

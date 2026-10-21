@@ -1,7 +1,7 @@
 """评测数据节点契约：多模型 holdout 对比数据面（H1 节点化——二次处理中间件退役）。
 
 model_test_predictions / model_test_probabilities 是 model 族输出的显式适配节点：
-绑定 model（collect 全部）+ split/x_y，物化经 train_split 边函数直调，产出公平对比长表。
+绑定 model（collect 全部）+ cv namespace（SplitSpec/TrainSplit）/x_y，物化经 train_split 边函数直调。
 """
 
 import numpy as np
@@ -49,7 +49,7 @@ def _upstream(loaders, y, task="classification"):
     from mflowy.data.fingerprint import fingerprint
     from mflowy.model.x_y import XySpec
 
-    return {"model": iter(loaders), "split": _spec(X, y, task), "x_y": XySpec(X, y, task, fingerprint(X, y))}
+    return {"model": iter(loaders), "cv": _spec(X, y, task), "x_y": XySpec(X, y, task, fingerprint(X, y))}
 
 
 def test_predictions_long_table_two_models():

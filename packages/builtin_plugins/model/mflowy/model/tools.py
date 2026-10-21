@@ -1,9 +1,13 @@
-"""mflowy 建模域 MCP 工具 — compute 四件（JobProvider 委派）+ YAML 预检。
+"""mflowy 建模域 MCP 工具 — compute 五件（JobProvider 委派）+ YAML 预检 + 会话/本地分析工具面。
 
 注册：pyproject 手工声明 entry points 组 ``mflowy.tools``；JobProvider 协议与
 Local 实现随域居住（``job_provider/``，``MFLOWY_JOB_PROVIDER=module:Class`` 可换远程）。
 仅 compute 工具带 ``ctx: Context | None`` 形参（SDK 注入，``_meta`` 透传 provider.headers；
-runner / 直接 import 调用时不注入）。
+runner / 直接 import 调用时不注入）。本地分析类（draw_taylor_diagram/
+modeling_report_skeleton）不走 JobProvider——两站点直调。
+
+入参纪律：非数据文件的文件输入一律问**明文字符串**（modeling_steps = yaml 文本，
+不假设调用方与引擎共享文件系统）；数据文件（csv/parquet/pdf 等）保持路径。
 """
 
 from __future__ import annotations
@@ -12,7 +16,6 @@ from typing import Annotated
 
 import yaml
 from mflowy.driver.dag import DAGResult
-from mflowy.utils.file import exists
 from pydantic import Field
 
 from .job_provider import get_job_provider as _get_job_provider
@@ -27,10 +30,10 @@ except ImportError:  # pragma: no cover — 无 [mcp] extra 的 runner/import �
 
 
 def validate_modeling_steps(
-    modeling_steps_yaml: Annotated[
+    modeling_steps: Annotated[
         str,
         Field(
-            description="建模步骤 YAML 文件路径；内容须为顶层步骤列表片段（- name: 开头），不含 name/description/flow 外壳（模板自动包装）"
+            description="建模步骤 YAML 明文（顶层步骤列表片段，- name: 开头，不含 name/description/flow 外壳——模板自动包装）"
         ),
     ],
 ) -> dict:
@@ -40,36 +43,31 @@ def validate_modeling_steps(
     - 提交 modeling 前静态检查 YAML
     - 向用户展示工作流 DAG 结构
 
-    校验失败（缺文件/片段格式/YAML 语法/DAG 构建）返回 ``{"valid": False, "error": ...}``
+    校验失败（片段格式/YAML 语法/DAG 构建）返回 ``{"valid": False, "error": ...}``
     而非抛异常——MCP 层对非 ToolError 异常只回裸错误串，失败原因走返回值才能到达客户端。
     """
     from mflowy.driver.builder import Builder
-    from mflowy.utils.file import read_text
 
-    if not exists(modeling_steps_yaml):
-        return {"valid": False, "error": f"文件不存在: {modeling_steps_yaml}"}
-
-    template = MODELING_TEMPLATE
-    steps_text = read_text(modeling_steps_yaml)
+    steps_text = modeling_steps
 
     try:
         parsed = yaml.safe_load(steps_text)
         if isinstance(parsed, dict):
             return {
                 "valid": False,
-                "error": "文件内容须为顶层步骤列表片段（- name: 开头的 YAML list）；检测到完整文档（顶层 mapping）"
+                "error": "内容须为顶层步骤列表片段（- name: 开头的 YAML list）；检测到完整文档（顶层 mapping）"
                 "——name/description/flow 外壳由建模模板自动包装，请剔除顶层外壳键，只保留 flow 列表内的步骤项",
             }
         if not isinstance(parsed, list):
             return {
                 "valid": False,
-                "error": "文件内容须为顶层步骤列表片段（- name: 开头的 YAML list）；当前内容为空或顶层不是列表",
+                "error": "内容须为顶层步骤列表片段（- name: 开头的 YAML list）；当前内容为空或顶层不是列表",
             }
 
         from .model.step_options import prune_x_transformer_step
 
         builder = Builder(
-            dag_yaml=template,
+            dag_yaml=MODELING_TEMPLATE,
             env={
                 "name": "validate",
                 "description": "",
@@ -89,10 +87,10 @@ def validate_modeling_steps(
 
 
 async def hyperparameters_search(
-    modeling_steps_yaml: Annotated[
+    modeling_steps: Annotated[
         str,
         Field(
-            description="搜索步骤 YAML 路径（load→clean→x_y→cv→model，model 步带搜索空间）；内容为顶层步骤列表片段（- name: 开头），不含 name/description/flow 外壳"
+            description="搜索步骤 YAML 明文（load→clean→x_y→cv→model，model 步带搜索空间；顶层步骤列表片段，- name: 开头，不含 name/description/flow 外壳）"
         ),
     ],
     name: Annotated[str, Field(description="任务名称")],
@@ -106,7 +104,7 @@ async def hyperparameters_search(
     - 扫描后用 modeling 工具传全 pin 参数（θ* 落地）做终训交付
     """
     return await _get_job_provider().hyperparameters_search(
-        modeling_steps_yaml=modeling_steps_yaml,
+        modeling_steps=modeling_steps,
         name=name,
         desc=desc,
         headers=ctx.request_context.meta if ctx else None,
@@ -114,10 +112,10 @@ async def hyperparameters_search(
 
 
 async def modeling(
-    modeling_steps_yaml: Annotated[
+    modeling_steps: Annotated[
         str,
         Field(
-            description="建模步骤 YAML 路径（load→clean→x_y→cv→transformer→model）；内容为顶层步骤列表片段（- name: 开头），不含 name/description/flow 外壳"
+            description="建模步骤 YAML 明文（load→clean→x_y→cv→transformer→model；顶层步骤列表片段，- name: 开头，不含 name/description/flow 外壳）"
         ),
     ],
     name: Annotated[str, Field(description="任务名称")],
@@ -136,7 +134,7 @@ async def modeling(
     - 传 experiment_id 复用已训模型，配 prune_missing 跳过重训
     """
     return await _get_job_provider().modeling(
-        modeling_steps_yaml=modeling_steps_yaml,
+        modeling_steps=modeling_steps,
         name=name,
         desc=desc,
         experiment_id=experiment_id,
@@ -146,9 +144,11 @@ async def modeling(
 
 
 async def explanation(
-    modeling_steps_yaml: Annotated[
+    modeling_steps: Annotated[
         str,
-        Field(description="与 modeling 相同的 YAML（顶层步骤列表片段：- name: 开头、无 name/description/flow 外壳）"),
+        Field(
+            description="与 modeling 相同的 YAML 明文（顶层步骤列表片段：- name: 开头、无 name/description/flow 外壳）"
+        ),
     ],
     model: Annotated[str, Field(description="训练 run 的 id（从训练输出 RunInfo 或 list_runs 获取）")],
     name: Annotated[str, Field(description="任务名称")],
@@ -162,7 +162,7 @@ async def explanation(
     - 训练完成后解释特征贡献与依赖关系
     """
     return await _get_job_provider().explanation(
-        modeling_steps_yaml=modeling_steps_yaml,
+        modeling_steps=modeling_steps,
         model=model,
         name=name,
         desc=desc,
@@ -222,34 +222,65 @@ async def inverse_optimization(
 # ── 建模会话工具（环境面在 model/session，π 在调用方 LLM） ───────────────────
 # 协议谈判在剧本层（model-brief + research-review skill）；start(cv_card)
 # 唯一主通道直进八动作面（#62：配置编辑 + 计算动作；done = finish）。
+# 会话恒单目标任务——多目标在会话外三层循环（多目标 → 多模型 → 单目标任务会话）。
 
 
 def modeling_session_start(
     file_path: Annotated[str, Field(description="数据文件绝对路径（清洗会话终态 parquet/csv）")],
     cv_card: Annotated[
-        dict,
+        str,
         Field(
-            description="CVCard（model-brief/research-review 剧本产物）：task/metric/cv/max_steps/candidates"
-            "=[{family, baseline, space_hints, seed}]，episode 内冻结（baseline 恰一、hints ⊆ 签名空间）"
+            description="cv.split 配置 yaml 明文（如 'cv: 3\\ntest_size: 0.2'——键 ⊆ cv.split 参数面："
+            "cv/repeats/group_by/test_size/shuffle/random_state）；episode 内冻结"
         ),
     ],
-    card: Annotated[dict | None, Field(description="DomainCard（survey 产物）：target/id_columns 等")] = None,
-    max_steps: Annotated[
-        int | None, Field(description="预算覆盖（缺省取协议卡；预算 = 实验数，只有计算动作吃步）")
+    target: Annotated[str | None, Field(description="目标列（显式参数 > card 背景 > 报错——单目标任务）")] = None,
+    task: Annotated[
+        str | None, Field(description="任务类型 regression/classification（显式参数 > card 背景 > 报错）")
+    ] = None,
+    metric: Annotated[str | None, Field(description="评估指标（None = 按任务自动选）")] = None,
+    candidates: Annotated[
+        list[dict] | None,
+        Field(
+            description="结构化候选（research-review 剧本产物）：[{family, baseline, space_hints, seed}]"
+            "——None = 全部已声明族开放（baseline 恰一、hints ⊆ 签名空间）"
+        ),
+    ] = None,
+    max_steps: Annotated[int | None, Field(description="预算（实验数，只有计算动作吃步；缺省 10）")] = None,
+    id_columns: Annotated[
+        list[str] | None, Field(description="ID 列（从 X 剔除防泄漏——显式参数 > card 背景；划分/搜索/终训同一数据面）")
+    ] = None,
+    goal: Annotated[str, Field(description="建模成功判据（业务口径）")] = "",
+    external_baseline: Annotated[str, Field(description="外部基线对标（自由文本，board 对照面）")] = "",
+    card: Annotated[
+        dict | None, Field(description="DomainCard（survey 产物）背景：target/task/id_columns 的兜底层")
     ] = None,
 ) -> dict:
     """开局建模会话：x_y+split 物化冻结 D + 光标就位（协议不进动作空间）。
 
     何时使用 modeling_session_start：
-    - model-brief 问卷（含 research-review 结构化候选）编译过 CVCard 后开局回合循环
+    - model-brief 问卷（含 research-review 结构化候选）编译出 cv_card（split yaml
+      明文）+ 显式协议参数后开局回合循环；多目标 = 每目标各开一个会话（三层循环）
     """
     from . import session
 
-    return session.start_session(file_path, card=card, cv_card=cv_card, max_steps=max_steps)
+    return session.start_session(
+        file_path,
+        cv_card,
+        target=target,
+        task=task,
+        metric=metric,
+        candidates=candidates,
+        max_steps=max_steps,
+        id_columns=id_columns,
+        goal=goal,
+        external_baseline=external_baseline,
+        card=card,
+    )
 
 
 def modeling_propose(session_id: Annotated[str, Field(description="会话 ID")]) -> list[dict]:
-    """候选生成（单源谓词机器）：select_model 候选（未跑在前/已训降级末位带 θ*/u_inner/u_full）
+    """候选生成（单源谓词机器）：select_model 候选（未跑在前/已训降级末位带 θ*/u_inner/u）
     + 计算动作（run_hpo/final_train_test）+ 配置编辑动作（set_hp/set_hp_space/set_seed/select_FE）。
 
     何时使用 modeling_propose：
@@ -308,47 +339,63 @@ def modeling_rollback(session_id: Annotated[str, Field(description="会话 ID")]
 def modeling_finish(
     session_id: Annotated[str, Field(description="会话 ID")],
     pdf: Annotated[
-        str | None,
+        str,
         Field(
-            description="π 产终局报告文件路径（preview 素材 + 图分析后你撰写的报告——LaTeX/PDF 等；"
-            "引擎收编进 deliverables，不编译不验内容）；None = preview（零副作用拿素材）"
+            description="π 产终局报告文件路径（素材面走 draw_taylor_diagram + modeling_report_skeleton，"
+            "读图后你撰写的报告——LaTeX/PDF 等；引擎收编进 deliverables，不编译不验内容）"
         ),
-    ] = None,
+    ],
 ) -> dict:
-    """收局（done，两段式——报告是 π 的产物）：pdf=None = preview——聚合产物清单
-    （OOF 图集/预测长表/指标）+ 泰勒 + decision_log/board 素材（宿主多模态读取后
-    撰写终局报告）；pdf=... = 收编报告进 deliverables + verdict（u_full/findings/
-    rank_consistency 是 SH 赌注的出账）→ 可重放 plan。
+    """收局（done，单动作——报告是 π 的产物）：收编报告进 deliverables + verdict
+    （u/findings/rank_consistency 是 SH 赌注的出账）→ 可重放 plan。
 
-    accepted 恒真（holdout 读在 final_train_test 恰一次，finish 只聚合）；重入 =
+    accepted 恒真（holdout 读在 final_train_test 恰一次，finish 只结算）；重入 =
     幂等重导出（交付报告不可变更——重写须弃局重开）。
 
     何时使用 modeling_finish：
-    - 预算耗尽 / 交付面冻结完 / board 平台期时收局：先 preview 拿素材，写完
-      「为什么是这个模型」的终局报告后带 pdf 路径真收局
+    - 收局剧本固定序走完后（画泰勒 → 看 skeleton 素材 → 写报告 → finish(pdf)）；
+      pdf 必须在报告文件就绪后调用——文件缺失 fail-loud，不会带着空交付物进终态
     """
+
     from . import session
 
     return session.finish_session(session_id, pdf=pdf)
 
 
-def taylor_diagram_report(
-    session_id: Annotated[str, Field(description="建模会话 ID（泰勒图的预测长表与 split 都随会话居住）")],
+def draw_taylor_diagram(
+    session_id: Annotated[str, Field(description="建模会话 ID（副产物按 run 寻址、图落会话目录）")],
     run_ids: Annotated[
         list[str], Field(description="final_train_test 的 run_id 清单（账本 entry.run_id；≥2 个才有对比面）")
     ],
 ) -> dict:
-    """多 run holdout 终训预测 fan-in 聚合：每 run 的 (correlation, σ_ratio, rmse) 统计 +
-    泰勒图落会话目录（reference = y_true）。用 holdout 终训预测、不用 OOF——θ* 在 inner
-    CV 上选出，OOF@θ* 带选择性乐观偏差且跨模型不均匀。
+    """多终训 run 副产物 fan-in 画泰勒图：每 run 的 (correlation, σ_ratio, rmse) 统计 +
+    图落会话目录（reference = y_true）。用 holdout 终训副产物、不用 OOF——θ* 在 inner
+    CV 上选出，OOF@θ* 带选择性乐观偏差且跨模型不均匀；只绘图不做报告（报告素材走
+    modeling_report_skeleton）。
 
-    何时使用 taylor_diagram_report：
-    - finish(preview) 前后对比多个已终训模型的误差结构（终局排名的证据面）
-    - 单模型不出图（多模型对比图）；缺 holdout 产物 fail-loud 带可用 run 清单
+    何时使用 draw_taylor_diagram：
+    - 收局剧本第一步：对比多个已终训模型的误差结构（终局排名的证据面）
+    - 各模型 y_test 不一致时拒绝出图（不同 holdout 的预测不进同一张对比图）；
+      单模型不出图（多模型对比图）；run 不在终训面 fail-loud 带可用清单
     """
     from . import session
 
     return session.taylor_report(session_id, run_ids)
+
+
+def modeling_report_skeleton(
+    session_id: Annotated[str, Field(description="会话 ID")],
+) -> dict:
+    """报告素材样板（只读零副作用）：表格从账本渲染（u_inner/θ*/u/rank——数字抄写
+    归引擎，你不默写）+ 图片清单（各 combo 的 OOF 图集、终训副产物指针、泰勒图路径）
+    + 叙事槽样板（「为什么是这个模型」等——判断归你）。
+
+    何时使用 modeling_report_skeleton：
+    - 写终局报告前拿素材：宿主多模态读图清单后按叙事槽撰写，写完 finish(pdf) 收局
+    """
+    from . import session
+
+    return session.report_skeleton(session_id)
 
 
 def modeling_report_findings(

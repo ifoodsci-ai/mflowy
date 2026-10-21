@@ -28,6 +28,11 @@ def sha256_of(path: str | Path, chunk: int = 8 * 1024 * 1024) -> str:
     return hasher.hexdigest()
 
 
+def sha256_text(text: str) -> str:
+    """文本内容 sha256（yaml 明文输入的指纹面——无文件路径可哈希时的血缘真源）。"""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 def fingerprint_tags(kind: str, ref: str) -> dict[str, str]:
     """文件指纹 tags：``kind`` = data / modeling_yaml（MCP 边界到达的两种文件）。
 

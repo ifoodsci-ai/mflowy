@@ -2,6 +2,10 @@
 
 编排逻辑原 lib/cmd/args/*.py 全部迁入此处（lib/cmd/ 已消除）。
 模板随建模域包居住（mflowy/model/templates/）。每个方法对应 Protocol 中的一个 compute 工具。
+
+入参纪律（#66 收口）：``modeling_steps`` = yaml **明文文本**（MCP 边界不假设共享
+文件系统）；task_dir 锚定（M10）从 load 步的数据文件目录解析（yaml 文件锚定的
+语义后继）；血缘指纹哈希文本内容（``sha256_text``）。
 """
 
 from __future__ import annotations
@@ -13,7 +17,7 @@ from mflowy.driver.builder import Builder
 from mflowy.driver.dag import DAGResult
 from mflowy.driver.serializer import flow_to_yaml
 from mflowy.model.model.step_options import prune_model_step, prune_x_transformer_step
-from mflowy.utils.file import exists, fingerprint_tags, read_text
+from mflowy.utils.file import fingerprint_tags, sha256_text
 from mflowy.utils.path import resolve_data_ref, set_task_dir
 
 from ..templates import (
@@ -35,24 +39,68 @@ def _validate_model_arg(v: str) -> str:
     return v
 
 
+def _steps_fingerprint_tags(steps_text: str) -> dict[str, str]:
+    """yaml 明文的血缘指纹（内容哈希——无文件路径可哈希）。"""
+    return {"mflowy.modeling_yaml_sha256": sha256_text(steps_text)}
+
+
+def _anchor_task_dir(steps_text: str) -> None:
+    """M10 工件锚定：明文 steps 无自身文件路径——锚到 load 步数据文件的目录。
+
+    无 load 步/file_path 时不锚（相对路径数据引用会在解析处报「请使用绝对路径」
+    ——诚实失败优于猜测锚点）。
+    """
+    import yaml as _yaml
+
+    try:
+        parsed = _yaml.safe_load(steps_text)
+    except _yaml.YAMLError:
+        return
+    if not isinstance(parsed, list):
+        return
+    for step in parsed:
+        if isinstance(step, dict) and step:
+            key = next(iter(step))
+            if str(key).startswith("load"):
+                fp = ((step[key] or {}).get("params") or {}).get("file_path")
+                if fp:
+                    set_task_dir(str(fp))
+                    return
+
+
+def _require_steps(steps_text: str) -> str:
+    """steps 明文的片段门（与 validate_modeling_steps 同语义，提交侧 fail-loud）。"""
+    import yaml as _yaml
+
+    if not steps_text or not steps_text.strip():
+        raise ValueError("modeling_steps 明文为空——须为顶层步骤列表片段（- name: 开头）")
+    parsed = _yaml.safe_load(steps_text)
+    if isinstance(parsed, dict):
+        raise ValueError(
+            "modeling_steps 须为顶层步骤列表片段（- name: 开头的 YAML list）——"
+            "name/description/flow 外壳由建模模板自动包装，请剔除顶层外壳键"
+        )
+    if not isinstance(parsed, list):
+        raise ValueError("modeling_steps 须为顶层步骤列表片段（- name: 开头的 YAML list）")
+    return steps_text
+
+
 def _build_modeling_steps(
-    modeling_steps_yaml: str,
+    modeling_steps: str,
     model: str,
 ) -> str:
-    """复用 modeling 的 modeling_steps_yaml，剪枝后序列化为 shap 的 modeling_steps。
+    """复用 modeling 的 modeling_steps，剪枝后序列化为 shap 的 modeling_steps。
 
     Args:
-        modeling_steps_yaml: 局部 steps 列表 YAML（与 modeling 工具同一份）
+        modeling_steps: 局部 steps 列表 YAML 明文（与 modeling 工具同一份）
         model: 单一 model 的裸 run_id（flavor/module= 前缀已废弃）；
             prune 工厂经 get_run 解析 module 后走 {module: run_id} 早返回，不查实验 run 列表
     """
-    set_task_dir(modeling_steps_yaml)
-    steps_text = read_text(modeling_steps_yaml)
     builder = Builder(
         MODELING_TEMPLATE,
         prune_model_step(model=model),  # model = 裸 run_id，工厂期 get_run 一次解析 module
         env={
-            "modeling_steps": steps_text,
+            "modeling_steps": modeling_steps,
             "multi_model": False,
         },
         structural_rules=(prune_x_transformer_step,),
@@ -71,7 +119,7 @@ class LocalJobProvider:
     async def hyperparameters_search(
         self,
         *,
-        modeling_steps_yaml: str,
+        modeling_steps: str,
         name: str,
         desc: str,
         headers: Mapping[str, str] | None = None,
@@ -79,16 +127,14 @@ class LocalJobProvider:
         """搜索-only DAG：model 步带搜索空间 → search 行为（inner CV 选参，不终训不碰 holdout）。"""
 
         def _run():
-            if not exists(modeling_steps_yaml):
-                raise FileNotFoundError(f"错误: 文件不存在: {modeling_steps_yaml}")
-            set_task_dir(modeling_steps_yaml)
-            steps_text = read_text(modeling_steps_yaml)
+            steps_text = _require_steps(modeling_steps)
+            _anchor_task_dir(steps_text)
             builder = Builder(
                 HYPERPARAMETERS_SEARCH_TEMPLATE,
                 env={"name": name, "description": desc, "modeling_steps": steps_text},
                 structural_rules=(prune_x_transformer_step,),
             )
-            return builder.build().run(tags=fingerprint_tags("modeling_yaml", modeling_steps_yaml))
+            return builder.build().run(tags=_steps_fingerprint_tags(steps_text))
 
         return await asyncio.to_thread(_run)
 
@@ -97,7 +143,7 @@ class LocalJobProvider:
     async def modeling(
         self,
         *,
-        modeling_steps_yaml: str,
+        modeling_steps: str,
         name: str,
         desc: str,
         experiment_id: str | None = None,
@@ -107,13 +153,10 @@ class LocalJobProvider:
         def _run():
             from mflowy.model.model.step_options import resume_model_step
 
-            if not exists(modeling_steps_yaml):
-                raise FileNotFoundError(f"错误: 文件不存在: {modeling_steps_yaml}")
             if prune_missing and not experiment_id:
                 raise ValueError("prune_missing 必须配合 experiment_id 使用")
-            set_task_dir(modeling_steps_yaml)
-
-            steps_text = read_text(modeling_steps_yaml)
+            steps_text = _require_steps(modeling_steps)
+            _anchor_task_dir(steps_text)
             multi_model = count_model_steps(steps_text) > 1
 
             options: tuple = ()
@@ -132,7 +175,7 @@ class LocalJobProvider:
                 },
                 structural_rules=(prune_x_transformer_step,),
             )
-            return builder.build().run(tags=fingerprint_tags("modeling_yaml", modeling_steps_yaml))
+            return builder.build().run(tags=_steps_fingerprint_tags(steps_text))
 
         return await asyncio.to_thread(_run)
 
@@ -141,7 +184,7 @@ class LocalJobProvider:
     async def explanation(
         self,
         *,
-        modeling_steps_yaml: str,
+        modeling_steps: str,
         model: str,
         name: str,
         desc: str,
@@ -149,13 +192,11 @@ class LocalJobProvider:
         headers: Mapping[str, str] | None = None,
     ) -> DAGResult:
         def _run():
-
             _validate_model_arg(model)
-            if not exists(modeling_steps_yaml):
-                raise FileNotFoundError(f"错误: 文件不存在: {modeling_steps_yaml}")
-            set_task_dir(modeling_steps_yaml)
+            steps_text = _require_steps(modeling_steps)
+            _anchor_task_dir(steps_text)
 
-            modeling_steps_text = _build_modeling_steps(modeling_steps_yaml, model=model)
+            modeling_steps_text = _build_modeling_steps(steps_text, model=model)
             builder = Builder(
                 dag_yaml=EXPLANATION_TEMPLATE,
                 env={
@@ -165,7 +206,7 @@ class LocalJobProvider:
                     "lowess_frac": lowess_frac,
                 },
             )
-            return builder.build().run(tags=fingerprint_tags("modeling_yaml", modeling_steps_yaml))
+            return builder.build().run(tags=_steps_fingerprint_tags(steps_text))
 
         return await asyncio.to_thread(_run)
 
@@ -179,7 +220,6 @@ class LocalJobProvider:
         headers: Mapping[str, str] | None = None,
     ) -> DAGResult:
         def _run():
-
             _validate_model_arg(model)
             _, data_path = resolve_data_ref(data)
 
@@ -210,7 +250,6 @@ class LocalJobProvider:
         headers: Mapping[str, str] | None = None,
     ) -> DAGResult:
         def _run():
-
             _validate_model_arg(model)
             _, data_path = resolve_data_ref(data)
 

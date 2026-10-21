@@ -1,4 +1,4 @@
-"""JobProvider Protocol — 每个 compute 工具一个类型化方法。
+"""JobProvider Protocol — 每个 compute 工具一个类型化方法（modeling_steps = yaml 明文文本）。
 
 LocalJobProvider 本地执行；
 """
@@ -17,7 +17,7 @@ class JobProvider(Protocol):
     async def hyperparameters_search(
         self,
         *,
-        modeling_steps_yaml: str,
+        modeling_steps: str,
         name: str,
         desc: str,
         headers: Mapping[str, str] | None = None,
@@ -26,7 +26,7 @@ class JobProvider(Protocol):
     async def modeling(
         self,
         *,
-        modeling_steps_yaml: str,
+        modeling_steps: str,
         name: str,
         desc: str,
         experiment_id: str | None = None,
@@ -37,7 +37,7 @@ class JobProvider(Protocol):
     async def explanation(
         self,
         *,
-        modeling_steps_yaml: str,
+        modeling_steps: str,
         model: str,
         name: str,
         desc: str,

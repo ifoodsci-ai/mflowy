@@ -154,8 +154,8 @@ class TestPruneModelStep:
         f.write_text(
             "name: test\nflow:\n"
             '- load__csv:\n    name: "load"\n'
-            '- x_y:\n    name: "xy"\n    params: {targets: y}\n'
-            "- split:\n    name: cv\n"
+            '- x_y:\n    name: "xy"\n    params: {target: y}\n'
+            "- cv__split:\n    name: cv\n"
             '- x_transformer__standard_scaler:\n    name: "scaler"\n'
             '- model__MLP:\n    name: "MLP"\n'
             '- model__XGB:\n    name: "XGB"\n'
@@ -176,8 +176,8 @@ class TestPruneModelStep:
         f.write_text(
             "name: test\nflow:\n"
             '- load__csv:\n    name: "load"\n'
-            '- x_y:\n    name: "xy"\n    params: {targets: y}\n'
-            "- split:\n    name: cv\n"
+            '- x_y:\n    name: "xy"\n    params: {target: y}\n'
+            "- cv__split:\n    name: cv\n"
             '- x_transformer__standard_scaler:\n    name: "scaler"\n'
             '- model__MLP:\n    name: "MLP"\n'
             '- model__XGB:\n    name: "XGB"\n'

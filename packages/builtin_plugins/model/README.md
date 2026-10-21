@@ -1,12 +1,12 @@
 # mflowy-model（建模域）
 
-MFlowy 建模域包：建模训练 MDP 的动作域——x_y / cross_validation / x_transformer / model /
+MFlowy 建模域包：建模训练 MDP 的动作域——x_y / cv / x_transformer / model /
 plot(model_evaluation + model_interpretability)。CPU 建模栈为硬依赖；torch 栈在 `[deep]`
 extra（uvx 安装需 `--index https://download.pytorch.org/whl/cpu`，仅 MLP flavor 需要——
 缺它时 `list-nodes` 降级标注，不影响其余能力）。
 
 - 动作族：`model/`（XGB/LGBM/CAT/RF/MLP/loader/predict/search_input）、
-  `x_transformer/`（编码 ×5 + 数值变换 ×8）、`cross_validation.py`（split + SplitSpec 单文件）、
+  `x_transformer/`（编码 ×5 + 数值变换 ×8）、`cross_validation.py`（SplitSpec 契约模块——节点住 cv/ 族目录）、`cv/`（split 参数构建 + load 引用加载——构建与引用分家）、
   非归组 `x_y.py`（任务目标划分 + 任务类型推理）
 - 共享件：`middlewares/`（log_cv / log_prediction / log_search_input）、`plot/`（评估/解释图，
   主题门面复用 `mflowy.utils.plot`）
@@ -46,8 +46,9 @@ MY_MODEL.regularizers = ("my_l2",)  # 正则面自声明（#38 出题规则的�
 
 - `diagnose.py`：OOF 观察面上的四算子（error_concentrated / slice_collapse / fold_std /
   complexity_edge）——run_hpo 后自动接线（findings 落账本 + 响应浮出），零步数
-- `report.py`：OOF 图集（挂 run 下，run_id 寻址）/ 泰勒聚合（holdout 终训预测 fan-in）；
-  终局报告不在引擎——preview 发素材（产物清单/decision_log/board），π 撰写后
-  `finish(pdf=...)` 收编进 deliverables（tmp/rename 原子落盘，不编译不验内容）
+- `report.py`：OOF 图集（挂 run 下，run_id 寻址）/ 泰勒聚合（终训节点副产物
+  fan-in——`taylor_byproducts` 边函数断言各模型 y_test 逐位同一）/ 报告素材
+  （`modeling_report_skeleton`：表格从账本渲染 + 图片清单 + 叙事槽）；终局报告不在
+  引擎——π 撰写后 `finish(pdf)` 收编进 deliverables（tmp/rename 原子落盘，不编译不验内容）
 - `propose_rules.py`：出题规则（rule = 节点附加属性，与 clean 域 `.repair` 同构）——
   findings 驱动层经 `driver.rule.fire/prioritize` 进菜单

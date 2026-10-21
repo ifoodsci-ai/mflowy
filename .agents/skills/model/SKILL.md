@@ -1,6 +1,6 @@
 ---
 name: model
-description: 建模训练 MDP 回合操作手册(mflowy)。CVCard 编译后开始建模回合，或建模会话进行中(收到 session_id)时使用。配合 mflowy MCP 工具 modeling_session_start / modeling_propose / modeling_apply(action) / modeling_rollback / modeling_report_findings / modeling_finish / modeling_abandon 驱动回合循环——动作空间 = 八动作面（配置编辑 + 计算动作），环境面在引擎，π(策略)是你。前置:model-brief skill 已产出 CVCard（含 research-review 结构化候选）。
+description: 建模训练 MDP 回合操作手册(mflowy)。开局产物就绪后开始建模回合，或建模会话进行中(收到 session_id)时使用。配合 mflowy MCP 工具 modeling_session_start / modeling_propose / modeling_apply(action) / modeling_rollback / modeling_report_findings / modeling_finish / modeling_abandon 驱动回合循环——动作空间 = 八动作面（配置编辑 + 计算动作），环境面在引擎，π(策略)是你。会话恒单目标任务——多目标在会话外三层循环（多目标→多模型→单目标任务会话，每目标各开一会话）。前置:model-brief skill 已产出开局入参（cv_card = cv.split 配置 yaml 明文 + 显式协议参数，含 research-review 结构化候选）。
 ---
 
 # Model Skill：建模 MDP 回合循环（search-only 回路 + 先搜后店）
@@ -13,7 +13,8 @@ description: 建模训练 MDP 回合操作手册(mflowy)。CVCard 编译后开�
 ## 开局
 
 ```
-modeling_session_start(final_path, card=<DomainCard>, cv_card=<CVCard>)   # 唯一主通道
+modeling_session_start(final_path, cv_card=<cv.split 配置 yaml 明文>,
+                        target=, task=, metric=, candidates=, max_steps=, id_columns=)   # 唯一主通道：显式参数 > card(DomainCard) 背景分层缺省
 ```
 
 - 协议由 **model-brief skill**（含 research-review 结构化候选）产出——candidates =
@@ -23,7 +24,8 @@ modeling_session_start(final_path, card=<DomainCard>, cv_card=<CVCard>)   # 唯�
 
 ## 回合：八动作面（`modeling_apply(action, params)`）
 
-配置编辑（零步费零奖励，只改光标，生效于下一次 run_hpo）：
+配置编辑（零步费零奖励，只改光标，生效于下一次 run_hpo；**单表 H**：同一参数
+唯一槽位——pin 覆盖空间或反向都是显式 last-write-wins，决策日志记前后值）：
 `select_model{family}` 定候选（注入该候选 hints/seed 缺省）→
 `set_hp{param: 值}` pin 常量 / `set_hp_space{param: [lo,hi]|[v1,v2,…]}` 收窄动态维 /
 `set_seed{seed}`（换 seed = 换目标 = study 重开）→ `select_FE{node}` 换 FE 档
@@ -34,12 +36,15 @@ modeling_session_start(final_path, card=<DomainCard>, cv_card=<CVCard>)   # 唯�
    继续，seed/scoring 变重开）；每 trial inner CV → u_inner/std；结束在 θ* 上出 OOF
    预测 + 图集 + findings（diagnose 四算子：error_concentrated/slice_collapse/
    fold_std/complexity_edge）；响应 `reward` = **Δu_inner**（相对该键上次最优）。
-2. `final_train_test`——**先搜后店**：θ* 从账本读 → 全量拟合 → holdout 终评恰一次 →
-   产物挂 run → **combo 冻结**（同键不可再搜索）；reward = 0（u_full 只进 verdict 面）。
+2. `final_train_test`——**先搜后店**：终训走 modeling 工具（JobProvider DAG）——
+   交付的恒是**搜索时刻证据配置**（快照 ∪ θ*，搜后改 pin 不生效）→ 终训/终评/
+   X_test·y_test·y_pred 副产物/plan 一体（交付的 plan_yaml 就是那次终训本身）→ holdout
+   终评恰一次 → **combo 冻结**（同键不可再搜索）；reward = 0（终局效用 u 只进 verdict 面）。
 
 `modeling_propose` 菜单 = findings 驱动层（记分牌序浮于顶部：折间不稳→加深、误差
-集中→FE 换档、贴边界/过拟合→正则收窄、切片塌陷→类别权重）+ 基座层（baseline 第一、
-未跑候选、终训交付、配置动作面）。规则 findings 与你落诊的 LLM findings 均匀聚合。
+集中→FE 换档、贴边界/过拟合→正则收窄、切片塌陷→类别权重；**findings 只对本 combo
+键出题**——证据不跨 FE 组合）+ 基座层（baseline 第一、未跑候选、终训交付、配置动作面）。
+规则 findings 与你落诊的 LLM findings 均匀聚合。
 
 **预算即决策**：只有计算动作吃步——配置编辑自由试错；好钢（run_hpo 深度）用在 board
 最有希望的方向。**自由参数化**：菜单只是建议不是边界（词表外动作/未知参数会被拒）。
@@ -50,14 +55,17 @@ modeling_session_start(final_path, card=<DomainCard>, cv_card=<CVCard>)   # 唯�
   回退——append-only 审计面）；
 - `modeling_report_findings(key, findings)`：人读诊断落账本（kind ⊆ 词表、severity
   ∈ [0,1]；决策日志审计）——规则算子覆盖不了的判断走这里；
-- `modeling_finish()`：**收局前标准动作（preview）**——聚合全部已训 combo 的产物
-  清单（OOF 图集/预测长表/指标）+ 绘泰勒（holdout 终训预测 fan-in）+ 素材
-  （decision_log/board）→ 你用宿主多模态读图、消化素材后撰写终局报告
-  （「为什么是这个模型」——findings 装「哪里有问题」，语义不混）；
-- `modeling_finish(pdf=...)`：真收局——引擎收编你的报告文件进 deliverables
-  （原子落盘；不编译不验内容——数字权威面是 verdict/board，报告是给人看的）+
-  verdict（u_full/findings/rank_consistency）；重入 = 幂等重导出（交付报告
-  不可变更——重写须弃局重开）；
+- **收局剧本固定序**（素材两工具 → 撰写 → 收编）：
+  1. `draw_taylor_diagram(session_id, run_ids)`：多终训 run 副产物画泰勒图（误差结构
+     对比——终局排名的证据面；各模型 y_test 不一致会拒绝出图）；
+  2. `modeling_report_skeleton(session_id)`：报告素材样板——表格数字从账本渲染
+     （u_inner/θ*/u/rank 抄文件非默写）+ 图片清单（OOF 图集/终训副产物/泰勒图路径）
+     + 叙事槽（「为什么是这个模型」）——宿主多模态读图后撰写终局报告；
+  3. `modeling_finish(session_id, pdf=...)`：**单动作收局**——引擎收编你的报告文件进
+     deliverables（原子落盘；不编译不验内容——数字权威面是 verdict/board，报告是给
+     人看的）+ verdict（u/findings/rank_consistency）；**pdf 必须在报告就绪后
+     调用**（文件缺失 fail-loud）；重入 = 幂等重导出（交付报告不可变更——重写须弃局
+     重开）；
 - `modeling_abandon(reason=...)`：用户中止/改协议重开前显式终局（不留僵尸）。
 
 ## 纪律

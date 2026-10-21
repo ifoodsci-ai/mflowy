@@ -20,9 +20,9 @@ import pytest
 from mflowy.model import tools
 
 DELEGATED_TOOLS = {
-    "hyperparameters_search": {"modeling_steps_yaml": "a.yaml", "name": "n", "desc": "d"},
-    "modeling": {"modeling_steps_yaml": "a.yaml", "name": "n", "desc": "d"},
-    "explanation": {"modeling_steps_yaml": "a.yaml", "model": "XGB=abc", "name": "n", "desc": "d"},
+    "hyperparameters_search": {"modeling_steps": "- model__XGB:\n    params: {}", "name": "n", "desc": "d"},
+    "modeling": {"modeling_steps": "- model__XGB:\n    params: {}", "name": "n", "desc": "d"},
+    "explanation": {"modeling_steps": "- model__XGB:\n    params: {}", "model": "XGB=abc", "name": "n", "desc": "d"},
     "predict": {"data": "a.csv", "model": "XGB=abc"},
     "inverse_optimization": {"data": "a.csv", "model": "XGB=abc"},
 }

@@ -268,6 +268,19 @@ def _log_metrics(metrics: Metrics) -> None:
     mlflow.log_metrics(flat)
 
 
+def terminal_u(metrics: Metrics, scoring: MetricName) -> float:
+    """终局代表效用 u 的单一真源：全套指标中取代表指标（scoring）直取——单目标
+    无跨目标均值（多目标已随 x_y 收窄退役，多目标建模在会话外分层循环）；误差类
+    取负对齐 higher-better 板面（与 u_inner 同尺）。"""
+    u = float(next(iter(metrics.values()))[scoring])
+    return -u if not MetricName.higher_is_better(scoring) else u
+
+
+# #66 节点副产物契约的单一真源名（training 行为落 run；session/report 消费面共享）。
+# X_test 随落——SHAP 解释等下游按 run_id 同时引用测试集与模型（mlflow final 模型）
+HOLDOUT_BYPRODUCTS = {"X_test": "X_test.parquet", "y_test": "y_test.parquet", "y_pred": "y_pred.parquet"}
+
+
 # ========== 超参搜索（单路径 objective）==========
 
 
@@ -324,6 +337,9 @@ def hyperparameters_search(
 
     fit_params = fit_params or {}
     scoring = MetricName(scoring) if not isinstance(scoring, MetricName) else scoring
+    # 窗口判定一次（搜索期窗口恒定）：无 active run 的直调形态不建 nested run——
+    # nested=True 只表示"允许嵌套"，无父 run 时会落孤儿顶层 run（污染默认实验）
+    in_window = mlflow.active_run() is not None
     cv, X_fit, y_fit, eval_set = _inner_cv_plan(split)
     optuna.logging.set_verbosity(optuna.logging.WARN if not is_verbose() else optuna.logging.INFO)
     direction = "maximize" if MetricName.higher_is_better(scoring) else "minimize"
@@ -331,48 +347,55 @@ def hyperparameters_search(
     groups_train = split.groups
 
     def objective(trial, **suggested) -> float:
-        import mlflow.utils.mlflow_tags
+        if in_window:
+            import mlflow.utils.mlflow_tags
 
-        merged = {**base_params, **suggested}
-        with mlflow.start_run(
-            run_name=f"trial_{trial.number}", nested=True, experiment_id=active_experiment_id()
-        ) as run:
-            logger.info(
-                f'<RunInfo: run-name="{run.info.run_name}", run-id={run.info.run_id}, '
-                f"nested, parent-run-id={run.data.tags.get(mlflow.utils.mlflow_tags.MLFLOW_PARENT_RUN_ID)}>"
-            )
-            mlflow.set_tags(
-                {
-                    "trial_number": str(trial.number),
-                    "params": json.dumps(suggested, default=str),
-                    "scoring": scoring.value,
-                }
-            )
-            if cv is not None:
-                pipe = make_pipe(**_strip_early_stopping(merged))
-                scores = cross_val_score(
-                    pipe,
-                    split.X_train,
-                    split.y_train,
-                    cv=cv,
-                    scoring=scorer,
-                    groups=groups_train,
-                    error_score="raise",
-                    n_jobs=1,
+            with mlflow.start_run(
+                run_name=f"trial_{trial.number}", nested=True, experiment_id=active_experiment_id()
+            ) as run:
+                logger.info(
+                    f'<RunInfo: run-name="{run.info.run_name}", run-id={run.info.run_id}, '
+                    f"nested, parent-run-id={run.data.tags.get(mlflow.utils.mlflow_tags.MLFLOW_PARENT_RUN_ID)}>"
                 )
-                trial.set_user_attr("scores", scores.tolist())
-                mean, std = float(np.mean(scores)), float(np.std(scores))
-                mlflow.log_metrics({f"{scoring}": mean, f"{scoring}_std": std})
-                return mean
+                mlflow.set_tags(
+                    {
+                        "trial_number": str(trial.number),
+                        "params": json.dumps(suggested, default=str),
+                        "scoring": scoring.value,
+                    }
+                )
+                return _score_trial(trial)
+        return _score_trial(trial)
 
-            # holdout-val 手动路径：与最终训练同切分同口径（早停可用）；单指标子集省概率计算
-            pipe = fit_with_eval(make_pipe, X_fit, y_fit, eval_set=eval_set, fit_params=fit_params, **merged)
-            y_pred = pipe.predict(eval_set[0])
-            y_proba = pipe.predict_proba(eval_set[0]) if split.task == TASKTYPE.CLASSIFICATION else None
-            metrics = evaluate(split.task, eval_set[1], y_pred, y_proba, scoring=scoring)
-            score = float(np.mean([m[scoring] for m in metrics.values()]))
+    def _score_trial(trial) -> float:
+        merged = {**base_params, **trial.params}
+        if cv is not None:
+            pipe = make_pipe(**_strip_early_stopping(merged))
+            scores = cross_val_score(
+                pipe,
+                split.X_train,
+                split.y_train,
+                cv=cv,
+                scoring=scorer,
+                groups=groups_train,
+                error_score="raise",
+                n_jobs=1,
+            )
+            trial.set_user_attr("scores", scores.tolist())
+            mean, std = float(np.mean(scores)), float(np.std(scores))
+            if in_window:
+                mlflow.log_metrics({f"{scoring}": mean, f"{scoring}_std": std})
+            return mean
+
+        # holdout-val 手动路径：与最终训练同切分同口径（早停可用）；单指标子集省概率计算
+        pipe = fit_with_eval(make_pipe, X_fit, y_fit, eval_set=eval_set, fit_params=fit_params, **merged)
+        y_pred = pipe.predict(eval_set[0])
+        y_proba = pipe.predict_proba(eval_set[0]) if split.task == TASKTYPE.CLASSIFICATION else None
+        metrics = evaluate(split.task, eval_set[1], y_pred, y_proba, scoring=scoring)
+        score = float(next(iter(metrics.values()))[scoring])
+        if in_window:
             mlflow.log_metrics({f"{scoring}": score})
-            return score
+        return score
 
     def _suggesting(trial):
         # study 直入路径（会话增量续跑）自带 suggest 包装——search() 的内层同构
@@ -486,11 +509,21 @@ def training(
     y_pred = pipe.predict(split.X_test)
     y_proba = pipe.predict_proba(split.X_test) if task == TASKTYPE.CLASSIFICATION else None
     metrics = evaluate(task, split.y_test, y_pred, y_proba)
+    u = terminal_u(metrics, scoring)
     _log_metrics(metrics)
     summary = ", ".join(f"{t}.{m.value}={v:.4f}" for t, tm in metrics.items() for m, v in tm.items())
     print(f"holdout metrics: {summary}")
 
+    # #66 节点副产物：X_test/y_test/y_pred parquet 随 run（run_id 寻址、行位对齐——
+    # log_table 不保索引，y_pred 行序 ≡ X_test ≡ y_test 行序）；loader.holdout =
+    # 终评快照（final_train_test 经 DAGResult 回读的数值面）
     if mlflow.active_run():
+        from mflowy.utils.mlflow import log_table as _log_table
+
+        y_pred_df = pd.DataFrame(y_pred, columns=split.y_test.columns)
+        _log_table(split.X_test, HOLDOUT_BYPRODUCTS["X_test"])
+        _log_table(split.y_test, HOLDOUT_BYPRODUCTS["y_test"])
+        _log_table(y_pred_df, HOLDOUT_BYPRODUCTS["y_pred"])
         parts = [(X_fit, y_fit, "Train")]
         if eval_set is not None:
             parts.append((X_val, y_val, "Val"))
@@ -507,7 +540,7 @@ def training(
         model_info = mlflow.sklearn.log_model(pipe, name="final", input_example=example, serialization_format="pickle")
         model_uri = model_info.model_uri
 
-    return ModelLoader(name=name, _pipe=pipe, _model_uri=model_uri)
+    return ModelLoader(name=name, _pipe=pipe, _model_uri=model_uri, holdout={"u": round(u, 4), "metrics": metrics})
 
 
 def oof_predictions(
@@ -554,35 +587,27 @@ def oof_predictions(
 _OVERFIT_GAP = 0.3  # |U_inner − U_full| / |U_inner| 超此值记过拟合信号
 
 
-def holdout_report(loader: ModelLoader, split: TrainSplit, scoring: MetricName) -> dict:
-    """finish 的独立终评入口：loader 在 holdout 上预测（不重训）→ u_full（归一）+
-    全套指标 + findings（过拟合信号/切片塌陷/误差集中列——回流清洗的提示面）。
+def holdout_findings(split: TrainSplit, y_pred: pd.DataFrame, u_inner: float | None, u: float) -> list[dict]:
+    """holdout 预测上的机械化 findings（不依赖 loader——y_pred 已算好）：过拟合信号/
+    切片塌陷/误差集中列（回流清洗的提示面）。
 
-    与会话 finish 解耦——test 读即终局的语义由调用方（finish 每交付模型恰一次）承载。
+    #66 从 holdout_report 抽出单源：DAG 终训路径（final_train_test）与 SDK 面
+    （holdout_report）共用同一诊断机器。
     """
     import scipy.stats as st
-
-    y_pred = loader.pipe.predict(split.X_test)
-    y_proba = loader.pipe.predict_proba(split.X_test) if split.task == TASKTYPE.CLASSIFICATION else None
-    metrics = evaluate(split.task, split.y_test, y_pred, y_proba)
-    u_full = float(np.mean([m[scoring] for m in metrics.values()]))
-    if not MetricName.higher_is_better(scoring):  # 误差类指标取负对齐 higher-better 板面
-        u_full = -u_full
-    u_full = round(u_full, 4)
 
     y_true = split.y_test.iloc[:, 0].to_numpy()
     y_hat = y_pred.iloc[:, 0].to_numpy() if isinstance(y_pred, pd.DataFrame) else np.asarray(y_pred)
 
     findings: list[dict] = []
-    inner = loader.u_inner
-    if inner is not None and abs(inner) > 1e-9:
-        gap = abs(inner - u_full) / abs(inner)
+    if u_inner is not None and abs(u_inner) > 1e-9:
+        gap = abs(u_inner - u) / abs(u_inner)
         if gap > _OVERFIT_GAP:
             findings.append(
                 {
                     "kind": "overfit_gap",
                     "severity": round(min(1.0, gap), 4),
-                    "evidence": {"u_inner": inner, "u_full": u_full, "gap_ratio": round(gap, 4)},
+                    "evidence": {"u_inner": u_inner, "u": u, "gap_ratio": round(gap, 4)},
                     "message": f"inner−holdout 差距 {gap:.0%}（>{_OVERFIT_GAP:.0%}）——结构对 train 过拟合或分布漂移",
                 }
             )
@@ -619,4 +644,23 @@ def holdout_report(loader: ModelLoader, split: TrainSplit, scoring: MetricName) 
                     "message": f"误差集中于列 `{worst_col}`（|ρ|={worst_rho:.2f}）——回流清洗域的首要候选（该列质量问题害了模型）",
                 }
             )
-    return {"u_full": u_full, "metrics": metrics, "findings": findings, "y_pred": y_pred, "y_proba": y_proba}
+    return findings
+
+
+def holdout_report(loader: ModelLoader, split: TrainSplit, scoring: MetricName) -> dict:
+    """SDK 直 import 面的独立终评入口：loader 在 holdout 上预测（不重训）→ u（归一，
+    ``terminal_u`` 单源）+ 全套指标 + findings（holdout_findings 单源——过拟合信号/
+    切片塌陷/误差集中列）。
+
+    与会话 finish 解耦——test 读即终局的语义由调用方（finish 每交付模型恰一次）承载。
+    """
+    y_pred = loader.pipe.predict(split.X_test)
+    y_proba = loader.pipe.predict_proba(split.X_test) if split.task == TASKTYPE.CLASSIFICATION else None
+    metrics = evaluate(split.task, split.y_test, y_pred, y_proba)
+    return {
+        "u": round(terminal_u(metrics, scoring), 4),
+        "metrics": metrics,
+        "findings": holdout_findings(split, y_pred, loader.u_inner, terminal_u(metrics, scoring)),
+        "y_pred": y_pred,
+        "y_proba": y_proba,
+    }

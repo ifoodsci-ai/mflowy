@@ -24,7 +24,7 @@ def _run_mw():
         patch("mlflow.log_metrics") as m_metrics,
         patch("mflowy.utils.mlflow.log_dict", side_effect=lambda meta, name: captured.update(name=name, meta=meta)),
     ):
-        log_cv(Context(NodeConf(name="划分", node_key="split"), []), lambda c, **kw: _spec())
+        log_cv(Context(NodeConf(name="划分", node_key="cv__split"), []), lambda c, **kw: _spec())
     return m_metrics, captured
 
 

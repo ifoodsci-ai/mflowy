@@ -1,12 +1,14 @@
-"""#64 OOF 观察面与终局：图集挂 run + 泰勒工具 + finish 两段式（pdf 收编）。
+"""#66 终局观察面：OOF 图集 + draw_taylor_diagram + report_skeleton + finish(pdf) 单动作。
 
 - OOF 图集：run_hpo 的观察面指向 OOF 源（cross_val_predict × train 侧 y_true），
   产物挂 run 下（run_id 寻址）可列出
-- 泰勒工具（本地分析类，两站点）：多 run holdout 终训预测 fan-in → (corr, σ, rmse) +
-  图落盘；用 holdout 终训预测（非 OOF——θ* 带选择性乐观偏差）；单模型/缺产物边界
-- finish 两段式：pdf=None = preview（聚合产物清单 + 泰勒 + 素材，零副作用不落
-  verdict）；pdf=路径 = 收编 π 产报告进 deliverables（tmp/rename 原子落盘）+
-  verdict；重入幂等（交付报告不可变更）
+- draw_taylor_diagram（改名自 taylor_diagram_report，BREAKING）：多终训 run 副产物
+  fan-in → (corr, σ, rmse) + 图落盘；y_test 逐位同一断言（不同 holdout 进同一张
+  对比图 = 撒谎的图——拒绝）；只绘图不做报告
+- modeling_report_skeleton：只读零副作用——表格数字从账本渲染（逐位相等）、
+  图片清单（OOF 图集/副产物指针/泰勒图路径）、叙事槽样板
+- finish(pdf) 单动作（BREAKING）：pdf 必填、收编进 deliverables（tmp/rename 原子
+  落盘）+ verdict；重入幂等（交付报告不可变更）；preview 分支退役
 """
 
 import json
@@ -17,7 +19,7 @@ import pandas as pd
 import pytest
 from mflowy.driver.mdp_session import verify_verdict
 from mflowy.model import session as ms
-from mflowy.model.tools import modeling_finish, taylor_diagram_report
+from mflowy.model.tools import draw_taylor_diagram, modeling_finish, modeling_report_skeleton
 
 _K = "RF|passthrough|passthrough"
 _K2 = "XGB|passthrough|passthrough"
@@ -25,7 +27,12 @@ _K2 = "XGB|passthrough|passthrough"
 
 @pytest.fixture(autouse=True)
 def isolate_tracking(tmp_path, monkeypatch):
-    monkeypatch.setenv("MLFLOW_TRACKING_URI", f"sqlite:///{tmp_path}/tracking.db")
+    import mlflow
+
+    uri = f"sqlite:///{tmp_path}/tracking.db"
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", uri)
+    mlflow.set_tracking_uri(uri)
+    monkeypatch.chdir(tmp_path)
 
 
 @pytest.fixture
@@ -49,28 +56,35 @@ def reg_csv(tmp_path) -> str:
 CARD = {"domain": "测试", "target": "target"}
 
 
-def _card(**over):
-    fams = over.pop("candidate_families", ["RF"])
-    base = {
-        "target": "target",
-        "task": "regression",
-        "metric": "mae",
-        "cv": 3,
-        "max_steps": 8,
-        "candidates": [{"family": f, "baseline": i == 0} for i, f in enumerate(fams)],
-    }
-    base.update(over)
-    return base
+CV_CARD = "cv: 3"
+
+
+def _start(root, csv, fams=("RF",)):
+    return ms.start_session(
+        csv,
+        CV_CARD,
+        card=CARD,
+        task="regression",
+        metric="mae",
+        max_steps=8,
+        candidates=[{"family": f, "baseline": i == 0} for i, f in enumerate(fams)],
+    )
 
 
 def _manifest(root, sid):
     return json.loads((root / sid / "manifest.json").read_text(encoding="utf-8"))
 
 
+def _pdf(tmp_path, name="final_report.pdf") -> Path:
+    p = tmp_path / name
+    p.write_bytes(b"%PDF-1.4 pi-authored")
+    return p
+
+
 @pytest.fixture
 def delivered(sessions_root, reg_csv):
     """双模型终态会话：RF + XGB 各搜一次并 final_train_test。"""
-    s = ms.start_session(reg_csv, card=CARD, cv_card=_card(candidate_families=["RF", "XGB"]))
+    s = _start(sessions_root, reg_csv, fams=("RF", "XGB"))
     sid = s["session_id"]
     for fam, params in (("RF", {"n_estimators": 15}), ("XGB", {"n_estimators": 15})):
         ms.apply_action(sid, "select_model", {"family": fam})
@@ -85,7 +99,7 @@ def delivered(sessions_root, reg_csv):
 
 def test_run_hpo_writes_oof_plot_album(sessions_root, reg_csv):
     """OOF 图集：run_hpo 产物挂 run 下（run_id 寻址）——图集可按 run 列出。"""
-    s = ms.start_session(reg_csv, card=CARD, cv_card=_card())
+    s = _start(sessions_root, reg_csv)
     sid = s["session_id"]
     ms.apply_action(sid, "select_model", {"family": "RF"})
     ms.apply_action(sid, "set_hp", {"n_estimators": 15})
@@ -96,76 +110,115 @@ def test_run_hpo_writes_oof_plot_album(sessions_root, reg_csv):
     files = sorted(p.name for p in plots)
     assert any("prediction_scatter" in f for f in files)  # 回归图集指向 OOF 源
     assert oof["plots"] and set(oof["plots"]) == set(files)  # manifest 面与盘一致
-    # 数据源断言：OOF 长表行数 = train 行数（fold 外预测覆盖每行恰一次）
     oof_df = pd.read_parquet(sessions_root / sid / oof["y_pred"])
-    ts = m["steps"]  # noqa: F841 — 存在性占位
     assert len(oof_df) == 96  # 120 行 × 0.8 train（cv=3 → outer test_size 缺省 0.2）
 
 
-# ── 泰勒工具（本地分析类两站点） ────────────────────────────────────────────
+# ── draw_taylor_diagram（副产物 fan-in + 同一性断言） ───────────────────────
 
 
-def test_taylor_report_multi_model(delivered, sessions_root):
+def test_draw_taylor_diagram_multi_model(delivered, sessions_root):
     s = delivered
     m = _manifest(sessions_root, s["session_id"])
     run_ids = [m["models"][k]["run_id"] for k in (_K, _K2)]
-    out = taylor_diagram_report(session_id=s["session_id"], run_ids=run_ids)
+    out = draw_taylor_diagram(session_id=s["session_id"], run_ids=run_ids)
     stats = out["stats"]
-    assert set(stats) == {_K, _K2}
+    assert set(stats) == {_K, _K2}  # stats 键 = combo key（ledger 反查）
     for row in stats.values():
         assert {"correlation", "sigma_ratio", "rmse_total_norm"} <= set(row)  # (corr, σ, rmse)
     assert out["figure"] and str(out["figure"]).endswith(".png")  # 图落盘
-    assert (sessions_root / s["session_id"] / str(out["figure"])).exists() or Path(out["figure"]).exists()
+    assert Path(out["figure"]).exists()
 
 
-def test_taylor_report_single_model_edge(delivered, sessions_root):
+def test_draw_taylor_diagram_single_model_edge(delivered, sessions_root):
     """单模型：泰勒为多模型对比图——不出图，统计照出（边界显式）。"""
     s = delivered
     m = _manifest(sessions_root, s["session_id"])
-    out = taylor_diagram_report(session_id=s["session_id"], run_ids=[m["models"][_K]["run_id"]])
+    out = draw_taylor_diagram(session_id=s["session_id"], run_ids=[m["models"][_K]["run_id"]])
     assert out["figure"] is None and "单模型" in out["note"]
 
 
-def test_taylor_report_missing_artifact_fail_loud(delivered, sessions_root):
+def test_draw_taylor_diagram_missing_artifact_fail_loud(delivered):
+    """run 不在账本终训面 = fail-loud 带可用清单（无终训副产物的 run 不可入图）。"""
     s = delivered
-    with pytest.raises(ValueError, match="holdout_y_pred"):
-        taylor_diagram_report(session_id=s["session_id"], run_ids=["no_such_run"])
+    with pytest.raises(ValueError, match="终训面"):
+        draw_taylor_diagram(session_id=s["session_id"], run_ids=["no_such_run"])
 
 
-# ── finish 两段式 ──────────────────────────────────────────────────────────
+def test_taylor_byproducts_refuses_mismatched_y_test():
+    """同一性断言（边函数缝）：各模型 y_test 逐位不一致 → 拒绝出图（撒谎的图）。"""
+    from mflowy.model.report import taylor_byproducts
+
+    y_test_a = pd.DataFrame({"y": [1.0, 2.0, 3.0]})
+    y_test_b = pd.DataFrame({"y": [1.0, 2.0, 3.1]})  # 另一 holdout
+    y_pred = pd.DataFrame({"y": [1.1, 2.2, 2.9]})
+    with pytest.raises(ValueError, match="y_test"):
+        taylor_byproducts([("A", y_test_a, y_pred), ("B", y_test_b, y_pred)])
+    # 一致的 y_test 正常聚合
+    long_df = taylor_byproducts([("A", y_test_a, y_pred), ("B", y_test_a, y_pred)])
+    assert set(long_df["model"]) == {"A", "B"} and {"y_name", "y", "y_pred"} <= set(long_df.columns)
 
 
-def test_finish_preview_zero_side_effect(delivered, sessions_root):
-    """preview：聚合产物清单 + 绘泰勒 + 素材（decision_log/board）；不落 verdict、
-    manifest 零 mutation、可重入。"""
-    s = delivered
-    sid = s["session_id"]
+# ── modeling_report_skeleton（只读素材面） ──────────────────────────────────
+
+
+def test_report_skeleton_renders_from_ledger(delivered, sessions_root):
+    """skeleton：表格数字与账本逐位相等（抄文件非默写）+ 图片清单 + 叙事槽；
+    只读零副作用（manifest 不动）。"""
+    sid = delivered["session_id"]
     before = _manifest(sessions_root, sid)
-    p = ms.finish_session(sid)
-    assert p["preview"] is True and "deliverables" not in p
-    arts = p["artifacts"]
-    assert {a["key"] for a in arts} == {_K, _K2}
-    for a in arts:
-        assert a["holdout_y_pred"] and a["oof_y_pred"] and a["plots"]
-    assert p["taylor"] is not None  # 双模型出泰勒
-    assert p["decision_log"] and p["board"]  # 素材发全（π 写报告的原料）
-    assert _manifest(sessions_root, sid) == before  # 零副作用（不落 verdict）
-    again = ms.finish_session(sid)
-    assert again["artifacts"] == arts  # 重入幂等
+    out = modeling_report_skeleton(session_id=sid)
+
+    entry = before["models"][_K]
+    board_row = next(r for r in out["tables"]["board"] if r["key"] == _K)
+    assert board_row["u_inner"] == entry["u_inner"] and board_row["u"] == entry["u"]
+    assert board_row["rank"] in (1, 2)  # 冻结面名次进表格（rank 不经 π 转写）
+    assert board_row["best_params"] == entry["best_params"]  # θ* 转写免 π
+    row2 = next(r for r in out["tables"]["board"] if r["key"] == _K2)
+    assert row2["u"] == before["models"][_K2]["u"]
+
+    images = {img["key"]: img for img in out["images"]}
+    assert set(images) == {_K, _K2}
+    for img in images.values():
+        assert img["oof_plots"] and img["holdout_byproducts"] == {
+            "X_test": "X_test.parquet",
+            "y_test": "y_test.parquet",
+            "y_pred": "y_pred.parquet",
+        }
+        assert img["run_id"]
+    assert out["narrative_slots"]  # 叙事槽样板（判断归 π）
+    assert out["rank_consistency"] is not None  # SH 赌注出账浮出（双冻结模型）
+    assert _manifest(sessions_root, sid) == before  # 零副作用
 
 
-def test_finish_missing_pdf_fail_loud(delivered):
-    """两段式：收局带不存在的报告路径 = fail-loud（先 preview 拿素材，π 产报告后带路径）。"""
+def test_report_skeleton_includes_taylor_after_draw(delivered, sessions_root):
+    """收局剧本序（画泰勒 → 看 skeleton）：泰勒图路径进图片清单。"""
+    sid = delivered["session_id"]
+    m = _manifest(sessions_root, sid)
+    out_draw = draw_taylor_diagram(session_id=sid, run_ids=[m["models"][k]["run_id"] for k in (_K, _K2)])
+    sk = modeling_report_skeleton(session_id=sid)
+    assert sk["taylor"] == out_draw["figure"]
+
+
+# ── finish(pdf) 单动作 ─────────────────────────────────────────────────────
+
+
+def test_finish_missing_pdf_fail_loud(delivered, tmp_path):
+    """收局带不存在的报告路径 = fail-loud（素材面先经 draw_taylor/skeleton 两工具）。"""
     with pytest.raises(ValueError, match="报告文件不存在"):
-        ms.finish_session(delivered["session_id"], pdf="/no/such/report.pdf")
+        ms.finish_session(delivered["session_id"], pdf=str(_pdf(tmp_path, "nope.pdf").with_name("absent.pdf")))
+
+
+def test_finish_pdf_required(delivered):
+    """BREAKING：pdf 必填——preview 分支退役（无 pdf 调用即 TypeError）。"""
+    with pytest.raises(TypeError):
+        ms.finish_session(delivered["session_id"])
 
 
 def test_finish_pdf_adoption_and_verdict(delivered, sessions_root, tmp_path):
     """真收局：收编 π 产报告（tmp/rename 落 deliverables、内容不验）+ verdict 落账。"""
-    s = delivered
-    sid = s["session_id"]
-    pdf = tmp_path / "final_report.pdf"
-    pdf.write_bytes(b"%PDF-1.4 pi-authored")  # π 产报告（便当——引擎不验内容）
+    sid = delivered["session_id"]
+    pdf = _pdf(tmp_path)
     v = ms.finish_session(sid, pdf=str(pdf))
     verify_verdict(v)
     assert v["accepted"] is True
@@ -185,17 +238,12 @@ def test_finish_pdf_adoption_and_verdict(delivered, sessions_root, tmp_path):
     rewrite.write_bytes(b"%PDF-1.4 v2")
     with pytest.raises(ValueError, match="不可变更"):
         ms.finish_session(sid, pdf=str(rewrite))  # 交付报告不可变更（审计面）
-    with pytest.raises(RuntimeError, match="终态"):
-        ms.finish_session(sid)  # preview 面已关闭
 
 
-def test_modeling_finish_tool_face_two_phase(delivered, sessions_root, tmp_path):
-    """接缝（session→tools）：modeling_finish 的 pdf 参数透传可达（工具面=会话面）。"""
+def test_modeling_finish_tool_face(delivered, tmp_path):
+    """接缝（session→tools）：modeling_finish 的 pdf 透传可达（工具面=会话面）。"""
     sid = delivered["session_id"]
-    p = modeling_finish(session_id=sid)  # pdf 缺省 = preview
-    assert p["preview"] is True and p["decision_log"]
-    pdf = tmp_path / "final_report.pdf"
-    pdf.write_bytes(b"%PDF-1.4")
+    pdf = _pdf(tmp_path)
     v = modeling_finish(session_id=sid, pdf=str(pdf))
     verify_verdict(v)
     assert v["accepted"] is True and v["report"]["file"].startswith("deliverables/")
