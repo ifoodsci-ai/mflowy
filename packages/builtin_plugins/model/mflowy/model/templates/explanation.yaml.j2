@@ -3,7 +3,7 @@ description: "{{ description | default('[custom](load → clean → cross_valida
 flow:
   {{ modeling_steps | indent(2, blank=True) }}
 
-  - plot__shap_explanation:
+  - shap_explanation:
       name: SHAP 解释数据
 
   - plot__shap_summary:

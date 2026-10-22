@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 @handler(log_plot, namespace="plot")
 def sample_waterfall(
-    plot_shap_explanation: list[tuple],
+    shap_explanation: list[tuple],
     sample_idx: Annotated[int, "指定样本索引"] = 0,
     max_display: Annotated[int, "最大显示特征数"] = 10,
     title: Annotated[str, "图表标题"] = "SHAP Waterfall",
@@ -37,7 +37,7 @@ def sample_waterfall(
     except ImportError as e:
         raise ImportError("shap is required for SHAP plots. Please install it with: pip install shap") from e
 
-    for y_name, explanation, _categorical_features in plot_shap_explanation:
+    for y_name, explanation, _categorical_features in shap_explanation:
         total = explanation.values.shape[0]
         idx = min(sample_idx, total - 1)
 

@@ -63,7 +63,7 @@ def _density_jitter(values: np.ndarray, width: float, rng: np.random.Generator) 
 
 @handler(log_plot, namespace="plot")
 def shap_summary(
-    plot_shap_explanation: list[tuple],
+    shap_explanation: list[tuple],
     max_display: Annotated[int, "最大显示特征数"] = SHAP_MAX_DISPLAY,
     title: Annotated[str, "图表标题"] = "SHAP Summary Plot",
     bar_alpha: Annotated[float, "条形透明度"] = 0.3,
@@ -75,7 +75,7 @@ def shap_summary(
 
     解读：特征按 mean|SHAP| 排序，条形越长=对模型输出整体影响越大。蜂群散点宽=该 SHAP 值区间样本密集；颜色红=高特征值，蓝=低特征值。看散点偏离零线的方向和颜色梯度判断特征如何推高/拉低预测。
     """
-    for y_name, explanation, categorical_features in plot_shap_explanation:
+    for y_name, explanation, categorical_features in shap_explanation:
         shap_values = explanation.values
         feature_data = explanation.data
         feature_names = list(explanation.feature_names)

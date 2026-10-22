@@ -70,7 +70,7 @@ def _find_turn_point(x: np.ndarray, y: np.ndarray) -> tuple[float, float] | None
 
 @handler(log_plot, namespace="plot")
 def shap_dependence(
-    plot_shap_explanation: list[tuple],
+    shap_explanation: list[tuple],
     feature: Annotated[str | None, "目标特征名"] = None,
     with_fit: Annotated[bool, "是否叠加 LOWESS 拟合线"] = True,
     title: Annotated[str | None, "图表标题"] = None,
@@ -88,7 +88,7 @@ def shap_dependence(
     """
     from statsmodels.nonparametric.smoothers_lowess import lowess
 
-    for y_name, explanation, categorical_features in plot_shap_explanation:
+    for y_name, explanation, categorical_features in shap_explanation:
         shap_values = explanation.values
         target_features = rank_features(explanation, feature=feature, top_n=top_n)
 
