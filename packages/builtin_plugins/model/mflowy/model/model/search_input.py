@@ -96,7 +96,7 @@ def _load_rules_validator(cross_rules_source: str) -> Callable[[pd.DataFrame], b
     return validate_fn  # type: ignore
 
 
-@handler(log_search_input, namespace="model")
+@handler(log_search_input)
 def search_input(
     run_id: Annotated[str, "训练 model 步骤所在 Run 的 id"],
     directions: Annotated[
@@ -110,7 +110,7 @@ def search_input(
     n_trials: Annotated[int, "Optuna trial 数量"] = 10000,
     random_seed: Annotated[int, "随机种子"] = RANDOM_STATE,
 ) -> pd.DataFrame:
-    """model.search_input：搜索让所有 ``model.y_names`` 按 ``directions`` 最优的输入特征组合。"""
+    """search_input：搜索让所有 ``model.y_names`` 按 ``directions`` 最优的输入特征组合。"""
     df = load if load is not None else None
     import optuna
 

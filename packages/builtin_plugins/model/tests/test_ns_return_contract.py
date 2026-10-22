@@ -7,7 +7,7 @@
 from pathlib import Path
 
 from mflowy.driver.builder import Builder
-from mflowy.model.templates import EXPLANATION_TEMPLATE, PREDICT_TEMPLATE
+from mflowy.model.templates import EXPLANATION_TEMPLATE, INVERSE_OPTIMIZATION_TEMPLATE, PREDICT_TEMPLATE
 
 
 def build_flow(keys: list[str], tmp_path: Path):
@@ -43,3 +43,21 @@ def test_predict_out_of_model_ns_eval_plots_compile(tmp_path):
 def test_predict_template_compiles():
     """predict compute 工具活路径：模板流键随裸键 predict 同步。"""
     Builder(PREDICT_TEMPLATE, env={"run_id": "r1", "data_path": "/tmp/x.csv"}).build()
+
+
+def test_search_input_out_of_model_ns_eval_plots_compile(tmp_path):
+    """search_input 裸节点化：与 predict 对称，DataFrame 返回者移出 model 组。"""
+    build_flow(["load__csv", "x_y", "split", "model__loader", "search_input", "plot__roc_curve"], tmp_path)
+
+
+def test_inverse_optimization_template_compiles():
+    """inverse_optimization compute 工具活路径：模板流键随裸键 search_input 同步。"""
+    env = {
+        "run_id": "r1",
+        "y_names": ["y"],
+        "directions": {"y": "maximize"},
+        "data_path": "",
+        "columns": {},
+        "cross_rules_source": "",
+    }
+    Builder(INVERSE_OPTIMIZATION_TEMPLATE, env=env).build()
