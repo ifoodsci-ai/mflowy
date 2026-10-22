@@ -7,7 +7,7 @@
 from pathlib import Path
 
 from mflowy.driver.builder import Builder
-from mflowy.model.templates import EXPLANATION_TEMPLATE
+from mflowy.model.templates import EXPLANATION_TEMPLATE, PREDICT_TEMPLATE
 
 
 def build_flow(keys: list[str], tmp_path: Path):
@@ -33,3 +33,13 @@ def test_explanation_template_compiles():
         EXPLANATION_TEMPLATE,
         env={"name": "t", "description": "d", "modeling_steps": steps, "lowess_frac": 0.3},
     ).build()
+
+
+def test_predict_out_of_model_ns_eval_plots_compile(tmp_path):
+    """predict 裸节点化：DataFrame 返回者移出 model 组——评估图收集边（Iterator[ModelLoader]）不再撞型。"""
+    build_flow(["load__csv", "x_y", "split", "model__loader", "predict", "plot__roc_curve"], tmp_path)
+
+
+def test_predict_template_compiles():
+    """predict compute 工具活路径：模板流键随裸键 predict 同步。"""
+    Builder(PREDICT_TEMPLATE, env={"run_id": "r1", "data_path": "/tmp/x.csv"}).build()
