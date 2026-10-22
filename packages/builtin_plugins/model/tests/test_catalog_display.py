@@ -16,6 +16,21 @@ def _ns(name: str):
     return next(i for i in list_nodes() if i.namespace == name)
 
 
+def test_bare_node_identity_pinned():
+    """#67 词表身份：DataFrame/解释数据产物裸节点化——plot ns 只有图、model ns 只有训练节点（组寻址契约单一）。"""
+    bare = {e.name for e in _ns("").nodes}
+    assert {"predict", "search_input", "shap_explanation"} <= bare
+    assert {e.name for e in _ns("model").nodes} == {
+        "model__CAT",
+        "model__LGBM",
+        "model__MLP",
+        "model__RF",
+        "model__XGB",
+        "model__loader",
+    }
+    assert "plot__shap_explanation" not in {e.name for e in _ns("plot").nodes}
+
+
 def test_model_ns_edges_flattened_to_via_metas():
     """model 族：train_split 边（cv namespace 参数——cv.split 物化 / cv.load 引用直通）
     + 可选 x_preprocessors 边（x_transformer）展开扁平。"""

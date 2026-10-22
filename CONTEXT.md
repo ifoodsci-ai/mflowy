@@ -35,7 +35,7 @@ _Avoid_: 注入器、injector、getter（第一代退役词）
 ### 寻址与图
 
 **节点名三形**:
-同一节点的三种写法：entry point 名 `plot.shap_explanation`（目录与 YAML）、寻址名（node_key）`plot__shap_explanation`（消费方参数边按此命中；`__` 连接符——组名与节点名皆可含 `_`，连接处无歧义，构造单一来源 `config.node_key`）、组内名 `shap_explanation`（namespace 内的 node_name）。
+同一节点的三种写法：entry point 名 `plot.shap_summary`（目录与 YAML）、寻址名（node_key）`plot__shap_summary`（消费方参数边按此命中；`__` 连接符——组名与节点名皆可含 `_`，连接处无歧义，构造单一来源 `config.node_key`）、组内名 `shap_summary`（namespace 内的 node_name）。非归组节点（如 `shap_explanation`）三形合一为裸名。
 
 **参数边**:
 消费方签名上声明的数据依赖通道（裸类型命名参数），编译期按"边名 > 组名索引 > node_key 索引"三层查节点表解析（收集保序取全 / 单值取末位）。"边"单独出现有歧义（另有边函数），正式表述用全称。

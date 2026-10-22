@@ -25,9 +25,7 @@ def test_shap_chain_compiles(tmp_path):
 def test_explanation_template_compiles():
     """explanation compute 工具活路径：模板渲染后可编译（修复前尾部 plot 消费必选边不可达必炸）。"""
     steps = (
-        "- load__csv:\n    name: 数据\n"
-        "- x_y:\n    params: {targets: y}\n"
-        "- model__loader:\n    params: {run_id: r1}\n"
+        "- load__csv:\n    name: 数据\n- x_y:\n    params: {target: y}\n- model__loader:\n    params: {run_id: r1}\n"
     )
     Builder(
         EXPLANATION_TEMPLATE,
@@ -37,7 +35,7 @@ def test_explanation_template_compiles():
 
 def test_predict_out_of_model_ns_eval_plots_compile(tmp_path):
     """predict 裸节点化：DataFrame 返回者移出 model 组——评估图收集边（Iterator[ModelLoader]）不再撞型。"""
-    build_flow(["load__csv", "x_y", "split", "model__loader", "predict", "plot__roc_curve"], tmp_path)
+    build_flow(["load__csv", "x_y", "cv__split", "model__loader", "predict", "plot__roc_curve"], tmp_path)
 
 
 def test_predict_template_compiles():
@@ -47,7 +45,7 @@ def test_predict_template_compiles():
 
 def test_search_input_out_of_model_ns_eval_plots_compile(tmp_path):
     """search_input 裸节点化：与 predict 对称，DataFrame 返回者移出 model 组。"""
-    build_flow(["load__csv", "x_y", "split", "model__loader", "search_input", "plot__roc_curve"], tmp_path)
+    build_flow(["load__csv", "x_y", "cv__split", "model__loader", "search_input", "plot__roc_curve"], tmp_path)
 
 
 def test_inverse_optimization_template_compiles():
