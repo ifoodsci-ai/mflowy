@@ -128,15 +128,15 @@ def split(
     shuffle: Annotated[bool, "划分前是否打乱（inner K 折族用）"] = True,
     random_state: Annotated[int, "随机种子"] = RANDOM_STATE,
 ) -> SplitSpec:
-    """声明式数据划分（纯构建）：参数 → outer holdout 划分器 + inner CV 划分器 + 数据指纹（同源同语义）。
+    """声明式数据划分（纯构建）：参数 → outer holdout 划分器 + inner CV 划分器。
 
-    索引不在此层物化——物化入口（materialize_split）按指纹校验数据后派生；物化划分
-    作为 ``split.pkl`` 副产物随 run 落盘由 log_cv 中间件承担。inner splitter 供训练侧
+    索引不在此层物化——物化入口（materialize_split）派生；物化划分作为 ``split.pkl``
+    副产物随 run 落盘由 log_cv 中间件承担。inner splitter 供训练侧
     超参搜索（cross_val_score）使用——训练规模超阈值时训练侧降级 holdout-val 并忽略之；
     outer 定义最终评估的 holdout——test 集在训练全流程中只被最终评估触碰一次。分组划分
     的组不跨 train/test。
     """
-    X, y, task = x_y[:3]
+    X, y, task = x_y
     groups = _materialize_groups(X, group_by) if group_by is not None else None  # 构建期仅作组数守卫
     stratified = _is_stratifiable(y) and task != "regressor"  # 回归目标不做分层（整数 dtype 误判防御）
 
@@ -157,7 +157,6 @@ def split(
     )
     return SplitSpec(
         inner_cv=_describe(cv, repeats, group_by),
-        data_fingerprint=x_y.fingerprint,  # 单一真源绑定（x_y 节点计算，本层零重算）
         outer=outer,
         inner=inner,
         group_by=group_by,

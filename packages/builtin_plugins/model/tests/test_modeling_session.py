@@ -109,7 +109,6 @@ def test_start_cursor_and_budget(sessions_root, reg_csv):
     }
     assert (sessions_root / s["session_id"] / "split.pkl").exists()
     m = _manifest(sessions_root, s["session_id"])
-    assert m["split"]["fingerprint"]  # 划分身份（run tag 面板）随 manifest 落盘
     assert m["split"]["run_id"]  # #66 划分身份 = run_id 引用（终训 plan 的 from_run_id 源）
 
 
@@ -536,11 +535,11 @@ def test_propose_merges_same_action_params(sessions_root, reg_csv):
 
 
 def test_run_tags_carry_split_identity(sessions_root, reg_csv):
-    """mlflow 拿血缘认证不拿工件：run tag 补划分身份（fingerprint/test_size/group_by）。"""
+    """mlflow 拿血缘认证不拿工件：run tag 补划分身份（run_id 引用/session 归属）。"""
     s, _ = _hpo(sessions_root, reg_csv, n_trials=1)
     m = _manifest(sessions_root, s["session_id"])
     import mlflow
 
     tags = mlflow.get_run(m["models"][_K_RF]["oof"]["run_id"]).data.tags
-    assert tags["mflowy.split_fingerprint"] == m["split"]["fingerprint"]
+    assert tags["mflowy.split_run_id"] == m["split"]["run_id"]
     assert tags["mflowy.session_id"] == s["session_id"]

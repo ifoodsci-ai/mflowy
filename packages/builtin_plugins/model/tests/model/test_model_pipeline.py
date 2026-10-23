@@ -31,7 +31,6 @@ def trained_pipe():
     y_all = pd.concat([y_train, y_test])
     spec = SplitSpec(  # 装饰性 spec：TrainSplit 直构不经物化，outer 从不被调
         inner_cv="2-fold",
-        data_fingerprint="test",
         outer=ShuffleSplit(test_size=0.2, random_state=0),
         inner=KFold(n_splits=2),
     )
@@ -106,7 +105,6 @@ class TestTrainingOutputs:
         X_train, y_train, X_test, y_test = _tiny_regression_parts()
         spec = SplitSpec(  # 装饰性 spec：TrainSplit 直构不经物化，outer 从不被调
             inner_cv="2-fold",
-            data_fingerprint="test",
             outer=ShuffleSplit(test_size=0.2, random_state=0),
             inner=KFold(n_splits=2),
         )
@@ -141,7 +139,6 @@ class TestInnerCvModeByThreshold:
         X_train, y_train, X_test, y_test = _tiny_regression_parts()
         spec = SplitSpec(  # 装饰性 spec：TrainSplit 直构不经物化，outer 从不被调
             inner_cv="2-fold",
-            data_fingerprint="test",
             outer=ShuffleSplit(test_size=0.2, random_state=0),
             inner=KFold(n_splits=2),
         )

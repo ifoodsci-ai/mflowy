@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
-from mflowy.model.cv.types import SplitSpec, _materialize_groups, describe_xy
+from mflowy.model.cv.types import SplitSpec, _materialize_groups
 from mflowy.model.model.types import TASKTYPE
 from mflowy.model.x_y import XySpec
 from mflowy.utils.logging import is_verbose
@@ -24,8 +24,8 @@ if TYPE_CHECKING:
 class TrainSplit:
     """model 训练的数据面：任务 + outer holdout 帧 + SplitSpec + train 行空间 groups。
 
-    train/test 帧定义在 x_y 节点 dropna 后的行空间上（SplitSpec 指纹绑定该行空间）；
-    val 切分不在此层——早停需要的 val 由 model 侧从 train 内部自切。
+    train/test 帧定义在 x_y 节点 dropna 后的行空间上（划分身份 = split.pkl 副产物
+    的 run_id 引用）；val 切分不在此层——早停需要的 val 由 model 侧从 train 内部自切。
     """
 
     task: TASKTYPE
@@ -40,18 +40,10 @@ class TrainSplit:
 def materialize_split(spec: SplitSpec, x_y: XySpec) -> TrainSplit:
     """合并 split 节点的 SplitSpec 与 x_y 节点的全量数据，物化 outer holdout 帧。
 
-    自封装三步：指纹校验（XySpec 携带的单一真源指纹 vs spec 绑定值——不符即
-    fail-loud 报两侧摘要，拒绝静默错切）→ groups 重建（按 spec.group_by 声明，
-    outer/inner 两处消费同源）→ 索引派生（划分器持种子，确定性：物化期派生 ≡
-    构建期派生）。指纹对行序不敏感（同内容集重放不误报）——守卫值内容集同一性。
+    自封装两步：groups 重建（按 spec.group_by 声明，outer/inner 两处消费同源）→
+    索引派生（划分器持种子，确定性：物化期派生 ≡ 构建期派生）。
     """
-    X, y, task, fp = x_y
-    if fp != spec.data_fingerprint:
-        raise ValueError(
-            "传入数据与 SplitSpec 指纹不符（spec 绑定于另一份数据，拒绝静默错切）：\n"
-            f"  spec:   {spec.data_summary or '?'}（fingerprint={spec.data_fingerprint}）\n"
-            f"  传入:   {describe_xy(X, y, task)}（fingerprint={fp}）"
-        )
+    X, y, task = x_y
     groups = _materialize_groups(X, spec.group_by) if spec.group_by is not None else None
     train_idx, test_idx = next(spec.outer.split(X, y, groups))
     return TrainSplit(

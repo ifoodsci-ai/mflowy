@@ -131,7 +131,7 @@ def test_split_chain_logs_split_pickle(xy):
 
     run_id, spec = _run_split_chain()
     assert _K_RUNS_WITH_SPLIT in _artifacts(run_id)
-    assert spec.data_fingerprint  # spec 契约面不变
+    assert spec.inner_cv and spec.n_rows  # spec 契约面不变（划分器 + 血缘摘要）
 
     with mlflow.start_run(run_name="cv-split:raw") as raw_run:
         split(x_y=xy)  # 直调形态绕过中间件——不落副产物
@@ -147,7 +147,6 @@ def test_load_split_reuses_identity(xy):
     origin_run, spec1 = _run_split_chain()
     with mlflow.start_run(run_name="load:reuse") as run2:
         ts = load_split(from_run_id=origin_run)
-    assert ts.spec.data_fingerprint == spec1.data_fingerprint
     assert repr(ts.spec.outer) == repr(spec1.outer) and repr(ts.spec.inner) == repr(spec1.inner)  # 引用同一性
     assert len(ts.X_train) and len(ts.X_test)  # 物化数据面随引用取回
     assert _K_RUNS_WITH_SPLIT not in _artifacts(run2.info.run_id)  # 消费不冒充生产

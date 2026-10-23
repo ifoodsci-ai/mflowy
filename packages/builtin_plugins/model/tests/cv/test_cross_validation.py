@@ -1,11 +1,10 @@
-"""cross_validate.split handler 单元测试 —— 契约（划分器+指纹）与 (cv, repeats, group_by) 决策表。"""
+"""cross_validate.split handler 单元测试 —— 契约（划分器对）与 (cv, repeats, group_by) 决策表。"""
 
 import pickle
 
 import numpy as np
 import pandas as pd
 import pytest
-from mflowy.data.fingerprint import fingerprint
 from mflowy.model.cv.split import split
 from mflowy.model.cv.types import SplitSpec
 from mflowy.model.model._split import materialize_split
@@ -41,7 +40,7 @@ def sample_data():
 
 
 def _xy(X, y, task="regression") -> XySpec:
-    return XySpec(X, y, task, fingerprint(X, y))
+    return XySpec(X, y, task)
 
 
 def _run(X, y, **params) -> SplitSpec:
@@ -63,17 +62,17 @@ def _run_chain(X, y, **params) -> SplitSpec:
 
 
 class TestSpecContract:
-    """SplitSpec = 划分器 + 数据指纹（O(1)）——索引/groups 全部是派生物。"""
+    """SplitSpec = 划分器对（O(1)）——索引/groups 全部是派生物；划分身份按 run 引用。"""
 
-    def test_spec_holds_splitters_and_fingerprint(self, sample_data):
+    def test_spec_holds_splitters_and_lineage(self, sample_data):
         X, y_clf, _ = sample_data
         spec = _run(X, y_clf, cv=3)
 
         assert not hasattr(spec, "train_idx") and not hasattr(spec, "test_idx")
         assert callable(spec.outer.split) and callable(spec.inner.split)
-        assert spec.data_fingerprint and spec.group_by is None
+        assert spec.group_by is None
         assert spec.n_rows == len(X)
-        assert spec.data_fingerprint == fingerprint(X, y_clf)  # 单一真源：SplitSpec 记 x_y 指纹，零第二实现
+        assert spec.data_summary and str(len(X)) in spec.data_summary  # 构建期血缘（人读留痕）
 
     def test_spec_pickles_with_splitters(self, sample_data):
         """会话 split.pkl 整体序列化路径不变——成员须可 pickle（划分器对象，非闭包）。"""
@@ -81,7 +80,6 @@ class TestSpecContract:
         spec = _run(X, y_clf, cv=2, group_by="group")
 
         spec2 = pickle.loads(pickle.dumps(spec))
-        assert spec2.data_fingerprint == spec.data_fingerprint
         assert isinstance(spec2.inner, StratifiedGroupKFold)
         assert isinstance(spec2.outer, type(spec.outer))
 
@@ -127,27 +125,6 @@ class TestMaterializeGuard:
         ts1, ts2 = _mat(spec, X, y_clf), _mat(spec, X, y_clf)
         pd.testing.assert_frame_equal(ts1.X_train, ts2.X_train)
         pd.testing.assert_frame_equal(ts1.X_test, ts2.X_test)
-
-    def test_mismatched_content_fails_loud(self, sample_data):
-        """同 shape 不同内容 → 拒绝静默错切（fail-loud，报错含两侧摘要）。"""
-        X, y_clf, _ = sample_data
-        spec = _run(X, y_clf, cv=3)
-        X2 = X.copy()
-        X2.iloc[0, 0] = 999.0
-
-        with pytest.raises(ValueError, match="指纹不符") as ei:
-            _mat(spec, X2, y_clf)
-        msg = str(ei.value)
-        assert spec.data_fingerprint in msg  # 构建侧摘要可对账
-        assert "X(20, 2)" in msg  # 传入侧 shape/列名在场
-
-    def test_row_order_insensitive_by_design(self, sample_data):
-        """行序重排不拒绝——真指纹公式 index=False 对行序不敏感（设计选择：
-        同内容集重放不误报）。守卫的是值内容集同一性，不是行序。"""
-        X, y_clf, _ = sample_data
-        spec = _run(X, y_clf, cv=3)
-        ts = _mat(spec, X.iloc[::-1], y_clf.iloc[::-1])  # 同内容集 → 守卫放行
-        assert len(ts.X_train) + len(ts.X_test) == len(X)
 
 
 class TestOuterHoldout:

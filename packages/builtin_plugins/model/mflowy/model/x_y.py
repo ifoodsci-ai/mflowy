@@ -7,7 +7,6 @@ import logging
 from typing import Annotated, NamedTuple
 
 import pandas as pd
-from mflowy.data.fingerprint import fingerprint
 from mflowy.driver.handler import handler
 from mflowy.model.model.types import TASKTYPE
 from mflowy.utils import mlflow as mlflow_util
@@ -16,16 +15,15 @@ logger = logging.getLogger(__name__)
 
 
 class XySpec(NamedTuple):
-    """x_y 节点产物：特征矩阵 + 目标矩阵 + 任务 + 数据指纹（内容级，单一真源 ``fingerprint()``）。
+    """x_y 节点产物：特征矩阵 + 目标矩阵 + 任务。
 
-    指纹定义在 dropna/类型收敛**之后**的行内容上——下游（split 契约物化守卫）以
-    ``fingerprint`` 比对数据同一性；对行序不敏感（同内容集重放不误报）。
+    划分同一性由 cv.split 副产物 split.pkl 的 run_id 引用承担（构建与引用分家，
+    #66 无指纹重现假设）——XySpec 不携带内容指纹。
     """
 
     X: pd.DataFrame
     y: pd.DataFrame
     task: TASKTYPE
-    fingerprint: str = ""
 
 
 @handler()
@@ -51,7 +49,7 @@ def x_y(
     目标列为空的行；``id_columns`` 从 X 剔除（防 ID 泄漏——X 与下游 split/终训
     同一面，无会话内二次剔除）；X 中 object 列转 category、数值列转 float。
 
-    本节点是 pipeline 必经环节，无同族替代；上游经 ``clean`` 参数边衔接清洗链末端（或 df 适配节点），下游以 ``x_y`` 参数边直接消费 (X, y, task, fingerprint) 四元组——指纹为内容级单一真源（mflowy.data.fingerprint），split 契约记录并在物化期校验。
+    本节点是 pipeline 必经环节，无同族替代；上游经 ``clean`` 参数边衔接清洗链末端（或 df 适配节点），下游以 ``x_y`` 参数边直接消费 (X, y, task) 三元组。
     """
     df = clean if clean is not None else load
     if not isinstance(target, str):
@@ -87,7 +85,7 @@ def x_y(
         + (f", id_columns 剔除: {id_cols}" if id_cols else "")
     )
     X = _ensure_X_dtypes(X)
-    return XySpec(X, y, task, fingerprint(X, y))
+    return XySpec(X, y, task)
 
 
 def _ensure_X_dtypes(X: pd.DataFrame) -> pd.DataFrame:

@@ -1,8 +1,8 @@
 """split 步元数据 mlflow 跟踪中间件
 
 记录划分留痕 metric 与 ``split.json``/``split.pkl`` artifact（inner 模式、outer
-比例、数据指纹、来源工件溯源、物化划分副产物——#66 节点副产物契约）。索引/groups
-是物化期派生物——构建期只记 spec 所知（n_rows/test_size/fingerprint）+ workflow_tags
+比例、数据面摘要、来源工件溯源、物化划分副产物——#66 节点副产物契约）。索引/groups
+是物化期派生物——构建期只记 spec 所知（n_rows/test_size/数据摘要）+ workflow_tags
 里的 load 工件血缘（data 系）。split.pkl 是划分身份的载体（run_id 引用，
 ``load_split`` 节点按引用复用）。
 """
@@ -27,8 +27,8 @@ def log_cv(ctx: Context, next: Handler) -> SplitSpec:
     assert isinstance(result, SplitSpec)
 
     test_size = getattr(result.outer, "test_size", None)
-    # 来源工件溯源：load 起点的文件级血缘（mflowy.data_* 系 tags）——工件 sha 可事后对盘复验，
-    # 与 spec 的行内容指纹（语义守卫）双粒度并存；无 data tags（会话路径/无 load DAG）记 None
+    # 来源工件溯源：load 起点的文件级血缘（mflowy.data_* 系 tags）——工件 sha 可事后对盘复验；
+    # 无 data tags（会话路径/无 load DAG）记 None
     source_artifacts = {
         k.removeprefix("mflowy."): v
         for k, v in (workflow_tags() or {}).items()
@@ -41,7 +41,6 @@ def log_cv(ctx: Context, next: Handler) -> SplitSpec:
         "test_size": test_size,
         "n_rows": result.n_rows,
         "group_by": result.group_by,
-        "data_fingerprint": result.data_fingerprint,
         "data_summary": result.data_summary,
         "source_artifacts": source_artifacts,
     }
@@ -64,5 +63,5 @@ def log_cv(ctx: Context, next: Handler) -> SplitSpec:
         log_pickle(materialize_split(result, res), "split.pkl")
     else:
         logger.warning("split.pkl 副产物跳过（x_y 上游不可见——非节点链调用形态无引用载体）")
-    print(f"split: {result.inner_cv}, n={result.n_rows}, test_size={test_size}, fingerprint={result.data_fingerprint}")
+    print(f"split: {result.inner_cv}, n={result.n_rows}, test_size={test_size}")
     return result

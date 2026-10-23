@@ -303,8 +303,9 @@ def start_session(file_path: str, card: dict | None = None, max_steps: int = 15)
                 "action": None,
                 "quality": quality["score"],
                 "digest": _digest(report),
-                "fingerprint": _fingerprint(df),
-                "artifact_sha256": sha256_of(d / "v0.parquet"),  # 工件溯源（双记）：行指纹管语义，工件 sha 管事后复验
+                "artifact_sha256": sha256_of(
+                    d / "v0.parquet"
+                ),  # 工件溯源（版本内容地址单键；行指纹仅作 _detect_all 备忘）
             }
         ],
         "decision_log": [],
@@ -407,8 +408,7 @@ def apply_action(session_id: str, node: str, params: dict | None = None, dry_run
             "action": {"node": node, "params": params},
             "quality": quality["score"],
             "digest": _digest(report),
-            "fingerprint": _fingerprint(out),
-            "artifact_sha256": sha256_of(store.session_dir(session_id) / fname),  # 工件溯源（双记）
+            "artifact_sha256": sha256_of(store.session_dir(session_id) / fname),  # 工件溯源（版本内容地址单键）
         }
     )
     manifest["decision_log"].append(

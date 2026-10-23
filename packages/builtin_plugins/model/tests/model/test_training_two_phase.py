@@ -26,10 +26,9 @@ def reg_split():
     x = rng.normal(size=n)
     df = pd.DataFrame({"x": x, "target": 2.0 * x + 0.1 * rng.normal(size=n)})
     X, y = df[["x"]], df[["target"]]
-    from mflowy.data.fingerprint import fingerprint
     from mflowy.model.x_y import XySpec
 
-    xy = XySpec(X, y, TASKTYPE.REGRESSION, fingerprint(X, y))
+    xy = XySpec(X, y, TASKTYPE.REGRESSION)
     return materialize_split(split_fn(x_y=xy, cv=3), xy)
 
 

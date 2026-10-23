@@ -22,7 +22,6 @@ def isolate_tracking(tmp_path, monkeypatch):
 
 @pytest.fixture
 def reg_split():
-    from mflowy.data.fingerprint import fingerprint
     from mflowy.model.cv.split import split as split_fn
     from mflowy.model.model._split import materialize_split
     from mflowy.model.x_y import XySpec
@@ -32,7 +31,7 @@ def reg_split():
     x = rng.normal(size=n)
     df = pd.DataFrame({"x": x, "target": 2.0 * x + 0.1 * rng.normal(size=n)})
     X, y = df[["x"]], df[["target"]]
-    xy = XySpec(X, y, TASKTYPE.REGRESSION, fingerprint(X, y))
+    xy = XySpec(X, y, TASKTYPE.REGRESSION)
     return materialize_split(split_fn(x_y=xy, cv=3), xy)
 
 

@@ -1,6 +1,6 @@
 """建模会话引擎（应用层）：#62 回路与状态机——s 元组（光标 + 账本）+ 八动作面。
 
-状态 ``s = (data_fingerprint, 光标 m/H/seed/F, 账本 board, oof, budget,
+状态 ``s = (光标 m/H/seed/F, 账本 board, oof, budget,
 done, history)``；动作面 ``A = {select_model, set_hp, set_hp_space, set_seed,
 select_FE}（配置编辑：零步费零奖励）∪ {run_hpo, final_train_test}（计算动作：吃步）
 ∪ {done}``（= finish_session 控制面独立入口，同 clean 域）。
@@ -237,7 +237,7 @@ def start_session(
         "protocol": {**proto, "split_yaml": cv_card, "split_params": split_params},
         "task": None,
         "id_columns": id_cols,
-        "split": {},  # 划分身份（run tag 面板）：fingerprint + test_size + group_by + run_id
+        "split": {},  # 划分身份（run tag 面板）：run_id 引用 + test_size + group_by
         "candidates": list(proto.get("candidates") or []),  # #63 结构化候选（含 baseline/hints/seed）
         "cursor": cursor,
         # 光标快照：rollback 弹栈只回退光标——账本/study 永不回退（盘上 append-only）
@@ -302,7 +302,6 @@ def _materialize(m: dict, df: pd.DataFrame, raw_task: str) -> None:
         logger.info("session_start[%s] 节点链输出：\n%s", m["session_id"], captured)
 
     m["split"] = {
-        "fingerprint": spec.data_fingerprint,
         "test_size": getattr(spec.outer, "test_size", None),
         "group_by": spec.group_by,
         "run_id": split_ctx.run_id,
@@ -328,7 +327,6 @@ def _lineage_tags(m: dict, action: str, key: str | None, family: str | None) -> 
         "mflowy.action": action,
         "mflowy.combo_key": key or "",
         "mflowy.family": family or "",
-        "mflowy.split_fingerprint": m["split"]["fingerprint"],
         "mflowy.split_run_id": str(m["split"].get("run_id") or ""),
         "mflowy.split_test_size": str(m["split"].get("test_size")),
         "mflowy.split_group_by": str(m["split"].get("group_by")),

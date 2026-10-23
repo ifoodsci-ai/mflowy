@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - Unreleased
 
+### BREAKING：数据指纹面收口——df 指纹 CAS 化（cleaning 域）+ x_y↔cv 链指纹全拆（划分身份 = run_id 引用）
+
+- **`mflowy.data.fingerprint.fingerprint` 重构为 CAS（BREAKING）**：签名收窄
+  `*dfs` → `df` 单帧；实现 = 规范序列化（`to_parquet(index=False)`）字节流的
+  sha256 hex——与版本工件同参落盘 **CAS 闭合**（内存 df 指纹 = 盘上工件 sha）；
+  manifest 双记收敛：`versions[].fingerprint` 键退役，版本溯源 =
+  `artifact_sha256` 单键，重放对账经闭合性直对工件 sha，`_detect_all` 备忘键
+  为指纹唯一存活消费（纯内存优化设施）；**行序进指纹**（重排 = 不同内容——
+  重放须保行序，版本工件本就保序落盘）、行标签不进（`index=False`，重放侧
+  索引差不误报）、零列帧退化为 `rows=n` 记账后哈希（格式统一 64 位 hex）；
+  同环境（同 pandas/pyarrow 版本）守卫 + 血缘留痕、不承诺跨版本稳定（原契约一致）
+- **x_y↔cv 链指纹全拆（BREAKING）**：物化守卫在现有布线下恒真（spec 与 x_y
+  恒为同 run 同源；跨 run 复用走 cv.load 的 TrainSplit 直通，本就无指纹校验）
+  ——`XySpec` 四元组收窄为 (X, y, task) 三元组、`xy_fingerprint` 与
+  `SplitSpec.data_fingerprint` 退役、`materialize_split` 指纹校验块删除（物化 =
+  groups 重建 + 索引派生）、split.json / manifest / run tag
+  （`mflowy.split_fingerprint`）指纹面退役——划分身份唯一承担者 = split.pkl
+  副产物的 run_id 引用（#66 无指纹重现假设；原「行序不敏感重放」语义随守卫
+  一并退役，指纹消费侧只剩 cleaning 域）
+
 ### BREAKING：cross_validation 契约随族居住——mflowy.model.cross_validation → mflowy.model.cv.types
 
 - **模块路径（BREAKING，仅直接 import）**：SplitSpec/X_idx/y_idx/X_y 契约与

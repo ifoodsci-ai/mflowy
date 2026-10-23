@@ -6,12 +6,12 @@ model_test_predictions / model_test_probabilities 是 model 族输出的显式�
 
 import numpy as np
 import pandas as pd
-from mflowy.data.fingerprint import fingerprint
 from mflowy.model.cv.types import SplitSpec
 from mflowy.model.plot.model_evaluation.eval_data import (
     model_test_predictions,
     model_test_probabilities,
 )
+from mflowy.model.x_y import XySpec
 from sklearn.model_selection import BaseCrossValidator, KFold
 
 
@@ -35,21 +35,22 @@ class _PinnedOuter(BaseCrossValidator):
 
 
 def _spec(X, y, task):
-    """最小 SplitSpec：划分器 + 与 _upstream 数据匹配的指纹。"""
+    """最小 SplitSpec：划分器 + 与 _upstream 数据匹配的行数。"""
     return SplitSpec(
         inner_cv="test",
-        data_fingerprint=fingerprint(X, y),
         outer=_PinnedOuter(),
         inner=KFold(n_splits=2),
+        n_rows=len(X),
     )
 
 
 def _upstream(loaders, y, task="classification"):
     X = pd.DataFrame(index=y.index)
-    from mflowy.data.fingerprint import fingerprint
-    from mflowy.model.x_y import XySpec
-
-    return {"model": iter(loaders), "cv": _spec(X, y, task), "x_y": XySpec(X, y, task, fingerprint(X, y))}
+    return {
+        "model": iter(loaders),
+        "cv": _spec(X, y, task),
+        "x_y": XySpec(X, y, task),
+    }
 
 
 def test_predictions_long_table_two_models():

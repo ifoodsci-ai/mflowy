@@ -13,9 +13,7 @@ from sklearn.model_selection import KFold, ShuffleSplit
 
 
 def _spec() -> SplitSpec:
-    return SplitSpec(
-        inner_cv="2-fold", data_fingerprint="fp", outer=ShuffleSplit(test_size=0.2), inner=KFold(n_splits=2), n_rows=4
-    )
+    return SplitSpec(inner_cv="2-fold", outer=ShuffleSplit(test_size=0.2), inner=KFold(n_splits=2), n_rows=4)
 
 
 def _run_mw():

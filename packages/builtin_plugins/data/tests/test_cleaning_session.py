@@ -536,41 +536,27 @@ def test_propose_empty_after_finish(sessions_root, dirty_csv):
     assert cs.propose_actions(s["session_id"]) == []
 
 
-def test_version_fingerprints_in_manifest(sessions_root, dirty_csv):
-    """#30 内容指纹：start/apply 落版本时写入 manifest（int 转 str 入 JSON）；
-    内容变 → 指纹变；同内容两开局 → v0 指纹一致（确定性，快照与重放互验的地基）。"""
-    s = cs.start_session(dirty_csv, card=CARD)
-    manifest = json.loads((sessions_root / s["session_id"] / "manifest.json").read_text(encoding="utf-8"))
-    v0_fp = manifest["versions"][0]["fingerprint"]
-    assert isinstance(v0_fp, str) and v0_fp
-    df0 = pd.read_parquet(sessions_root / s["session_id"] / "v0.parquet")
-    assert v0_fp == str(int(pd.util.hash_pandas_object(df0, index=False).sum()))  # 独立真源
-
-    cs.apply_action(s["session_id"], "fill_median", {"cols": ["hole"]})
-    manifest = json.loads((sessions_root / s["session_id"] / "manifest.json").read_text(encoding="utf-8"))
-    v1_fp = manifest["versions"][1]["fingerprint"]
-    assert v1_fp != v0_fp
-    df1 = pd.read_parquet(sessions_root / s["session_id"] / "v1.parquet")
-    assert v1_fp == str(int(pd.util.hash_pandas_object(df1, index=False).sum()))
-
-    s2 = cs.start_session(dirty_csv, card=CARD)
-    m2 = json.loads((sessions_root / s2["session_id"] / "manifest.json").read_text(encoding="utf-8"))
-    assert m2["versions"][0]["fingerprint"] == v0_fp  # 同数据同指纹
-
-
 def test_version_artifact_sha_in_manifest(sessions_root, dirty_csv):
-    """#60 工件溯源（双记）：各版本记录新增 artifact_sha256 = 版本 parquet 的 sha256——
-    事后可对盘上工件独立复验（行内容指纹 fingerprint 留作语义仪器：备忘/重放对账）。"""
+    """#60 工件溯源：各版本记录 artifact_sha256 = 版本 parquet 的 sha256（版本内容
+    地址单键——CAS 双记已收敛，manifest 不落指纹键）；事后可对盘上工件独立复验；
+    内容变 → sha 变；同数据两开局 → v0 sha 一致（确定性，重放对账的地基）。"""
     from mflowy.utils.file import sha256_of
 
     s = cs.start_session(dirty_csv, card=CARD)
     sid = s["session_id"]
     manifest = json.loads((sessions_root / sid / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["versions"][0]["artifact_sha256"] == sha256_of(sessions_root / sid / "v0.parquet")
+    v0 = manifest["versions"][0]
+    assert v0["artifact_sha256"] == sha256_of(sessions_root / sid / "v0.parquet")
+    assert "fingerprint" not in v0  # 双记清理：manifest 只落内容地址单键
 
     cs.apply_action(s["session_id"], "fill_median", {"cols": ["hole"]})
     manifest = json.loads((sessions_root / sid / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["versions"][1]["artifact_sha256"] == sha256_of(sessions_root / sid / "v1.parquet")
+    assert manifest["versions"][1]["artifact_sha256"] != v0["artifact_sha256"]  # 内容变 → 地址变
+
+    s2 = cs.start_session(dirty_csv, card=CARD)
+    m2 = json.loads((sessions_root / s2["session_id"] / "manifest.json").read_text(encoding="utf-8"))
+    assert m2["versions"][0]["artifact_sha256"] == v0["artifact_sha256"]  # 同数据同地址
 
 
 def test_finish_preview_zero_side_effects(sessions_root, dirty_csv):
@@ -656,6 +642,7 @@ def test_finish_plan_replays(sessions_root, dirty_csv, tmp_path, monkeypatch):
         reset_task_dir(token)
     assert result.status == "finished", result.error
 
-    # 对账（#30）：重放终态 ≡ 会话终态快照——内容指纹相等，等价从约定变断言
+    # 对账（#30）：重放终态 ≡ 会话终态快照——CAS 闭合，重放 df 的内存指纹直接对
+    # manifest 的版本工件 sha（同值不同路径：buffer 序列化 vs 盘上文件）
     manifest = json.loads((sessions_root / s["session_id"] / "manifest.json").read_text(encoding="utf-8"))
-    assert cs._fingerprint(result.runs[-1].value) == manifest["versions"][-1]["fingerprint"]
+    assert cs._fingerprint(result.runs[-1].value) == manifest["versions"][-1]["artifact_sha256"]
