@@ -21,7 +21,7 @@ import pandas as pd
 from .types import TASKTYPE, ModelPipeline
 
 if TYPE_CHECKING:
-    from mflowy.model.cross_validation import X_y
+    from mflowy.model.cv.types import X_y
     from sklearn.compose import ColumnTransformer
 
 

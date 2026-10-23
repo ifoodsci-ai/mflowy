@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from mflowy.driver.config import NodeConf
 from mflowy.driver.context import Context
-from mflowy.model.cross_validation import SplitSpec
+from mflowy.model.cv.types import SplitSpec
 from mflowy.model.middlewares import log_cv
 from mflowy.utils.mlflow import set_workflow_tags
 

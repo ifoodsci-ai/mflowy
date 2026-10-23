@@ -11,7 +11,7 @@
 | 数据载入 | CSV / Excel / Parquet / HTTP / 本地文件 / Python 脚本                                          | `packages/builtin_plugins/mflowy/builtin_plugins/loaders/`                |
 | 数据清洗 | 缺失值（删除/填充）、异常值（Z-score / IQR）、特征过滤（方差/相关性/通用）、单位清洗、自定义 Python | `packages/builtin_plugins/mflowy/builtin_plugins/cleaners/`               |
 | 特征工程 | 类别编码 ×5、数值变换 ×8（缩放/对数/幂/分箱/PCA/交互特征等）                                   | `packages/builtin_plugins/mflowy/builtin_plugins/x_transformer/`          |
-| CV 策略  | 单节点 `split`（`cv` 折数 + `repeats` + `group_by` 三参数自动决策划分族，全对位 sklearn splitter）+ `SplitSpec`（outer holdout 与 inner CV 同源） | `packages/builtin_plugins/mflowy/builtin_plugins/cross_validation/`       |
+| CV 策略  | 单节点 `split`（`cv` 折数 + `repeats` + `group_by` 三参数自动决策划分族，全对位 sklearn splitter）+ `SplitSpec`（outer holdout 与 inner CV 同源） | `packages/builtin_plugins/model/mflowy/model/cv/`                              |
 | 模型算法 | XGBoost、LightGBM、CatBoost、RandomForest、PyTorch MLP（回归/分类/多分类）                     | `packages/builtin_plugins/mflowy/builtin_plugins/model/`                  |
 | 超参优化 | Optuna TPE 自动调参                                                                            | `packages/builtin_plugins/mflowy/builtin_plugins/model/study.py`                  |
 | 评估指标 | 回归 4（MAE/RMSE/R²/MAPE）+ 分类 13（Accuracy/BalancedAccuracy/Precision/Recall/F1/MCC/Kappa/AUC-ROC/PR-AUC/LogLoss/MLogLoss/Brier/ECE）+ per-class 报告 | `packages/builtin_plugins/mflowy/builtin_plugins/model/types.py`          |

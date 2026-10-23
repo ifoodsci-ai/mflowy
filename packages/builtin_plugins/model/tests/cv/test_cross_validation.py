@@ -6,8 +6,8 @@ import numpy as np
 import pandas as pd
 import pytest
 from mflowy.data.fingerprint import fingerprint
-from mflowy.model.cross_validation import SplitSpec
 from mflowy.model.cv.split import split
+from mflowy.model.cv.types import SplitSpec
 from mflowy.model.model._split import materialize_split
 from mflowy.model.x_y import XySpec
 from sklearn.model_selection import (

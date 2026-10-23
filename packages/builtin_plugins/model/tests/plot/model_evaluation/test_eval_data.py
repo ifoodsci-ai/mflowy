@@ -7,7 +7,7 @@ model_test_predictions / model_test_probabilities 是 model 族输出的显式�
 import numpy as np
 import pandas as pd
 from mflowy.data.fingerprint import fingerprint
-from mflowy.model.cross_validation import SplitSpec
+from mflowy.model.cv.types import SplitSpec
 from mflowy.model.plot.model_evaluation.eval_data import (
     model_test_predictions,
     model_test_probabilities,

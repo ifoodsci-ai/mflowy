@@ -5,7 +5,7 @@ from collections.abc import Iterator
 import numpy as np
 import pandas as pd
 from mflowy.driver.edge import edge
-from mflowy.model.cross_validation import SplitSpec
+from mflowy.model.cv.types import SplitSpec
 from mflowy.model.model._split import TrainSplit
 from mflowy.model.model.edges import train_split as _train_split
 from mflowy.model.model.types import TASKTYPE, ModelLoader

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - Unreleased
 
+### BREAKING：cross_validation 契约随族居住——mflowy.model.cross_validation → mflowy.model.cv.types
+
+- **模块路径（BREAKING，仅直接 import）**：SplitSpec/X_idx/y_idx/X_y 契约与
+  describe_xy/_materialize_groups 机器自 `mflowy.model.cross_validation` 移入
+  `mflowy.model.cv.types`——契约与节点同族居住（#66 分家收官）；entry point 词表
+  零变化（namespace 声明即身份——YAML/DAG/MCP 工具面无影响）
+- **log_cv 延迟导入退役**：历史破环（cross_validation 持装饰器 ↔ log_cv 断言
+  SplitSpec）自节点移居 cv/ 起已结构性消亡——TYPE_CHECKING 块与函数内导入升模块级，
+  过时破环注释一并退役；mlflow/x_y/_split 的重载延迟导入保持
+- 测试镜像随迁：`tests/test_cross_validation.py` → `tests/cv/test_cross_validation.py`
+
 ### BREAKING：modeling 终局协议与工件面收口——finish(pdf) 单动作 + 节点副产物 + 终训走 JobProvider + 光标单表 H（#66）
 
 - **#66 光标单表 H（BREAKING）**：`s.h_space` 成员退役——``H[param]`` 唯一槽位

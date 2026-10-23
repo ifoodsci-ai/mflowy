@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
-from mflowy.model.cross_validation import SplitSpec, _materialize_groups, describe_xy
+from mflowy.model.cv.types import SplitSpec, _materialize_groups, describe_xy
 from mflowy.model.model.types import TASKTYPE
 from mflowy.model.x_y import XySpec
 from mflowy.utils.logging import is_verbose

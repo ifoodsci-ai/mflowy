@@ -1,7 +1,7 @@
-"""cross_validation 契约模块：SplitSpec（划分器 + 数据指纹的 O(1) 契约）与共享机器。
+"""cv 族契约叶子：SplitSpec（划分器 + 数据指纹的 O(1) 契约）与共享机器。
 
-节点住 ``mflowy.model.cv`` 族目录（split = 参数构建 / load = 按 run 引用加载——
-构建与引用分家，签名即契约）；本模块只持契约与共享的物化机器：
+节点为同族邻居（split = 参数构建 / load = 按 run 引用加载——构建与引用
+分家，签名即契约）；本模块只持契约与共享的物化机器：
 
 - ``SplitSpec``：outer/inner 划分器 + 数据指纹——全部成员可 pickle（会话 split.pkl
   整体序列化路径）；确定性由划分器持有的 random_state 保证（物化期派生 ≡ 构建期

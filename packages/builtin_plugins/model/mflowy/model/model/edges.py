@@ -19,7 +19,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 from mflowy.driver.edge import edge
-from mflowy.model.cross_validation import SplitSpec
+from mflowy.model.cv.types import SplitSpec
 from mflowy.model.model._split import TrainSplit, build_preprocessors, materialize_split
 from mflowy.model.x_y import XySpec
 from sklearn.compose import ColumnTransformer

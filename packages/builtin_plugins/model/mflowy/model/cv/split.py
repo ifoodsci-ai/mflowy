@@ -33,7 +33,6 @@ from typing import Annotated
 import numpy as np
 import pandas as pd
 from mflowy.driver.handler import handler
-from mflowy.model.cross_validation import SplitSpec, _materialize_groups, describe_xy
 from mflowy.model.middlewares import log_cv
 from mflowy.model.x_y import XySpec
 from mflowy.utils.constants import RANDOM_STATE
@@ -51,6 +50,8 @@ from sklearn.model_selection import (
     StratifiedShuffleSplit,
 )
 from sklearn.utils.multiclass import type_of_target
+
+from .types import SplitSpec, _materialize_groups, describe_xy
 
 logger = logging.getLogger(__name__)
 

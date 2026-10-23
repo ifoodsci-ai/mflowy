@@ -6,7 +6,7 @@ extra（uvx 安装需 `--index https://download.pytorch.org/whl/cpu`，仅 MLP f
 缺它时 `list-nodes` 降级标注，不影响其余能力）。
 
 - 动作族：`model/`（XGB/LGBM/CAT/RF/MLP/loader/predict/search_input）、
-  `x_transformer/`（编码 ×5 + 数值变换 ×8）、`cross_validation.py`（SplitSpec 契约模块——节点住 cv/ 族目录）、`cv/`（split 参数构建 + load 引用加载——构建与引用分家）、
+  `x_transformer/`（编码 ×5 + 数值变换 ×8）、`cv/`（types.py 契约叶子 + split 参数构建 + load 引用加载——契约与节点同族居住）、
   非归组 `x_y.py`（任务目标划分 + 任务类型推理）
 - 共享件：`middlewares/`（log_cv / log_prediction / log_search_input）、`plot/`（评估/解释图，
   主题门面复用 `mflowy.utils.plot`）

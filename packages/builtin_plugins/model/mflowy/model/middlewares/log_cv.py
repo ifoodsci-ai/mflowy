@@ -10,24 +10,18 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
 from mflowy.driver.context import Context
 from mflowy.driver.handler import Handler
+from mflowy.model.cv.types import SplitSpec
 from mflowy.utils import mlflow as mlflow_util
 from mflowy.utils.mlflow import workflow_tags
-
-if TYPE_CHECKING:
-    from mflowy.model.cross_validation import SplitSpec
 
 logger = logging.getLogger(__name__)
 
 
 def log_cv(ctx: Context, next: Handler) -> SplitSpec:
-    # 函数内导入破环：cross_validation（装饰器要本中间件）↔ 本模块（断言要 SplitSpec）
-    # ——契约并入单文件后，防环约束从旧 types.py 叶子移交到此处延迟
     import mlflow
-    from mflowy.model.cross_validation import SplitSpec
 
     result = next(ctx)
     assert isinstance(result, SplitSpec)

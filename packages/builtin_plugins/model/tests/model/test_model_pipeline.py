@@ -21,7 +21,7 @@ def _tiny_regression_parts():
 @pytest.fixture
 def trained_pipe():
     """无 CT 的 RF pipeline，直训（不走 mlflow）。"""
-    from mflowy.model.cross_validation import SplitSpec
+    from mflowy.model.cv.types import SplitSpec
     from mflowy.model.model._random_forest import model_cls
     from mflowy.model.model._split import TrainSplit
     from sklearn.model_selection import KFold, ShuffleSplit
@@ -98,7 +98,7 @@ class TestTrainingOutputs:
 
     def test_oob_and_holdout_summary_printed(self, capsys):
         """RF 训练打印 oob_score 与终评指标摘要（业务数据通道）"""
-        from mflowy.model.cross_validation import SplitSpec
+        from mflowy.model.cv.types import SplitSpec
         from mflowy.model.model._random_forest import model_cls
         from mflowy.model.model._split import TrainSplit
         from sklearn.model_selection import KFold, ShuffleSplit
@@ -134,7 +134,7 @@ class TestInnerCvModeByThreshold:
     """K 折 vs holdout-val 由训练侧 HOLDOUT_MIN_ROWS 决策（cv 层恒产出 splitter）"""
 
     def _tiny_split(self):
-        from mflowy.model.cross_validation import SplitSpec
+        from mflowy.model.cv.types import SplitSpec
         from mflowy.model.model._split import TrainSplit
         from sklearn.model_selection import KFold, ShuffleSplit
 
