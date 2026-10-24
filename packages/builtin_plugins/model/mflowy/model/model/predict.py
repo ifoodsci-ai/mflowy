@@ -15,12 +15,12 @@ from .loader import loader as _loader
 logger = logging.getLogger(__name__)
 
 
-@handler(log_prediction, namespace="model")
+@handler(log_prediction)
 def predict(
     load: pd.DataFrame,
     run_id: Annotated[str, "训练 model 步骤所在 Run 的 id"],
 ) -> pd.DataFrame:
-    """model.predict：按 run_id 恢复最终模型（name='final' 的单一 Pipeline）预测新数据。
+    """predict：按 run_id 恢复最终模型（name='final' 的单一 Pipeline）预测新数据。
 
     分类输出标签、回归输出数值；多目标按 model.y_names 展开为列。原始 df 直进
     （ColumnTransformer 已内嵌于 Pipeline，predict 前无需外部预处理）。

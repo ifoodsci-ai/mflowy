@@ -1,6 +1,6 @@
-"""SHAP 解释数据节点：最终模型在全量 X 采样上的 explanation（H1 节点化）。
+"""SHAP 解释数据节点（裸节点）：最终模型在全量 X 采样上的 explanation（H1 节点化）。
 
-消费方（summary/dependence/sample_waterfall）以 ``plot_shap_explanation`` 参数边
+解释数据非图——不入 plot ns，裸键 ``shap_explanation`` 供消费方同名参数边
 绑定本节点输出：[(y_name, Explanation, categorical_features)]。
 """
 
@@ -16,7 +16,7 @@ from mflowy.utils.constants import RANDOM_STATE
 SHAP_NSAMPLES = 100
 
 
-@handler(namespace="plot")
+@handler()
 def shap_explanation(
     model: ModelLoader,
     x_y: XySpec,

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - Unreleased
 
+### BREAKING：词表身份收口——plot 族返回契约破裂修复（#67）
+
+- **`shap_explanation` 裸节点化**（`@handler(namespace="plot")` → `@handler()`）：解释数据非图，
+  寻址键 `plot__shap_explanation` → `shap_explanation`；summary/dependence/sample_waterfall
+  消费参数边 `plot_shap_explanation` 同名同步（原单下划线在"组名索引 / node_key 索引"两边都
+  不命中——任何流必选边不可达，explanation 工具模板必炸，此前无模板编译测试所以漏网）
+- **`predict` / `search_input` 移出 model ns**（裸键 `predict` / `search_input`，原
+  `model__predict` / `model__search_input`）：DataFrame 返回者不污染 model 组寻址——评估图
+  收集边（`model_test_*` 内层 `Iterator[ModelLoader]`）与单值边契约恢复单一（model 组余下
+  CAT/LGBM/MLP/RF/XGB/loader 全部返回 ModelLoader）
+- explanation / predict / inverse_optimization 三份模板流键同步；判据 = 三条最小流编译 +
+  三份模板渲染后 build（Builder 编译缝）+ 词表身份钉测试（plot ns 只有图、model ns 只有训练节点）
+
 ### BREAKING：数据指纹面收口——df 指纹 CAS 化（cleaning 域）+ x_y↔cv 链指纹全拆（划分身份 = run_id 引用）
 
 - **`mflowy.data.fingerprint.fingerprint` 重构为 CAS（BREAKING）**：签名收窄

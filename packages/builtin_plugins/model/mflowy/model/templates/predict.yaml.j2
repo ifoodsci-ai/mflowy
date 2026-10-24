@@ -5,7 +5,7 @@ flow:
       name: 加载预测数据
       params:
         file_path: "{{ data_path }}"
-  - model__predict:
+  - predict:
       name: 模型预测
       params:
         run_id: {{ run_id }}
