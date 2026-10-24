@@ -198,6 +198,17 @@ class ModelLoader:
     def y_names(self) -> list[str]:
         return self.pipe.y_names
 
+    @property
+    def source_run_id(self) -> str | None:
+        """模型工件来源 run（``runs:/<run_id>/...`` 解析）；内存态/非 run 工件为 None。
+
+        遥测 tag（``mflowy.source_run_id``）的单源——消费方不再自持 run_id 字符串。
+        """
+        uri = self._model_uri or ""
+        if uri.startswith("runs:/"):
+            return uri.removeprefix("runs:/").split("/", 1)[0] or None
+        return None
+
     def predict(self, X: pd.DataFrame, **kwargs) -> np.ndarray:
         return self.pipe.predict(self._align(X), **kwargs)
 

@@ -7,10 +7,13 @@ flow:
       params:
         file_path: "{{ data_path }}"
 {% endif %}
+  - model__loader:
+      name: 恢复最终模型
+      params:
+        run_id: {{ run_id }}
   - search_input:
       name: 输入空间优化
       params:
-        run_id: {{ run_id }}
         directions:
 {% for y, d in directions.items() %}
           {{ y }}: {{ d }}

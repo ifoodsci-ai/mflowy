@@ -1,66 +1,67 @@
-"""SHAP 解释数据节点（裸节点）：最终模型在全量 X 采样上的 explanation（H1 节点化）。
+"""SHAP 解释数据节点（shap 族）：最终模型在测试集 X_test 上的 explanation。
 
-解释数据非图——不入 plot ns，裸键 ``shap_explanation`` 供消费方同名参数边
-绑定本节点输出：[(y_name, Explanation, categorical_features)]。
+shap 族 = 解释数据家（explanation 真算留痕 / load 引用重建——构建/引用分家，
+同 cv 族先例）；绘图消费方以 ``shap`` 组边（最近声明）绑定本族产物，explanation
+与 load 同契约可互换。
+
+返回裸 ``shap.Explanation``（多分类 3D 透传，消费方按输出/类切块）；
+``y_name`` / ``categorical_features`` / ``classes`` 以实例属性附着（numpy data
+不携逐列 dtype，元数据随对象走）。``shap_values.parquet`` 副产物由
+log_shap_explanation 中间件随 run 落盘。
 """
 
 from typing import Annotated
 
 import numpy as np
 import pandas as pd
+import shap
 from mflowy.driver.handler import handler
+from mflowy.model.middlewares import log_shap_explanation
 from mflowy.model.model.types import ModelLoader
-from mflowy.model.x_y import XySpec
 from mflowy.utils.constants import RANDOM_STATE
 
 SHAP_NSAMPLES = 100
 
 
-@handler()
-def shap_explanation(
+@handler(log_shap_explanation, namespace="shap")
+def explanation(
     model: ModelLoader,
-    x_y: XySpec,
+    load: pd.DataFrame,
     random_state: Annotated[int, "解释集采样种子"] = RANDOM_STATE,
-) -> list[tuple]:
-    """最终模型在全量 X 下采样上的 SHAP explanation 列表，按 y_name 切片（多目标 3D→2D）。"""
-    try:
-        import shap
-    except ImportError as e:
-        raise ImportError("shap is required for SHAP plots. Please install it with: pip install shap") from e
+) -> shap.Explanation:
+    """最终模型在测试集（load 数据面，与终评 X_test 同源）上的 SHAP explanation。
 
-    loader = model  # 单值边取最近 = 最终模型
-    X = x_y[0]
+    load 按模型 x_names 取列（多余列剔除、缺列 fail-loud）；超 100 行采样。
+    多分类 shap_values 3D 透传——``classes`` 属性给输出标签。
+    """
+    x_names = model.x_names
+    missing = [c for c in x_names if c not in load.columns]
+    if missing:
+        raise ValueError(f"load 测试集缺少模型输入列: {missing}；模型期望 {x_names}")
+    X = load[x_names]
 
     if len(X) > SHAP_NSAMPLES:
         rng = np.random.default_rng(random_state)
-        idx = np.sort(rng.choice(len(X), size=SHAP_NSAMPLES, replace=False))
-        X = X.iloc[idx]
+        X = X.iloc[np.sort(rng.choice(len(X), size=SHAP_NSAMPLES, replace=False))]
 
-    pipe = loader.pipe
+    pipe = model.pipe
     ct = pipe.named_steps.get("preprocess")
     X_t: pd.DataFrame = ct.transform(X) if ct is not None else X
 
     est = pipe.estimator
-    explanation = est.shap_values(X_t, nsamples=SHAP_NSAMPLES, random_state=random_state)
-    shap_values: np.ndarray = explanation.values
+    raw = est.shap_values(X_t, nsamples=SHAP_NSAMPLES, random_state=random_state)
+    values: np.ndarray = raw.values if isinstance(raw, shap.Explanation) else np.asarray(raw)
 
-    feature_names = X_t.columns
-    categorical_features = [n for n, dt in X_t.dtypes.items() if not pd.api.types.is_numeric_dtype(dt)]
+    # 输出标签：单输出 2D = [y_name]；多分类 3D = k 个类（y_names 对不上时按序编号）
+    y_names = list(pipe.y_names)
+    if values.ndim == 3:
+        k = values.shape[2]
+        classes = y_names if len(y_names) == k else [f"class_{i}" for i in range(k)]
+    else:
+        classes = y_names
 
-    is_multi = shap_values.ndim == 3
-    n_outputs = shap_values.shape[2] if is_multi else 1
-    y_names = pipe.y_names
-    output_names = list(y_names) if len(y_names) == n_outputs else [f"output_{i}" for i in range(n_outputs)]
-
-    return [
-        (
-            y_name,
-            shap.Explanation(
-                values=shap_values[:, :, i] if is_multi else shap_values,
-                data=X_t.values,
-                feature_names=list(feature_names),
-            ),
-            categorical_features,
-        )
-        for i, y_name in enumerate(output_names)
-    ]
+    exp = shap.Explanation(values=values, data=X_t.to_numpy(), feature_names=list(X_t.columns))
+    exp.y_name = y_names[0]
+    exp.categorical_features = [n for n, dt in X_t.dtypes.items() if not pd.api.types.is_numeric_dtype(dt)]
+    exp.classes = classes
+    return exp

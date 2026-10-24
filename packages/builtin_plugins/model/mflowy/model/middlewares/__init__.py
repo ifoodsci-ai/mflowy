@@ -7,5 +7,13 @@
 from .log_cv import log_cv
 from .log_prediction import log_prediction
 from .log_search_input import log_search_input
+from .log_shap_explanation import log_shap_explanation
+from .log_task_evidence import log_task_evidence
 
-__all__ = ["log_cv", "log_prediction", "log_search_input"]
+__all__ = [
+    "log_cv",
+    "log_prediction",
+    "log_search_input",
+    "log_shap_explanation",
+    "log_task_evidence",
+]

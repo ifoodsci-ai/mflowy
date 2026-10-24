@@ -2,7 +2,7 @@
 
 单 y 轴特征排列 + 双 x 轴叠加：底部 SHAP value 蜂群散点（CMAP_DIVERGING 按特征值着色），
 顶部 mean|SHAP| 条形图（#56B3E96B），右侧 Feature Value 色条。
-按 y_name 迭代出图（多目标时每目标一张）。
+按输出/类迭代出图（shap 组边消费——explanation/load 同契约皆可绑定）。
 """
 
 from __future__ import annotations
@@ -13,12 +13,13 @@ from typing import Annotated
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import shap
 from mflowy.data.middlewares import log_plot
 from mflowy.driver.handler import handler
 from mflowy.utils.constants import RANDOM_STATE
 from mflowy.utils.plot import CMAP_DIVERGING
 
-from ...utils import SHAP_MAX_DISPLAY, shap_explanation_to_df
+from ...utils import SHAP_MAX_DISPLAY, iter_output_blocks, shap_values_to_df
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +64,7 @@ def _density_jitter(values: np.ndarray, width: float, rng: np.random.Generator) 
 
 @handler(log_plot, namespace="plot")
 def shap_summary(
-    shap_explanation: list[tuple],
+    shap: shap.Explanation,
     max_display: Annotated[int, "最大显示特征数"] = SHAP_MAX_DISPLAY,
     title: Annotated[str, "图表标题"] = "SHAP Summary Plot",
     bar_alpha: Annotated[float, "条形透明度"] = 0.3,
@@ -71,15 +72,14 @@ def shap_summary(
 ):
     """双 x 轴蜂群图：底部 SHAP value 散点（密度感知抖动 + CMAP_DIVERGING 按特征值着色），
     顶部 mean|SHAP| 条形图（#56B3E96B），y 轴为特征名（按 mean|SHAP| 降序），
-    右侧附 Feature Value 色条。按 y_name 迭代出图。
+    右侧附 Feature Value 色条。按输出/类迭代出图。
 
     解读：特征按 mean|SHAP| 排序，条形越长=对模型输出整体影响越大。蜂群散点宽=该 SHAP 值区间样本密集；颜色红=高特征值，蓝=低特征值。看散点偏离零线的方向和颜色梯度判断特征如何推高/拉低预测。
     """
-    for y_name, explanation, categorical_features in shap_explanation:
-        shap_values = explanation.values
-        feature_data = explanation.data
-        feature_names = list(explanation.feature_names)
-
+    categorical_features = getattr(shap, "categorical_features", [])
+    feature_data = shap.data
+    feature_names = list(shap.feature_names)
+    for label, shap_values in iter_output_blocks(shap):
         mean_abs = np.mean(np.abs(shap_values), axis=0)
         order = np.argsort(mean_abs)[::-1][:max_display]
         n_show = len(order)
@@ -131,7 +131,7 @@ def shap_summary(
 
         ax_scatter.axvline(0, color="gray", linewidth=2, alpha=0.8, zorder=3)
 
-        fig.suptitle(f"{title} ({y_name})", y=1.04)
+        fig.suptitle(f"{title} ({label})", y=1.04)
         sm = plt.cm.ScalarMappable(cmap=CMAP_DIVERGING, norm=plt.Normalize(0, 1))
         sm.set_array([])
         cb = fig.colorbar(sm, cax=cax)
@@ -139,6 +139,6 @@ def shap_summary(
         cb.set_ticks([0, 1])
         cb.set_ticklabels(["Low", "High"])
 
-        bee_df = shap_explanation_to_df(explanation)
-        bee_df.attrs["suffix"] = f"_{y_name}"
+        bee_df = shap_values_to_df(shap_values, feature_data, feature_names)
+        bee_df.attrs["suffix"] = f"_{label}"
         yield bee_df, fig

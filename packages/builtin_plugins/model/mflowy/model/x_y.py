@@ -8,25 +8,28 @@ from typing import Annotated, NamedTuple
 
 import pandas as pd
 from mflowy.driver.handler import handler
+from mflowy.model.middlewares import log_task_evidence
 from mflowy.model.model.types import TASKTYPE
-from mflowy.utils import mlflow as mlflow_util
 
 logger = logging.getLogger(__name__)
 
 
 class XySpec(NamedTuple):
-    """x_y 节点产物：特征矩阵 + 目标矩阵 + 任务。
+    """x_y 节点产物：特征矩阵 + 目标矩阵 + 任务（+任务推断证据——仅自动推断时非 None）。
 
     划分同一性由 cv.split 副产物 split.pkl 的 run_id 引用承担（构建与引用分家，
-    #66 无指纹重现假设）——XySpec 不携带内容指纹。
+    #66 无指纹重现假设）——XySpec 不携带内容指纹。``task_evidence`` 尾字段带默认值：
+    ``X, y, task = x_y`` 式三元解包已退役为属性/索引访问，positional 构造（X, y, task）
+    全兼容。
     """
 
     X: pd.DataFrame
     y: pd.DataFrame
     task: TASKTYPE
+    task_evidence: pd.DataFrame | None = None
 
 
-@handler()
+@handler(log_task_evidence)
 def x_y(
     load: pd.DataFrame,
     target: Annotated[str, "目标列（单目标任务——多目标在会话外分层循环，KISS）"],
@@ -72,20 +75,17 @@ def x_y(
     if y.empty:
         raise ValueError("目标变量 y 为空，无法推断任务类型。")
 
-    import mlflow
-
+    evidence_df: pd.DataFrame | None = None
     if not task:
         task, evidence_df = TASKTYPE.from_y(y, with_evidence=True)  # type: ignore
         assert isinstance(evidence_df, pd.DataFrame)
-        if mlflow.active_run():
-            mlflow_util.log_table(evidence_df, f"{task}_evidence.parquet")
     X = df.drop(columns=[target, *id_cols])
     print(
         f"X: {X.shape}, y: {y.shape}, target: {target}, task: {task}"
         + (f", id_columns 剔除: {id_cols}" if id_cols else "")
     )
     X = _ensure_X_dtypes(X)
-    return XySpec(X, y, task)
+    return XySpec(X, y, task, evidence_df)
 
 
 def _ensure_X_dtypes(X: pd.DataFrame) -> pd.DataFrame:

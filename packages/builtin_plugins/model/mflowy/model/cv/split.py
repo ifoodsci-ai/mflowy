@@ -136,7 +136,7 @@ def split(
     outer 定义最终评估的 holdout——test 集在训练全流程中只被最终评估触碰一次。分组划分
     的组不跨 train/test。
     """
-    X, y, task = x_y
+    X, y, task = x_y.X, x_y.y, x_y.task  # XySpec 尾字段 task_evidence 不进数据面
     groups = _materialize_groups(X, group_by) if group_by is not None else None  # 构建期仅作组数守卫
     stratified = _is_stratifiable(y) and task != "regressor"  # 回归目标不做分层（整数 dtype 误判防御）
 

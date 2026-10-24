@@ -43,7 +43,7 @@ def materialize_split(spec: SplitSpec, x_y: XySpec) -> TrainSplit:
     自封装两步：groups 重建（按 spec.group_by 声明，outer/inner 两处消费同源）→
     索引派生（划分器持种子，确定性：物化期派生 ≡ 构建期派生）。
     """
-    X, y, task = x_y
+    X, y, task = x_y.X, x_y.y, x_y.task  # XySpec 尾字段 task_evidence 不进数据面
     groups = _materialize_groups(X, spec.group_by) if spec.group_by is not None else None
     train_idx, test_idx = next(spec.outer.split(X, y, groups))
     return TrainSplit(

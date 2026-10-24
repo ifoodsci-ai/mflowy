@@ -16,12 +16,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import shap
 from mflowy.data.middlewares import log_plot
 from mflowy.driver.handler import handler
 from mflowy.utils.constants import RANDOM_STATE
 from mflowy.utils.plot import CMAP_DIVERGING
 
-from ...utils import rank_features, shap_explanation_to_df
+from ...utils import iter_output_blocks, rank_features, shap_values_to_df
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +71,7 @@ def _find_turn_point(x: np.ndarray, y: np.ndarray) -> tuple[float, float] | None
 
 @handler(log_plot, namespace="plot")
 def shap_dependence(
-    shap_explanation: list[tuple],
+    shap: shap.Explanation,
     feature: Annotated[str | None, "目标特征名"] = None,
     with_fit: Annotated[bool, "是否叠加 LOWESS 拟合线"] = True,
     title: Annotated[str | None, "图表标题"] = None,
@@ -82,15 +83,17 @@ def shap_dependence(
 ):
     """子图网格绘制 top-k 特征的 SHAP 依赖图：散点按交互伙伴特征值 CMAP_DIVERGING 着色，
     叠加 LOWESS 拟合线 + 零交叉转折点 + 垂直阈值线，
-    y>0 整片 Positive / y<0 整片 Negative 半透明区域。按 y_name 迭代出图。
+    y>0 整片 Positive / y<0 整片 Negative 半透明区域。按输出/类迭代出图。
 
     解读：LOWESS 曲线形状=特征对预测的非线性效应（U 形/单调/阶梯）。转折点 x 坐标=效应翻转的特征阈值。散点颜色梯度=交互伙伴调节主效应的方向（同色聚集=强交互）。
     """
     from statsmodels.nonparametric.smoothers_lowess import lowess
 
-    for y_name, explanation, categorical_features in shap_explanation:
-        shap_values = explanation.values
-        target_features = rank_features(explanation, feature=feature, top_n=top_n)
+    categorical_features = getattr(shap, "categorical_features", [])
+    feature_data = shap.data
+    feature_names = list(shap.feature_names)
+    for label, shap_values in iter_output_blocks(shap):
+        target_features = rank_features(shap_values, feature_names, feature=feature, top_n=top_n)
 
         n_total = len(target_features)
         n_cols = min(col_wrap, n_total)
@@ -113,9 +116,9 @@ def shap_dependence(
 
         for i, feat_name in enumerate(target_features):
             ax = axes_flat[i]
-            feat_idx = explanation.feature_names.index(feat_name)
-            sv = explanation.values[:, feat_idx]
-            raw_fv = explanation.data[:, feat_idx]
+            feat_idx = feature_names.index(feat_name)
+            sv = shap_values[:, feat_idx]
+            raw_fv = feature_data[:, feat_idx]
 
             is_cat = feat_name in categorical_features
             if is_cat:
@@ -128,8 +131,8 @@ def shap_dependence(
             inter_idx = _heuristic_interaction_partner(shap_values, feat_idx)
             if inter_idx is not None:
                 has_any_interaction = True
-                raw_cv = explanation.data[:, inter_idx]
-                color_label = explanation.feature_names[inter_idx]
+                raw_cv = feature_data[:, inter_idx]
+                color_label = feature_names[inter_idx]
                 interaction_names.append(color_label)
                 if color_label in categorical_features:
                     cv_codes, _ = pd.factorize(raw_cv)
@@ -233,13 +236,13 @@ def shap_dependence(
             sm.set_array([])
             cb = fig.colorbar(sm, cax=cax)
             unique_names = list(dict.fromkeys(interaction_names))
-            label = unique_names[0] if len(unique_names) == 1 else "Interaction Feature"
-            cb.set_label(label)
+            cbar_label = unique_names[0] if len(unique_names) == 1 else "Interaction Feature"
+            cb.set_label(cbar_label)
 
             # 单一交互伙伴且为分类：colorbar ticklabels 用 category 名（≤8 个）或首尾
             if len(unique_names) == 1 and unique_names[0] in categorical_features:
-                inter_feat_idx = explanation.feature_names.index(unique_names[0])
-                cats = np.unique(explanation.data[:, inter_feat_idx])
+                inter_feat_idx = feature_names.index(unique_names[0])
+                cats = np.unique(feature_data[:, inter_feat_idx])
                 if len(cats) <= 8:
                     cb.set_ticks(np.linspace(0, 1, len(cats)))
                     cb.set_ticklabels([str(c) for c in cats])
@@ -253,7 +256,7 @@ def shap_dependence(
         else:
             cax.set_visible(False)
 
-        fig.suptitle(f"{title or 'SHAP Dependence Plots'} ({y_name})")
+        fig.suptitle(f"{title or 'SHAP Dependence Plots'} ({label})")
 
         # 底部图例：Lowess 曲线 + Negative/Positive 区域色块
         legend_handles = [
@@ -269,6 +272,6 @@ def shap_dependence(
             frameon=False,
         )
 
-        dep_df = shap_explanation_to_df(explanation)
-        dep_df.attrs["suffix"] = f"_{y_name}"
+        dep_df = shap_values_to_df(shap_values, feature_data, feature_names)
+        dep_df.attrs["suffix"] = f"_{label}"
         yield dep_df, fig
