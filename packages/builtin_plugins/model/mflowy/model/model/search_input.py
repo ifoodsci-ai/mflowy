@@ -2,7 +2,8 @@
 
 给定训练好的 model + 搜索空间约束，找出能让预测输出最优的输入特征组合。
 核心抽象（``mflowy.model.model.study``）：``ParameterSearchSpace`` / ``search_inverse``（单目标 tpe / 多目标 NSGAII）。
-模型加载与预测复用 ``loader`` 的 ModelLoader 门面（单一最终模型）。
+模型经 ``model`` 上游边注入（model__* 组寻址取最近；跨 run 复用经 model__loader 声明承载），
+预测复用 ModelLoader 门面（单一最终模型）——本节点零 run_id 耦合。
 
 设计契约：``model.y_names`` 是训练时定义的目标契约，search_input 优化全部 y_names，
 方向由 ``directions`` dict 显式给出。不在推理时挑选「关心哪几个 y」——那是训练的事。
@@ -29,7 +30,7 @@ from mflowy.utils.file import read_text
 from mflowy.utils.path import split_path_to_py_with_target
 from mflowy.utils.python_script_security_scan import scan_security
 
-from .loader import loader as _loader
+from .types import ModelLoader
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ def _infer_search_spaces(
     - 其他（datetime/category 等）→ ``logger.warning`` 跳过
 
     ``x_names`` 给定时只推断其中的列——避免把 target 等 model.x_names 之外的列
-    误推断为搜索空间（trial 采样后 model.predict 会报 feature_names mismatch）。
+    误推断为搜索空间（trial 采样后模型 predict 会报 feature_names mismatch）。
     """
     if df is None or df.empty:
         return {}
@@ -98,7 +99,7 @@ def _load_rules_validator(cross_rules_source: str) -> Callable[[pd.DataFrame], b
 
 @handler(log_search_input)
 def search_input(
-    run_id: Annotated[str, "训练 model 步骤所在 Run 的 id"],
+    model: ModelLoader,
     directions: Annotated[
         dict[str, Literal["maximize", "minimize"]], "每个 y_name 的优化方向，key 必须完全等于 model.y_names"
     ],
@@ -110,12 +111,12 @@ def search_input(
     n_trials: Annotated[int, "Optuna trial 数量"] = 10000,
     random_seed: Annotated[int, "随机种子"] = RANDOM_STATE,
 ) -> pd.DataFrame:
-    """search_input：搜索让所有 ``model.y_names`` 按 ``directions`` 最优的输入特征组合。"""
+    """search_input：按上游 model 门面搜索让所有 ``model.y_names`` 按 ``directions`` 最优的输入特征组合。"""
     df = load if load is not None else None
     import optuna
 
-    # 1. 加载最终模型（单一 Pipeline 门面）
-    model_loader = _loader(run_id=run_id)
+    # 1. 上游模型门面（model__* 组寻址单值取最近声明）
+    model_loader = model
     y_names = list(model_loader.y_names)
     x_names = list(model_loader.x_names)
 

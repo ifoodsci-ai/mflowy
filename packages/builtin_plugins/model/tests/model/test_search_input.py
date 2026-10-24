@@ -1,7 +1,7 @@
-"""model.search_input handler 单元测试 —— Optuna 驱动的输入空间优化
+"""search_input handler 单元测试 —— Optuna 驱动的输入空间优化
 
-策略：真实 Optuna study（per T1=B 决议）+ Mock model_loader。
-每个 trial 调真实 ``suggest_params`` + 真实 ``study.optimize`` 循环，但 model.predict 走 mock。
+策略：真实 Optuna study（per T1=B 决议）+ mock model 门面直接注入（model 边消费面）。
+每个 trial 调真实 ``suggest_params`` + 真实 ``study.optimize`` 循环，但模型 predict 走 mock。
 
 设计契约：model.y_names 是训练时定义的目标契约，search_input 优化全部 y_names。
 directions dict 的 key 必须精确等于 y_names；不挑目标子集（那是训练的事）。
@@ -32,31 +32,25 @@ def _make_loader(y_names, x_names, predict_vals):
 
 
 @pytest.fixture
-def mock_loader(monkeypatch):
-    """patch search_input 内的 _loader，返回门面 ModelLoader"""
+def mock_loader():
+    """构造门面 ModelLoader——search_input 的 model 边注入面"""
 
-    def _patch(y_names, x_names, predict_vals):
-        model_loader = _make_loader(y_names, x_names, predict_vals)
+    def _make(y_names, x_names, predict_vals):
+        return _make_loader(y_names, x_names, predict_vals)
 
-        def _fake_loader(run_id):
-            return model_loader
-
-        monkeypatch.setattr("mflowy.model.model.search_input._loader", _fake_loader)
-        return model_loader
-
-    return _patch
+    return _make
 
 
 class TestHappyPath:
     def test_single_target_maximize_returns_clean_io_df(self, mock_loader, tmp_path):
         """单目标 maximize → 输出含 2 特征列 + price（y_name），无 state 列"""
-        mock_loader(["price"], ["feat_a", "feat_b"], [[10.0]])
+        loader = mock_loader(["price"], ["feat_a", "feat_b"], [[10.0]])
 
         df = pd.DataFrame({"feat_a": [1, 2, 3], "feat_b": [0.5, 1.5, 2.5]})
 
         result = search_input(
+            model=loader,
             load=df,
-            run_id="fake",
             directions={"price": "maximize"},
             columns={
                 "feat_a": ContinuousSpace(1, 3),
@@ -75,13 +69,13 @@ class TestHappyPath:
 
     def test_infer_from_df_picks_up_columns(self, mock_loader):
         """默认从 df 推断搜索空间，无需 columns"""
-        mock_loader(["y"], ["x1", "x2"], [[1.0]])
+        loader = mock_loader(["y"], ["x1", "x2"], [[1.0]])
 
         df = pd.DataFrame({"x1": [1, 2, 3], "x2": [0.1, 0.2, 0.3]})
 
         result = search_input(
+            model=loader,
             load=df,
-            run_id="fake",
             directions={"y": "maximize"},
             n_trials=2,
             random_seed=42,
@@ -94,12 +88,12 @@ class TestHappyPath:
 
     def test_multi_target_returns_all_y_columns(self, mock_loader):
         """多目标模型 → 输出含所有 y_names 列"""
-        mock_loader(["revenue", "cost"], ["x"], [[100.0, 30.0]])
+        loader = mock_loader(["revenue", "cost"], ["x"], [[100.0, 30.0]])
 
         df = pd.DataFrame({"x": [1, 2, 3]})
         result = search_input(
+            model=loader,
             load=df,
-            run_id="fake",
             directions={"revenue": "maximize", "cost": "minimize"},
             columns={"x": ContinuousSpace(1, 3)},
             n_trials=3,
@@ -113,12 +107,12 @@ class TestHappyPath:
 
     def test_discrete_column_sampled_from_choices(self, mock_loader):
         """数值离散列 → x 值只取自 {1, 2, 3}，不再被误当连续范围采样"""
-        mock_loader(["y"], ["x"], [[1.0]])
+        loader = mock_loader(["y"], ["x"], [[1.0]])
 
         df = pd.DataFrame({"x": [0, 0, 0]})
         result = search_input(
+            model=loader,
             load=df,
-            run_id="fake",
             directions={"y": "maximize"},
             columns={"x": DiscreteSpace([1, 2, 3])},
             n_trials=20,
@@ -134,7 +128,7 @@ class TestHappyPath:
         真实 XGBoost 在 X_row 含未训练特征时报 feature_names mismatch。
         search_input 应把 model.x_names 传给 _infer_search_spaces 做过滤。
         """
-        mock_loader(["price"], ["feat_a", "feat_b"], [[10.0]])
+        loader = mock_loader(["price"], ["feat_a", "feat_b"], [[10.0]])
 
         # df 故意包含 target 列 price（不应进入搜索空间）
         df = pd.DataFrame(
@@ -146,8 +140,8 @@ class TestHappyPath:
         )
 
         result = search_input(
+            model=loader,
             load=df,
-            run_id="fake",
             directions={"price": "maximize"},
             n_trials=3,
             random_seed=42,
@@ -162,12 +156,12 @@ class TestHappyPath:
 
     def test_df_none_skips_infer(self, mock_loader):
         """df=None（无 load.file 上游）→ 跳过 _infer_search_spaces，靠 columns"""
-        mock_loader(["y"], ["x"], [[1.0]])
+        loader = mock_loader(["y"], ["x"], [[1.0]])
 
         # 不传 df（CLI 无 data 场景）
         result = search_input(
+            model=loader,
             load=None,
-            run_id="fake",
             directions={"y": "maximize"},
             columns={"x": ContinuousSpace(1, 3)},
             n_trials=2,
@@ -180,15 +174,15 @@ class TestHappyPath:
 class TestCrossRules:
     def test_validate_returns_false_prunes_trial(self, mock_loader, tmp_path):
         """validate(X_row) 返回 False → trial 被 PRUNED，不在输出里"""
-        mock_loader(["y"], ["x"], [[1.0]])
+        loader = mock_loader(["y"], ["x"], [[1.0]])
 
         rules_file = tmp_path / "rules.py"
         rules_file.write_text("import pandas as pd\ndef validate(df: pd.DataFrame) -> bool:\n    return False\n")
 
         df = pd.DataFrame({"x": [1, 2, 3]})
         result = search_input(
+            model=loader,
             load=df,
-            run_id="fake",
             directions={"y": "maximize"},
             columns={"x": ContinuousSpace(1, 3)},
             cross_rules=str(rules_file),
@@ -202,7 +196,7 @@ class TestCrossRules:
 
     def test_validate_raises_step_fail(self, mock_loader, tmp_path):
         """validate 抛异常 → step-fail，异常透传不捕获"""
-        mock_loader(["y"], ["x"], [[1.0]])
+        loader = mock_loader(["y"], ["x"], [[1.0]])
 
         rules_file = tmp_path / "rules.py"
         rules_file.write_text(
@@ -212,8 +206,8 @@ class TestCrossRules:
         df = pd.DataFrame({"x": [1, 2, 3]})
         with pytest.raises(RuntimeError, match="user script bug"):
             search_input(
+                model=loader,
                 load=df,
-                run_id="fake",
                 directions={"y": "maximize"},
                 columns={"x": ContinuousSpace(1, 3)},
                 cross_rules=str(rules_file),
@@ -222,13 +216,13 @@ class TestCrossRules:
 
     def test_cross_rules_source_file_not_exists(self, mock_loader):
         """cross_rules_source 路径不存在 → FileNotFoundError"""
-        mock_loader(["y"], ["x"], [[1.0]])
+        loader = mock_loader(["y"], ["x"], [[1.0]])
 
         df = pd.DataFrame({"x": [1]})
         with pytest.raises(FileNotFoundError, match="FileNotExisted"):
             search_input(
+                model=loader,
                 load=df,
-                run_id="fake",
                 directions={"y": "maximize"},
                 columns={"x": ContinuousSpace(1, 3)},
                 cross_rules="/nonexistent/path/rules.py",
@@ -237,7 +231,7 @@ class TestCrossRules:
 
     def test_cross_rules_source_security_violation(self, mock_loader, tmp_path):
         """cross_rules_source 含 eval 直接调用 → scan_security 拦截"""
-        mock_loader(["y"], ["x"], [[1.0]])
+        loader = mock_loader(["y"], ["x"], [[1.0]])
 
         rules_file = tmp_path / "rules.py"
         rules_file.write_text(
@@ -247,8 +241,8 @@ class TestCrossRules:
         df = pd.DataFrame({"x": [1]})
         with pytest.raises(ValueError, match="安全限制"):
             search_input(
+                model=loader,
                 load=df,
-                run_id="fake",
                 directions={"y": "maximize"},
                 columns={"x": ContinuousSpace(1, 3)},
                 cross_rules=str(rules_file),
@@ -257,7 +251,7 @@ class TestCrossRules:
 
     def test_cross_rules_source_missing_validate_function(self, mock_loader, tmp_path):
         """cross_rules_source 脚本缺 def validate(df)->bool → scan_security 拦"""
-        mock_loader(["y"], ["x"], [[1.0]])
+        loader = mock_loader(["y"], ["x"], [[1.0]])
 
         rules_file = tmp_path / "rules.py"
         rules_file.write_text("import pandas as pd\ndef wrong_name(df: pd.DataFrame) -> bool:\n    return True\n")
@@ -265,8 +259,8 @@ class TestCrossRules:
         df = pd.DataFrame({"x": [1]})
         with pytest.raises(ValueError, match="validate"):
             search_input(
+                model=loader,
                 load=df,
-                run_id="fake",
                 directions={"y": "maximize"},
                 columns={"x": ContinuousSpace(1, 3)},
                 cross_rules=str(rules_file),
@@ -275,15 +269,15 @@ class TestCrossRules:
 
     def test_cross_rules_func_suffix_entry_point(self, mock_loader, tmp_path):
         """cross_rules 支持 <path>:<func> 后缀指定入口函数（默认 validate）"""
-        mock_loader(["y"], ["x"], [[1.0]])
+        loader = mock_loader(["y"], ["x"], [[1.0]])
 
         rules_file = tmp_path / "rules.py"
         rules_file.write_text("import pandas as pd\ndef allow_all(df: pd.DataFrame) -> bool:\n    return True\n")
 
         df = pd.DataFrame({"x": [1, 2, 3]})
         result = search_input(
+            model=loader,
             load=df,
-            run_id="fake",
             directions={"y": "maximize"},
             columns={"x": ContinuousSpace(1, 3)},
             cross_rules=f"{rules_file}:allow_all",
@@ -296,13 +290,13 @@ class TestCrossRules:
 class TestValidation:
     def test_directions_keys_mismatch_raises(self, mock_loader):
         """directions key 不完全等于 model.y_names → 早 raise"""
-        mock_loader(["actual"], ["x"], [[1.0]])
+        loader = mock_loader(["actual"], ["x"], [[1.0]])
 
         df = pd.DataFrame({"x": [1]})
         with pytest.raises(ValueError, match="directions 的 key 必须完全等于"):
             search_input(
+                model=loader,
                 load=df,
-                run_id="fake",
                 directions={"wrong": "maximize"},  # key 错
                 columns={"x": ContinuousSpace(1, 3)},
                 n_trials=1,
@@ -310,13 +304,13 @@ class TestValidation:
 
     def test_directions_missing_one_y_raises(self, mock_loader):
         """多目标模型 directions 漏一个 y → 早 raise"""
-        mock_loader(["a", "b"], ["x"], [[1.0, 2.0]])
+        loader = mock_loader(["a", "b"], ["x"], [[1.0, 2.0]])
 
         df = pd.DataFrame({"x": [1]})
         with pytest.raises(ValueError, match="directions 的 key 必须完全等于"):
             search_input(
+                model=loader,
                 load=df,
-                run_id="fake",
                 directions={"a": "maximize"},  # 漏 b
                 columns={"x": ContinuousSpace(1, 3)},
                 n_trials=1,
@@ -324,13 +318,13 @@ class TestValidation:
 
     def test_x_names_not_covered_raises(self, mock_loader):
         """search_space 未覆盖全部 model.x_names → 早 raise"""
-        mock_loader(["y"], ["x1", "x2"], [[1.0]])
+        loader = mock_loader(["y"], ["x1", "x2"], [[1.0]])
 
         df = pd.DataFrame({"x1": [1, 2]})  # 缺 x2，且 columns 也只给 x1
         with pytest.raises(ValueError, match=r"搜索空间未覆盖 model.x_names"):
             search_input(
+                model=loader,
                 load=df,
-                run_id="fake",
                 directions={"y": "maximize"},
                 columns={"x1": ContinuousSpace(1, 3)},
                 n_trials=1,
@@ -338,13 +332,13 @@ class TestValidation:
 
     def test_empty_search_space_raises(self, mock_loader):
         """df 无可推断列且无 columns → 搜索空间为空 ValueError"""
-        mock_loader(["y"], ["x"], [[1.0]])
+        loader = mock_loader(["y"], ["x"], [[1.0]])
 
         df = pd.DataFrame({"ts": pd.date_range("2026-01-01", periods=3)})
         with pytest.raises(ValueError, match="搜索空间为空"):
             search_input(
+                model=loader,
                 load=df,
-                run_id="fake",
                 directions={"y": "maximize"},
                 n_trials=1,
             )
@@ -353,12 +347,12 @@ class TestValidation:
 class TestEdgeCases:
     def test_n_trials_zero_returns_empty_df(self, mock_loader):
         """n_trials=0 → 返回空 df（与 all-pruned 一致）"""
-        mock_loader(["y"], ["x"], [[1.0]])
+        loader = mock_loader(["y"], ["x"], [[1.0]])
 
         df = pd.DataFrame({"x": [1, 2]})
         result = search_input(
+            model=loader,
             load=df,
-            run_id="fake",
             directions={"y": "maximize"},
             columns={"x": ContinuousSpace(1, 3)},
             n_trials=0,

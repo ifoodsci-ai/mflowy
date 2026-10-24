@@ -5,7 +5,9 @@ flow:
       name: 加载预测数据
       params:
         file_path: "{{ data_path }}"
-  - predict:
-      name: 模型预测
+  - model__loader:
+      name: 恢复最终模型
       params:
         run_id: {{ run_id }}
+  - predict:
+      name: 模型预测

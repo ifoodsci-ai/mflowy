@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - Unreleased
 
+### BREAKING：节点解耦收口——predict/search_input 上游边化 + shap 族化（构建/引用分家）+ 副产物全走中间件
+
+- **`predict` / `search_input` 的 `run_id` 参数退役（BREAKING）**：模型改经 `model` 参数边注入
+  （model__* 组寻址单值取最近声明）——节点内不再耦合 model__loader 恢复逻辑，流里可自由
+  组合任意 model__* 上游；compute 工具面零变化（run_id 经 PREDICT/INVERSE 模板内的
+  model__loader 节点承载下传）；`mflowy.source_run_id` tag 改由 `ModelLoader.source_run_id`
+  单源派生（`runs:/` uri 解析，内存态不落 tag）
+- **shap 族化（BREAKING，#67 裸节点决定二次演进——组合优于耦合）**：`shap_explanation`
+  裸键 → 族 `shap__explanation`（真算）+ `shap__load`（引用重建）；族返回契约 = 裸
+  `shap.Explanation`（多分类 3D 透传；`y_name`/`categorical_features`/`classes` 以实例属性
+  附记）；三个绘图消费方参数边改 `shap` **组边**（最近声明，explanation/load 同契约互换）
+- **`shap__explanation(model, load)`——load 测试集面必选**：按模型 x_names 取列（缺列
+  fail-loud）、超 100 行采样、x_y 边退役；解释面 = 终评 X_test 同源——explanation 工具从
+  训练 run 的 `X_test.parquet` 副产物下载喂入（工件寻址住工具层，节点零 run_id 知识）
+- **`shap__load(load: Iterator[DataFrame])`——collect + 列签名分区**：流内两个 `load__file`
+  声明（测试集 + shap_values.parquet），按 `shap__` 前缀列自描述分区（values 宽表恰一份、
+  测试集至多一份，歧义 fail-loud），重建 Explanation 与真算同形
+- **shap_values 副产物（#66 契约 shap 面）**：`log_shap_explanation` 中间件随 run 落
+  `shap_values.parquet`——宽表（`shap__`/`value__`/`cat__` 前缀列逐列同质 dtype，自含采样
+  数据面；3D 按 `class` 列分块）
+- **副产物全走中间件**：x_y 任务类型证据表从节点体迁 `log_task_evidence`（取数面 =
+  `XySpec` 尾字段 `task_evidence`，三元组索引访问全兼容）；model 族 training 行为的
+  holdout 三件套迁移记债（帧数据为函数局部量，涉 ModelLoader 契约扩展——#69）
+- 词表：非归组区 = x_y/predict/search_input（split 已族化为 cv__split）；shap 族 = explanation/load
+
 ### BREAKING：词表身份收口——plot 族返回契约破裂修复（#67）
 
 - **`shap_explanation` 裸节点化**（`@handler(namespace="plot")` → `@handler()`）：解释数据非图，

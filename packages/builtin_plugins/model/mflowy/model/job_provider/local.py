@@ -197,12 +197,24 @@ class LocalJobProvider:
             _anchor_task_dir(steps_text)
 
             modeling_steps_text = _build_modeling_steps(steps_text, model=model)
+            # 测试集面从训练 run 的 X_test.parquet 副产物取（终评同面）——节点零 run_id
+            # 知识，工件寻址住在工具层；缺副产物 fail-loud 带该 run 工件清单
+            from mflowy.utils.mlflow import download_run_artifact, run_artifacts
+
+            arts = run_artifacts(model)
+            if "X_test.parquet" not in arts:
+                raise ValueError(
+                    f"run {model} 没有 X_test.parquet 副产物（training 行为的 holdout 留痕），"
+                    f"现有工件: {arts or '无'}——SHAP 解释面 = 终评测试集，无法替代"
+                )
+            x_test_path = download_run_artifact(model, "X_test.parquet")
             builder = Builder(
                 dag_yaml=EXPLANATION_TEMPLATE,
                 env={
                     "name": name,
                     "description": desc,
                     "modeling_steps": modeling_steps_text,
+                    "x_test_path": x_test_path,
                     "lowess_frac": lowess_frac,
                 },
             )

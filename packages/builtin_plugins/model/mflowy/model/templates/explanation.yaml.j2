@@ -3,7 +3,12 @@ description: "{{ description | default('[custom](load → clean → cross_valida
 flow:
   {{ modeling_steps | indent(2, blank=True) }}
 
-  - shap_explanation:
+  - load__file:
+      name: 加载测试集 X_test（终评同面）
+      params:
+        file_path: "{{ x_test_path }}"
+
+  - shap__explanation:
       name: SHAP 解释数据
 
   - plot__shap_summary:

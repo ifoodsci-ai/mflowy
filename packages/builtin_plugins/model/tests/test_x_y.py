@@ -35,7 +35,7 @@ def test_x_y_prefers_nearest_clean(fake_plugins, tmp_path, fake_tracking):
     dag = _dag(fake_plugins, tmp_path, with_clean=True)
     dag.run()
     xy = next(t for t in dag.nodes if t.conf.name == "XY")
-    X, y, _task = xy.result
+    X = xy.result.X
     assert list(X.columns) == ["x1"]
 
 
@@ -44,5 +44,5 @@ def test_x_y_falls_back_to_load(fake_plugins, tmp_path, fake_tracking):
     dag = _dag(fake_plugins, tmp_path, with_clean=False)
     dag.run()
     xy = next(t for t in dag.nodes if t.conf.name == "XY")
-    X, y, _task = xy.result
+    X = xy.result.X
     assert list(X.columns) == ["x1", "x2"]

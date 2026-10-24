@@ -5,11 +5,13 @@ plot(model_evaluation + model_interpretability)。CPU 建模栈为硬依赖；to
 extra（uvx 安装需 `--index https://download.pytorch.org/whl/cpu`，仅 MLP flavor 需要——
 缺它时 `list-nodes` 降级标注，不影响其余能力）。
 
-- 动作族：`model/`（XGB/LGBM/CAT/RF/MLP/loader/predict/search_input）、
+- 动作族：`model/`（XGB/LGBM/CAT/RF/MLP/loader——全部返回 ModelLoader，组寻址契约单一）、
   `x_transformer/`（编码 ×5 + 数值变换 ×8）、`cv/`（types.py 契约叶子 + split 参数构建 + load 引用加载——契约与节点同族居住）、
-  非归组 `x_y.py`（任务目标划分 + 任务类型推理）
-- 共享件：`middlewares/`（log_cv / log_prediction / log_search_input）、`plot/`（评估/解释图，
-  主题门面复用 `mflowy.utils.plot`）
+  `plot/model_interpretability/shap/`（shap 族：explanation 真算留痕 + load 引用重建——构建/引用分家，
+  契约 = 裸 shap.Explanation + 属性注记，消费方走 `shap` 组边）、
+  非归组 `x_y.py`（任务目标划分 + 任务类型推理）/ `model/predict.py` + `model/search_input.py`（model 上游边消费，零 run_id 耦合）
+- 共享件：`middlewares/`（log_cv / log_prediction / log_search_input / log_shap_explanation / log_task_evidence——
+  副产物统一走中间件落 mlflow 工件）、`plot/`（评估/解释图，主题门面复用 `mflowy.utils.plot`）
 - 类型：`model/types.py`（MetricName / ModelPipeline / ModelLoader；TASKTYPE 再导出自 data）
 - 标注：`extras.py`（`model/mlp → [deep]`，0.2.0 起唯一可选 extra）
 - 判据：镜像路径有对应测试（`tests/`），`uv sync` 后 `list-nodes` 可见（新模块须重跑 `uv sync`）
