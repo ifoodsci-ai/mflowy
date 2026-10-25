@@ -1,0 +1,30 @@
+- load__python:
+    name: 加载
+    params:
+      source: digits.py:load
+- x_y:
+    name: X/y 拆分
+    params:
+      target: target
+- cv__split:
+    name: 数据集划分
+    params:
+      cv: 3
+- model__XGB:
+    name: XGBoost
+    params:
+      n_estimators: 30
+      n_trials: 10
+      scoring: f1
+- x_transformer__standard_scaler:
+    name: 标准化
+    params:
+      numerical_cols: []
+- model__MLP:
+    name: MLP
+    params:
+      max_epochs: 10
+      batch_size: 16
+      hidden_dims:
+      - 32
+      - 16
