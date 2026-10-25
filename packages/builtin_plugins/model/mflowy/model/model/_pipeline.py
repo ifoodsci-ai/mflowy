@@ -331,6 +331,9 @@ def hyperparameters_search(
     ``study`` 缺省自建（一次性 DAG 路径）；传入已有 study 则增量续跑（会话 sqlite
     真源——空间收窄/pin/加深续跑，目标变由调用方重开后传入）。返回 study 本体，
     θ*/u_inner/std 派生自 study（best trial 的 params/value/user_attrs["scores"]）。
+
+    ``seed`` **仅在 ``study=None``（自建 study）路径消费**——传入 study 时其 sampler
+    由开 study 方随 seed 挂（#84：会话侧 `_open_study`；此处不再二次播种）。
     """
     import mlflow
     import optuna
