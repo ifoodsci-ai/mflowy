@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - Unreleased
 
+### driver 内核卫生（#55）：撞名 warning 去重 + 内核 print 通道收尾
+
+- **撞名/坏名 warning 进程内去重**（``discover._warn_once``）：目录零缓存现算——
+  同键冲突每次扫描都撞真撞名即刷屏；同进程同类同键恰发一次（热更新赌注保持：
+  新 entry point 即时可见，去重只针对已报过的同一对）。覆盖三发射点：坏名
+  跳过、同组覆盖冲突、跨层撞名（边名撞节点/组）
+- **内核 print 通道收尾（通道纪律最后一角）**：``mlflow_log`` 中间件 handler 间
+  空行 ``print()`` → ``logger.debug``（非 CLI 宿主不可强制写 stdout）；
+  ``DAG.run`` 增 ``echo: bool = True`` 逃生门——节点输出回显属入口层，默认开
+  （CLI 观感不变），MCP 进程内调用传 False 保 stdout 纯净
+- 钉测：同组覆盖/跨层撞名 warning 两扫描恰一次 ×2；``echo=False`` 零 stdout
+  （默认开保持回显）
+
 ### run_hpo 盘上 study sampler 随 seed 建（#84 flake 根治）
 
 - **根因**：会话路径 `_open_study` 以 optuna 缺省 sampler（未钉种子的 TPESampler）

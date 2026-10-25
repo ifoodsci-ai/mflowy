@@ -414,3 +414,25 @@ class TestPruneAtCompile:
 
         dag = Builder(_yaml(tmp_path, "选项", _node("a", "load", "a")), rename).build()
         assert [c.conf.name for c in dag.nodes] == ["改名"]
+
+
+def test_run_echo_false_zero_stdout(fake_plugins, tmp_path, capsys):
+    """#55 通道纪律逃生门：``DAG.run(echo=False)`` 零 stdout——回显属入口层，非 CLI 宿主（MCP 进程内调用）可关；默认开（CLI 观感不变）。"""
+
+    @handler()
+    def alpha() -> int:
+        return 1
+
+    fake_plugins.setdefault("load", {})["alpha"] = alpha
+    from mflowy.utils.mlflow import FakeTracking, use_tracking
+
+    with use_tracking(FakeTracking()):
+        dag = Builder(_yaml(tmp_path, "echo关", _node("a", "load", "alpha"))).build()
+        res = dag.run(echo=False)
+    assert res.status == "finished"
+    assert capsys.readouterr().out == ""  # 纯净 stdout：业务数据只走捕获窗口
+
+    with use_tracking(FakeTracking()):
+        res2 = Builder(_yaml(tmp_path, "echo开", _node("a", "load", "alpha"))).build().run()
+    assert res2.status == "finished"
+    assert capsys.readouterr().out != ""  # 默认回显保持
