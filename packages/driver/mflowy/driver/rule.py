@@ -240,3 +240,51 @@ class RuleEngine:
                 raise ValueError(f"规则 key 撞名：{key!r} 已注册（可用: {sorted(self._rules)}）")
             self._rules[key] = r
         return self
+
+    @property
+    def rules(self) -> Mapping[str, Rule]:
+        """注册面只读视图（消费方读订阅元数据，不改装）。"""
+        return dict(self._rules)
+
+    def fire(self, *keys: str, R: Any) -> list[Activation]:
+        """按 key 激活规则（空 keys = 全部；未知 key fail-loud 带候选清单）。
+
+        每命中规则调 ``propose(R)``，产出经校验的 ``Activation`` 累积进实例
+        缓冲（连续 fire 聚合，``poll_proposals`` 一次取走）并即时返回本次产出。
+        """
+        produced: list[Activation] = []
+        for key in self._select(keys):
+            for a in self._rules[key].propose(R):
+                _validate_activation(a, key)
+                act = Activation(
+                    rule_key=a["rule_key"], proposal=a["proposal"], salience=a["salience"],
+                    rationale=a["rationale"], evidence=a.get("evidence"),
+                )
+                self._activations.append(act)
+                produced.append(act)
+        return produced
+
+    def poll_proposals(self) -> list[Activation]:
+        """聚合排空：salience 降序，同分按 (rule_key, action, params 序列化) 字典序。"""
+        ordered = sorted(
+            self._activations,
+            key=lambda a: (-a.salience, a.rule_key, a.proposal["action"], _stable_params(a)),
+        )
+        self._activations = []
+        return ordered
+
+    def _select(self, keys: tuple[str, ...]) -> list[str]:
+        """key 选择：空 = 全部注册规则；未知 fail-loud；重复去重保序。"""
+        if not keys:
+            return list(self._rules)
+        unknown = [k for k in keys if k not in self._rules]
+        if unknown:
+            raise ValueError(f"未知规则 key：{unknown}（可用: {sorted(self._rules)}）")
+        return list(dict.fromkeys(keys))
+
+
+def _stable_params(a: Activation) -> str:
+    """tie-break 用的 params 稳定序列化（同 rule 多走法的确定性排序）。"""
+    import json
+
+    return json.dumps(a.proposal["params"], sort_keys=True, ensure_ascii=False, default=str)
