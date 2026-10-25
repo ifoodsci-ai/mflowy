@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - Unreleased
 
+### 基准建模就绪（#70 决策图执行）：B1/B2/B3 三 P0 修复 + 基准任务落仓 + e2e-bench 冒烟门
+
+- **B1（#71）`model__MLP` 全路径修复**：`MLPEstimator.__init__` 增 `random_state` 形参
+  （`RANDOM_STATE` 缺省），seeding 住 estimator fit 首行 `pl.seed_everything`——
+  handler 级 seed 调用退役（单源，machinery seed_key 契约五族全守：estimator 参数面收
+  seed；DAG/会话两路径同语义）。修复前 handler 显式 `seed=` 注入即 TypeError，任何含
+  `model__MLP` 的 DAG 必炸（回归于 78d4a089）；验收 = DAG 级执行用例 + machinery 套接钉
+  （torch 环境守卫）
+- **B2（#72）分类会话 `run_hpo` 修复——y 双态归一层**：sklearn `cross_val_predict` 对
+  分类 + proba 方法走 `encode=True`（asarray + LabelEncoder），estimator fit 收标签编码
+  ndarray 而非 DataFrame——五族 fit 原假设 DataFrame 全部必炸（RF `.to_numpy` /
+  XGB·LGBM·CAT 经 `SubTask.from_y` 的 `y.iloc` / MLP `y.columns`）。修复双层：
+  `model/utils.as_y_frame` 共享双态归一（五族 fit 首行）+ `oof_predictions` 单目标压
+  1D（sklearn proba 组装对 2D 单列 y 误判 binary label indicator）；MLP 补 sklearn
+  分类器契约 `classes_`。验收 = 分类会话五族 run_hpo 用例（此前会话测试全回归任务，
+  漏网根因）
+- **B3（#73）示例/e2e 漂移收口 + 防再漂机制**：10 个示例 YAML 修漂（`split`→`cv__split`、
+  `targets`→`target`、MLP 参数随 #62 退役面更新、house_prices 退役节点换现词表）；
+  `examples/multilabel/` 删除（多标签工作负载随 #66 单目标收窄整体退役，保留即永久
+  漂移）；Makefile e2e 收口（`modeling_steps` 明文 + `cv` namespace 查询 + 下游目标
+  XGB→MLP——树族节点是搜索行为无 final 模型，链内唯一可解释/可预测目标是 MLP）；
+  **防再漂**：`tests/test_examples_yaml.py` 遍历示例全过 `validate_modeling_steps`
+  （编译即校验钉示例契约）；顺手收敛 P1-6：`load__python` 未知参数 fail-loud（原
+  `**kwargs` 静默吞）
+- **M10 锚定修复（P1-4）**：`_anchor_task_dir` 增认 load 族 `source` 参数（csv/excel/
+  parquet/python 正名，`.py:func` 剥 func 锚脚本目录，URL 不锚）——修复前 `load__python`
+  结构性无锚（实验创建即「请使用绝对路径」）；`make e2e` 全链追踪隔离 + 生成器 staging
+  出仓（零仓库运行产物）
+- **顺手收敛 P1-5**：CAT fit 对 `cat_features` 列 NaN fail-loud 指路（原直达 CatBoostError
+  内部异常无引导）——先清洗或切编码，DAG/会话两路径同覆盖
+- **基准任务落仓（#74）**：`examples/digits/`（sklearn 1797×64）+ `examples/titanic/`
+  （同 schema 合成 891×12：Age ~20%/Cabin ~77%/Embarked 2 条缺失 + 妇女儿童优先相关
+  结构，种子 1912 确定性）生成器 + 配套示例 YAML；零 CSV 落仓（sklearn 自带 ×3 + 合成 ×1）
+- **`make e2e-bench` 三基准冒烟门（#75）**：iris 五族搜索 / digits MLP+scaler+XGB /
+  titanic 全清洗链三树族 + iris/RF 分类会话最小链（B2 执行位）；判据 = 节点全绿 +
+  指标下限（iris·digits f1≥0.90、titanic≥0.60，报告实测折），越限 FAIL 行 + 非零退出
+  （`BENCH_FLOOR_BUMP` 越限自证）；实测 28s（预算 <5min）；发布前人肉门 = 先 `make e2e`
+  再 `make e2e-bench`
+
 ### BREAKING：节点解耦收口——predict/search_input 上游边化 + shap 族化（构建/引用分家）+ 副产物全走中间件
 
 - **`predict` / `search_input` 的 `run_id` 参数退役（BREAKING）**：模型改经 `model` 参数边注入
