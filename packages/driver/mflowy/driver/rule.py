@@ -19,8 +19,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, NamedTuple, Protocol, TypedDict
 
 from mflowy.driver.mdp_session import Candidate, verify_candidate
@@ -281,6 +283,54 @@ class RuleEngine:
         if unknown:
             raise ValueError(f"未知规则 key：{unknown}（可用: {sorted(self._rules)}）")
         return list(dict.fromkeys(keys))
+
+    def copy(self, path: str | None = None) -> RuleEngine:
+        """复制为新实例：注册面携带、激活态清空（默认实例 → 会话实例的通道）。"""
+        clone = RuleEngine(path=path)
+        clone._rules = dict(self._rules)
+        return clone
+
+    def save(self) -> None:
+        """原子落盘（tmp+rename）：注册面 + 未 poll 激活态整体一个 pkl。"""
+        import pickle
+
+        if self.path is None:
+            raise ValueError("engine 无落盘路径（open_engine 复制时绑定，或构造时传入）")
+        p = Path(self.path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_name(p.name + ".tmp")
+        with open(tmp, "wb") as fh:
+            pickle.dump(self, fh, protocol=pickle.HIGHEST_PROTOCOL)
+        tmp.replace(p)
+
+    @classmethod
+    def load(cls, path: str) -> RuleEngine:
+        """从盘加载实例：损坏 fail-loud 带路径与成因（不静默重建默认）。"""
+        import pickle
+        from pathlib import Path
+
+        p = Path(path)
+        try:
+            with open(p, "rb") as fh:
+                obj = pickle.load(fh)
+        except Exception as e:  # noqa: BLE001 —— 任何读/反序列化失败都归一为带路径的 fail-loud
+            raise RuntimeError(f"规则引擎实例损坏（{p}）：{e!r}") from e
+        if not isinstance(obj, cls):
+            raise TypeError(f"{p} 不是 {cls.__name__} 实例，得到 {type(obj).__name__}")
+        obj.path = str(p)
+        return obj
+
+
+@contextmanager
+def open_engine(path: str, default: RuleEngine | None = None) -> Iterator[RuleEngine]:
+    """业务接口入口：盘上有 pkl 则加载，否则从默认实例复制（激活态清空）。
+
+    with 正常退出原子落盘（注册面 + 未 poll 激活态）；异常透传且不落盘——
+    失败调用零副作用（事务性）。规则对象须可 pickle（``Rule`` 协议文档）。
+    """
+    engine = RuleEngine.load(path) if Path(path).exists() else (default or RuleEngine()).copy(str(path))
+    yield engine
+    engine.save()
 
 
 def _stable_params(a: Activation) -> str:

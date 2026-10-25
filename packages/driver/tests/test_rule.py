@@ -34,6 +34,10 @@ class _EchoRule:
         ]
 
 
+class _CustomRule(_EchoRule):
+    """模块级自定义规则替身（pkl 落盘要求：类须可 import 定位）。"""
+
+
 def test_register_fail_loud_on_duplicate_key():
     """撞名 fail-loud：同 key 二次注册报错并给出已注册候选清单（红线条目）。"""
     from mflowy.driver.rule import RuleEngine
@@ -137,3 +141,66 @@ def test_fire_fail_loud_on_malformed_activation():
     engine3.register(_Bad([{"rule_key": "bad", "proposal": {"action": "x", "params": {}}, "salience": 1.5, "rationale": "r"}]))
     with pytest.raises(TypeError, match="salience"):
         engine3.fire(R={})
+
+
+# ── 落盘：save/load/copy + open_engine ─────────────────────────────────────
+
+
+def test_open_engine_fresh_path_copies_default_and_saves_on_exit(tmp_path):
+    """盘上无 pkl：从默认实例复制（激活态清空）；with 正常退出原子落盘。"""
+    from mflowy.driver.rule import RuleEngine, open_engine
+
+    default = RuleEngine().register(_EchoRule("a"), _EchoRule("b"))
+    default.fire(R={})  # 默认实例被误点火也不得带进会话实例
+
+    pkl = tmp_path / "rules.pkl"
+    with open_engine(pkl, default=default) as engine:
+        assert sorted(engine.rules) == ["a", "b"]
+        assert engine.poll_proposals() == []  # 激活态清空
+        engine.fire(R={})
+    assert pkl.exists() and not pkl.with_name(pkl.name + ".tmp").exists()  # 原子：无残留 tmp
+
+
+def test_open_engine_loads_custom_rules_and_pending_activations(tmp_path):
+    """盘上有 pkl：加载实例——运行期注册的自定义规则与未 poll 激活态跨调用存活。"""
+    from mflowy.driver.rule import RuleEngine, open_engine
+
+    default = RuleEngine().register(_EchoRule("a"))
+    pkl = tmp_path / "rules.pkl"
+
+    with open_engine(pkl, default=default) as engine:
+        engine.register(_CustomRule("custom.x", salience=7))
+        engine.fire("custom.x", R={})  # 不 poll——挂起态落盘
+
+    with open_engine(pkl, default=default) as engine:
+        assert "custom.x" in engine.rules
+        acts = engine.poll_proposals()
+        assert [a.rule_key for a in acts] == ["custom.x"]  # 挂起激活态恢复
+
+    with open_engine(pkl, default=default) as engine:
+        assert engine.poll_proposals() == []  # 上一轮已 poll 排空并落盘
+
+
+def test_open_engine_exception_no_save(tmp_path):
+    """with 内异常：异常透传且不落盘（事务性——失败调用零副作用）。"""
+    import pytest as _pytest
+
+    from mflowy.driver.rule import RuleEngine, open_engine
+
+    default = RuleEngine().register(_EchoRule("a"))
+    pkl = tmp_path / "rules.pkl"
+    with _pytest.raises(RuntimeError, match="boom"):
+        with open_engine(pkl, default=default) as engine:
+            engine.register(_EchoRule("custom"))
+            raise RuntimeError("boom")
+    assert not pkl.exists()
+
+
+def test_open_engine_fail_loud_on_corrupt_pkl(tmp_path):
+    """损坏 pkl：fail-loud 带路径与成因，不静默重建默认。"""
+    from mflowy.driver.rule import open_engine
+
+    pkl = tmp_path / "rules.pkl"
+    pkl.write_bytes(b"\x80\x04 not-a-pickle")
+    with pytest.raises(RuntimeError, match="rules.pkl"):
+        open_engine(pkl, default=None).__enter__()
