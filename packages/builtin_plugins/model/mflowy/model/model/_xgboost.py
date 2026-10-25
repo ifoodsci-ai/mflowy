@@ -26,8 +26,10 @@ logger = logging.getLogger(__name__)
 class _XGBMixin(LossCurveMixin, TreeExplainMixin):
     task: TASKTYPE  # 子类类属性声明——SubTask 路由用（sklearn clone 存活）
 
-    def fit(self, X: pd.DataFrame, y: pd.DataFrame, eval_set=None, **_):
+    def fit(self, X: pd.DataFrame, y: pd.DataFrame, eval_X=None, eval_y=None, **_):
         y = as_y_frame(y)  # B2 双态：sklearn cross_val_predict(proba) 传标签编码 ndarray
+        if "eval_set" in _:  # 旧 kwarg 不静默吞（#61 迁移）——stale 调用方立即暴露
+            raise TypeError("eval_set 已迁移为 eval_X/eval_y 双参 seam（独立 val，#61）")
         validate_input(X, y)
         subtask = SubTask.from_y(y, self.task)
 
@@ -40,10 +42,11 @@ class _XGBMixin(LossCurveMixin, TreeExplainMixin):
         self.set_params(**params)
 
         # eval 指标只在有显式 val 时收集（train-in-eval 供 loss curve 的 Train 段）；
-        # 无 eval_set 时不挂任何 eval——K 折 trial 零 eval 开销，且 ctor 早停不误触发
-        if eval_set is None:
+        # 无独立 val 时不挂任何 eval——K 折 trial 零 eval 开销，且 ctor 早停不误触发；
+        # xgboost 原生 API 仍是 eval_set（无弃用）——统一 seam 在此翻译（#61）
+        if eval_X is None:
             return super().fit(X, y, verbose=is_verbose())
-        return super().fit(X, y, eval_set=[(X, y), eval_set], verbose=is_verbose())
+        return super().fit(X, y, eval_set=[(X, y), (eval_X, eval_y)], verbose=is_verbose())
 
     def get_loss_curve(self, **_):
         evals_result = getattr(self, "evals_result_", None) or {}
