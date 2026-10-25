@@ -414,3 +414,13 @@ class TestPruneAtCompile:
 
         dag = Builder(_yaml(tmp_path, "选项", _node("a", "load", "a")), rename).build()
         assert [c.conf.name for c in dag.nodes] == ["改名"]
+
+
+def test_vocab_miss_carries_rename_hint(tmp_path):
+    """#86：编译缝 fail-loud 文案带改名去向（沿词表 miss 文案契约先例）——旧键只拒绝，文案给现行键。"""
+    from mflowy.driver.discover import CatalogMiss, discover
+
+    if "shap__explanation" not in discover():
+        pytest.skip("无插件安装（driver-only 环境），内置目录断言不适用")
+    with pytest.raises(CatalogMiss, match="候选：'shap__explanation'"):
+        Builder(_yaml(tmp_path, "历史键迁移", "- plot__shap_explanation:\n    name: 旧键")).build()
