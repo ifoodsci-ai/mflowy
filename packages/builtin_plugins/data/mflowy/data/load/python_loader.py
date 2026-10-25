@@ -21,6 +21,9 @@ def python(
     **kwargs,
 ) -> pd.DataFrame:
     """执行指定 Python 脚本中的 <func_name>() -> pd.DataFrame 自定义加载逻辑。"""
+    if kwargs:
+        # fail-loud（红线 1）：**kwargs 无处转发（入口函数零参调用）——静默吞 = 隐性合同
+        raise ValueError(f"未知参数 {sorted(kwargs)}——load__python 只收 source（参数面清单：source）")
     if not source:
         raise ValueError("需要一个python脚本文件地址")
     path, func = split_path_to_py_with_target(source)

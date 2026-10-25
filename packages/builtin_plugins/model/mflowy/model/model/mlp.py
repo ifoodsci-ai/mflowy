@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from typing import Annotated
 
-import pytorch_lightning as pl
 from mflowy.driver.handler import handler
 from mflowy.model.model._split import TrainSplit
 from mflowy.utils.constants import RANDOM_STATE
@@ -45,10 +44,9 @@ def MLP(
 
     ``early_stopping_rounds`` 仅最终训练生效（早停时从 train 切 val），trial 阶段不适用；上游 pipeline 应已 StandardScaler 归一化（本 handler 不内置 scaler，树模型则免缩放）。
 
-    MLP 用 >=10k 数据规模且已标准化场景，GBDT 系列用无需标准化的表格基线场景。
+    MLP 用 >=10k 数据规模且已标准化场景，GBDT 系列用无需标准化的表格基线场景。随机性统一由 ``MLPEstimator`` 的 ``random_state``（fit 首行 ``pl.seed_everything``）承载——machinery seed_key 契约单源。
     """
     split = train_split
-    pl.seed_everything(random_state, workers=True)
     make_pipe, initial_params, param_space = _machinery(
         split.task,
         x_preprocessors,

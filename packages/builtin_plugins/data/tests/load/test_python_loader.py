@@ -37,3 +37,13 @@ def sample_rows() -> pd.DataFrame:
         f.write_text(self.SCRIPT, encoding="utf-8")
         with pytest.raises(ValueError, match="not_found"):
             python(source=f"{f}:not_found")
+
+
+class TestUnknownParamsFailLoud:
+    """B3（#73）P1-6 收口：**kwargs 无处转发（入口函数零参调用）——静默吞 = 隐性合同。"""
+
+    def test_unknown_kwarg_rejected_with_candidates(self, tmp_path):
+        f = tmp_path / "loader.py"
+        f.write_text(TestFuncSuffix.SCRIPT, encoding="utf-8")
+        with pytest.raises(ValueError, match="file_path"):
+            python(source=str(f), file_path=str(f))  # 曾被静默吞的"假参数"（task_dir 锚定意外合同）

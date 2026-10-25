@@ -1,0 +1,28 @@
+- load__python:
+    name: 加载轴承退化监测数据
+    params:
+      source: bearing_rul.py:load
+- x_y:
+    name: X/y 拆分
+    params:
+      target: RUL
+      # 整数 RUL（唯一值 <5% 且步长=1）会被自动推断判成 LabelEncoder 式分类——
+      # 剩余寿命是连续量，显式钉回归
+      task: regressor
+      id_columns: unit_id
+- cv__split:
+    name: 数据集划分
+    params:
+      cv: 3
+- model__RF:
+    name: 随机森林
+    params:
+      n_estimators: 30
+      n_trials: 10
+      scoring: mae
+- model__XGB:
+    name: XGBoost
+    params:
+      n_estimators: 30
+      n_trials: 10
+      scoring: mae

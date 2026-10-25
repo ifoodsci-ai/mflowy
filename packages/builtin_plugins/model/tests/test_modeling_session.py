@@ -543,3 +543,90 @@ def test_run_tags_carry_split_identity(sessions_root, reg_csv):
     tags = mlflow.get_run(m["models"][_K_RF]["oof"]["run_id"]).data.tags
     assert tags["mflowy.split_run_id"] == m["split"]["run_id"]
     assert tags["mflowy.session_id"] == s["session_id"]
+
+
+# ── B2 分类会话回归钉（#72）：run_hpo 的 OOF proba 路径（sklearn encode=True 传
+#    标签编码 ndarray y）五族必经——此前会话测试全 task="regression" 漏网 ──────────
+
+
+@pytest.fixture
+def cls_csv(tmp_path) -> str:
+    """三分类合成数据（30/类 × 3，可分簇心）——iris 同构小规模。"""
+    n_per = 30
+    rng = np.random.default_rng(11)
+    rows, labels = [], []
+    centers = [rng.normal(size=4) * 3 for _ in range(3)]
+    for k, c in enumerate(centers):
+        for _ in range(n_per):
+            rows.append(c + rng.normal(size=4))
+            labels.append(k)
+    df = pd.DataFrame(rows, columns=[f"f{i}" for i in range(4)])
+    df["target"] = labels
+    p = tmp_path / "cls.csv"
+    df.to_csv(p, index=False)
+    return str(p)
+
+
+def _cls_hpo(root, csv, family: str):
+    """最短分类合法链：start(classification) → select_model → run_hpo。"""
+    s = ms.start_session(
+        csv,
+        CV_CARD,
+        card={"domain": "分类测试", "target": "target"},
+        task="classification",
+        metric="f1",
+        max_steps=8,
+        candidates=[{"family": f, "baseline": f == family} for f in ("RF", "XGB", "LGBM", "CAT")],
+    )
+    ms.apply_action(s["session_id"], "select_model", {"family": family})
+    return s, ms.apply_action(s["session_id"], "run_hpo", {"n_trials": 1})
+
+
+@pytest.mark.parametrize("family", ["RF", "XGB", "LGBM", "CAT"])
+def test_classification_run_hpo_all_families(sessions_root, cls_csv, family):
+    """分类会话 run_hpo 族面回归：搜索 + OOF（含 proba encode 路径）全绿，产物落 run。"""
+    s, r = _cls_hpo(sessions_root, cls_csv, family)
+    key = f"{family}|passthrough|passthrough"
+    m = _manifest(sessions_root, s["session_id"])
+    entry = m["models"][key]
+    assert entry["u_inner"] is not None and entry["oof"]["run_id"]
+    oof_path = sessions_root / s["session_id"] / entry["oof"]["y_pred"]
+    assert oof_path.exists() and len(pd.read_parquet(oof_path)) == 72  # train 侧逐行 OOF
+    assert "reward" in r
+
+
+def test_classification_run_hpo_mlp(sessions_root, cls_csv):
+    """分类会话 run_hpo MLP（torch 环境守卫）：全 pin 退化形（n_trials=1）+ OOF proba。"""
+    pytest.importorskip("torch")
+    s = ms.start_session(
+        cls_csv,
+        CV_CARD,
+        card={"domain": "分类测试", "target": "target"},
+        task="classification",
+        metric="f1",
+        max_steps=8,
+        candidates=[{"family": "MLP", "baseline": True}],
+    )
+    ms.apply_action(s["session_id"], "select_model", {"family": "MLP"})
+    ms.apply_action(s["session_id"], "set_hp", {"max_epochs": 2, "batch_size": 16, "hidden_dims": [8]})
+    r = ms.apply_action(s["session_id"], "run_hpo", {"n_trials": 1})
+    m = _manifest(sessions_root, s["session_id"])
+    entry = m["models"]["MLP|passthrough|passthrough"]
+    assert entry["u_inner"] is not None and "reward" in r
+
+
+def test_catboost_category_nan_fail_loud():
+    """P1-5 守卫：类别列 NaN 入 CAT —— 指路 ValueError，不再直达 CatBoostError 内部异常。"""
+    from mflowy.model.model._catboost import model_cls
+    from mflowy.model.model.types import TASKTYPE
+
+    X = pd.DataFrame(
+        {
+            "num": [1.0, 2.0, 3.0, 4.0],
+            "cat": pd.Categorical(["a", None, "b", "a"]),  # 类别列含 NaN
+        }
+    )
+    y = pd.DataFrame({"target": [0, 1, 0, 1]})
+    est = model_cls[TASKTYPE.CLASSIFICATION](iterations=2)
+    with pytest.raises(ValueError, match="NaN"):
+        est.fit(X, y)

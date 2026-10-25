@@ -44,10 +44,22 @@ def _steps_fingerprint_tags(steps_text: str) -> dict[str, str]:
     return {"mflowy.modeling_yaml_sha256": sha256_text(steps_text)}
 
 
+def _anchor_of_source(fp: str) -> str | None:
+    """load 步数据引用 → 锚定用本地路径：``.py:func`` 剥 func 锚脚本目录；URL 不锚。"""
+    if fp.startswith(("http://", "https://")):
+        return None  # 无本地目录语义（load__http）
+    head, _, _ = fp.rpartition(":")  # path:func → path（仅 .py 脚本可带 :func 后缀）
+    if head.endswith(".py"):
+        return head
+    return fp
+
+
 def _anchor_task_dir(steps_text: str) -> None:
     """M10 工件锚定：明文 steps 无自身文件路径——锚到 load 步数据文件的目录。
 
-    无 load 步/file_path 时不锚（相对路径数据引用会在解析处报「请使用绝对路径」
+    认 load 族两个正名参数：``file_path``（load__file）与 ``source``
+    （csv/excel/parquet/python——B3 前只认 file_path，python 加载器结构性无锚）。
+    无 load 步/不可锚时不锚（相对路径数据引用会在解析处报「请使用绝对路径」
     ——诚实失败优于猜测锚点）。
     """
     import yaml as _yaml
@@ -62,9 +74,10 @@ def _anchor_task_dir(steps_text: str) -> None:
         if isinstance(step, dict) and step:
             key = next(iter(step))
             if str(key).startswith("load"):
-                fp = ((step[key] or {}).get("params") or {}).get("file_path")
-                if fp:
-                    set_task_dir(str(fp))
+                params = (step[key] or {}).get("params") or {}
+                fp = params.get("file_path") or params.get("source")
+                if isinstance(fp, str) and (anchor := _anchor_of_source(fp)):
+                    set_task_dir(anchor)
                     return
 
 

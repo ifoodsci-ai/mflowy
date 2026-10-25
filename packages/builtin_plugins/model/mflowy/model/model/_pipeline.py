@@ -566,15 +566,20 @@ def oof_predictions(
         y_proba = pipe.predict_proba(X_val) if task == TASKTYPE.CLASSIFICATION else None
         return y_pred, y_proba
 
+    # B2 双态第二层：sklearn ``cross_val_predict`` 的 encode 路径按 ``y.ndim`` 判读——
+    # 单目标 2D (n,1) 会被当 binary label indicator（``n_classes = y.shape[1] = 1``）→
+    # proba 组装 IndexError；单目标压 1D（Series），多目标维持 2D（multioutput list 面）。
+    # estimator 侧 ``as_y_frame`` 兜住 encode 后的 1D 标签编码 ndarray。
+    y_fit = split.y_train.iloc[:, 0] if split.y_train.shape[1] == 1 else split.y_train
     pipe = make_pipe(**_strip_early_stopping(params))
-    pred = cross_val_predict(pipe, split.X_train, split.y_train, cv=split.spec.inner, groups=split.groups, n_jobs=1)
+    pred = cross_val_predict(pipe, split.X_train, y_fit, cv=split.spec.inner, groups=split.groups, n_jobs=1)
     y_pred = pd.DataFrame(pred, index=split.y_train.index, columns=split.y_train.columns)
     y_proba = None
     if task == TASKTYPE.CLASSIFICATION:
         proba = cross_val_predict(
             pipe,
             split.X_train,
-            split.y_train,
+            y_fit,
             cv=split.spec.inner,
             groups=split.groups,
             method="predict_proba",

@@ -5,8 +5,8 @@
 - x_y:
     name: X/y 拆分
     params:
-      targets: net_hourly_electrical_energy_output
-- split:
+      target: net_hourly_electrical_energy_output
+- cv__split:
     name: K-Fold CV
     params:
       cv: 5

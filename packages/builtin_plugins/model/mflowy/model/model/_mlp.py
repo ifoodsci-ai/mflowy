@@ -25,7 +25,7 @@ from ._neural_network import (
     derive_task_params,
 )
 from .types import TASKTYPE
-from .utils import validate_input
+from .utils import as_y_frame, validate_input
 
 
 def _lightning_root() -> Path:
@@ -87,7 +87,9 @@ class MLPEstimator(BaseEstimator):
     """LiteMLP 的 sklearn 适配器——使 MLP 与树系统一进 ModelPipeline / cross_val_score / mlflow.sklearn 持久化。
 
     结构参数（input_dim/output_dims/loss_func/dtypes）由 fit 时从 X/y 自算（derive_task_params），
-    不进构造签名——clone/get_params 只覆盖显式超参。
+    不进构造签名——clone/get_params 只覆盖显式超参。``random_state`` 是显式超参之一：
+    fit 首行 ``pl.seed_everything``（machinery seed_key 契约——estimator 参数面收 seed，
+    DAG/会话两路径同一语义；sklearn 惯例 seed-at-fit，K 折各折同 init）。
     """
 
     def __init__(
@@ -103,6 +105,7 @@ class MLPEstimator(BaseEstimator):
         max_epochs: int = 100,
         batch_size: int = 32,
         early_stopping_rounds: int | None = None,
+        random_state: int = RANDOM_STATE,
     ):
         self.task = task
         self.hidden_dims = hidden_dims
@@ -115,10 +118,17 @@ class MLPEstimator(BaseEstimator):
         self.max_epochs = max_epochs
         self.batch_size = batch_size
         self.early_stopping_rounds = early_stopping_rounds
+        self.random_state = random_state
 
     def fit(self, X: pd.DataFrame, y: pd.DataFrame, eval_set=None, **_):
+        pl.seed_everything(self.random_state, workers=True)
+        y = as_y_frame(y)  # B2 双态：sklearn cross_val_predict(proba) 传标签编码 ndarray
         validate_input(X, y)
         output_dims, loss_func, dtypes = derive_task_params(y, self.task)
+        if self.task == TASKTYPE.CLASSIFICATION:
+            # sklearn 分类器契约：classes_（Pipeline.classes_ 透传 + cross_val_predict
+            # proba 组装消费）；多目标为 list[array]（multioutput 惯例）
+            self.classes_ = np.unique(y.iloc[:, 0]) if y.shape[1] == 1 else [np.unique(y[c]) for c in y.columns]
         net = LiteMLP(
             input_dim=X.shape[1],
             hidden_dims=list(self.hidden_dims),

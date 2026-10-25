@@ -5,8 +5,8 @@
 - x_y:
     name: X/y 拆分
     params:
-      targets: target
-- split:
+      target: target
+- cv__split:
     name: 数据集划分
     params:
       cv: 2
@@ -38,8 +38,7 @@
 - model__MLP:
     name: MLP
     params:
-      n_trials: 2
-      epochs: 10
+      max_epochs: 10
       batch_size: 16
       hidden_dims:
       - 16

@@ -1,0 +1,37 @@
+- load__python:
+    name: 加载钢板质检数据
+    params:
+      source: steel_defect.py:load
+- x_y:
+    name: X/y 拆分
+    params:
+      target: defective
+      id_columns: plate_id
+- cv__split:
+    name: 数据集划分
+    params:
+      cv: 3
+- x_transformer__onehot_encoder:
+    name: 类别编码
+    params:
+      categorical_cols:
+      - steel_grade
+      - shift
+- model__XGB:
+    name: XGBoost
+    params:
+      n_estimators: 30
+      n_trials: 10
+      scoring: f1
+- model__LGBM:
+    name: LightGBM
+    params:
+      n_estimators: 30
+      n_trials: 10
+      scoring: f1
+- model__CAT:
+    name: CatBoost
+    params:
+      iterations: 30
+      n_trials: 10
+      scoring: f1

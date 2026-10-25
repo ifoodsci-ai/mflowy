@@ -8,12 +8,35 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import numpy as np
 import pandas as pd
 from mflowy.model.model.study import ContinuousSpace, DiscreteSpace, ParameterSearchSpace
 
 from .types import TASKTYPE, MetricName
 
 logger = logging.getLogger(__name__)
+
+
+def as_y_frame(y) -> pd.DataFrame:
+    """estimator fit 入口的 y 双态归一（B2，#72）：DataFrame 原样；Series/ndarray 视
+    目标列包 DataFrame（列名合成 ``target{i}``——仅进 MLP head 键，oof 外层由真
+    ``y_train.columns`` 命名，合成名不外泄）。
+
+    毒源：sklearn ``cross_val_predict`` 对分类 + proba 族方法走 ``encode=True``
+    （asarray + LabelEncoder）→ estimator fit 收 2D ndarray——五族 fit 原假设
+    DataFrame（``.iloc``/``.columns``/``.to_numpy``）必炸；DAG 路径 y 恒
+    DataFrame 幸免。
+    """
+    if isinstance(y, pd.DataFrame):
+        return y
+    if isinstance(y, pd.Series):
+        return y.to_frame()
+    arr = np.asarray(y)
+    if arr.ndim == 1:
+        arr = arr.reshape(-1, 1)
+    if arr.ndim != 2:
+        raise ValueError(f"y 须为 1D/2D（DataFrame/ndarray），got shape {arr.shape}")
+    return pd.DataFrame(arr, columns=[f"target{i}" for i in range(arr.shape[1])])
 
 
 def validate_input(X: pd.DataFrame, y: pd.DataFrame) -> None:

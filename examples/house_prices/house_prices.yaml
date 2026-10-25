@@ -2,23 +2,22 @@
     name: 加载房价数据
     params:
       source: house_prices.py:load
-- clean__common_filter:
+- clean__drop_cols:
     name: 删除Id列
     params:
-      drop:
+      cols:
       - Id
-- clean__fill_missing:
+- clean__fill_median:
     name: 填充缺失值
     params:
-      cv: 5
-      columns:
+      cols:
       - LotFrontage
       - MasVnrArea
 - x_y:
     name: X/y 拆分
     params:
-      targets: SalePrice
-- split:
+      target: SalePrice
+- cv__split:
     name: 数据集划分
     params:
       cv: 5
@@ -109,17 +108,3 @@
       n_estimators: 100
       n_trials: 2
       scoring: mae
-      max_depth:
-        start: 3
-        end: 10
-      min_samples_split:
-        start: 2
-        end: 20
-      min_samples_leaf:
-        start: 5
-        end: 50
-      ccp_alpha:
-        start: 0.0
-        end: 0.1
-- plot__taylor_diagram:
-    name: 模型对比

@@ -1,0 +1,54 @@
+- load__python:
+    name: 加载泰坦尼克合成数据
+    params:
+      source: titanic.py:load
+- clean__drop_cols:
+    name: 删除高基数字符串列
+    params:
+      cols:
+      - Name
+      - Ticket
+      - Cabin
+- clean__fill_median:
+    name: 填充年龄缺失
+    params:
+      cols:
+      - Age
+- clean__fill_mode:
+    name: 填充登船港缺失
+    params:
+      cols:
+      - Embarked
+- x_y:
+    name: X/y 拆分
+    params:
+      target: Survived
+      id_columns: PassengerId
+- cv__split:
+    name: 数据集划分
+    params:
+      cv: 3
+- x_transformer__onehot_encoder:
+    name: 类别编码
+    params:
+      categorical_cols:
+      - Sex
+      - Embarked
+- model__XGB:
+    name: XGBoost
+    params:
+      n_estimators: 30
+      n_trials: 10
+      scoring: f1
+- model__LGBM:
+    name: LightGBM
+    params:
+      n_estimators: 30
+      n_trials: 10
+      scoring: f1
+- model__CAT:
+    name: CatBoost
+    params:
+      iterations: 30
+      n_trials: 10
+      scoring: f1
