@@ -1,10 +1,11 @@
-"""#36 LLM findings 回路 + #38 propose 规则引擎重写。
+"""#36 LLM findings 回路 + 规则引擎实例（fire/poll 统一入口）。
 
 - report_findings 控制面：schema 校验（kind ⊆ 词表/severity ∈ [0,1]/未知键拒绝）、
   落诊进 models[key]、决策日志审计；propose 对规则与 LLM findings 均匀聚合
-- 规则引擎基座（driver/rule.fire + prioritize）：findings 驱动层浮于菜单顶部；
-  fold_std 门控加深（无 n_trials 族不出）；无 leader → FE 候选零出现（引擎级
-  gate）；排序确定性（同分 owner/kind 字典序）；unconsumed 显式报告
+- 规则引擎实例（driver.rule.RuleEngine + open_engine 落盘）：modelRuleEngine
+  默认实例注册族级/FE 规则（propose_rules）；findings 驱动层浮于菜单顶部；
+  fold_std 门控加深（无 n_trials 族不出）；无 leader → FE 候选零出现（规则
+  资格内联）；排序确定性（salience 降序，同分 rule_key 字典序）
 """
 
 import json
@@ -12,7 +13,7 @@ import json
 import numpy as np
 import pandas as pd
 import pytest
-from mflowy.model import session as ms
+from mflowy.model import propose_rules, session as ms
 
 _K_RF = "RF|ordinal|passthrough"  # cat 数据上 encode 族最小装配 ordinal
 
@@ -70,6 +71,41 @@ def searched(sessions_root, cat_csv):
     return s
 
 
+# ── 默认引擎实例：注册面完整性 ──────────────────────────────────────────────
+
+
+def test_default_engine_registers_family_and_fe_rules():
+    """聚合完整性：每族 × 4 出题 kind + 每 FE 节点一条换档规则，激活态空。"""
+    from mflowy.model import registry
+
+    engine = propose_rules.default_engine()
+    fams = sorted(registry.families())
+    fe = sorted(registry.fe_vocab())
+    expected = {f"{f}.{k}" for f in fams for k in ("fold_std", "complexity_edge", "overfit_gap", "slice_collapse")}
+    expected |= {f"fe.{n}" for n in fe}
+    assert set(engine.rules) == expected
+    assert engine.poll_proposals() == []  # 默认实例激活态空
+
+
+def test_default_engine_subscribes_exactly_known_finding_kinds():
+    """订阅面 = #35 词表：规则 kind 并集恰为 KNOWN_FINDING_KINDS（校验面 = 订阅面）。"""
+    engine = propose_rules.default_engine()
+    kinds = {r.kind for r in engine.rules.values()}
+    assert kinds == set(propose_rules.KNOWN_FINDING_KINDS)
+
+
+def test_engine_pkl_persisted_in_session_dir(searched, sessions_root):
+    """会话实例落盘：propose 后 session 目录有 rules.pkl，可再加载（自定义规则持载面）。"""
+    from mflowy.driver.rule import open_engine
+
+    s = searched
+    ms.propose_actions(s["session_id"])
+    pkl = sessions_root / s["session_id"] / "rules.pkl"
+    assert pkl.exists()
+    with open_engine(str(pkl), default=propose_rules.default_engine()) as engine:
+        assert engine.rules  # 盘上实例注册面完整
+
+
 # ── #36 report_findings ─────────────────────────────────────────────────────
 
 
@@ -121,11 +157,11 @@ def test_propose_aggregates_llm_and_rule_findings(searched):
     assert fe[0]["evidence"]["_rule"]["kind"] == "error_concentrated"
 
 
-# ── #38 规则引擎基座 ────────────────────────────────────────────────────────
+# ── 规则引擎实例：findings 驱动层 ───────────────────────────────────────────
 
 
 def test_no_leader_no_fe_candidates(sessions_root, cat_csv):
-    """无 leader（S 无模型信息）→ FE 候选零出现（引擎级 gate，非权重压序）。"""
+    """无 leader（S 无模型信息）→ FE 候选零出现（规则资格内联，非权重压序）。"""
     s = _start(sessions_root, cat_csv)
     ms.apply_action(s["session_id"], "select_model", {"family": "RF"})
     # 未 run：无模型账本信息（无 leader）——FE 基座档不出现；error_concentrated findings 也不存在
@@ -152,17 +188,25 @@ def test_fold_std_gates_deeper_search(searched):
 
 
 def test_deeper_rule_respects_n_trials_signature():
-    """回归防线：无 n_trials 形参的族不出加深题（gate 层面）。"""
-    from mflowy.model.propose_rules import family_rules
+    """回归防线：无 n_trials 形参的族不出加深题（资格内联在规则 propose）。"""
+    rule = propose_rules.FamilyRule(family="FAKE", kind="fold_std")
+    ctx = {
+        "family": "FAKE",
+        "signatures": {"FAKE": {}},
+        "has_n_trials": {"FAKE": False},
+        "entry": {"n_trials_at_last_eval": 2},
+        "combo_key": "FAKE|a|b",
+    }
+    acts = rule.propose({"findings": [{"kind": "fold_std", "severity": 0.5}], "ctx": ctx})
+    assert acts == []  # 签名无 n_trials → 不出加深题
 
-    rules = family_rules("FAKE", ("reg",))
-    gate = rules["fold_std"].rule_spec.gate
-    ctx = {"family": "FAKE", "owner_family": "FAKE", "signatures": {"FAKE": {}}}
-    assert gate(ctx) is False  # 签名无 n_trials → 不出加深题
+    ctx_ok = {**ctx, "has_n_trials": {"FAKE": True}}
+    acts2 = rule.propose({"findings": [{"kind": "fold_std", "severity": 0.5}], "ctx": ctx_ok})
+    assert acts2 and acts2[0].proposal["params"]["n_trials"] >= 6
 
 
 def test_findings_driven_menu_deterministic_order(searched):
-    """排序确定性：同 evidence 强度下 (owner, kind) 字典序——重复调用结果稳定。"""
+    """排序确定性：同 salience 下 rule_key 字典序——重复调用结果稳定。"""
     s = searched
     key = _K_RF
     ms.report_findings(
@@ -182,19 +226,21 @@ def test_findings_driven_menu_deterministic_order(searched):
     assert driven, "findings 驱动层在场"
 
 
-def test_rule_candidates_carry_score_breakdown(searched):
-    """_score 分解可审计：weight×severity 的分解面在 evidence。"""
+def test_rule_candidates_carry_salience_audit_face(searched):
+    """salience 审计面：_rule 分解（rule_key/kind/salience）在 evidence。"""
     s = searched
     key = _K_RF
     ms.report_findings(s["session_id"], key, [{"kind": "fold_std", "severity": 0.5}])
     props = ms.propose_actions(s["session_id"])
-    scored = [p for p in props if "_score" in p.get("evidence", {})]
-    assert scored and all(set(s["evidence"]["_score"]) == {"weight", "severity", "score", "overridden"} for s in scored)
+    scored = [p for p in props if "_rule" in p.get("evidence", {})]
+    assert scored and all(
+        set(p["evidence"]["_rule"]) == {"rule_key", "kind", "salience"} for p in scored
+    )
 
 
-def test_unconsumed_reported_not_silent(searched, caplog):
-    """消费闭环：已订阅 kind 但 gate 拒绝走 skipped；本用例关注 fire 的 unconsumed
-    面——无订阅 kind 经 report_findings 的词表门根本进不来（超纲即拒）。"""
+def test_unconsumed_reported_not_silent(searched):
+    """消费闭环：已订阅 kind 但 gate 拒绝走规则内零产出；本用例关注订阅面——
+    无订阅 kind 经 report_findings 的词表门根本进不来（超纲即拒）。"""
     s = searched
     key = _K_RF
     with pytest.raises(ValueError, match="超纲"):
