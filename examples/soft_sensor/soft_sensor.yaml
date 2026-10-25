@@ -1,0 +1,37 @@
+- load__python:
+    name: 加载反应器软测量数据
+    params:
+      source: soft_sensor.py:load
+- clean__fill_median:
+    name: 填补传感器故障缺失
+    params:
+      cols:
+      - feed_temp
+      - T3
+      - pressure
+- x_y:
+    name: X/y 拆分
+    params:
+      target: purity
+      id_columns: sample_id
+- cv__split:
+    name: 数据集划分
+    params:
+      cv: 3
+- x_transformer__onehot_encoder:
+    name: 类别编码
+    params:
+      categorical_cols:
+      - product_grade
+- model__XGB:
+    name: XGBoost
+    params:
+      n_estimators: 30
+      n_trials: 10
+      scoring: mae
+- model__RF:
+    name: 随机森林
+    params:
+      n_estimators: 30
+      n_trials: 10
+      scoring: mae

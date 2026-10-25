@@ -45,6 +45,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   指标下限（iris·digits f1≥0.90、titanic≥0.60，报告实测折），越限 FAIL 行 + 非零退出
   （`BENCH_FLOOR_BUMP` 越限自证）；实测 28s（预算 <5min）；发布前人肉门 = 先 `make e2e`
   再 `make e2e-bench`
+- **工业场景基准三链落仓（#74/#75 范式扩展）**：`examples/bearing_rul/`（预测性维护
+  RUL 回归：36 机组 × 150–560 循环 run-to-failure 仿真，振动/温度特征随退化进度非线性
+  增长 + 载荷-寿命幂律，种子 1950）+ `examples/steel_defect/`（质检类不平衡二分类：
+  3200×13，缺陷率 ~8%，表面统计主导可分结构，种子 1969）+ `examples/soft_sensor/`
+  （软测量脏表回归：2600×12，传感器故障缺失 T3 ~8%/pressure ~4%/feed_temp ~2% +
+  催化剂老化/床温共线结构，种子 1869）——生成器契约测试钉 schema/缺失/结构/确定性，
+  YAML 自动入 #73 反漂门。`make e2e-bench` 扩六链：bearing RF/XGB 回归、steel onehot
+  三树族 f1、soft fill_median 清洗→XGB/RF 回归；下限实测定折（数据 + machinery seed
+  双确定性，逐次重跑逐位一致）= bearing MAE≤20/15 循环、steel f1≥0.75、soft
+  MAE≤0.60/0.80 纯度点。bearing 整数 RUL（唯一值 <5% 且步长=1）被 `x_y` 自动推断判
+  LabelEncoder 式分类——YAML 显式 `task: regressor` 钉住（整数计数型回归目标的推断
+  盲区，`x_y.task` 显式参数的正当用例）
 
 ### BREAKING：节点解耦收口——predict/search_input 上游边化 + shap 族化（构建/引用分家）+ 副产物全走中间件
 

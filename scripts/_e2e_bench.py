@@ -1,13 +1,17 @@
-"""e2e-bench 三基准冒烟门（#75 决议，发布前人肉门——不进 CI）。
+"""e2e-bench 六基准冒烟门（#75 决议，发布前人肉门——不进 CI；工业三链随 #74 范式扩展）。
 
 链面（按任务裁剪）：
 - iris    ：全五族 DAG 搜索行为（examples/iris/iris.yaml）
 - digits  ：scaler → MLP training 行为 + XGB 搜索（examples/digits/digits.yaml）
 - titanic ：全清洗链 → 三树族搜索（examples/titanic/titanic.yaml）
+- bearing_rul ：机组退化 RUL 回归（RF/XGB，mae——回归判据 = u_inner 已对齐
+  higher-better，floor 为负 MAE，越不负 = MAE 越小）
+- steel_defect：类不平衡质检分类（onehot → 三树族，f1）
+- soft_sensor ：传感器缺失脏表清洗（fill_median）→ onehot → XGB/RF 回归（mae）
 - 会话链  ：iris/RF 分类会话 start → select_model → run_hpo → final_train_test（B2 执行位）
 
 判据 = 节点全绿 + 每任务指标下限（防「绿但退化」；下限 = benchmark_readiness_report.md
-实测折，见 THRESHOLDS 注释）。越限/未完成 → FAIL 行 + 非零退出。
+实测折 + 工业三链实测折，见 THRESHOLDS 注释）。越限/未完成 → FAIL 行 + 非零退出。
 数据全部来自 examples/<task>/<task>.py 生成器（#74 决议），无网络、无仓外依赖；
 追踪默认落临时 file store（零仓库产物，M10），已设 MLFLOW_TRACKING_URI 则尊重。
 需 ``--extra deep``（digits 链含 MLP）。
@@ -32,12 +36,19 @@ sys.path.insert(0, str(ROOT / "scripts"))
 # 相对 source 绝对化单源（scripts 目录同居件互引；E402 不可避免——需先改 sys.path）
 from _e2e_payload import absolutize_load_sources  # noqa: E402
 
-# 指标下限（u_inner，f1——higher-better）：报告实测 iris RF=0.958 / digits XGB=0.951 /
-# titanic 三树族≈0.64，取保守折。BENCH_FLOOR_BUMP（task|family|floor）供越限自证。
+# 指标下限（u_inner——higher-better 对齐；分类 = f1，回归 = 负 MAE）：报告实测
+# iris RF=0.958 / digits XGB=0.951 / titanic 三树族≈0.64；工业三链实测（数据种子 +
+# machinery seed 双确定性，逐次重跑数值逐位一致）：bearing RF=-10.60 / XGB=-7.07
+# （MAE，循环数）、steel 三树族≈0.886-0.890（f1）、soft XGB=-0.352 / RF=-0.566
+# （MAE，纯度百分点）。均取保守折（结构塌方如任务误判/特征失效必越限——退化到
+# 均值预测时 bearing MAE≈150+）。BENCH_FLOOR_BUMP（task|family|floor）供越限自证。
 THRESHOLDS: dict[str, dict[str, float]] = {
     "iris": {"RF": 0.90},
     "digits": {"XGB": 0.90},
     "titanic": {"XGB": 0.60, "LGBM": 0.60, "CAT": 0.60},
+    "bearing_rul": {"RF": -20.0, "XGB": -15.0},  # 实测 -10.60 / -7.07
+    "steel_defect": {"XGB": 0.75, "LGBM": 0.75, "CAT": 0.75},  # 实测 ≈0.89
+    "soft_sensor": {"XGB": -0.60, "RF": -0.80},  # 实测 -0.352 / -0.566
 }
 
 failures: list[str] = []
