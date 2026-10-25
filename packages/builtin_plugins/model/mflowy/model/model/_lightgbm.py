@@ -11,7 +11,7 @@ from mflowy.utils.logging import is_verbose
 from ._embedded_tree import TreeExplainMixin
 from ._loss_curve import LossCurveMixin
 from .types import TASKTYPE, SubTask
-from .utils import validate_input
+from .utils import as_y_frame, validate_input
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +26,7 @@ class _LGBMMixin(LossCurveMixin, TreeExplainMixin):
     task: TASKTYPE  # 子类类属性声明——SubTask 路由用（sklearn clone 存活）
 
     def fit(self, X: pd.DataFrame, y: pd.DataFrame, eval_set=None, early_stopping_rounds: int | None = None, **_):
+        y = as_y_frame(y)  # B2 双态：sklearn cross_val_predict(proba) 传标签编码 ndarray
         validate_input(X, y)
         subtask = SubTask.from_y(y, self.task)
         import lightgbm as lgb

@@ -8,7 +8,7 @@ from sklearn.ensemble import RandomForestRegressor as rfr
 
 from ._embedded_tree import TreeExplainMixin
 from .types import TASKTYPE
-from .utils import validate_input
+from .utils import as_y_frame, validate_input
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,7 @@ class _RFMixin(TreeExplainMixin):
     task: TASKTYPE
 
     def fit(self, X: pd.DataFrame, y: pd.DataFrame, **_):
+        y = as_y_frame(y)  # B2 双态：sklearn cross_val_predict(proba) 传标签编码 ndarray
         validate_input(X, y)
         # sklearn 原生 multi-output estimator 按 y 的形状维度 dispatch:
         # (n,) 1D 单目标 → predict (n,)；(n,m) 2D 多目标 → predict (n,m)

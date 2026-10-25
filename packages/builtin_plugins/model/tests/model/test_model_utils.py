@@ -1,8 +1,9 @@
 """测试 model/utils.py 模块（监督学习契约：X/y 恒成对）"""
 
+import numpy as np
 import pandas as pd
 import pytest
-from mflowy.model.model.utils import validate_input
+from mflowy.model.model.utils import as_y_frame, validate_input
 
 
 class TestValidateInput:
@@ -36,3 +37,29 @@ class TestValidateInput:
 
     def test_single_row(self):
         validate_input(pd.DataFrame({"a": [1]}), pd.DataFrame({"t": [0]}))
+
+
+class TestAsYFrame:
+    """as_y_frame 双态归一（B2，#72）：sklearn cross_val_predict(proba) 的 encode=True
+    路径传标签编码 ndarray——五族 fit 原假设 DataFrame 必炸的统一转换位。"""
+
+    def test_dataframe_identity(self):
+        y = pd.DataFrame({"target": [0, 1, 2]})
+        assert as_y_frame(y) is y  # DataFrame 原样（零拷贝）
+
+    def test_series_wraps_single_column(self):
+        out = as_y_frame(pd.Series([0, 1, 0], name="t"))
+        assert isinstance(out, pd.DataFrame) and out.columns.tolist() == ["t"]
+
+    def test_1d_ndarray_wraps(self):
+        out = as_y_frame(np.array([0, 1, 2]))
+        assert out.shape == (3, 1) and out.columns.tolist() == ["target0"]
+
+    def test_2d_ndarray_label_encoded_form(self):
+        """sklearn encode=True 实际形态：2D (n,1) 标签编码 ndarray。"""
+        out = as_y_frame(np.array([[0], [1], [2]]))
+        assert out.shape == (3, 1) and out.columns.tolist() == ["target0"]
+
+    def test_3d_rejected_fail_loud(self):
+        with pytest.raises(ValueError, match="1D/2D"):
+            as_y_frame(np.zeros((2, 2, 2)))

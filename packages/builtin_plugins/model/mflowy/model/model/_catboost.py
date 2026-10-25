@@ -10,7 +10,7 @@ from mflowy.utils.logging import is_verbose
 from ._embedded_tree import TreeExplainMixin
 from ._loss_curve import LossCurveMixin
 from .types import TASKTYPE, SubTask
-from .utils import validate_input
+from .utils import as_y_frame, validate_input
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +26,7 @@ class _CATMixin(LossCurveMixin, TreeExplainMixin):
     task: TASKTYPE  # 子类类属性声明——SubTask 路由用（sklearn clone 存活）
 
     def fit(self, X: pd.DataFrame, y: pd.DataFrame, eval_set=None, **_):
+        y = as_y_frame(y)  # B2 双态：sklearn cross_val_predict(proba) 传标签编码 ndarray
         validate_input(X, y)
         subtask = SubTask.from_y(y, self.task)
 
@@ -41,6 +42,14 @@ class _CATMixin(LossCurveMixin, TreeExplainMixin):
         fit_params: dict = {}
         # 激活内部自动处理分类列的机制
         if cat_features := X.select_dtypes("category").columns.tolist():
+            # fail-loud 守卫（P1-5）：cat_features 拒 NaN（CatBoostError 直达内部异常
+            # 无引导）——脏表先清洗或切编码，在此给出指路
+            nan_cols = [c for c in cat_features if X[c].isna().any()]
+            if nan_cols:
+                raise ValueError(
+                    f"CatBoost 原生类别列不接受 NaN（{nan_cols}）——先清洗（clean 域 "
+                    "fill_mode/缺失标记）或 x_transformer 编码（ordinal/onehot）后再入 CAT"
+                )
             fit_params["cat_features"] = cat_features
         if eval_set is not None:
             fit_params["eval_set"] = [eval_set]
