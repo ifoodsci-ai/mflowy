@@ -20,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **钉测**：同数据两个全新会话首 trial θ* 逐位一致
   （`test_run_hpo_theta_deterministic_across_studies`——同进程内两个未钉 sampler
   必不同，等价断言真咬合缺陷）；原 flaky 用例补 #84 根因注记
+### 词表身份钉测试补判据③（#87，#67 验收残留）
+
+- ns 返回契约套件（`test_ns_return_contract.py`）新增判据③最小流：
+  `load__file → x_y → model__loader → predict → shap__explanation → plot__shap_summary`
+  编译通过即断言（单值 ``model`` 边未吃到 predict 的 DataFrame 返回）——predict
+  若回流 model ns，类型门经此用例报警而非等用户流炸；测试文件头部判据清单
+  （①②③）同步补全
 
 ### 基准建模就绪（#70 决策图执行）：B1/B2/B3 三 P0 修复 + 基准任务落仓 + e2e-bench 冒烟门
 
