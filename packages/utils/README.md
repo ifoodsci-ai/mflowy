@@ -8,7 +8,7 @@ MFlowy 全家共享的底层工具，无业务语义：
 | 模板 | `jinja.py` | 沙箱化 Jinja2 环境（SandboxedEnvironment + StrictUndefined），YAML 模板渲染 |
 | 观测基础设施 | `logging.py` `capture.py` | stderr 日志分级、stdout 按任务捕获（通道边界的实现侧） |
 | 脚本安全 | `python_script_security_scan.py` | `load.python` / `clean.python` 的 AST 安全门（禁 os/sys/subprocess 等危险调用） |
-| 内容指纹 | `file.py` | 文件读写 + `sha256_of` / `fingerprint_tags`（run 级数据指纹 tag 的实现侧） |
+| 内容指纹与原子写 | `file.py` | 文件读写 + `sha256_of` / `fingerprint_tags`（run 级数据指纹 tag 的实现侧）+ `write_bytes_atomic` / `write_text_atomic`（tmp+rename 原子写基元——manifest 落盘纪律的实现侧） |
 | 任务目录锚定 | `path.py` | ContextVar 每请求/每 asyncio task 隔离——MCP 并发分发下进行中 DAG 的产物解析不串目录 |
 | 通用 | `wraps.py` `utils.py` | 同步/静默装饰器、时间戳 |
 

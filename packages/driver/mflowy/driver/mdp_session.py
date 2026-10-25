@@ -16,6 +16,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol, TypedDict
 
+from mflowy.utils.file import write_text_atomic
+
 
 class Observation(TypedDict):
     """回合观测：start/apply/rollback 响应的契约下限（核心键之外域可加字段）。
@@ -185,10 +187,10 @@ class SessionStore:
 
     def write_manifest(self, sid: str, manifest: Mapping[str, Any]) -> None:
         """原子落盘（tmp+rename，M3）：manifest 是会话 commit 点，撕裂写不留半开状态。"""
-        p = self.session_dir(sid).joinpath("manifest.json")
-        tmp = p.with_name(p.name + ".tmp")
-        tmp.write_text(json.dumps(manifest, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
-        tmp.replace(p)  # POSIX rename 原子：读侧要么旧版要么新版，永无半份
+        write_text_atomic(
+            self.session_dir(sid) / "manifest.json",
+            json.dumps(manifest, ensure_ascii=False, indent=1, default=str),
+        )
 
     def is_terminal(self, sid: str) -> bool:
         """终态判定：finished ∨ abandoned（get 缺省——存量会话文件零迁移）。"""

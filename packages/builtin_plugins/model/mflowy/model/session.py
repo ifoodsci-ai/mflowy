@@ -50,6 +50,7 @@ from mflowy.model import registry
 from mflowy.model.model._pipeline import oof_predictions, u_inner_of
 from mflowy.model.model.types import MetricName
 from mflowy.model.model.utils import MACHINERY_SKIP, infer_metric, normalize_space, space_from_json, space_to_json
+from mflowy.utils.file import write_text_atomic
 
 logger = logging.getLogger(__name__)
 
@@ -727,14 +728,6 @@ def _run_bridge(coro):
         return ex.submit(asyncio.run, coro).result()
 
 
-def _write_atomic(path: Path, text: str) -> None:
-    """tmp + rename 原子落盘（引擎写盘纪律——读者只见完整文件）。"""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
-
-
 def _final_train_test(store, m: dict, params: dict) -> dict:
     """final_train_test：先搜后门店——终训走 modeling 工具（JobProvider DAG）。
 
@@ -767,7 +760,7 @@ def _final_train_test(store, m: dict, params: dict) -> dict:
 
     plan_text = _plan_yaml(m, key, final_params)
     plan_path = _store().session_dir(m["session_id"]) / "plans" / f"final_{_key_file(key)}.yaml"
-    _write_atomic(plan_path, plan_text)  # 审计工件（执行合同面是明文文本，M4 计划落盘留痕）
+    write_text_atomic(plan_path, plan_text)  # 审计工件（执行合同面是明文文本，M4 计划落盘留痕）
 
     from .job_provider import get_job_provider
 

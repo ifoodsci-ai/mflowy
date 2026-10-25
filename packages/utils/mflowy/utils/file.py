@@ -1,6 +1,7 @@
-"""本地文件读取抽象。"""
+"""本地文件读写抽象。"""
 
 import hashlib
+import os
 from pathlib import Path
 
 
@@ -17,6 +18,24 @@ def read_text(path: str, encoding: str = "utf-8") -> str:
 def exists(path: str) -> bool:
     """检查文件是否存在。"""
     return Path(path).exists()
+
+
+def write_bytes_atomic(path: str | Path, data: bytes) -> None:
+    """tmp+rename 原子写（基元）：读侧要么旧版要么新版，永无半份。
+
+    tmp 是目标同目录的兄弟文件（同文件系统 rename 才原子）、点前缀隐藏命名
+    （不进 glob/目录列举）；写 tmp 失败时目标分毫未动——丢弃 tmp 即回滚。
+    """
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_name(f".{p.name}.tmp")
+    tmp.write_bytes(data)
+    os.replace(tmp, p)
+
+
+def write_text_atomic(path: str | Path, text: str, encoding: str = "utf-8") -> None:
+    """文本门面：先编码后落盘——编码失败发生在任何文件效果之前（不留空 tmp 垃圾）。"""
+    write_bytes_atomic(path, text.encode(encoding))
 
 
 def sha256_of(path: str | Path, chunk: int = 8 * 1024 * 1024) -> str:

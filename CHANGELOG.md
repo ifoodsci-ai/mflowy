@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - Unreleased
 
+### Added（utils 原子写原语：tmp+rename 三处分叉收敛为单源）
+
+- **`mflowy.utils.file.write_bytes_atomic` / `write_text_atomic`**：tmp+rename 原子写
+  下沉 utils——bytes 基元（tmp 是目标同目录点前缀兄弟，同文件系统 rename 才原子；写
+  tmp 失败目标分毫未动，丢弃即回滚）+ 文本门面（先编码后落盘：编码失败发生在任何文件
+  效果之前，不留空 tmp 垃圾）；契约测试钉三不变式（成功无垃圾残留 / 撕裂写目标完好且
+  垃圾点前缀 / 编码失败零文件副作用）
+- **三处分叉收敛**（单源红线："第二份拷贝出现即收敛"）：driver
+  `SessionStore.write_manifest` 内联实现（tmp 名 `manifest.json.tmp` 可见款）与 model
+  会话 `_write_atomic`（点前缀款）同纪律两写法已分叉——统一走原语，`_write_atomic`
+  删除；交付物拷贝（session.py copy-from-file 流式）非 write-from-buffer 算子，单站点
+  保持原地
+- 行为可见变化：driver 侧 tmp 垃圾名 `manifest.json.tmp` → `.manifest.json.tmp`（点
+  前缀隐藏不进 glob/目录列举；仓内无消费方按旧名寻址，非 breaking）
+
 ### 基准建模就绪（#70 决策图执行）：B1/B2/B3 三 P0 修复 + 基准任务落仓 + e2e-bench 冒烟门
 
 - **B1（#71）`model__MLP` 全路径修复**：`MLPEstimator.__init__` 增 `random_state` 形参
