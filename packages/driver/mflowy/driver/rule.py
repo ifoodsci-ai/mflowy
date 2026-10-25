@@ -197,28 +197,24 @@ class Activation:
 
 
 def _validate_activation(a: Any, rule_key: str) -> None:
-    """Activation fail-loud 校验：键齐、类型对、rule_key 与宿主规则一致。"""
-    if not isinstance(a, Mapping):
-        raise TypeError(f"规则 {rule_key!r} 的 propose 产出须为 Activation 形 Mapping，得到 {type(a).__name__}")
-    if a.get("rule_key") != rule_key:
-        raise ValueError(f"Activation.rule_key={a.get('rule_key')!r} 与宿主规则 {rule_key!r} 不一致")
+    """Activation fail-loud 校验：实例类型、字段类型、rule_key 与宿主规则一致。"""
+    if not isinstance(a, Activation):
+        raise TypeError(f"规则 {rule_key!r} 的 propose 产出须为 Activation 实例，得到 {type(a).__name__}")
+    if a.rule_key != rule_key:
+        raise ValueError(f"Activation.rule_key={a.rule_key!r} 与宿主规则 {rule_key!r} 不一致")
     where = f"Activation（rule={rule_key!r}）"
-    for k in ("proposal", "salience", "rationale"):
-        if k not in a:
-            raise ValueError(f"{where} 缺 {k}")
-    p = a["proposal"]
-    if not isinstance(p, Mapping) or set(p) - {"action", "params"} or "action" not in p or "params" not in p:
-        raise ValueError(f"{where}.proposal 须为恰含 action/params 两键的 Mapping，得到 {p!r}")
+    p = a.proposal
+    if not isinstance(p, Mapping) or set(p) != {"action", "params"}:
+        raise ValueError(f"{where}.proposal 须为恰含 action/params 两键的 Mapping，得到 {dict(p) if isinstance(p, Mapping) else p!r}")
     if not isinstance(p["action"], str) or not p["action"]:
         raise TypeError(f"{where}.action 期望非空 str")
     if not isinstance(p["params"], Mapping):
         raise TypeError(f"{where}.params 期望 Mapping")
-    if isinstance(a["salience"], bool) or not isinstance(a["salience"], int):
-        raise TypeError(f"{where}.salience 期望 int，得到 {a['salience']!r}")
-    if not isinstance(a["rationale"], str):
+    if isinstance(a.salience, bool) or not isinstance(a.salience, int):
+        raise TypeError(f"{where}.salience 期望 int，得到 {a.salience!r}")
+    if not isinstance(a.rationale, str):
         raise TypeError(f"{where}.rationale 期望 str")
-    ev = a.get("evidence")
-    if ev is not None and not isinstance(ev, Mapping):
+    if a.evidence is not None and not isinstance(a.evidence, Mapping):
         raise TypeError(f"{where}.evidence 期望 Mapping | None")
 
 
@@ -258,12 +254,8 @@ class RuleEngine:
         for key in self._select(keys):
             for a in self._rules[key].propose(R):
                 _validate_activation(a, key)
-                act = Activation(
-                    rule_key=a["rule_key"], proposal=a["proposal"], salience=a["salience"],
-                    rationale=a["rationale"], evidence=a.get("evidence"),
-                )
-                self._activations.append(act)
-                produced.append(act)
+                self._activations.append(a)
+                produced.append(a)
         return produced
 
     def poll_proposals(self) -> list[Activation]:

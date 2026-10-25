@@ -13,6 +13,7 @@ seam（公共接口，2026-10 重构定案）：
 """
 
 import pytest
+from mflowy.driver.rule import Activation
 
 
 class _EchoRule:
@@ -25,12 +26,12 @@ class _EchoRule:
 
     def propose(self, R):
         return [
-            {
-                "rule_key": self.key,
-                "proposal": {"action": self._action, "params": {}},
-                "salience": self._salience,
-                "rationale": f"{self.key} 出题",
-            }
+            Activation(
+                rule_key=self.key,
+                proposal={"action": self._action, "params": {}},
+                salience=self._salience,
+                rationale=f"{self.key} 出题",
+            )
         ]
 
 
@@ -128,19 +129,24 @@ def test_fire_fail_loud_on_malformed_activation():
             return self._out
 
     engine = RuleEngine()
-    engine.register(_Bad([{"rule_key": "other", "proposal": {"action": "x", "params": {}}, "salience": 1, "rationale": "r"}]))
-    with pytest.raises(ValueError, match="不一致"):
+    engine.register(_Bad(["裸 dict"]))
+    with pytest.raises(TypeError, match="Activation 实例"):
         engine.fire(R={})
 
     engine2 = RuleEngine()
-    engine2.register(_Bad([{"rule_key": "bad", "proposal": {"action": "x"}, "salience": 1, "rationale": "r"}]))
-    with pytest.raises(ValueError, match="proposal"):
+    engine2.register(_Bad([Activation("other", {"action": "x", "params": {}}, 1, "r")]))
+    with pytest.raises(ValueError, match="不一致"):
         engine2.fire(R={})
 
     engine3 = RuleEngine()
-    engine3.register(_Bad([{"rule_key": "bad", "proposal": {"action": "x", "params": {}}, "salience": 1.5, "rationale": "r"}]))
-    with pytest.raises(TypeError, match="salience"):
+    engine3.register(_Bad([Activation("bad", {"action": "x"}, 1, "r")]))
+    with pytest.raises(ValueError, match="proposal"):
         engine3.fire(R={})
+
+    engine4 = RuleEngine()
+    engine4.register(_Bad([Activation("bad", {"action": "x", "params": {}}, 1.5, "r")]))
+    with pytest.raises(TypeError, match="salience"):
+        engine4.fire(R={})
 
 
 # ── 落盘：save/load/copy + open_engine ─────────────────────────────────────
