@@ -73,7 +73,7 @@ class RepairRule:
         fn = namespace_nodes("clean")[self.node].load()
         make = dict(_iter_repairs(getattr(fn, "repair", None) or {}))[self.kind]
         severity_max = round(max((e.severity for e in errs), default=0.0), 4)
-        salience = int(round(kind_weight(self.kind, card.get("defect_priority")) * severity_max * _SALIENCE_SCALE))
+        salience = round(kind_weight(self.kind, card.get("defect_priority")) * severity_max * _SALIENCE_SCALE)
         evidence = {
             "kind": self.kind,
             "columns": sorted({e.column for e in errs if e.column}),

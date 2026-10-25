@@ -13,7 +13,8 @@ import json
 import numpy as np
 import pandas as pd
 import pytest
-from mflowy.model import propose_rules, session as ms
+from mflowy.model import propose_rules
+from mflowy.model import session as ms
 
 _K_RF = "RF|ordinal|passthrough"  # cat 数据上 encode 族最小装配 ordinal
 
@@ -233,9 +234,7 @@ def test_rule_candidates_carry_salience_audit_face(searched):
     ms.report_findings(s["session_id"], key, [{"kind": "fold_std", "severity": 0.5}])
     props = ms.propose_actions(s["session_id"])
     scored = [p for p in props if "_rule" in p.get("evidence", {})]
-    assert scored and all(
-        set(p["evidence"]["_rule"]) == {"rule_key", "kind", "salience"} for p in scored
-    )
+    assert scored and all(set(p["evidence"]["_rule"]) == {"rule_key", "kind", "salience"} for p in scored)
 
 
 def test_unconsumed_reported_not_silent(searched):

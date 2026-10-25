@@ -103,16 +103,19 @@ _Avoid_: ExperimentCard、ModelBrief、ModelingCard（协议卡禁用别名）
 ### 规则与出题（0.2.0）
 
 **规则（rule）**:
-挂在被提议节点上的出题知识：`node.rule = {kind: fn}`（与 clean 域 `.repair` 同构），
-声明"什么 findings/会话态下我是好的一步"。规则是节点附加属性而非词表项——无独立
-entry point，枚举即对已加载节点 getattr。
-_Avoid_: 以「规则引擎」裸指 RETE/DSL 类推理引擎（明确非需求——本仓自研件全称「规则引擎 SDK」）；rules. 前缀注册桶（#37 旧稿已废弃）
+实现 `driver.rule.Rule` 协议的出题知识对象（`key` 身份 + `propose(R) -> list[Activation]`），
+声明"什么触发上下文下我是好的一步"。词表知识源随词汇主人居住（clean `.repair` /
+model 族自声明），经域适配器（data `repair_rules` / model `propose_rules`）包装注册到
+域默认 RuleEngine 实例；会话实例经 `open_engine(session_dir/rules.pkl, default=…)` 从盘
+加载/复制（自定义规则 pkl 持载，激活态清空起步）。
+_Avoid_: 以「规则引擎」裸指 RETE/DSL 类推理引擎（明确非需求——本仓自研件全称「规则引擎 SDK」）；rules. 前缀 entry point 注册桶（#37 旧稿已废弃）；节点属性挂载 `node.rule = {kind: fn}`（0.2.0 随实例门面重构退役）
 
 **资格门（gate）**:
-规则点火前的会话态前置谓词（`(ctx) -> bool`，显式具名）。未过则候选恒不出现——
-资格与权重互不代偿：S 无模型信息时 FE 候选恒零，不靠权重压序。
-_Avoid_: 用高 weight 实现阶段前置（overrides 可改权重、不可越资格）
+规则 propose 内的前置早退（读 R 的会话态，不满足即零产出）。未过则候选恒不出现——
+资格与 salience 互不代偿：S 无模型信息时 FE 候选恒零，不靠记分压序。
+_Avoid_: 用高 salience 实现阶段前置（记分只回答"多值得做"，不编码资格）
 
-**记分牌（weight × severity）**:
-候选排序面：weight = 域先验（委托人 overrides 可覆盖），severity = 触发 finding 的证据
-强度（探索题记 0——无证据 = 零证据强度）；同分按 (owner, kind) 字典序保证菜单确定性。
+**记分牌（salience）**:
+Activation 的 int 排序面：域先验权重 × 触发证据强度（severity），放大取整保序；
+poll_proposals 按 salience 降序聚合，同分按 (rule_key, action, params 序列化) 字典序
+保证菜单确定性。

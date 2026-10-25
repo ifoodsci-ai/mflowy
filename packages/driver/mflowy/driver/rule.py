@@ -25,7 +25,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-
 # ── 实例门面（2026-10 重构）：Rule/Activation/RuleEngine ───────────────────
 
 
@@ -66,7 +65,9 @@ def _validate_activation(a: Any, rule_key: str) -> None:
     where = f"Activation（rule={rule_key!r}）"
     p = a.proposal
     if not isinstance(p, Mapping) or set(p) != {"action", "params"}:
-        raise ValueError(f"{where}.proposal 须为恰含 action/params 两键的 Mapping，得到 {dict(p) if isinstance(p, Mapping) else p!r}")
+        raise ValueError(
+            f"{where}.proposal 须为恰含 action/params 两键的 Mapping，得到 {dict(p) if isinstance(p, Mapping) else p!r}"
+        )
     if not isinstance(p["action"], str) or not p["action"]:
         raise TypeError(f"{where}.action 期望非空 str")
     if not isinstance(p["params"], Mapping):
@@ -166,7 +167,7 @@ class RuleEngine:
         try:
             with open(p, "rb") as fh:
                 obj = pickle.load(fh)
-        except Exception as e:  # noqa: BLE001 —— 任何读/反序列化失败都归一为带路径的 fail-loud
+        except Exception as e:  # 任何读/反序列化失败都归一为带路径的 fail-loud
             raise RuntimeError(f"规则引擎实例损坏（{p}）：{e!r}") from e
         if not isinstance(obj, cls):
             raise TypeError(f"{p} 不是 {cls.__name__} 实例，得到 {type(obj).__name__}")

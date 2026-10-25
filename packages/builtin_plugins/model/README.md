@@ -52,5 +52,5 @@ MY_MODEL.regularizers = ("my_l2",)  # 正则面自声明（#38 出题规则的�
   fan-in——`taylor_byproducts` 边函数断言各模型 y_test 逐位同一）/ 报告素材
   （`modeling_report_skeleton`：表格从账本渲染 + 图片清单 + 叙事槽）；终局报告不在
   引擎——π 撰写后 `finish(pdf)` 收编进 deliverables（tmp/rename 原子落盘，不编译不验内容）
-- `propose_rules.py`：出题规则（rule = 节点附加属性，与 clean 域 `.repair` 同构）——
-  findings 驱动层经 `driver.rule.fire/prioritize` 进菜单
+- `propose_rules.py`：出题规则实例（FamilyRule/FERule 注册在 modelRuleEngine 默认实例）——
+  findings 驱动层经 `open_engine` → fire/poll 进菜单（会话实例 pkl 持载自定义规则）

@@ -190,7 +190,6 @@ def test_open_engine_loads_custom_rules_and_pending_activations(tmp_path):
 def test_open_engine_exception_no_save(tmp_path):
     """with 内异常：异常透传且不落盘（事务性——失败调用零副作用）。"""
     import pytest as _pytest
-
     from mflowy.driver.rule import RuleEngine, open_engine
 
     default = RuleEngine().register(_EchoRule("a"))
@@ -208,5 +207,5 @@ def test_open_engine_fail_loud_on_corrupt_pkl(tmp_path):
 
     pkl = tmp_path / "rules.pkl"
     pkl.write_bytes(b"\x80\x04 not-a-pickle")
-    with pytest.raises(RuntimeError, match="rules.pkl"):
+    with pytest.raises(RuntimeError, match=r"rules\.pkl"):
         open_engine(pkl, default=None).__enter__()

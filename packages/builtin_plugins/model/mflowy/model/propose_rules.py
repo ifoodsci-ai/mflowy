@@ -26,11 +26,17 @@ KNOWN_FINDING_KINDS = frozenset({"error_concentrated", "slice_collapse", "fold_s
 _SALIENCE_SCALE = 1_000_000
 
 # 出题 kind → 记分牌权重（域先验）：只回答"多值得做"，不编码资格
-_KIND_WEIGHTS = {"fold_std": 1.2, "overfit_gap": 1.1, "complexity_edge": 1.0, "slice_collapse": 1.0, "error_concentrated": 1.0}
+_KIND_WEIGHTS = {
+    "fold_std": 1.2,
+    "overfit_gap": 1.1,
+    "complexity_edge": 1.0,
+    "slice_collapse": 1.0,
+    "error_concentrated": 1.0,
+}
 
 
 def _salience(weight: float, severity: float) -> int:
-    return int(round(weight * float(severity) * _SALIENCE_SCALE))
+    return round(weight * float(severity) * _SALIENCE_SCALE)
 
 
 # ── 规则体（纯函数：(finding, family, ctx) -> list[Activation]） ───────────
@@ -156,7 +162,7 @@ class FERule:
     node: str
     slot: str
 
-    kind = "error_concentrated"  # noqa: RUF012 —— 订阅面常量（frozen 实例字段不可变，类属性只读面）
+    kind = "error_concentrated"  # 订阅面常量（frozen 实例字段不可变，类属性只读面）
 
     @property
     def key(self) -> str:
@@ -168,7 +174,12 @@ class FERule:
             return []
         if not ctx.get("fe_slots_ok", {}).get(self.slot):  # 槽位非冗余（cat native/无类别列、num 免缩放不出）
             return []
-        return [a for f in R["findings"] if f.get("kind") == self.kind for a in _fe_switch_rule(f, self.node, self.slot, ctx)]
+        return [
+            a
+            for f in R["findings"]
+            if f.get("kind") == self.kind
+            for a in _fe_switch_rule(f, self.node, self.slot, ctx)
+        ]
 
 
 def default_engine() -> RuleEngine:

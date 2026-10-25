@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - Unreleased
 
+### BREAKING：规则引擎重构——散落规则聚合到实例（Rule/Activation/RuleEngine + open_engine 落盘），两域 MDP 统一 fire/poll 入口
+
+- **实例门面取代节点属性挂载**：规则 = 实现 `driver.rule.Rule` 协议的对象（`key` 身份 +
+  `propose(R) -> list[Activation]`），经 `RuleEngine.register(*rules)` 聚合；`fire(*keys, R)`
+  按 key 激活（空 = 全部，未知 key fail-loud 带候选清单）产出 `Activation`（proposal 恰含
+  action/params + salience 记分牌 + rationale/evidence 解释面）在实例内累积，
+  `poll_proposals()` 按 salience 降序（同分 rule_key/action/params 字典序）聚合排空——
+  连续 fire 一次取走，菜单确定性不变
+- **实例落盘**：pkl 承载注册面（含运行期注册的自定义规则）与未 poll 激活态；
+  `open_engine(path, default=域默认实例)` 盘上有则加载（损坏 fail-loud 带路径，不静默重建）、
+  无则从默认实例复制（激活态清空起步）；with 正常退出原子落盘（tmp+rename）、异常不落盘
+  （失败调用零副作用）。规则须可 pickle——域规则 = 模块级 frozen dataclass 只持 str/num，
+  词表/注册表对象在 propose 内现查
+- **data 域统一接入**（此前 `.repair` 直扫绕开引擎）：`repair_rules.py` 新模块——词表
+  `.repair` 声明（知识仍随词汇主人居住）包装为 `RepairRule`（key = `node.kind`）注册进
+  cleanRuleEngine 默认实例；`propose_actions` 走 fire（R = defects/card/df）/poll，菜单响应
+  形状与记分语义不变（kind_weight×severity 同尺映 salience），会话目录落 `rules.pkl`
+- **model 域迁移**：`propose_rules.py` 闭包工厂（`family_rules`/`fe_rule`/`attach_rules`）改写为
+  `FamilyRule`/`FERule` 规则实例（key = `family.kind` / `fe.node`），资格门内联 propose 早退
+  （skipped 面随内联退役）；`session.propose_actions` findings 驱动层同走 fire/poll，`_rule`
+  溯源改 `{rule_key, kind, salience}`（`_score` 分解随 overrides 退役——唯一调用方从未传）
+- **BREAKING**：`driver.rule` 旧 API（`@rule` 装饰器 / `RuleSpec` / `Finding` / `fire` /
+  `prioritize` / `FireResult`）删除——唯一仓内消费者 model 域已迁移；第三方规则作者改实现
+  `Rule` 协议并注册 `RuleEngine` 实例
+
 ### Added（utils 原子写原语：tmp+rename 三处分叉收敛为单源）
 
 - **`mflowy.utils.file.write_bytes_atomic` / `write_text_atomic`**：tmp+rename 原子写
@@ -20,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   删除；交付物拷贝（session.py copy-from-file 流式）非 write-from-buffer 算子，单站点
   保持原地
 - 行为可见变化：driver 侧 tmp 垃圾名 `manifest.json.tmp` → `.manifest.json.tmp`（点
-  前缀隐藏不进 glob/目录列举；仓内无消费方按旧名寻址，非 breaking）
+  前缀隐藏不进 glob/目录列举；仓内无消费方按旧名寻址，非 breaking）BREAKING)
 
 ### 单源红线收敛（#83，#66 验收跟进）：cv/max_steps 缺省单点 + 泰勒图名单源 + 片段门共享谓词
 
