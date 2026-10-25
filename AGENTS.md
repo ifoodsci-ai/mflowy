@@ -66,7 +66,7 @@ uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 | M3  | `SessionStore.create` 只建目录；两域 `_is_terminal` 委托基座 `is_terminal_state` | driver 侧已落地（`write_manifest` tmp+rename / 共享单源 / gc root 守卫，见 CHANGELOG）；余：两域绕过 create、`_is_terminal` 逐字重复 | 两域 `_is_terminal` 逐字重复删除                      |
 | M4  | 会话壳收敛：store/终态/decision_log 形状/plan-YAML emitter 住 driver，域只填转移语义 | 两域 ~1/5 骨架逐字重复、plan YAML 手拼分叉        | 两域 session 各缩 ~150 行；`MDPSessionHandle` 结构等价有测试钉住 |
 | M5  | 版本树 append-only（`current_v` 指针）；loader 工件带版本号，rollback 同步盘上 | clean 截断覆写弃分支；model loader 覆写不同步      | rollback-after-rerun 一致性用例                       |
-| M6  | `registry.families()` 对缺 extra 条目降级跳过                          | 无守卫，CPU-only 开不了建模会话                    | 无 torch 环境 CI job 跑通 RF 会话                     |
+| M6  | `registry.families()` 对缺 extra 条目降级跳过                          | 已收敛（#49：ImportError 跳过+warning+钉测）——CI no-torch job 见 #43 | 无 torch 环境 CI job 跑通 RF 会话                     |
 | M7  | 会话引擎路径全捕获（`_detect_all` 包 capture）                         | detect 算子裸 print 污染 stdio                    | MCP stdio e2e 断言纯 JSON-RPC 输出                    |
 | M9  | 遥测端点 env 可覆盖 + agentcat monkeypatch 带 feature-detect           | 端点硬编码；私有内部 monkeypatch 静默失效          | `MFLOWY_TELEMETRY_ENDPOINT` 指向 `docker/telemetry` 可用 |
 | M10 | 重栈产物锚定 task_dir/`~/.mflowy`；仓库根与包根零运行产物              | lightning_logs/mlruns/catboost_info 落包根        | `make test` 后 `git status` 干净                       |

@@ -8,8 +8,12 @@
 
 from __future__ import annotations
 
+import logging
+
 import pandas as pd
 from mflowy.model.model._split import build_preprocessors
+
+logger = logging.getLogger(__name__)
 
 # 结构因子档位（x_transformer 目录的离散投影：编码 4 × 缩放 3；passthrough = 不加该槽）
 CAT_ENCODERS = ("passthrough", "ordinal", "onehot", "target")
@@ -40,7 +44,11 @@ def families() -> dict[str, dict]:
 
     fams: dict[str, dict] = {}
     for node, ep in sorted(namespace_nodes("model").items()):
-        fn = ep.load()
+        try:
+            fn = ep.load()
+        except ImportError as e:  # 缺 extra 优雅降级（M6/#49，同 module.py 富化降级姿势）：跳过 + warning（带条目路径），其余族照常——无 torch 环境开得了 RF 会话
+            logger.warning("族 %s（%s）装载降级（import 失败：%s）——缺对应 extra？其余族照常", node, ep.value, e)
+            continue
         meta = getattr(fn, "mdp_family", None)
         if meta is None:
             continue
