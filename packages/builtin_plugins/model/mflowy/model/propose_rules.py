@@ -17,26 +17,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from mflowy.driver.rule import Activation, RuleEngine
+from mflowy.driver.rule import Activation, RuleEngine, salience
 
-# LLM findings 的 kind 词表（#35 定案；report_findings 校验面 = 规则订阅面）
-KNOWN_FINDING_KINDS = frozenset({"error_concentrated", "slice_collapse", "fold_std", "complexity_edge", "overfit_gap"})
-
-# salience 整数化放大系数：weight(域先验) × severity(∈[0,1]) 保序映到 int
-_SALIENCE_SCALE = 1_000_000
-
-# 出题 kind → 记分牌权重（域先验）：只回答"多值得做"，不编码资格
-_KIND_WEIGHTS = {
-    "fold_std": 1.2,
-    "overfit_gap": 1.1,
-    "complexity_edge": 1.0,
-    "slice_collapse": 1.0,
-    "error_concentrated": 1.0,
-}
-
-
-def _salience(weight: float, severity: float) -> int:
-    return round(weight * float(severity) * _SALIENCE_SCALE)
+# FE 出题 kind 与域先验权重（记分牌只回答"多值得做"，不编码资格）
+FE_KIND = "error_concentrated"
+_FE_WEIGHT = 1.0
 
 
 # ── 规则体（纯函数：(finding, family, ctx) -> list[Activation]） ───────────
@@ -52,7 +37,7 @@ def _deeper_rule(f: dict, family: str, ctx: dict) -> list[Activation]:
         Activation(
             rule_key=f"{family}.fold_std",
             proposal={"action": "run_hpo", "params": {"n_trials": n}},
-            salience=_salience(_KIND_WEIGHTS["fold_std"], f.get("severity", 0.0)),
+            salience=salience(_FAMILY_KINDS["fold_std"][1], f.get("severity", 0.0)),
             rationale=f"折间不稳（std/|mean|={f.get('evidence', {}).get('cv')}）——加深搜索至 n_trials={n}",
             evidence={"finding": dict(f), "key": ctx["combo_key"], "n_trials": n},
         )
@@ -76,7 +61,7 @@ def _regularize_rule(f: dict, family: str, ctx: dict) -> list[Activation]:
             Activation(
                 rule_key=f"{family}.{f['kind']}",
                 proposal={"action": "set_hp_space", "params": {param: [lo, declared.end]}},
-                salience=_salience(_KIND_WEIGHTS[f["kind"]], f.get("severity", 0.0)),
+                salience=salience(_FAMILY_KINDS[f["kind"]][1], f.get("severity", 0.0)),
                 rationale=f"{f['kind']}（{f.get('message', '')}）——正则收窄 {param} 至上半区 [{lo:.4g}, {declared.end:.4g}]",
                 evidence=evidence | {"narrow": [lo, declared.end]},
             )
@@ -85,7 +70,7 @@ def _regularize_rule(f: dict, family: str, ctx: dict) -> list[Activation]:
         Activation(
             rule_key=f"{family}.{f['kind']}",
             proposal={"action": "set_hp", "params": {param: declared}},
-            salience=_salience(_KIND_WEIGHTS[f["kind"]], f.get("severity", 0.0)),
+            salience=salience(_FAMILY_KINDS[f["kind"]][1], f.get("severity", 0.0)),
             rationale=f"{f['kind']}（{f.get('message', '')}）——正则 pin {param}={declared}（静态面无收窄余地）",
             evidence=evidence,
         )
@@ -101,7 +86,7 @@ def _weight_rule(f: dict, family: str, ctx: dict) -> list[Activation]:
         Activation(
             rule_key=f"{family}.slice_collapse",
             proposal={"action": "set_hp", "params": {"scale_pos_weight": 2.0}},
-            salience=_salience(_KIND_WEIGHTS["slice_collapse"], f.get("severity", 0.0)),
+            salience=salience(_FAMILY_KINDS["slice_collapse"][1], f.get("severity", 0.0)),
             rationale=f"切片塌陷（slice={f.get('evidence', {}).get('slice')}，recall={f.get('evidence', {}).get('recall')}）"
             "——pin scale_pos_weight=2.0 提升少数类权重",
             evidence={"finding": dict(f), "param": "scale_pos_weight"},
@@ -115,7 +100,7 @@ def _fe_switch_rule(f: dict, node: str, slot: str, ctx: dict) -> list[Activation
         Activation(
             rule_key=f"fe.{node}",
             proposal={"action": "select_FE", "params": {"node": node}},
-            salience=_salience(_KIND_WEIGHTS["error_concentrated"], f.get("severity", 0.0)),
+            salience=salience(_FE_WEIGHT, f.get("severity", 0.0)),
             rationale=f"误差集中于列 `{f.get('evidence', {}).get('column')}`——换 FE 档（{node}）重跑验证",
             evidence={"finding": dict(f), "slot": slot},
         )
@@ -123,6 +108,18 @@ def _fe_switch_rule(f: dict, node: str, slot: str, ctx: dict) -> list[Activation
 
 
 # ── 规则实例 ────────────────────────────────────────────────────────────────
+
+# 族级出题面单源：kind → (规则体, 记分牌权重)——加 kind 只动这里（词表/权重/
+# 分派三方同表派生， KNOWN_FINDING_KINDS 与 default_engine 均从此投影）
+_FAMILY_KINDS: dict[str, tuple[Any, float]] = {
+    "fold_std": (_deeper_rule, 1.2),
+    "overfit_gap": (_regularize_rule, 1.1),
+    "complexity_edge": (_regularize_rule, 1.0),
+    "slice_collapse": (_weight_rule, 1.0),
+}
+
+# LLM findings 的 kind 词表（#35 定案；report_findings 校验面 = 规则订阅面）
+KNOWN_FINDING_KINDS = frozenset(_FAMILY_KINDS) | {FE_KIND}
 
 
 @dataclass(frozen=True)
@@ -141,17 +138,15 @@ class FamilyRule:
         return f"{self.family}.{self.kind}"
 
     def propose(self, R: Any) -> list[Activation]:
+        entry = _FAMILY_KINDS.get(self.kind)
+        if entry is None:  # 未知族级 kind fail-loud 带候选（防第三方拼错静默零产出）
+            raise ValueError(f"未知族级出题 kind：{self.kind!r}（可用: {sorted(_FAMILY_KINDS)}）")
         ctx = R["ctx"]
         if ctx.get("family") != self.family:  # 资格：宿主族 = 光标当前候选
             return []
         if self.kind == "fold_std" and not ctx.get("has_n_trials", {}).get(self.family, False):
             return []  # 加深题回归防线：不能搜索的族没深度旋钮
-        body = {
-            "fold_std": _deeper_rule,
-            "complexity_edge": _regularize_rule,
-            "overfit_gap": _regularize_rule,
-            "slice_collapse": _weight_rule,
-        }[self.kind]
+        body = entry[0]
         return [a for f in R["findings"] if f.get("kind") == self.kind for a in body(f, self.family, ctx)]
 
 
@@ -162,7 +157,7 @@ class FERule:
     node: str
     slot: str
 
-    kind = "error_concentrated"  # 订阅面常量（frozen 实例字段不可变，类属性只读面）
+    kind = FE_KIND  # 订阅面常量（frozen 实例字段不可变，类属性只读面）
 
     @property
     def key(self) -> str:
@@ -191,7 +186,7 @@ def default_engine() -> RuleEngine:
 
     rules: list[FamilyRule | FERule] = []
     for family in registry.families():
-        for kind in ("fold_std", "complexity_edge", "overfit_gap", "slice_collapse"):
+        for kind in _FAMILY_KINDS:
             rules.append(FamilyRule(family=family, kind=kind))
     for node, slot in registry.fe_vocab().items():
         rules.append(FERule(node=node, slot=slot))

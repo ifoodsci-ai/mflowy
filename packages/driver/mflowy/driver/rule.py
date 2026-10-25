@@ -19,6 +19,8 @@
 
 from __future__ import annotations
 
+import json
+import pickle
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -39,6 +41,15 @@ class Rule(Protocol):
     key: str
 
     def propose(self, R: Any) -> list[Activation]: ...
+
+
+# salience 整数化放大系数：域先验权重(≤个位数) × 证据强度(∈[0,1]) 保序映到 int
+SALIENCE_SCALE = 1_000_000
+
+
+def salience(weight: float, severity: float) -> int:
+    """记分牌单源：weight × severity 放大取整（两域共用，口径分歧从结构上根除）。"""
+    return round(weight * float(severity) * SALIENCE_SCALE)
 
 
 @dataclass(frozen=True)
@@ -146,8 +157,6 @@ class RuleEngine:
 
     def save(self) -> None:
         """原子落盘（tmp+rename）：注册面 + 未 poll 激活态整体一个 pkl。"""
-        import pickle
-
         if self.path is None:
             raise ValueError("engine 无落盘路径（open_engine 复制时绑定，或构造时传入）")
         p = Path(self.path)
@@ -160,9 +169,6 @@ class RuleEngine:
     @classmethod
     def load(cls, path: str) -> RuleEngine:
         """从盘加载实例：损坏 fail-loud 带路径与成因（不静默重建默认）。"""
-        import pickle
-        from pathlib import Path
-
         p = Path(path)
         try:
             with open(p, "rb") as fh:
@@ -176,19 +182,18 @@ class RuleEngine:
 
 
 @contextmanager
-def open_engine(path: str, default: RuleEngine | None = None) -> Iterator[RuleEngine]:
+def open_engine(path: str, default: RuleEngine) -> Iterator[RuleEngine]:
     """业务接口入口：盘上有 pkl 则加载，否则从默认实例复制（激活态清空）。
 
     with 正常退出原子落盘（注册面 + 未 poll 激活态）；异常透传且不落盘——
     失败调用零副作用（事务性）。规则对象须可 pickle（``Rule`` 协议文档）。
+    ``default`` 必填——无默认实例的引擎不该有落盘通道。
     """
-    engine = RuleEngine.load(path) if Path(path).exists() else (default or RuleEngine()).copy(str(path))
+    engine = RuleEngine.load(path) if Path(path).exists() else default.copy(str(path))
     yield engine
     engine.save()
 
 
 def _stable_params(a: Activation) -> str:
     """tie-break 用的 params 稳定序列化（同 rule 多走法的确定性排序）。"""
-    import json
-
     return json.dumps(a.proposal["params"], sort_keys=True, ensure_ascii=False, default=str)

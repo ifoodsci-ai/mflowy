@@ -203,9 +203,18 @@ def test_open_engine_exception_no_save(tmp_path):
 
 def test_open_engine_fail_loud_on_corrupt_pkl(tmp_path):
     """损坏 pkl：fail-loud 带路径与成因，不静默重建默认。"""
-    from mflowy.driver.rule import open_engine
+    from mflowy.driver.rule import RuleEngine, open_engine
 
     pkl = tmp_path / "rules.pkl"
     pkl.write_bytes(b"\x80\x04 not-a-pickle")
     with pytest.raises(RuntimeError, match=r"rules\.pkl"):
-        open_engine(pkl, default=None).__enter__()
+        open_engine(pkl, default=RuleEngine()).__enter__()
+
+
+def test_salience_shared_scale_keeps_order():
+    """记分牌单源：weight×severity 保序映 int（两域共用，近并列取整可并列）。"""
+    from mflowy.driver.rule import salience
+
+    assert salience(1.2, 0.5) == 600_000
+    assert salience(0.35, 1.0) > salience(0.10, 1.0)  # 权重序保持
+    assert salience(0.35, 0.0) == 0  # 无证据 = 零证据强度

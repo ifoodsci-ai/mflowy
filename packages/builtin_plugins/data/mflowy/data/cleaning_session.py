@@ -478,16 +478,19 @@ def propose_actions(session_id: str) -> list[dict]:
     with open_engine(str(store.session_dir(session_id) / "rules.pkl"), default=default_engine()) as engine:
         engine.fire(R={"defects": report, "card": card, "df": df})
         activations = engine.poll_proposals()
-    return [
-        {
-            "action": a.proposal["action"],
-            "params": dict(a.proposal["params"]),
-            "source_kinds": [k for k in [(a.evidence or {}).get("kind")] if k],
-            "rationale": a.rationale,
-            "evidence": dict(a.evidence or {}),
-        }
-        for a in activations
-    ]
+    menu = []
+    for a in activations:
+        kind = (a.evidence or {}).get("kind")  # 规则快照自带订阅 kind（无 kind 的自定义规则记空）
+        menu.append(
+            {
+                "action": a.proposal["action"],
+                "params": dict(a.proposal["params"]),
+                "source_kinds": [kind] if kind else [],
+                "rationale": a.rationale,
+                "evidence": dict(a.evidence or {}),
+            }
+        )
+    return menu
 
 
 def finish_session(session_id: str, min_quality: float | None = None, preview: bool = False) -> dict:

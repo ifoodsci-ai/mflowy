@@ -105,3 +105,30 @@ def test_session_engine_pkl_carries_custom_rule_across_calls(sessions_root, tmp_
 
     props = cs.propose_actions(s["session_id"])
     assert any(p["action"] == "impute" and p["rationale"] == "自定义兜底" for p in props)
+
+
+# ── fail-loud：词表漂移（红线#1 带候选清单） ────────────────────────────────
+
+
+def test_repair_rule_fail_loud_on_vocabulary_drift():
+    """词表漂移：节点卸载 / kind 声明撤走 → 报错带候选清单，不炸裸 KeyError。"""
+    rule = repair_rules.RepairRule(node="nope", kind="missing")
+    with pytest.raises(ValueError, match=r"clean 词表无 'nope'.*可用"):
+        rule.propose(
+            {
+                "defects": ErrorReport(shape=(1, 1), errors=[DataError(kind="missing", severity=0.5)]),
+                "card": {},
+                "df": None,
+            }
+        )
+
+    real = next(iter(repair_rules.default_engine().rules.values()))
+    drifted = repair_rules.RepairRule(node=real.node, kind="__gone__")
+    with pytest.raises(ValueError, match=r"不再声明.*可用"):
+        drifted.propose(
+            {
+                "defects": ErrorReport(shape=(1, 1), errors=[DataError(kind="__gone__", severity=0.5)]),
+                "card": {},
+                "df": None,
+            }
+        )

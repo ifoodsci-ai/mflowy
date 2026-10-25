@@ -10,14 +10,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from mflowy.driver.rule import Activation, RuleEngine
-
-# salience 整数化放大系数：weight(≤0.35) × severity(∈[0,1]) 保序映到 int
-_SALIENCE_SCALE = 1_000_000
+from mflowy.driver.rule import Activation, RuleEngine, salience
 
 
 def _iter_repairs(repair) -> Iterator[tuple[str, object]]:
@@ -70,10 +67,14 @@ class RepairRule:
         if not errs:
             return []
         card = R.get("card") or {}
-        fn = namespace_nodes("clean")[self.node].load()
-        make = dict(_iter_repairs(getattr(fn, "repair", None) or {}))[self.kind]
+        fn = self._resolve_node(namespace_nodes("clean"))
+        declared = dict(_iter_repairs(getattr(fn, "repair", None) or {}))
+        if self.kind not in declared:  # 词表漂移（节点撤走该 kind 修复）fail-loud 带候选
+            raise ValueError(
+                f"clean__{self.node} 不再声明 {self.kind!r} 修复（可用: {sorted(declared)}）——规则实例已过期，重建会话 pkl"
+            )
         severity_max = round(max((e.severity for e in errs), default=0.0), 4)
-        salience = round(kind_weight(self.kind, card.get("defect_priority")) * severity_max * _SALIENCE_SCALE)
+        score = salience(kind_weight(self.kind, card.get("defect_priority")), severity_max)
         evidence = {
             "kind": self.kind,
             "columns": sorted({e.column for e in errs if e.column}),
@@ -84,12 +85,19 @@ class RepairRule:
             Activation(
                 rule_key=self.key,
                 proposal={"action": self.node, "params": params},
-                salience=salience,
+                salience=score,
                 rationale=rationale,
                 evidence=evidence,
             )
-            for params, rationale in _call_make(make, errs, card, R["df"])
+            for params, rationale in _call_make(declared[self.kind], errs, card, R["df"])
         ]
+
+    def _resolve_node(self, nodes: Mapping[str, Any]) -> Any:
+        """节点现查：词表 miss（插件卸载）fail-loud 带候选清单，不炸裸 KeyError。"""
+        ep = nodes.get(self.node)
+        if ep is None:
+            raise ValueError(f"clean 词表无 {self.node!r} 节点（可用: {sorted(nodes)}）——规则实例已过期，重建会话 pkl")
+        return ep.load()
 
 
 def default_engine() -> RuleEngine:

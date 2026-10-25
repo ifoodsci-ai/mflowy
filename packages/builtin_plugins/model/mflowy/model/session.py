@@ -1337,7 +1337,7 @@ def propose_actions(session_id: str) -> list[dict]:
             }
         )
         # select_FE 基座档：有模型账本信息（leader）才出现——S 无模型信息时 FE
-        # 候选零出现（引擎级 gate，非权重压序；动作边界只看 cursor.m——菜单是建议不是边界）
+        # 候选零出现（规则资格内联早退，非记分压序；动作边界只看 cursor.m——菜单是建议不是边界）
         if m["models"]:
             _fe_base_entries(m, cursor, fams, proposals)
     return _merge_menu(driven + proposals)
