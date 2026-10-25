@@ -1,23 +1,27 @@
-"""规则引擎 SDK：rule = 节点附加属性（词表项级出题知识），fire/prioritize 门面。
+"""规则引擎 SDK：实例门面（Rule/Activation/RuleEngine + open_engine 落盘）。
 
-设计定案（#37 调研 + 2026-10 评审会话）：
+设计定案（2026-10 重构——散落规则聚合到引擎实例）：
 
-- **节点属性而非注册桶**：driver 经 entry points 已枚举节点，规则知识随词汇主人
-  居住（``node.rule = {kind: fn}``，与 clean 域 ``.repair`` 同构）；消费方注入已
-  加载的候选节点集，引擎零目录查询、零 import 边际成本。
-- **三轴正交**：订阅（kind）/ 资格（gate——读 ctx 的具名谓词，显式声明）/
-  排序（记分牌 weight×severity）。资格与权重互不代偿：S 无模型信息时 FE 规则
-  恒零产出，而非靠权重压序。
-- **观测钩子**：溯源进 ``evidence["_rule"]``、资格未过进 ``skipped``、无人订阅的
-  findings 进 ``unconsumed``——菜单可解释是 fail-loud 的菜单侧对应物。
-- **引擎不去重**：同动作多规则命中由会话按 (action, params) 合并（frontier 决策）。
+- **实例聚合**：规则 = 实现 ``Rule`` 协议的对象（``key`` 身份 + ``propose(R)``
+  出题），经 ``engine.register()`` 聚合；两域词表知识（clean ``.repair`` /
+  model 族与 FE）由域适配器（``repair_rules`` / ``propose_rules``）包装注册。
+  知识源仍随词汇主人居住，引擎只做聚合与调度。
+- **fire/poll 两段**：``fire(*keys, R)`` 按 key 激活（空 = 全部；未知 key
+  fail-loud 带候选），产出 ``Activation`` 累积在实例内；连续 fire 由
+  ``poll_proposals()`` 一次聚合（记分牌序：salience 降序，同分 rule_key
+  字典序——确定性菜单）并排空。
+- **实例可落盘**：pkl 承载注册面（含运行期注册的自定义规则）与未 poll 的
+  激活态；``open_engine(path, default=...)`` 盘上有则加载、无则从默认实例
+  复制（激活态清空），with 正常退出原子落盘（tmp+rename）、异常不落盘。
+  规则对象须可 pickle（域规则 = 模块级 dataclass、只持 str/num 配置）。
+- **引擎不去重**：同 (action, params) 多规则命中由会话合并（frontier 决策）。
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, NamedTuple, TypedDict
+from typing import Any, NamedTuple, Protocol, TypedDict
 
 from mflowy.driver.mdp_session import Candidate, verify_candidate
 
@@ -157,3 +161,82 @@ def prioritize(candidates: list[Candidate], overrides: Mapping[str, float] | Non
         }
         ranked.append(out)
     return ranked
+
+
+# ── 实例门面（2026-10 重构）：Rule/Activation/RuleEngine ───────────────────
+
+
+class Rule(Protocol):
+    """规则契约：key 身份（引擎内唯一）+ propose(R) 出题。
+
+    ``R`` 为触发上下文（域自定义——clean 域 = 检测算子输出等；model 域 =
+    findings + 会话态）。落盘要求：实现须可 pickle（模块级类、只持 str/num
+    配置；词表/注册表对象在 propose 内现查，不持引用）。
+    """
+
+    key: str
+
+    def propose(self, R: Any) -> list[Activation]: ...
+
+
+@dataclass(frozen=True)
+class Activation:
+    """规则激活产出：proposal 走法 + 记分牌 salience + 解释面。
+
+    proposal 只收 ``{"action": str, "params": Mapping}``——rationale/evidence
+    是 Activation 的一等字段，不塞 proposal。
+    """
+
+    rule_key: str
+    proposal: Mapping[str, Any]
+    salience: int
+    rationale: str
+    evidence: Mapping[str, Any] | None = None
+
+
+def _validate_activation(a: Any, rule_key: str) -> None:
+    """Activation fail-loud 校验：键齐、类型对、rule_key 与宿主规则一致。"""
+    if not isinstance(a, Mapping):
+        raise TypeError(f"规则 {rule_key!r} 的 propose 产出须为 Activation 形 Mapping，得到 {type(a).__name__}")
+    if a.get("rule_key") != rule_key:
+        raise ValueError(f"Activation.rule_key={a.get('rule_key')!r} 与宿主规则 {rule_key!r} 不一致")
+    where = f"Activation（rule={rule_key!r}）"
+    for k in ("proposal", "salience", "rationale"):
+        if k not in a:
+            raise ValueError(f"{where} 缺 {k}")
+    p = a["proposal"]
+    if not isinstance(p, Mapping) or set(p) - {"action", "params"} or "action" not in p or "params" not in p:
+        raise ValueError(f"{where}.proposal 须为恰含 action/params 两键的 Mapping，得到 {p!r}")
+    if not isinstance(p["action"], str) or not p["action"]:
+        raise TypeError(f"{where}.action 期望非空 str")
+    if not isinstance(p["params"], Mapping):
+        raise TypeError(f"{where}.params 期望 Mapping")
+    if isinstance(a["salience"], bool) or not isinstance(a["salience"], int):
+        raise TypeError(f"{where}.salience 期望 int，得到 {a['salience']!r}")
+    if not isinstance(a["rationale"], str):
+        raise TypeError(f"{where}.rationale 期望 str")
+    ev = a.get("evidence")
+    if ev is not None and not isinstance(ev, Mapping):
+        raise TypeError(f"{where}.evidence 期望 Mapping | None")
+
+
+class RuleEngine:
+    """规则引擎实例：注册面 + 激活缓冲 + pkl 落盘（域默认实例 → 会话实例）。"""
+
+    def __init__(self, path: str | None = None) -> None:
+        self.path = path
+        self._rules: dict[str, Rule] = {}
+        self._activations: list[Activation] = []
+
+    def register(self, *rules: Rule) -> RuleEngine:
+        """注册规则（可链式）：key 撞名 fail-loud 带已注册候选清单。"""
+        for r in rules:
+            key = getattr(r, "key", None)
+            if not isinstance(key, str):
+                raise TypeError(f"规则 key 期望 str，得到 {type(key).__name__}（{r!r}）")
+            if not key:
+                raise ValueError(f"规则 key 不得为空（{r!r}）")
+            if key in self._rules:
+                raise ValueError(f"规则 key 撞名：{key!r} 已注册（可用: {sorted(self._rules)}）")
+            self._rules[key] = r
+        return self
