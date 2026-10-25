@@ -5,8 +5,8 @@
 - x_y:
     name: X/y 拆分
     params:
-      targets: strength
-- split:
+      target: strength
+- cv__split:
     name: K-Fold CV
     params:
       cv: 5

@@ -47,3 +47,44 @@ class TestValidateModelArg:
 
         with pytest.raises(ValueError):
             _validate_model_arg(raw)
+
+
+class TestAnchorTaskDir:
+    """B3（#73）：_anchor_task_dir 增认 load 族 ``source`` 参数（csv/excel/parquet/python
+    的正名）——修复前只认 ``file_path``，load__python 示例结构性无锚（实验创建即
+    「请使用绝对路径」）。"""
+
+    @pytest.fixture(autouse=True)
+    def _restore_task_dir(self, tmp_path):
+        from mflowy.utils.path import reset_task_dir, set_task_dir
+
+        token = set_task_dir(tmp_path / "known" / ".marker")  # set_task_dir 收文件路径锚其目录
+        yield
+        reset_task_dir(token)
+
+    def _anchor(self, steps_text: str):
+        from mflowy.model.job_provider.local import _anchor_task_dir
+
+        _anchor_task_dir(steps_text)
+        from mflowy.utils.path import task_dir
+
+        return task_dir()
+
+    def test_python_source_anchors_stripping_func(self, tmp_path):
+        steps = f"- load__python:\n    params:\n      source: {tmp_path}/gen.py:load\n"
+        assert self._anchor(steps) == tmp_path
+
+    def test_csv_source_anchors_plain_path(self, tmp_path):
+        steps = f"- load__csv:\n    params:\n      source: {tmp_path}/data.csv\n"
+        assert self._anchor(steps) == tmp_path
+
+    def test_file_path_still_anchors(self, tmp_path):
+        steps = f"- load__file:\n    params:\n      file_path: {tmp_path}/data.parquet\n"
+        assert self._anchor(steps) == tmp_path
+
+    def test_url_source_not_anchored(self, tmp_path):
+        steps = "- load__file:\n    params:\n      file_path: https://example.com/data.csv\n"
+        assert self._anchor(steps) == tmp_path / "known"  # 不锚（无本地目录语义）
+
+    def test_no_load_step_not_anchored(self, tmp_path):
+        assert self._anchor("- x_y:\n    params:\n      target: t\n") == tmp_path / "known"

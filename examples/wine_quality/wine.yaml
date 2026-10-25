@@ -5,9 +5,9 @@
 - x_y:
     name: X/y 拆分
     params:
-      targets: quality
+      target: quality
       task: REGRESSION
-- split:
+- cv__split:
     name: K-Fold CV
     params:
       cv: 5
