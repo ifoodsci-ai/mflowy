@@ -16,13 +16,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-import shap
+import shap as shap_lib  # 模块别名：参数名 shap（组边寻址名）不遮蔽模块
 from mflowy.data.middlewares import log_plot
 from mflowy.driver.handler import handler
 from mflowy.utils.constants import RANDOM_STATE
 from mflowy.utils.plot import CMAP_DIVERGING
 
-from ...utils import iter_output_blocks, rank_features, shap_values_to_df
+from ...utils import rank_features, shap_values_to_df
+from .contract import annotation_triple, iter_output_blocks
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +72,7 @@ def _find_turn_point(x: np.ndarray, y: np.ndarray) -> tuple[float, float] | None
 
 @handler(log_plot, namespace="plot")
 def shap_dependence(
-    shap: shap.Explanation,
+    shap: shap_lib.Explanation,
     feature: Annotated[str | None, "目标特征名"] = None,
     with_fit: Annotated[bool, "是否叠加 LOWESS 拟合线"] = True,
     title: Annotated[str | None, "图表标题"] = None,
@@ -89,7 +90,7 @@ def shap_dependence(
     """
     from statsmodels.nonparametric.smoothers_lowess import lowess
 
-    categorical_features = getattr(shap, "categorical_features", [])
+    categorical_features = annotation_triple(shap)[1]
     feature_data = shap.data
     feature_names = list(shap.feature_names)
     for label, shap_values in iter_output_blocks(shap):

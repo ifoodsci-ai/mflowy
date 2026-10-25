@@ -14,9 +14,15 @@ import pandas as pd
 import shap
 from mflowy.driver.handler import handler
 
-_SHAP_PREFIX = "shap__"
-_VALUE_PREFIX = "value__"
-_CAT_PREFIX = "cat__"
+from .contract import (
+    CAT_PREFIX,
+    LEDGER_CLASS,
+    LEDGER_SAMPLE_IDX,
+    LEDGER_Y_NAME,
+    SHAP_PREFIX,
+    VALUE_PREFIX,
+    attach_annotations,
+)
 
 
 @handler(namespace="shap")
@@ -33,7 +39,7 @@ def load(
     if not dfs:
         raise ValueError("shap.load 收到空 load 面——需要 shap_values.parquet（+可选测试集）的 load__file 声明")
 
-    flags = [any(str(c).startswith(_SHAP_PREFIX) for c in df.columns) for df in dfs]
+    flags = [any(str(c).startswith(SHAP_PREFIX) for c in df.columns) for df in dfs]
     values_frames = [df for df, f in zip(dfs, flags, strict=True) if f]
     test_frames = [df for df, f in zip(dfs, flags, strict=True) if not f]
     if len(values_frames) != 1:
@@ -46,13 +52,13 @@ def load(
 
     vdf = values_frames[0]
     data_override = test_frames[0] if test_frames else None
-    feats = [c.removeprefix(_SHAP_PREFIX) for c in vdf.columns if c.startswith(_SHAP_PREFIX)]
+    feats = [c.removeprefix(SHAP_PREFIX) for c in vdf.columns if c.startswith(SHAP_PREFIX)]
 
     blocks: list[tuple[str, np.ndarray, np.ndarray]] = []
-    for label in pd.unique(vdf["class"]):
-        part = vdf[vdf["class"] == label].sort_values("sample_idx")
-        vals = part[[f"{_SHAP_PREFIX}{f}" for f in feats]].to_numpy(dtype=float)
-        data = part[[f"{_VALUE_PREFIX}{f}" for f in feats]].to_numpy()
+    for label in pd.unique(vdf[LEDGER_CLASS]):
+        part = vdf[vdf[LEDGER_CLASS] == label].sort_values(LEDGER_SAMPLE_IDX)
+        vals = part[[f"{SHAP_PREFIX}{f}" for f in feats]].to_numpy(dtype=float)
+        data = part[[f"{VALUE_PREFIX}{f}" for f in feats]].to_numpy()
         if data_override is not None:
             missing = [c for c in feats if c not in data_override.columns]
             if missing:
@@ -67,7 +73,10 @@ def load(
 
     values = blocks[0][1] if len(blocks) == 1 else np.stack([b[1] for b in blocks], axis=2)
     exp = shap.Explanation(values=np.asarray(values, dtype=float), data=blocks[0][2], feature_names=feats)
-    exp.y_name = str(vdf["y_name"].iloc[0])
-    exp.categorical_features = [f for f in feats if bool(vdf[f"{_CAT_PREFIX}{f}"].iloc[0])]
-    exp.classes = [b[0] for b in blocks]
-    return exp
+    # 注记三元组组装走契约单源（与 shap__explanation 同一 attach_annotations）
+    return attach_annotations(
+        exp,
+        y_name=str(vdf[LEDGER_Y_NAME].iloc[0]),
+        categorical_features=[f for f in feats if bool(vdf[f"{CAT_PREFIX}{f}"].iloc[0])],
+        classes=[b[0] for b in blocks],
+    )

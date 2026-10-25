@@ -20,6 +20,8 @@ from mflowy.model.middlewares import log_shap_explanation
 from mflowy.model.model.types import ModelLoader
 from mflowy.utils.constants import RANDOM_STATE
 
+from .contract import attach_annotations
+
 SHAP_NSAMPLES = 100
 
 
@@ -61,7 +63,10 @@ def explanation(
         classes = y_names
 
     exp = shap.Explanation(values=values, data=X_t.to_numpy(), feature_names=list(X_t.columns))
-    exp.y_name = y_names[0]
-    exp.categorical_features = [n for n, dt in X_t.dtypes.items() if not pd.api.types.is_numeric_dtype(dt)]
-    exp.classes = classes
-    return exp
+    # 注记三元组组装走契约单源（与 shap__load 同一 attach_annotations）
+    return attach_annotations(
+        exp,
+        y_name=y_names[0],
+        categorical_features=[n for n, dt in X_t.dtypes.items() if not pd.api.types.is_numeric_dtype(dt)],
+        classes=classes,
+    )
