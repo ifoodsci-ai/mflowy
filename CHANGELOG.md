@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - Unreleased
 
+### Fixed（#77）：inverse_optimization 模板补渲染 n_trials/random_seed——调用方传参不再被 Jinja 静默丢弃
+
+- LocalJobProvider 恒把 `n_trials`/`random_seed` 放进模板 env，但
+  `inverse_optimization.yaml.j2` 全文不引用——Jinja 静默忽略多余 env 键，
+  `search_input` handler 默认值（n_trials=10000）恒生效，调 `n_trials=200` 实跑
+  10000（红线 1「静默丢弃即缺陷」）。模板 `search_input.params` 补渲染两键；
+  StrictUndefined 下 env 缺键即 fail-loud。`test_ns_return_contract.py` 编译测试
+  env 补两键，并断言渲染值真进了节点 params（取非默认值 200/7 钉住渲染行为，
+  恰等于默认值的断言钉不住）。
+
 ### BREAKING：规则引擎重构——散落规则聚合到实例（Rule/Activation/RuleEngine + load/save 纯函数落盘），两域 MDP 统一 fire/poll 入口
 
 - **实例门面取代节点属性挂载**：规则 = 实现 `driver.rule.Rule` 协议的对象（`key` 身份 +

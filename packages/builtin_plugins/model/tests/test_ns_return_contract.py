@@ -72,7 +72,12 @@ def test_search_input_out_of_model_ns_eval_plots_compile(tmp_path):
 
 
 def test_inverse_optimization_template_compiles():
-    """inverse_optimization compute 工具活路径：run_id 经 model__loader 承载。"""
+    """inverse_optimization compute 工具活路径：run_id 经 model__loader 承载。
+
+    n_trials/random_seed 必须渲染进 search_input params（#77）：LocalJobProvider 恒传
+    两键进 env，模板不渲染 = 调用方传参被 Jinja 静默丢弃、handler 默认值恒生效。
+    取非默认值（200/7）断言——恰好等于默认值的断言钉不住"渲染"这个行为。
+    """
     env = {
         "run_id": "r1",
         "y_names": ["y"],
@@ -80,5 +85,10 @@ def test_inverse_optimization_template_compiles():
         "data_path": "",
         "columns": {},
         "cross_rules_source": "",
+        "n_trials": 200,
+        "random_seed": 7,
     }
-    Builder(INVERSE_OPTIMIZATION_TEMPLATE, env=env).build()
+    dag = Builder(INVERSE_OPTIMIZATION_TEMPLATE, env=env).build()
+    search = next(n for item in dag.conf.flow for k, n in item.items() if k == "search_input")
+    assert search.params["n_trials"] == 200
+    assert search.params["random_seed"] == 7

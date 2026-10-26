@@ -14,6 +14,8 @@ flow:
   - search_input:
       name: 输入空间优化
       params:
+        n_trials: {{ n_trials }}
+        random_seed: {{ random_seed }}
         directions:
 {% for y, d in directions.items() %}
           {{ y }}: {{ d }}
