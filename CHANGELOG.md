@@ -99,6 +99,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   StrictUndefined 下 env 缺键即 fail-loud。`test_ns_return_contract.py` 编译测试
   env 补两键，并断言渲染值真进了节点 params（取非默认值 200/7 钉住渲染行为，
   恰等于默认值的断言钉不住）。
+### Changed（#58）：model 会话引擎收敛——headers 契约单源自省 + 族目录准入校验 + 陈账清理
+
+- **JobProvider headers 契约清单从 Protocol 自省单源生成**：工具×方法清单、样本
+  参数、录制替身全部由 `JobProvider` 协议运行期自省派生（`test_tools_headers.py`
+  手抄两份清单退役）——新增 compute 方法契约测试自动覆盖；新增工具包装签名 ⊇
+  协议参数的一致性断言；`Headers` 类型别名（protocol/local 两处签名共享）
+- **族目录准入校验**（K8s CRD 风格）：`registry.families()` 聚合期对 `.mdp_family`
+  声明做形状校验——structure 必含 `cat_support`（值域 native/encode）/
+  `scaling_need`(bool)/`min_samples`(int)，`machinery` 必须 callable，可选
+  `fit_params` = fit kwargs 工厂（callable）；未知键拒绝；坏声明 raise 附声明
+  义务指引（错误信息与 model README「族目录声明义务」节同源）。会话中途裸
+  KeyError 的故障面消失；`session._machinery_of` 的运行期补查退役
+- **build_ct 机械单源**（US11）：FE 槽位→节点装配改经运行期词表现查
+  （`FE_CAT/NUM_NODES` 唯一真源——词表/DAG/装配同一解析面），并修复 target
+  编码档在会话装配路径的存量断裂（`target_encoder` 的必需参数从 spec 的 y 面
+  注入——会话恒单目标）；registry 陈账清理（families() docstring 已退役资源轴
+  描述删除）
+
 ### BREAKING（#65）：清洗 MDP 度量层修复——Φ 单调化 + 先验观测 + dry_run 退役
 
 - **Φ 聚合按 kind 均值改求和**：消除任何缺陷都使质量分不降（单调奖励）——三反例
