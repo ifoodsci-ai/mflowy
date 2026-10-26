@@ -61,6 +61,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 钉测：同组覆盖/跨层撞名 warning 两扫描恰一次 ×2；``echo=False`` 零 stdout
   （默认开保持回显）
 
+### lightgbm eval_set → eval_X/eval_y 弃用迁移（#61）
+
+- **统一 seam 迁移**：``fit_with_eval`` 签名 ``eval_set`` 元组 → ``eval_X``/``eval_y``
+  双参（keyword-only）；四族 estimator mixin fit 同步（XGB/LGBM/CAT/MLP）——各族
+  **原生 API 翻译住在各自 mixin**（xgboost/catboost 原生仍是 eval_set 无弃用，
+  lightgbm 走元组形式 eval_X/eval_y 含 train 面，零 LGBMDeprecationWarning）
+- ``_inner_cv_plan`` 返回值 (cv, X_fit, y_fit, eval_set) → (…, X_val, y_val)；
+  training/oof_predictions 调用点随迁；早停/loss-curve/train-in-eval 行为不变
+- 文档措辞同步（lightgbm/random_forest/_loss_curve/_mlp 警示文案——「eval_set」
+  →「独立 val」）；钉测：新 seam 下早停行为不变 + catch_warnings(error) 断言零
+  弃用告警 + 旧 kwarg TypeError fail-loud（不静默吞）
+
 ### run_hpo 盘上 study sampler 随 seed 建（#84 flake 根治）
 
 - **根因**：会话路径 `_open_study` 以 optuna 缺省 sampler（未钉种子的 TPESampler）

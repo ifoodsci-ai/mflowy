@@ -25,7 +25,7 @@ def _model_cls():
     return model_cls
 
 
-# 早停经 fit_params 透传（仅最终训练带 eval_set 时生效）——machinery 恒返回缺省档
+# 早停经 fit_params 透传（仅最终训练带独立 val 时生效）——machinery 恒返回缺省档
 _FIT_DEFAULTS = {"early_stopping_rounds": 60}
 
 
@@ -60,7 +60,7 @@ def LGBM(
     reg_alpha: Annotated[float | ContinuousSpace[float], "L1 正则化系数"] = ContinuousSpace(1e-8, 10.0, "log"),
     reg_lambda: Annotated[float | ContinuousSpace[float], "L2 正则化系数"] = ContinuousSpace(1e-8, 10.0, "log"),
     scale_pos_weight: Annotated[float, "正类权重倍数（不平衡二分类用，neg/pos）"] = 1.0,
-    early_stopping_rounds: Annotated[int | None, "早停轮数（仅最终训练带 eval_set 时生效），None 关闭"] = 60,
+    early_stopping_rounds: Annotated[int | None, "早停轮数（仅最终训练带独立 val 时生效），None 关闭"] = 60,
     random_state: Annotated[int, "随机种子"] = RANDOM_STATE,
 ):
     """LightGBM，GBDT 系列基线模型；``num_leaves`` 等参数以搜索空间走 Optuna 调参（默认 tpe / 100 trials）。
@@ -68,7 +68,7 @@ def LGBM(
     两行为派生（#62，``extract_search_spaces`` 空否即判据）：参数含搜索空间 →
     **hyperparameters_search 行为**（inner CV 选参，不终训不碰 holdout）；全 pin →
     **training 行为**（全量拟合 + holdout 终评 + loader）。``early_stopping_rounds`` 经
-    fit_params 透传（仅最终训练带 eval_set 时生效）。
+    fit_params 透传（仅最终训练带独立 val 时生效）。
 
     参数空间默认覆盖 num_leaves/max_depth/learning_rate/n_estimators 等 GBDT 核心项；``scoring`` 为 None 时按 task 自动推断（回归 MAE / 分类 F1）。LightGBM 用 >=10k 高维特征场景（histogram 直方加速）。
     """

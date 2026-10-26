@@ -1,8 +1,11 @@
 """LightGBM 单元测试（estimator 子类：fit override + 诊断接口）"""
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
+from lightgbm.basic import LGBMDeprecationWarning
 from mflowy.model.model._lightgbm import model_cls
 from mflowy.model.model.types import TASKTYPE
 
@@ -92,7 +95,7 @@ def test_lightgbm_multioutput_regression_raises(sample_data):
 
 
 def test_lightgbm_with_validation_set(sample_data):
-    """eval_set + early_stopping_rounds 经 fit 参数透传（callback 路径）"""
+    """独立 val（eval_X/eval_y，#61 弃用迁移）+ early_stopping_rounds 经 fit 参数透传（callback 路径）"""
     X, y_reg, _ = sample_data
 
     est = _make_est(TASKTYPE.REGRESSION, n_estimators=50, verbose=-1)
@@ -100,10 +103,20 @@ def test_lightgbm_with_validation_set(sample_data):
     X_train, X_val = X.iloc[:8], X.iloc[8:]
     y_train, y_val = y_reg.iloc[:8], y_reg.iloc[8:]
 
-    est.fit(X_train, y_train, eval_set=(X_val, y_val), early_stopping_rounds=5)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", LGBMDeprecationWarning)  # #61 验收：零 LGBMDeprecationWarning
+        est.fit(X_train, y_train, eval_X=X_val, eval_y=y_val, early_stopping_rounds=5)
 
     y_pred = est.predict(X_val)
     assert len(y_pred) == len(y_val)
+
+
+def test_lightgbm_seam_accepts_deprecated_kwarg_no_pass_through(sample_data):
+    """统一 seam 收 eval_X/eval_y——旧 eval_set kwarg 不再被签名接受（fail-loud 不静默吞）。"""
+    X, y_reg, _ = sample_data
+    est = _make_est(TASKTYPE.REGRESSION, n_estimators=5, verbose=-1)
+    with pytest.raises(TypeError, match="eval_set"):
+        est.fit(X.iloc[:8], y_reg.iloc[:8], eval_set=(X.iloc[8:], y_reg.iloc[8:]))
 
 
 def test_lightgbm_handler_registered():

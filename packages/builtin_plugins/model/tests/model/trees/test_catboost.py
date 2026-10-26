@@ -107,7 +107,7 @@ def test_catboost_with_validation_set(sample_data):
     X_train, X_val = X.iloc[:8], X.iloc[8:]
     y_train, y_val = y_reg.iloc[:8], y_reg.iloc[8:]
 
-    est.fit(X_train, y_train, eval_set=(X_val, y_val))
+    est.fit(X_train, y_train, eval_X=X_val, eval_y=y_val)
 
     y_pred = est.predict(X_val)
     assert len(y_pred) == len(y_val)

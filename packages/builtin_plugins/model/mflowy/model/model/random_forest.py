@@ -45,7 +45,7 @@ def RF(
     max_samples: Annotated[float | None, "bootstrap 采样比例"] = 0.8,
     random_state: Annotated[int, "随机种子"] = RANDOM_STATE,
 ):
-    """RandomForest，bagging 系列基线模型；``oob_score=True`` 固定启用袋外评估，无 eval_set/loss_curve 概念。
+    """RandomForest，bagging 系列基线模型；``oob_score=True`` 固定启用袋外评估，无独立 val/loss_curve 概念。
 
     两行为派生（#62，``extract_search_spaces`` 空否即判据）：参数含搜索空间 →
     **hyperparameters_search 行为**——inner CV 选参（θ*/u_inner 证据，不终训不碰

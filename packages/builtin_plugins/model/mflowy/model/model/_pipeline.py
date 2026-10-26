@@ -285,7 +285,7 @@ HOLDOUT_BYPRODUCTS = {"X_test": "X_test.parquet", "y_test": "y_test.parquet", "y
 
 
 def _strip_early_stopping(params: dict) -> dict:
-    """K 折 trial 恒无早停：逐折无独立 val，而 xgboost 的 ctor 早停在无 eval_set 时 fit 期直接 raise。"""
+    """K 折 trial 恒无早停：逐折无独立 val，而 xgboost 的 ctor 早停在无 eval 面时 fit 期直接 raise。"""
     return {k: v for k, v in params.items() if k != "early_stopping_rounds"}
 
 
@@ -305,11 +305,11 @@ def make_scorer(scoring: MetricName, task: TASKTYPE) -> Callable:
 
 def _inner_cv_plan(split: TrainSplit):
     """search 行为的评分面决策（单一真源）：K 折（n_rows < 阈值）vs train 内切
-    val（大样本，早停可用）。返回 (cv, X_fit, y_fit, eval_set)。"""
+    val（大样本，早停可用）。返回 (cv, X_fit, y_fit, X_val, y_val)——val 缺位为 None, None（#61 双参 seam）。"""
     if len(split.X_train) >= HOLDOUT_MIN_ROWS.get():
         X_fit, y_fit, X_val, y_val = split_val(split.X_train, split.y_train, split.task, groups=split.groups)
-        return None, X_fit, y_fit, (X_val, y_val)
-    return split.spec.inner, split.X_train, split.y_train, None
+        return None, X_fit, y_fit, X_val, y_val
+    return split.spec.inner, split.X_train, split.y_train, None, None
 
 
 def hyperparameters_search(
@@ -343,7 +343,7 @@ def hyperparameters_search(
     # 窗口判定一次（搜索期窗口恒定）：无 active run 的直调形态不建 nested run——
     # nested=True 只表示"允许嵌套"，无父 run 时会落孤儿顶层 run（污染默认实验）
     in_window = mlflow.active_run() is not None
-    cv, X_fit, y_fit, eval_set = _inner_cv_plan(split)
+    cv, X_fit, y_fit, X_val, y_val = _inner_cv_plan(split)
     optuna.logging.set_verbosity(optuna.logging.WARN if not is_verbose() else optuna.logging.INFO)
     direction = "maximize" if MetricName.higher_is_better(scoring) else "minimize"
     scorer = make_scorer(scoring, split.task)
@@ -391,10 +391,10 @@ def hyperparameters_search(
             return mean
 
         # holdout-val 手动路径：与最终训练同切分同口径（早停可用）；单指标子集省概率计算
-        pipe = fit_with_eval(make_pipe, X_fit, y_fit, eval_set=eval_set, fit_params=fit_params, **merged)
-        y_pred = pipe.predict(eval_set[0])
-        y_proba = pipe.predict_proba(eval_set[0]) if split.task == TASKTYPE.CLASSIFICATION else None
-        metrics = evaluate(split.task, eval_set[1], y_pred, y_proba, scoring=scoring)
+        pipe = fit_with_eval(make_pipe, X_fit, y_fit, eval_X=X_val, eval_y=y_val, fit_params=fit_params, **merged)
+        y_pred = pipe.predict(X_val)
+        y_proba = pipe.predict_proba(X_val) if split.task == TASKTYPE.CLASSIFICATION else None
+        metrics = evaluate(split.task, y_val, y_pred, y_proba, scoring=scoring)
         score = float(next(iter(metrics.values()))[scoring])
         if in_window:
             mlflow.log_metrics({f"{scoring}": score})
@@ -496,14 +496,13 @@ def training(
 
     n_rows = len(split.X_train)
     wants_es = bool(model_params.get("early_stopping_rounds") or fit_params.get("early_stopping_rounds"))
-    eval_set = None
+    X_val = y_val = None
     X_fit, y_fit = split.X_train, split.y_train
     if wants_es:
         X_fit, y_fit, X_val, y_val = split_val(split.X_train, split.y_train, task, groups=split.groups)
-        eval_set = (X_val, y_val)
         logger.info(f"val: {len(X_val)} rows（train {n_rows} → fit {len(X_fit)}）")
 
-    pipe = fit_with_eval(make_pipe, X_fit, y_fit, eval_set=eval_set, fit_params=fit_params, **model_params)
+    pipe = fit_with_eval(make_pipe, X_fit, y_fit, eval_X=X_val, eval_y=y_val, fit_params=fit_params, **model_params)
 
     if hasattr(pipe.estimator, "oob_score_"):
         print(f"oob_score={pipe.estimator.oob_score_:.4f}")
@@ -528,7 +527,7 @@ def training(
         _log_table(split.y_test, HOLDOUT_BYPRODUCTS["y_test"])
         _log_table(y_pred_df, HOLDOUT_BYPRODUCTS["y_pred"])
         parts = [(X_fit, y_fit, "Train")]
-        if eval_set is not None:
+        if X_val is not None:
             parts.append((X_val, y_val, "Val"))
         parts.append((split.X_test, split.y_test, "Test"))
         plot_loss_curve(pipe)
@@ -564,7 +563,7 @@ def oof_predictions(
     task = split.task
     if len(split.X_train) >= HOLDOUT_MIN_ROWS.get():
         X_fit, y_fit, X_val, y_val = split_val(split.X_train, split.y_train, task, groups=split.groups)
-        pipe = fit_with_eval(make_pipe, X_fit, y_fit, eval_set=None, fit_params={}, **params)
+        pipe = fit_with_eval(make_pipe, X_fit, y_fit, fit_params={}, **params)
         y_pred = pd.DataFrame(pipe.predict(X_val), index=y_val.index, columns=y_val.columns)
         y_proba = pipe.predict_proba(X_val) if task == TASKTYPE.CLASSIFICATION else None
         return y_pred, y_proba

@@ -22,7 +22,7 @@ class LossCurveMixin:
                 - columns: iteration, type, loss
         """
         if not train_metrics:
-            raise ValueError("无 loss 曲线数据（未训练或 fit 未传 eval_set）")
+            raise ValueError("无 loss 曲线数据（未训练或 fit 未传独立 val（eval_X/eval_y））")
 
         # 取底层模型默认的第一个损失函数评估指标
         default_metric_name = next(iter(train_metrics))
