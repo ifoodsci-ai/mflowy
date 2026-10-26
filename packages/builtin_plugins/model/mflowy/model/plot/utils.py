@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 if TYPE_CHECKING:
-    import shap
+    pass
 
 import logging
 
@@ -27,20 +27,6 @@ def shap_values_to_df(values: np.ndarray, data: np.ndarray, feature_names) -> pd
             "value": np.asarray(data).ravel(order="C"),
         }
     )
-
-
-def iter_output_blocks(explanation: shap.Explanation):
-    """按输出/类切 Explanation → (label, values 2D)——2D 单块、3D 逐类。
-
-    label 取 ``classes`` 属性注记（shap 族生产者契约）；绘图侧按块迭代出图。
-    """
-    values = explanation.values
-    classes = getattr(explanation, "classes", None) or ["-"]
-    if values.ndim == 3:
-        for i, label in enumerate(classes):
-            yield str(label), values[:, :, i]
-    else:
-        yield str(classes[0]), values
 
 
 def rank_features(

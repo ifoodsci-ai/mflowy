@@ -116,9 +116,8 @@ def search_input(
     import optuna
 
     # 1. 上游模型门面（model__* 组寻址单值取最近声明）
-    model_loader = model
-    y_names = list(model_loader.y_names)
-    x_names = list(model_loader.x_names)
+    y_names = list(model.y_names)
+    x_names = list(model.x_names)
 
     # 2. 构建搜索空间：infer + columns 列级合并（infer 限定在 x_names 内，排除 target 等）
     search_space: dict[str, ParameterSearchSpace] = {
@@ -158,7 +157,7 @@ def search_input(
         X_row = pd.DataFrame([params])
         if rules_fn is not None and not rules_fn(X_row):
             raise optuna.TrialPruned()
-        pred = np.ravel(model_loader.predict(X_row))
+        pred = np.ravel(model.predict(X_row))
         return tuple(float(pred[i]) for i in range(len(y_names)))
 
     # 7. 委托 model.study.search 跑 study（directions 长度 1 = 单目标，>1 = 多目标）

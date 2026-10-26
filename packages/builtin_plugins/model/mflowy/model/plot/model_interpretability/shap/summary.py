@@ -13,13 +13,14 @@ from typing import Annotated
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import shap
+import shap as shap_lib  # 模块别名：参数名 shap（组边寻址名）不遮蔽模块
 from mflowy.data.middlewares import log_plot
 from mflowy.driver.handler import handler
 from mflowy.utils.constants import RANDOM_STATE
 from mflowy.utils.plot import CMAP_DIVERGING
 
-from ...utils import SHAP_MAX_DISPLAY, iter_output_blocks, shap_values_to_df
+from ...utils import SHAP_MAX_DISPLAY, shap_values_to_df
+from .contract import annotation_triple, iter_output_blocks
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +65,7 @@ def _density_jitter(values: np.ndarray, width: float, rng: np.random.Generator) 
 
 @handler(log_plot, namespace="plot")
 def shap_summary(
-    shap: shap.Explanation,
+    shap: shap_lib.Explanation,
     max_display: Annotated[int, "最大显示特征数"] = SHAP_MAX_DISPLAY,
     title: Annotated[str, "图表标题"] = "SHAP Summary Plot",
     bar_alpha: Annotated[float, "条形透明度"] = 0.3,
@@ -76,7 +77,7 @@ def shap_summary(
 
     解读：特征按 mean|SHAP| 排序，条形越长=对模型输出整体影响越大。蜂群散点宽=该 SHAP 值区间样本密集；颜色红=高特征值，蓝=低特征值。看散点偏离零线的方向和颜色梯度判断特征如何推高/拉低预测。
     """
-    categorical_features = getattr(shap, "categorical_features", [])
+    categorical_features = annotation_triple(shap)[1]
     feature_data = shap.data
     feature_names = list(shap.feature_names)
     for label, shap_values in iter_output_blocks(shap):

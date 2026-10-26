@@ -61,6 +61,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **钉测**：同数据两个全新会话首 trial θ* 逐位一致
   （`test_run_hpo_theta_deterministic_across_studies`——同进程内两个未钉 sampler
   必不同，等价断言真咬合缺陷）；原 flaky 用例补 #84 根因注记
+### shap 副产物契约单源化（#85，#67 验收残留）：写读产三方共享件 + 注记缺失 fail-loud
+
+- **契约住 ``shap/contract.py``（单源）**：列前缀（``shap__``/``value__``/``cat__``）
+  、记账列（``class``/``sample_idx``/``y_name``）、注记三元组 accessor/组装
+  （``annotation_triple``/``attach_annotations``）、3D 分块迭代
+  （``iter_output_blocks``——自 plot/utils 迁入，写方分块与 plot 侧迭代共用）、
+  宽表组装（``explanation_to_frame``）
+- **三方收敛**：写方 ``log_shap_explanation`` 中间件、读方 ``shap__load``、生产方
+  ``shap__explanation``/``shap__load`` 全部 import 契约件——前缀/列名/注记字面量
+  副本删除（源扫描钉测：三前缀字面量全仓唯一）
+- **注记缺失 fail-loud**：裸 ``shap.Explanation`` 缺 ``y_name``/
+  ``categorical_features``/``classes`` 时 ``annotation_triple`` 带产出面指引报错
+  ——``'-'`` 占位静默回退退役（占位符落盘即断链）
+- **顺手卫生**：plot 三消费方（summary/dependence/sample_waterfall）对 ``shap``
+  参数遮蔽统一为 ``import shap as shap_lib`` 一式；``search_input`` 死别名
+  ``model_loader = model`` 删除
+- **round-trip 真跑钉测**：middleware 落 parquet → ``shap__load`` 重建与真算
+  逐位同形（2D/3D）
 
 ### 基准建模就绪（#70 决策图执行）：B1/B2/B3 三 P0 修复 + 基准任务落仓 + e2e-bench 冒烟门
 
