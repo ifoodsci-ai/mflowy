@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 
 import pandas as pd
 from mflowy.model.model._split import build_preprocessors
@@ -32,13 +33,60 @@ def fe_vocab() -> dict[str, str]:
     return {node: "cat" for node in FE_CAT_NODES.values()} | {node: "num" for node in FE_NUM_NODES.values()}
 
 
+# .mdp_family 准入形状（声明义务单源；文档面 = model README「族目录声明义务」节）
+_MDP_FAMILY_KEYS = frozenset({"structure", "machinery", "fit_params"})
+_STRUCTURE_KEYS = frozenset({"cat_support", "scaling_need", "min_samples"})
+_ADMISSION_DUTY = (
+    "声明义务（model README「族目录声明义务」节）：.mdp_family = "
+    '{"structure": {"cat_support": "native"|"encode", "scaling_need": bool, "min_samples": int}, '
+    '"machinery": make_machinery(...)（会话直调的 estimator 机器）, '
+    '"fit_params"?: callable（fit kwargs 工厂——如 LGBM 的 early_stopping 覆盖面）}'
+)
+
+
+def _admit_family(node: str, meta: object) -> dict:
+    """族目录准入校验（K8s CRD 风格，#58）：坏声明在聚合期 fail-loud 并附声明
+    义务指引——不留到会话中途裸 KeyError；未知键拒绝（fail-loud 红线）。"""
+    where = f"族 {node!r} 的 .mdp_family"
+    if not isinstance(meta, Mapping):
+        raise TypeError(f"{where} 须为 Mapping——{_ADMISSION_DUTY}")
+    unknown = set(meta) - _MDP_FAMILY_KEYS
+    if unknown:
+        raise ValueError(f"{where} 含未知键 {sorted(unknown)}（可用：{sorted(_MDP_FAMILY_KEYS)}）——{_ADMISSION_DUTY}")
+    missing = _MDP_FAMILY_KEYS - {"fit_params"} - set(meta)
+    if missing:
+        raise ValueError(f"{where} 缺键 {sorted(missing)}——{_ADMISSION_DUTY}")
+    st = meta["structure"]
+    if not isinstance(st, Mapping):
+        raise TypeError(f"{where}['structure'] 须为 Mapping——{_ADMISSION_DUTY}")
+    st_missing = _STRUCTURE_KEYS - set(st)
+    if st_missing:
+        raise ValueError(f"{where}['structure'] 缺键 {sorted(st_missing)}——{_ADMISSION_DUTY}")
+    if not set(st) <= _STRUCTURE_KEYS:
+        raise ValueError(
+            f"{where}['structure'] 含未知键 {sorted(set(st) - _STRUCTURE_KEYS)}（可用：{sorted(_STRUCTURE_KEYS)}）"
+        )
+    if st["cat_support"] not in ("native", "encode"):
+        raise ValueError(f"{where}['structure']['cat_support'] 须为 'native'|'encode'，得到 {st['cat_support']!r}")
+    if not isinstance(st["scaling_need"], bool):
+        raise TypeError(f"{where}['structure']['scaling_need'] 须为 bool，得到 {st['scaling_need']!r}")
+    if isinstance(st["min_samples"], bool) or not isinstance(st["min_samples"], int):
+        raise TypeError(f"{where}['structure']['min_samples'] 须为 int，得到 {st['min_samples']!r}")
+    if not callable(meta["machinery"]):
+        raise TypeError(f"{where}['machinery'] 须为 callable（make_machinery 工厂产物）——{_ADMISSION_DUTY}")
+    if "fit_params" in meta and not callable(meta["fit_params"]):
+        raise TypeError(f"{where}['fit_params'] 须为 callable（fit kwargs 工厂，可选）")
+    return dict(meta)
+
+
 def families() -> dict[str, dict]:
-    """族目录（运行期真源）：model 词表 ∩ ``.mdp_family`` 声明者。
+    """族目录（运行期真源）：model 词表 ∩ ``.mdp_family`` 声明者（聚合期准入校验）。
 
     条目 = ``{"pyfunc": 节点本体, "mdp_family": 会话语义元数据}``——
-    ``mdp_family`` 只装资源轴（axis/bounds/partial_default/full_default）、
-    增量评估能力位与结构相容声明，**不复制签名搜索空间**（防第二真源漂移；
-    空间单一真源 = 节点签名）。旧的 fast/cls 快筛硬配置随伪 MDP 退役。
+    ``mdp_family`` 装 structure 相容声明、machinery（会话直调的 estimator 机器）
+    与可选 fit_params，**不复制签名搜索空间**（防第二真源漂移；空间单一真源 =
+    节点签名）。坏声明在聚合期 raise（``_admit_family``——带声明义务指引）；
+    缺 extra 的族装载降级跳过（M6/#49）。
     """
     from mflowy.driver.discover import namespace_nodes
 
@@ -52,7 +100,7 @@ def families() -> dict[str, dict]:
         meta = getattr(fn, "mdp_family", None)
         if meta is None:
             continue
-        fams[node] = {"pyfunc": fn, "mdp_family": meta}
+        fams[node] = {"pyfunc": fn, "mdp_family": _admit_family(node, meta)}
     return fams
 
 

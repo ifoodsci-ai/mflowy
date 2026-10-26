@@ -554,9 +554,8 @@ def _select_fe(store, m: dict, params: dict) -> dict:
 
 
 def _machinery_of(family: str):
+    """两行为共享的 estimator 机器——machinery 存在性由族目录准入校验保证（#58 聚合期门）。"""
     meta = registry.families()[family]["mdp_family"]
-    if "machinery" not in meta:
-        raise ValueError(f"族 `{family}` 未声明 machinery（.mdp_family['machinery']——两行为共享的 estimator 机器）")
     return meta["machinery"], meta.get("fit_params")
 
 
