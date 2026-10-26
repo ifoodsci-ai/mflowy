@@ -21,9 +21,18 @@ def test_valid_structure_matrix():
 
 
 def test_family_mdp_family_declarations_complete():
-    """builtin 五族 .mdp_family 声明齐备（#33 后瘦身：目录标记 + structure 三字段）。"""
+    """builtin 五族 .mdp_family 声明齐备（#33 后瘦身：目录标记 + structure 三字段）。
+
+    M6（#49）：缺 [deep] extra 时 MLP 优雅跳过——期望集随 torch 可用性二分。"""
     fams = registry.families()
-    assert set(fams) == {"XGB", "LGBM", "CAT", "RF", "MLP"}
+    expected = {"XGB", "LGBM", "CAT", "RF"}
+    try:
+        import torch  # noqa: F401
+    except ImportError:
+        pass
+    else:
+        expected.add("MLP")  # [deep] extra 在位才装载（families() 缺依赖降级跳过）
+    assert set(fams) == expected
     for fam, entry in fams.items():
         meta = entry["mdp_family"]
         # #62 后：structure（相容声明）+ machinery（会话直调的 estimator 机器）；LGBM 另有 fit_params
@@ -35,6 +44,35 @@ def test_family_mdp_family_declarations_complete():
     # 语义锚：树系原生类别 / sklearn 系需编码 / MLP 需缩放
     assert fams["XGB"]["mdp_family"]["structure"]["cat_support"] == "native"
     assert fams["RF"]["mdp_family"]["structure"]["cat_support"] == "encode"
-    assert fams["MLP"]["mdp_family"]["structure"]["scaling_need"] is True
+    if "MLP" in fams:  # 无 torch 环境 MLP 已降级跳过
+        assert fams["MLP"]["mdp_family"]["structure"]["scaling_need"] is True
     # 声明即入目录：model 词表里不带 .mdp_family 的节点对会话不可见
     assert callable(fams["RF"]["pyfunc"])
+
+
+def test_families_degrades_on_missing_extra(monkeypatch, caplog):
+    """M6（#49）缺依赖优雅降级：ep.load() 撞 ImportError → 该族跳过 + warning，其余族照常。"""
+    import logging
+
+    from mflowy.driver import discover
+
+    class _BrokenEp:
+        value = "mflowy.model.model.mlp:pyfunc"  # 条目路径标注随 warning 出账
+
+        def load(self):
+            raise ModuleNotFoundError("No module named 'torch'")
+
+    real = discover.namespace_nodes
+
+    def fake(ns):
+        table = dict(real(ns))
+        table["MLP"] = _BrokenEp()  # 模拟无 [deep] extra 的 MLP 条目
+        return table
+
+    monkeypatch.setattr(discover, "namespace_nodes", fake)
+    with caplog.at_level(logging.WARNING):
+        fams = registry.families()
+    assert "MLP" not in fams and {"RF", "XGB", "LGBM", "CAT"} <= set(fams)
+    assert any("MLP" in r.getMessage() and "mflowy.model.model.mlp" in r.getMessage() for r in caplog.records), [
+        r.getMessage() for r in caplog.records
+    ]

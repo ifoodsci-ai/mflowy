@@ -38,6 +38,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   （`LocalJobProvider._require_steps`，raise fail-loud）同拒绝集（等价性钉测试）；
   两侧对外行为不变，文案统一收敛到谓词
 
+### M6 缺依赖优雅降级（#49）：families() 装载守卫——无 torch 环境开得了建模会话
+
+- **`registry.families()` ep.load() 增 ImportError 守卫**（同 `module.py` 富化降级
+  姿势）：缺 extra 的族条目跳过 + `logger.warning`（消息带条目路径与缺失模块名），其余族照常
+  ——修复 CPU-only 安装（无 `[deep]`）连 RF 会话都开不了（`start_session`/`apply_action`
+  /`propose_actions` 主链全经 families()）。词表 miss 仍 fail-loud（CatalogMiss 不受影响）
+- **`test_registry` 期望集随 torch 可用性二分**：有 `[deep]` 五族全集 / 无则减 MLP；
+  新增确定性守卫钉测（monkeypatch 坏 ep → 跳过 + warning，其余族在册）
+- 迁移表 M6 行同步（存量违规点已收敛；CI no-torch job = #43 后续交付）
+
 ### 基准建模就绪（#70 决策图执行）：B1/B2/B3 三 P0 修复 + 基准任务落仓 + e2e-bench 冒烟门
 
 - **B1（#71）`model__MLP` 全路径修复**：`MLPEstimator.__init__` 增 `random_state` 形参
