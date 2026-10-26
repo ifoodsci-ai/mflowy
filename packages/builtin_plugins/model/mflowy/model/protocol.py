@@ -1,7 +1,7 @@
 """建模域 CVCard（原 ProtocolCard，#63 全链改名）：评估协议卡的冻结载体。
 
 与 DomainCard（数据先验，mflowy.data.types）对称——两卡都是 episode 内冻结的
-MDP 输入：先验卡管"数据是什么"，协议卡管"对局怎么打"（task/metric/CV/预算/
+POMDP 输入：先验卡管"数据是什么"，协议卡管"对局怎么打"（task/metric/CV/预算/
 结构化候选）。换协议 = board 作废 + test 重触，只能弃局开新 episode。
 
 candidates = ``[{family, baseline: bool, space_hints: {param: 值 | [lo, hi]}, seed}]``

@@ -38,7 +38,7 @@ def test_namespace_no_init(pkg):
 def test_member_import_boundaries():
     """包依赖方向铁律（utils ← driver ← data ← model ← mcp 单向）：
     driver/utils 不得 import 任何域包（内核对插件零感知）；data 不得 import model
-    （两 MDP 域隔离，共享件住上游 data）。mcp 是编排层、pyproject 硬依赖双域包，
+    （两 POMDP 域隔离，共享件住上游 data）。mcp 是编排层、pyproject 硬依赖双域包，
     合法消费其公开清单如 extras.py；entry point group 名字符串不算 import。"""
     import re
 
@@ -143,3 +143,30 @@ def test_skill_doc_references_stay_in_repo():
             if not (ROOT / ref).is_file():
                 broken.setdefault(ref, str(md.relative_to(ROOT)))
     assert not broken, f"SKILL 引用了未入仓的文档（M11 引用文档入仓断链）: {broken}"
+
+
+def test_active_docs_use_pomdp_not_mdp():
+    """术语统一（0.2.0 MDP→POMDP）防回潮：活性治理文档零裸 "MDP" 残留。
+
+    排除面各有其据：CHANGELOG（已发布历史条目——追加式纪律）、docs/research（历史
+    设计快照，文件名即 mdp）、benchmark_readiness_report（自declared 一次性评估
+    快照）、.agents/skills/kaggle-competition（「外环 MDP」为该 skill 自身的形式化
+    设计词）、代码文件（mdp_session/MDPSessionHandle/.mdp_family 为代码锚点，标识
+    符不随术语改名）；CONTEXT.md 的 _Avoid_ 行例外——禁用别名表本就该点名旧称。"""
+    import re
+
+    files = [
+        ROOT / "AGENTS.md",
+        ROOT / "CONTEXT.md",
+        ROOT / "README.md",
+        *sorted((ROOT / "packages").rglob("README.md")),  # 含 builtin_plugins/{data,model} 两级深
+        *sorted((ROOT / "docs").glob("*.md")),
+    ]
+    files += sorted(p for p in (ROOT / ".agents" / "skills").rglob("*.md") if "kaggle-competition" not in p.parts)
+
+    for f in files:
+        text = f.read_text(encoding="utf-8")
+        if f.name == "CONTEXT.md":
+            text = "\n".join(line for line in text.splitlines() if "_Avoid_" not in line)
+        leftover = [line.strip() for line in text.splitlines() if re.search(r"\bMDP\b", line)]
+        assert not leftover, f"{f.relative_to(ROOT)} 仍有裸 MDP（术语统一回潮）: {leftover[:3]}"
