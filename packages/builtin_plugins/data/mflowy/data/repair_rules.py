@@ -97,9 +97,7 @@ class RepairRule:
                 rationale=rationale,
                 evidence={**base_evidence, **(extra or {})},
             )
-            for params, rationale, extra in _iter_candidates(
-                _call_make(declared[self.kind], errs, card, R["df"])
-            )
+            for params, rationale, extra in _iter_candidates(_call_make(declared[self.kind], errs, card, R["df"]))
         ]
 
     def _resolve_node(self, nodes: Mapping[str, Any]) -> Any:
