@@ -205,3 +205,15 @@ def test_propose_baseline_first(sessions_root, reg_csv):
     sel = [p for p in props if p["action"] == "select_model"]
     assert sel[0]["params"]["family"] == "RF" and sel[0]["evidence"]["baseline"] is True
     assert sel[1]["params"]["family"] == "XGB" and sel[1]["evidence"]["baseline"] is False
+
+
+def test_defaults_held_only_by_build_signature():
+    """#83 单源红线：cv/max_steps 缺省仅由 CVCard.build 签名持有——卡字段必填，无字段缺省拷贝。"""
+    import dataclasses
+    import inspect
+
+    fields = {f.name: f for f in dataclasses.fields(CVCard)}
+    assert fields["cv"].default is dataclasses.MISSING
+    assert fields["max_steps"].default is dataclasses.MISSING
+    params = inspect.signature(CVCard.build).parameters
+    assert params["cv"].default == 5 and params["max_steps"].default == 10

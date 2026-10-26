@@ -27,6 +27,7 @@ from ..templates import (
     MODELING_TEMPLATE,
     PREDICT_TEMPLATE,
     count_model_steps,
+    parse_steps_fragment,
 )
 
 
@@ -82,19 +83,8 @@ def _anchor_task_dir(steps_text: str) -> None:
 
 
 def _require_steps(steps_text: str) -> str:
-    """steps 明文的片段门（与 validate_modeling_steps 同语义，提交侧 fail-loud）。"""
-    import yaml as _yaml
-
-    if not steps_text or not steps_text.strip():
-        raise ValueError("modeling_steps 明文为空——须为顶层步骤列表片段（- name: 开头）")
-    parsed = _yaml.safe_load(steps_text)
-    if isinstance(parsed, dict):
-        raise ValueError(
-            "modeling_steps 须为顶层步骤列表片段（- name: 开头的 YAML list）——"
-            "name/description/flow 外壳由建模模板自动包装，请剔除顶层外壳键"
-        )
-    if not isinstance(parsed, list):
-        raise ValueError("modeling_steps 须为顶层步骤列表片段（- name: 开头的 YAML list）")
+    """片段门透传（谓词单源住 templates.parse_steps_fragment，#83）——提交侧 raise fail-loud。"""
+    parse_steps_fragment(steps_text)
     return steps_text
 
 

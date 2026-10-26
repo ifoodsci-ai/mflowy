@@ -211,16 +211,21 @@ def start_session(
     # 四类相容校验门：task↔dtype/metric↔task/cv↔数据/预算与候选（含 hints ⊆ 签名空间、baseline 恰一）
     from mflowy.model.protocol import CVCard
 
+    # 缺省单源（#83）：未指定即不传——落 CVCard.build 签名缺省；会话层零复述、零 or 合并
+    proto_extras: dict = {}
+    if "cv" in split_params:
+        proto_extras["cv"] = split_params["cv"]
+    if max_steps is not None:
+        proto_extras["max_steps"] = max_steps
     proto = CVCard.build(
         df,
         target=target,
         task=task,
         metric=metric,
-        cv=split_params.get("cv", 5),
-        max_steps=max_steps if max_steps is not None else 10,
         candidates=candidates,
         goal=goal,
         external_baseline=external_baseline,
+        **proto_extras,
     ).as_dict()
 
     session_id = f"ms_{uuid.uuid4().hex[:10]}"
@@ -245,7 +250,7 @@ def start_session(
         "snapshots": [{"m": None, "H": {}, "seed": None, "F": dict(cursor["F"])}],
         "models": {},  # 账本：per (family,F) 条目（真源 = 盘上 sqlite study）
         "steps": 0,
-        "max_steps": int(max_steps or proto["max_steps"]),
+        "max_steps": proto["max_steps"],  # 冻结协议值直抄——无二次合并（#83）
         "decision_log": [],
         "verdict": None,
         "finished": False,
@@ -295,7 +300,10 @@ def _materialize(m: dict, df: pd.DataFrame, raw_task: str) -> None:
         with capture_prints() as buf:
             xy = xy_ctx.handler(xy_ctx, load=df, target=m["target"], task=task, id_columns=m["id_columns"])
             xy_ctx.result = xy  # 链直调不自动落 result（Context.run 才落）——log_cv 侧信道依赖显式播种
-            spec = split_ctx.handler(split_ctx, x_y=xy, **m["protocol"]["split_params"])
+            # 缺省单源（#83）：物化折数取冻结协议值——不二落 cv.split 签名缺省（两活源即漂移面）
+            split_kwargs = {**m["protocol"]["split_params"]}
+            split_kwargs.setdefault("cv", m["protocol"]["cv"])
+            spec = split_ctx.handler(split_ctx, x_y=xy, **split_kwargs)
     finally:
         set_active_experiment(prev_exp)
     captured = buf.getvalue().strip()
@@ -1021,7 +1029,9 @@ def report_skeleton(session_id: str) -> dict:
     泰勒图路径）+ 叙事槽样板（判断归 π）。"""
     m = _store().read_manifest(session_id)
     d = _store().session_dir(session_id)
-    taylor_fig = str(d / "taylor_diagram.png") if (d / "taylor_diagram.png").exists() else None
+    from mflowy.model.report import TAYLOR_FIGURE  # 图名单源——与写入方共享常量（#83）
+
+    taylor_fig = str(d / TAYLOR_FIGURE) if (d / TAYLOR_FIGURE).exists() else None
     # rank：冻结面按 u 降序的名次（1 = 交付最优）；rank_consistency = u_inner/u 秩相关（SH 赌注出账）
     frozen = sorted(
         (k for k, e in m["models"].items() if e.get("frozen") and e.get("u") is not None),

@@ -22,6 +22,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 行为可见变化：driver 侧 tmp 垃圾名 `manifest.json.tmp` → `.manifest.json.tmp`（点
   前缀隐藏不进 glob/目录列举；仓内无消费方按旧名寻址，非 breaking）
 
+### 单源红线收敛（#83，#66 验收跟进）：cv/max_steps 缺省单点 + 泰勒图名单源 + 片段门共享谓词
+
+- **cv/max_steps 缺省仅由 `CVCard.build` 签名持有**（BREAKING：`CVCard` 卡字段
+  `cv`/`max_steps` 转必填——直接构造卡的字段缺省拷贝删除，仓内构造唯一路径本就是
+  `build`）：会话开局装配纯透传（未指定即不传——落签名缺省），manifest 的
+  `max_steps` 直抄冻结协议值——`int(max_steps or 协议值)` 二次合并退役（显式传 0
+  原路径已被 build 校验拦下，现路径直连且钉测试：0 值 fail-loud 绝不 falsy 回退）；
+  split 物化折数同步取冻结协议值，不再二落 `cv.split` 签名缺省（两活缺省源 = 漂移面）
+- **泰勒图产物名单源**：`report._TAYLOR_FIGURE` → 公开常量 `TAYLOR_FIGURE`，
+  `report_skeleton` 图片清单与 `taylor_for_runs` 写入方共用——`taylor_diagram.png`
+  字面量全仓唯一（常量定义处，源扫描钉测试）
+- **步骤片段门共享谓词**：`templates.parse_steps_fragment` 单源谓词，MCP 预检面
+  （`validate_modeling_steps`，结构化 `valid=False` 返回）与提交侧
+  （`LocalJobProvider._require_steps`，raise fail-loud）同拒绝集（等价性钉测试）；
+  两侧对外行为不变，文案统一收敛到谓词
+
 ### 基准建模就绪（#70 决策图执行）：B1/B2/B3 三 P0 修复 + 基准任务落仓 + e2e-bench 冒烟门
 
 - **B1（#71）`model__MLP` 全路径修复**：`MLPEstimator.__init__` 增 `random_state` 形参
