@@ -99,6 +99,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   StrictUndefined 下 env 缺键即 fail-loud。`test_ns_return_contract.py` 编译测试
   env 补两键，并断言渲染值真进了节点 params（取非默认值 200/7 钉住渲染行为，
   恰等于默认值的断言钉不住）。
+### Changed（剧本层调用治理）：六域 skill 置 `disable-model-invocation`
+
+- clean / model / model-brief / research-review / survey / kaggle-competition 六份
+  剧本 skill 的 frontmatter 置 `disable-model-invocation: true`——回合循环与问卷/
+  评审剧本改为**用户显式触发**（点名 skill 或斜杠形式），agent 不再按 description
+  自动装载（剧本入口是用户意图，不是模型猜测）；M11 剧本引用面测试不受影响
+  （frontmatter 不属引用面）
+
 ### Changed（术语统一 MDP→POMDP）：两域会话 prose 全量改称 POMDP
 
 - 术语权威 CONTEXT.md 会话词条改称 **POMDP** 并增可观测性界定：引擎簿记态（光标/
