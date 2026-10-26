@@ -7,6 +7,7 @@ ValueError，无静默回退；单一副作用：只填值，不追加指示列�
 ffill/bfill 的 by= 组内填充不跨组泄漏（批量一致性场景）。
 """
 
+import math
 from typing import Annotated
 
 import pandas as pd
@@ -156,6 +157,34 @@ def _fill_seq(df: pd.DataFrame, cols: list[str], by: str | None, how: str) -> No
 #    噪声由记分牌排序治理（菜单按 权重×severity 降序），不由遮蔽治理 ──────────
 
 
+def _num(x):
+    """None-安全的读数形态（NaN/inf → None——不伪装成数值）。"""
+    return round(float(x), 4) if x is not None and math.isfinite(float(x)) else None
+
+
+def _shape_repair(label):
+    """fill 数值档工厂（tier_repair + 分布读数）：目标列偏度/四分位进候选 evidence——
+    稳健档（median）vs 正态档（mean）的选择从标签变读数；计算单源 = statistic 域
+    univariate_facts（无 print 事实出口，本处只做投影）。"""
+
+    def _make(errors, card, df):
+        cols = family_cols(df, errors, "numeric")
+        if not cols:
+            return []
+        from mflowy.data.statistic.univariate import univariate_facts
+
+        all_rows, _findings = univariate_facts(df)
+        rows = {r["name"]: r for r in all_rows}
+        shape = {
+            c: {k: _num(rows[c][k]) for k in ("skew", "q1", "q2", "q3") if k in rows.get(c, {})}
+            for c in cols
+            if rows.get(c, {}).get("family") == "numeric"
+        }
+        return [({"cols": cols}, f"{label}: {cols}", {"col_shape": shape})]
+
+    return _make
+
+
 def _const_repair(errors, card, df):
     cols = family_cols(df, errors, "categorical")
     if not cols:
@@ -163,8 +192,8 @@ def _const_repair(errors, card, df):
     return [({"cols": cols, "value": "Unknown"}, f"常量 Unknown 填类别缺失(保留缺失信号): {cols}")]
 
 
-fill_median.repair = {"missing": tier_repair("numeric", "中位数填充数值缺失")}
-fill_mean.repair = {"missing": tier_repair("numeric", "均值填充数值缺失")}
+fill_median.repair = {"missing": _shape_repair("中位数填充数值缺失")}
+fill_mean.repair = {"missing": _shape_repair("均值填充数值缺失")}
 fill_interpolate.repair = {"missing": tier_repair("numeric", "线性插值填充数值缺失")}
 fill_mode.repair = {"missing": tier_repair("categorical", "众数填充类别缺失")}
 fill_const.repair = {"missing": _const_repair}
