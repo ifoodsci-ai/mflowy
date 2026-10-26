@@ -150,3 +150,29 @@ def test_families_admission_accepts_good_declaration(monkeypatch):
 
     assert "FAKE_OK" in fams
     assert fams["FAKE_OK"]["mdp_family"]["fit_params"] is _fit_params
+
+
+def test_build_ct_covers_every_fe_option():
+    """#58 US11：FE 词表每个档位都能装配——槽位→节点名映射唯一真源（词表/DAG/
+    装配同一解析面），新增编码/缩放档漏注册节点即红（CatalogMiss fail-loud）。"""
+    import pandas as pd
+
+    # x_y 物化后的 dtype 面（数值 float / 类别 category——x_transformer 列检测的前提）
+    X = pd.DataFrame(
+        {
+            "num": [1.0, 2.0, 3.0, 4.0],
+            "cat": pd.Series(["a", "b", "a", "b"], dtype="category"),
+        }
+    )
+    y = pd.DataFrame({"t": [0.0, 1.0, 0.0, 1.0]})
+    spec = (X, y, "regressor")
+
+    for cat in registry.CAT_ENCODERS:
+        for num in registry.NUM_SCALERS:
+            ct = registry.build_ct(cat, num, spec)
+            if cat == "passthrough" and num == "passthrough":
+                assert ct is None  # 全空槽 = 可选边语义
+            else:
+                assert ct is not None, (cat, num)
+
+    assert registry.build_ct("passthrough", "passthrough", spec) is None

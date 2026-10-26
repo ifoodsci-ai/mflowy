@@ -1,6 +1,6 @@
 """建模域族目录：discover() 的 model 词表过滤带 ``.mdp_family`` 声明者（会话 SDK 面）。
 
-知识归属：结构相容性与资源轴元数据随各族模块居住（``.structure`` /
+知识归属：结构相容性与会话语义元数据随各族模块居住（``.structure`` /
 ``.mdp_family`` 自声明），本模块只做聚合与组装——不持族硬清单。第三方模型
 作者在节点上声明 ``.mdp_family`` 即入族目录；**未声明 = 对会话不可见**
 （DAG 词表不受影响）。声明义务文档化见 model README。
@@ -105,25 +105,25 @@ def families() -> dict[str, dict]:
 
 
 def build_ct(cat_encoder: str, num_scaler: str, spec: tuple[pd.DataFrame, pd.DataFrame, object]):
-    """结构 → ColumnTransformer：x_transformer 节点 pyfunc 直调产出三元组后组装。
+    """结构 → ColumnTransformer：FE 槽位节点经运行期词表现查装配（#58 机械单源——
+    槽位→节点名映射 ``FE_CAT/NUM_NODES`` 是唯一真源，词表/DAG/装配同一解析面）。
 
     空槽（该 dtype 无列）自动坍缩为 passthrough；全 passthrough 返回 None
     （可选边语义，与手工流 x_preprocessors 为 None 一致）。
     """
-    from .x_transformer.categorical.onehot_encoder import onehot_encoder
-    from .x_transformer.categorical.ordinal_encoder import ordinal_encoder
-    from .x_transformer.categorical.target_encoder import target_encoder
-    from .x_transformer.numeric.robust_scaler import robust_scaler
-    from .x_transformer.numeric.standard_scaler import standard_scaler
+    from mflowy.driver.config import node_key
+    from mflowy.driver.discover import get_node
 
-    cat_fn = {"ordinal": ordinal_encoder, "onehot": onehot_encoder, "target": target_encoder}
-    num_fn = {"standard": standard_scaler, "robust": robust_scaler}  # 键位与 FE_CAT/NUM_NODES 一致（映射单源在模块头）
-
+    # target= 统一携带（会话恒单目标）：target_encoder 的必需参数从 spec 的 y 面取；
+    # 其余 FE 节点 ``**_`` 兜底静默——词表内节点签名演进不破装配面
+    kw = {"target": spec[1].columns[0]}
     triples = []
-    if cat_encoder in cat_fn:
-        triples.append(cat_fn[cat_encoder](x_y=spec))
-    if num_scaler in num_fn:
-        triples.append(num_fn[num_scaler](x_y=spec))
+    if cat_encoder in FE_CAT_NODES:
+        fn = get_node(node_key("x_transformer", FE_CAT_NODES[cat_encoder]), raw=True)
+        triples.append(fn(x_y=spec, **kw))
+    if num_scaler in FE_NUM_NODES:
+        fn = get_node(node_key("x_transformer", FE_NUM_NODES[num_scaler]), raw=True)
+        triples.append(fn(x_y=spec, **kw))
     triples = [t for t in triples if len(t) == 3 and len(t[2]) > 0]
     return build_preprocessors(triples)
 
