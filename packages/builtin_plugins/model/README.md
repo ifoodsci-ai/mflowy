@@ -42,7 +42,9 @@ MY_MODEL.regularizers = ("my_l2",)  # 正则面自声明（#38 出题规则的�
 
 签名即搜索空间的单一真源（默认 `ContinuousSpace`/`DiscreteSpace` = 动态维、常量默认 =
 静态固定）——`.mdp_family` 不复制空间（防第二真源漂移）；`machinery` 经工厂从签名
-派生（不手写第二份缺省表）。破坏性变更受 CHANGELOG 语义化版本约束。
+派生（不手写第二份缺省表）。**声明在 `registry.families()` 聚合期过准入校验**（缺键/
+值域错/未知键 → raise 并附本节指引——错误信息与文档同源）；破坏性变更受 CHANGELOG
+语义化版本约束。
 
 ## 会话观察面（#35/#64）
 

@@ -5,6 +5,7 @@
 ``.mdp_family`` 声明者（强制完整声明——未声明 = 对会话不可见）。
 """
 
+import pytest
 from mflowy.model import registry
 
 
@@ -76,3 +77,76 @@ def test_families_degrades_on_missing_extra(monkeypatch, caplog):
     assert any("MLP" in r.getMessage() and "mflowy.model.model.mlp" in r.getMessage() for r in caplog.records), [
         r.getMessage() for r in caplog.records
     ]
+
+
+# ── #58 族目录准入校验：坏声明在聚合期 fail-loud（附声明义务指引） ───────────
+
+
+def _patch_family(monkeypatch, name: str, mdp_family):
+    """向 model 词表注入一个带任意 .mdp_family 声明的假族（其余真族照常）。"""
+    from mflowy.driver import discover
+
+    real = discover.namespace_nodes
+
+    class _Ep:
+        value = f"mflowy.model.model.fake_family:{name}"
+
+        def load(self):
+            fn = lambda *a, **k: None  # noqa: E731
+            if mdp_family is not None:
+                fn.mdp_family = mdp_family
+            return fn
+
+    def fake(ns):
+        table = dict(real(ns))
+        table[name] = _Ep()
+        return table
+
+    monkeypatch.setattr(discover, "namespace_nodes", fake)
+
+
+_GOOD_STRUCTURE = {"cat_support": "native", "scaling_need": False, "min_samples": 30}
+
+
+@pytest.mark.parametrize(
+    "bad_declaration,expect_hint",
+    [
+        ({"structure": _GOOD_STRUCTURE}, "machinery"),  # 缺 machinery
+        (
+            {"structure": {"cat_support": "native", "min_samples": 30}, "machinery": lambda *a: None},
+            "scaling_need",
+        ),  # structure 缺键
+        (
+            {"structure": {"cat_support": "maybe", "scaling_need": False, "min_samples": 30}, "machinery": lambda *a: None},
+            "native",
+        ),  # cat_support 值域
+        (
+            {"structure": _GOOD_STRUCTURE, "machinery": lambda *a: None, "resource_axis": {}},
+            "未知键",
+        ),  # 退役键回潮
+        ("not-a-mapping", "Mapping"),  # 异型声明
+    ],
+    ids=["missing-machinery", "structure-missing-key", "bad-cat-support", "unknown-key", "not-mapping"],
+)
+def test_families_admission_rejects_bad_declaration(monkeypatch, bad_declaration, expect_hint):
+    """坏 .mdp_family 在 families() 聚合期 raise（带声明义务指引）——不留到会话中途裸 KeyError。"""
+    _patch_family(monkeypatch, "FAKE_BAD", bad_declaration)
+
+    with pytest.raises((TypeError, ValueError), match=expect_hint):
+        registry.families()
+
+
+def test_families_admission_accepts_good_declaration(monkeypatch):
+    """合格声明照常入目录（structure/machinery/fit_params 全形态——fit_params 与 LGBM
+    同形：``(**overrides) -> dict`` 的 fit kwargs 工厂）。"""
+    _fit_params = lambda **overrides: {"early_stopping_rounds": 50, **overrides}  # noqa: E731
+    _patch_family(
+        monkeypatch,
+        "FAKE_OK",
+        {"structure": dict(_GOOD_STRUCTURE), "machinery": lambda *a: None, "fit_params": _fit_params},
+    )
+
+    fams = registry.families()
+
+    assert "FAKE_OK" in fams
+    assert fams["FAKE_OK"]["mdp_family"]["fit_params"] is _fit_params
