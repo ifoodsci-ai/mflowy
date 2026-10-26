@@ -465,7 +465,10 @@ def test_abandon_closes_all_planes(sessions_root, reg_csv):
 
 def test_findings_drive_only_same_combo(sessions_root, cat_csv):
     """#66 story 17：findings 只对本 combo 键出题（规则与 LLM 同粒度）——菜单
-    rationale 引用的证据不来自另一个 FE 组合。"""
+    rationale 引用的证据不来自另一个 FE 组合。
+
+    #84 注记：确定性依赖 run_hpo 的盘上 study sampler 带 seed（`_open_study`）——
+    曾走未钉缺省 sampler，θ* 每进程漂移导致本用例非确定性失败。"""
     s = _start(sessions_root, cat_csv)
     sid = s["session_id"]
     ms.apply_action(sid, "select_model", {"family": "RF"})
@@ -481,6 +484,19 @@ def test_findings_drive_only_same_combo(sessions_root, cat_csv):
     ms.apply_action(sid, "select_FE", {"node": "ordinal_encoder"})  # 光标回 RF|ordinal
     props2 = ms.propose_actions(sid)
     assert any("折间不稳" in (p.get("rationale") or "") for p in props2)  # 本键 findings 恢复出题
+
+
+def test_run_hpo_theta_deterministic_across_studies(sessions_root, cat_csv):
+    """#84 随机源钉测：同 seed 两个全新会话（各自全新 study）首 trial 建议逐位一致
+    ——sampler 随 seed 建（曾未钉：每个新 study 的缺省 TPESampler 各自吃熵，θ* 漂移）。"""
+    thetas = []
+    for _ in range(2):
+        s = _start(sessions_root, cat_csv)
+        sid = s["session_id"]
+        ms.apply_action(sid, "select_model", {"family": "RF"})
+        ms.apply_action(sid, "run_hpo", {"n_trials": 1})
+        thetas.append(_manifest(sessions_root, sid)["models"]["RF|ordinal|passthrough"]["best_params"])
+    assert thetas[0] == thetas[1], thetas
 
 
 def test_propose_menu_covers_action_faces(sessions_root, reg_csv):

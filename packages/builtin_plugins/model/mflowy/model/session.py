@@ -580,19 +580,26 @@ def _ensure_structure(m: dict, family: str) -> dict:
     )
 
 
-def _open_study(m: dict, key: str, objective_id: dict, scoring: MetricName):
-    """盘上 study 真源：目标同一性判据——空间变（收窄/pin/加深）增量继续，目标变（seed/scoring）重开。"""
+def _open_study(m: dict, key: str, objective_id: dict, scoring: MetricName, seed: int | None):
+    """盘上 study 真源：目标同一性判据——空间变（收窄/pin/加深）增量继续，目标变（seed/scoring）重开。
+
+    sampler 随 seed 建（#84：objective_id 已含 seed，sampler 种子与目标同一性同步——
+    曾走 optuna 缺省未钉 TPESampler，θ* 每进程漂移致 findings 出题面抖动）。"""
     import optuna
+    from optuna import samplers
 
     db = _store().session_dir(m["session_id"]) / f"study_{_key_file(key)}.db"
     storage = f"sqlite:///{db}"
     direction = "maximize" if MetricName.higher_is_better(scoring) else "minimize"
+    sampler = samplers.TPESampler(seed=seed)
     if db.exists():
-        study = optuna.load_study(study_name=key, storage=storage)
+        study = optuna.load_study(study_name=key, storage=storage, sampler=sampler)
         if study.user_attrs.get("objective") == objective_id:
             return study
         db.unlink()  # 目标变 → 重开（trial 清零；旧文件弃置——append-only 真源换新目标）
-    study = optuna.create_study(study_name=key, storage=storage, direction=direction, load_if_exists=True)
+    study = optuna.create_study(
+        study_name=key, storage=storage, direction=direction, load_if_exists=True, sampler=sampler
+    )
     study.set_user_attr("objective", objective_id)
     return study
 
@@ -636,7 +643,7 @@ def _run_hpo(store, m: dict, params: dict) -> dict:
         raise ValueError("全 pin 候选（有效空间为空）走 n_trials=1 退化形——多余 trial 是同一参数的重复评估")
 
     objective_id = {"seed": seed if seed is not None else "default", "scoring": scoring.value}
-    study = _open_study(m, key, objective_id, scoring)
+    study = _open_study(m, key, objective_id, scoring, seed)
     with mlflow.start_run(run_name=f"run_hpo:{key}") as run:
         _tag_run(run, m, action="run_hpo", key=key, family=family)
         from mflowy.utils.capture import capture_prints

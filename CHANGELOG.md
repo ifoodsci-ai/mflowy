@@ -48,6 +48,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   新增确定性守卫钉测（monkeypatch 坏 ep → 跳过 + warning，其余族在册）
 - 迁移表 M6 行同步（存量违规点已收敛；CI no-torch job = #43 后续交付）
 
+### run_hpo 盘上 study sampler 随 seed 建（#84 flake 根治）
+
+- **根因**：会话路径 `_open_study` 以 optuna 缺省 sampler（未钉种子的 TPESampler）
+  开/载盘上 study，`hyperparameters_search` 的 `seed` 形参在该路径被静默丢弃
+  （仅 study=None 的 DAG 路径经 search_ml 吃到）——θ* 每进程吃熵漂移，OOF/findings
+  出题面抖动致 `test_findings_drive_only_same_combo` 非确定性失败（跨进程复现率
+  ~1/8，与 PYTHONHASHSEED 无因果——hash 序只是碰巧放大了观察差异）
+- **修复**：`_open_study` 增 seed 形参，create/load study 均挂 `TPESampler(seed=seed)`
+  ——sampler 种子与 objective_id（已含 seed）的目标同一性同步（换 seed = 换目标 =
+  study 重开，语义自洽）
+- **钉测**：同数据两个全新会话首 trial θ* 逐位一致
+  （`test_run_hpo_theta_deterministic_across_studies`——同进程内两个未钉 sampler
+  必不同，等价断言真咬合缺陷）；原 flaky 用例补 #84 根因注记
+
 ### 基准建模就绪（#70 决策图执行）：B1/B2/B3 三 P0 修复 + 基准任务落仓 + e2e-bench 冒烟门
 
 - **B1（#71）`model__MLP` 全路径修复**：`MLPEstimator.__init__` 增 `random_state` 形参
