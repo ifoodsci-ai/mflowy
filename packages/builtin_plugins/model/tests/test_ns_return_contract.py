@@ -1,7 +1,10 @@
 """词表身份契约（#67 + shap 族化）：Builder 编译缝——ns 返回契约判据用例。
 
 判据流 = 体检实证过的失败面；编译即校验：词表 miss / 撞名 / 必选边不可达 /
-类型不兼容全在 build() 暴露。
+类型不兼容全在 build() 暴露。#67 三判据全钉：①shap 链可达（test_shap_chain_
+compiles）②predict+评估图收集边不撞型（test_predict_out_of_model_ns_eval_
+plots_compile）③predict 为最近节点接 shap 解释链（test_predict_nearest_feeds_
+shap_explanation）。
 """
 
 from pathlib import Path
@@ -49,6 +52,13 @@ def test_explanation_template_compiles():
 def test_predict_out_of_model_ns_eval_plots_compile(tmp_path):
     """predict 裸节点化：DataFrame 返回者移出 model 组——评估图收集边（Iterator[ModelLoader]）不再撞型。"""
     build_flow(["load__csv", "x_y", "cv__split", "model__loader", "predict", "plot__roc_curve"], tmp_path)
+
+
+def test_predict_nearest_feeds_shap_explanation(tmp_path):
+    """#67 判据③：predict 为最近声明的 model 域外节点时接 shap 解释链——单值 ``model``
+    边只命中训练节点（ModelLoader），未吃到 predict 的 DataFrame 返回。编译通过即断言；
+    若 predict 将来回流 model ns，类型门经此用例立即报警，而非等用户流炸。"""
+    build_flow(["load__file", "x_y", "model__loader", "predict", "shap__explanation", "plot__shap_summary"], tmp_path)
 
 
 def test_predict_template_compiles():

@@ -91,6 +91,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   happy path 零开销（仅 miss 错误路径计算）；driver-only 环境真目录用例带跳过守卫
 - 钉测：假词表机制用例 ×5 + 真目录四键 seam 参数化 + Builder 编译缝文案用例
 
+### 词表身份钉测试补判据③（#87，#67 验收残留）
+
+- ns 返回契约套件（`test_ns_return_contract.py`）新增判据③最小流：
+  `load__file → x_y → model__loader → predict → shap__explanation → plot__shap_summary`
+  编译通过即断言（单值 ``model`` 边未吃到 predict 的 DataFrame 返回）——predict
+  若回流 model ns，类型门经此用例报警而非等用户流炸；测试文件头部判据清单
+  （①②③）同步补全
+
 ### 基准建模就绪（#70 决策图执行）：B1/B2/B3 三 P0 修复 + 基准任务落仓 + e2e-bench 冒烟门
 
 - **B1（#71）`model__MLP` 全路径修复**：`MLPEstimator.__init__` 增 `random_state` 形参
