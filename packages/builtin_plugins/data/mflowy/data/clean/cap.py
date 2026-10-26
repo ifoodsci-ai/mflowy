@@ -1,8 +1,8 @@
 """cap 家族原子：截断到界——统计栅栏（cap_iqr/cap_z）与域先验界（range_clip）同居。
 
 栅栏实现唯一居所在 detect/rules（apply 时对当前状态求值，与 detect.outliers 同尺）；
-range_clip 是条件型动作（判据来自问卷 expected_ranges 的领域先验而非数据分布，
-物理范围违例目前无 detect 算子）——故不挂 .repair、不进候选菜单，由问卷/agent 驱动。
+range_clip 的判据 = detect.range_violation（问卷 expected_ranges 的领域先验，
+#65 观测通道化）——kind=range_violation 挂 .repair 进候选菜单。
 """
 
 import logging
@@ -85,6 +85,21 @@ def range_clip(
     return clipped
 
 
-# 候选声明：outlier 温和双档（与 drop 家族激进档合计按记分牌排序陈列）
+# ── 候选声明（.repair v2）────────────────────────────────────────────────
+
+# outlier 温和双档（与 drop 家族激进档合计按记分牌排序陈列）
 cap_iqr.repair = {"outlier": tier_repair("numeric", "IQR 栅栏截断(稳健档)", {"k": 1.5})}
 cap_z.repair = {"outlier": tier_repair("numeric", "3σ 截断(正态档)", {"k": 3.0})}
+
+
+def _range_clip_repair(errors, card, df):
+    """range_violation 温和档：越界值截断到界（判据/边界来自 detect 证据——同尺）。"""
+    ranges = {
+        e.column: [e.evidence["lo"], e.evidence["hi"]]
+        for e in errors
+        if e.column and e.column in df.columns and {"lo", "hi"} <= set(e.evidence)
+    }
+    return [({"ranges": ranges}, f"物理范围裁剪到界(温和档): {sorted(ranges)}")] if ranges else []
+
+
+range_clip.repair = {"range_violation": _range_clip_repair}

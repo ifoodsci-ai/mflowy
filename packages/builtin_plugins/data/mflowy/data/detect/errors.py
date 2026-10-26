@@ -21,6 +21,7 @@ KINDS: frozenset[str] = frozenset(
         "constant",
         "stringly_numeric",
         "id_like",
+        "range_violation",
     }
 )
 

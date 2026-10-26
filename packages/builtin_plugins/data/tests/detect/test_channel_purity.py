@@ -17,9 +17,13 @@ from mflowy.data.detect.errors import ErrorReport
 from mflowy.data.detect.id_like import id_like
 from mflowy.data.detect.missing import missing
 from mflowy.data.detect.outliers import outliers
+from mflowy.data.detect.range_violation import range_violation
 from mflowy.data.detect.stringly import stringly
 
-OPERATORS = [missing, duplicates, outliers, constant, stringly, id_like, collinear]
+OPERATORS = [missing, duplicates, outliers, constant, stringly, id_like, collinear, range_violation]
+
+# 声明式算子的必填先验参数（其余算子零参数直调）
+_OP_KWARGS = {range_violation: {"ranges": {"x1": [-3.0, 3.0]}}}
 
 
 @pytest.fixture
@@ -50,7 +54,7 @@ _DEDUP_OPS = {id_like}
 def test_operator_direct_call_prints_nothing(op, dirty_df, capsys):
     """裸调（与 _detect_all 同姿势）零 stdout——MCP stdio 通道纯净。"""
     df = dirty_df.drop_duplicates().reset_index(drop=True) if op in _DEDUP_OPS else dirty_df
-    report = op(load=df)
+    report = op(load=df, **_OP_KWARGS.get(op, {}))
 
     assert capsys.readouterr().out == ""
     assert isinstance(report, ErrorReport)
