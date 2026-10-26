@@ -355,3 +355,58 @@ def login(
         _store(creds)
     logger.info("login 完成：user_id=%s scope=%s", creds.user_id, creds.scope)
     return creds.summary("logged_in")
+
+
+def ensure_access_token(base_url: str | None = None) -> str:
+    """取效 access token：未过期直返；过期 → 持锁 → 双检 → refresh grant。
+
+    refresh 为轮换制（每次返回新 refresh token，旧值立即作废）——整文件原子替换，
+    且临界区持文件锁：并发二次提交旧值会触发服务端复用检测（账号全端下线）。
+
+    失败面：无凭据 / 环境不符 / refresh 失效 → ``LoginRequiredError``（invalid_grant
+    时已清本地凭据，文案含全端下线风险提示）；端点其他错误 → ``OAuthHttpError``。
+    """
+    creds = _load()
+    if creds is None:
+        raise LoginRequiredError("未登录：请先调用 login 工具完成平台授权")
+    if base_url is not None and base_url != creds.base_url:
+        raise LoginRequiredError(f"本地凭据属于 {creds.base_url}，与请求环境 {base_url} 不符——请用对应环境重新 login")
+    if time.time() < creds.expires_at - _EXPIRY_SKEW_SECONDS:
+        return creds.access_token
+
+    with _credentials_lock():
+        creds = _load()  # 双检：等锁期间他人已刷新则直接复用
+        if creds is None:
+            raise LoginRequiredError("未登录：请先调用 login 工具完成平台授权")
+        if time.time() < creds.expires_at - _EXPIRY_SKEW_SECONDS:
+            return creds.access_token
+        try:
+            token = _token_request(creds.base_url, {
+                "grant_type": "refresh_token",
+                "refresh_token": creds.refresh_token,
+                "client_id": CLIENT_ID,
+            })
+        except OAuthHttpError as e:
+            if e.error == "invalid_grant":
+                _clear()
+                raise LoginRequiredError(
+                    "登录凭据已失效（invalid_grant），本地凭据已清除，请重新调用 login。"
+                    "若非本人操作：refresh 复用会触发平台复用检测导致账号全端下线，"
+                    "请到平台 /account 检查已登录设备列表。"
+                ) from e
+            raise
+        claims = jwt_payload(token["access_token"])
+        rotated = Credentials(
+            base_url=creds.base_url,
+            access_token=token["access_token"],
+            refresh_token=token["refresh_token"],
+            scope=token.get("scope", creds.scope),
+            user_id=claims.get("sub", creds.user_id),
+            session_id=claims.get("session_id", creds.session_id),
+            device_name=creds.device_name,
+            obtained_at=time.time(),
+            expires_at=float(claims.get("exp", time.time() + token.get("expires_in", 900))),
+        )
+        _store(rotated)
+        logger.info("token 已轮换：user_id=%s", rotated.user_id)
+        return rotated.access_token

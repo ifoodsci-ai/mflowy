@@ -257,6 +257,98 @@ def test_login_force_reruns_flow_and_base_switch_overwrites(monkeypatch, tmp_pat
     assert stored["base_url"] == "http://other-base:3" and stored["refresh_token"] == "rf-new"
 
 
+# ── token 生命周期（ensure_access_token：缓存命中/轮换/失效清除/锁）──────────
+
+
+def test_ensure_access_token_cached_hit_no_network(monkeypatch, tmp_path):
+    """access 未过期 → 直返本地值，零网络。"""
+    _seed_credentials(monkeypatch, tmp_path)
+    monkeypatch.setattr(auth, "_http_json", lambda *_a, **_k: pytest.fail("未过期不应触网"))
+
+    assert auth.ensure_access_token() == _jwt(_token_payload())
+
+
+def test_ensure_access_token_refreshes_and_replaces_whole_file(monkeypatch, tmp_path):
+    """access 过期 → refresh grant（JSON）→ 整文件原子替换：新 token 落盘、旧 refresh 不残留、权限保持 0600。"""
+    _seed_credentials(monkeypatch, tmp_path, expires_at=time.time() - 1)  # 已过期
+    rotated = _token_response(_token_payload(exp=int(time.time()) + 900), refresh="rf-rotated")
+    calls = _fake_transport(monkeypatch, token=rotated)
+
+    token = auth.ensure_access_token()
+
+    assert token == rotated["access_token"]
+    refresh_call = next(c for c in calls if c["url"].endswith("/oauth/token"))
+    assert refresh_call["payload"] == {"grant_type": "refresh_token", "refresh_token": "rf-old", "client_id": auth.CLIENT_ID}
+    creds_file = tmp_path / "credentials.json"
+    stored = json.loads(creds_file.read_text())
+    assert stored["refresh_token"] == "rf-rotated"
+    assert "rf-old" not in creds_file.read_text()
+    assert stat.S_IMODE(creds_file.stat().st_mode) == 0o600
+
+
+def test_ensure_access_token_invalid_grant_clears_and_warns_full_logout(monkeypatch, tmp_path):
+    """refresh 失效 → 清本地凭据 + LoginRequiredError，文案含全端下线风险提示。"""
+    _seed_credentials(monkeypatch, tmp_path, expires_at=time.time() - 1)
+    _fake_transport(monkeypatch, token=auth.OAuthHttpError(
+        "http://x/oauth/token", 400, "invalid_grant", "invalid or expired grant"))
+
+    with pytest.raises(auth.LoginRequiredError, match="全端下线"):
+        auth.ensure_access_token()
+    assert not (tmp_path / "credentials.json").exists()
+
+    with pytest.raises(auth.LoginRequiredError, match="未登录"):
+        auth.ensure_access_token()  # 凭据已清——二次调用直接引导 login
+
+
+def test_ensure_access_token_requires_login_and_env_guard(monkeypatch, tmp_path):
+    """无凭据 → 引导 login；指定不同 base_url → 拒用（防拿错环境的 token）。"""
+    _use_credentials(monkeypatch, tmp_path)
+    with pytest.raises(auth.LoginRequiredError, match="login"):
+        auth.ensure_access_token()
+
+    _seed_credentials(monkeypatch, tmp_path)
+    with pytest.raises(auth.LoginRequiredError, match="环境"):
+        auth.ensure_access_token(base_url="http://other-base:3")
+
+
+def test_ensure_access_token_concurrent_refresh_single_network_call(monkeypatch, tmp_path):
+    """双线程并发取效 token → 锁串行化 + 双检：仅一次网络刷新，两线程同值。
+
+    无锁的后果是轮换竞态——旧 refresh 被二次提交，服务端判定失窃并全端下线。
+    """
+    _seed_credentials(monkeypatch, tmp_path, expires_at=time.time() - 1)
+    rotated = _token_response(_token_payload(exp=int(time.time()) + 900), refresh="rf-rotated")
+    network_calls: list[dict] = []
+    gate = threading.Event()
+
+    def _http_json(url, payload=None, *, method=None, timeout=30.0):
+        if url.endswith("/oauth/token"):
+            network_calls.append({"payload": payload})
+            gate.wait(timeout=10)  # 让两线程都进入临界区竞争窗口
+        return rotated
+
+    monkeypatch.setattr(auth, "_http_json", _http_json)
+    results: list[str] = []
+    errors: list[BaseException] = []
+
+    def _worker():
+        try:
+            results.append(auth.ensure_access_token())
+        except BaseException as e:  # noqa: BLE001——把线程内失败带回主线程断言
+            errors.append(e)
+
+    t1, t2 = threading.Thread(target=_worker), threading.Thread(target=_worker)
+    t1.start(); t2.start()
+    time.sleep(0.3)  # 两线程都撞上过期分支/锁窗口
+    gate.set()
+    t1.join(timeout=10); t2.join(timeout=10)
+
+    assert errors == []
+    assert len(network_calls) == 1, f"并发刷新应恰好一次网络往返，实际 {len(network_calls)}"
+    assert results == [rotated["access_token"]] * 2
+    assert json.loads((tmp_path / "credentials.json").read_text())["refresh_token"] == "rf-rotated"
+
+
 # ── PKCE（S256）──────────────────────────────────────────────────────────────
 
 
