@@ -46,6 +46,7 @@ def register(mcp: MCPServer):
         tools.list_run_artifacts,
         tools.read_artifact,
         tools.sessions_gc,
+        tools.login,
     ):
         mcp.tool()(fn)
 

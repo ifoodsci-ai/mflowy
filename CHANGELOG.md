@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - Unreleased
 
+### Added（#88）：login 平台工具——OAuth 2.1 身份地基（PKCE S256 + loopback + token 库）
+
+- **`mflowy.utils.auth`（纯 stdlib）**：平台 OAuth 2.1 客户端——授权码流
+  （PKCE S256 + 本机浏览器 + `http://127.0.0.1:{随机端口}/callback` loopback 回调 +
+  state 一次性比对），token 端点 JSON 体（契约明确非 RFC 6749 form）；
+  凭据 `~/.mflowy/credentials.json`（0600）单文件 tmp+rename 原子整替（umask 收紧，
+  token 不经 644 窗口）。refresh 轮换制：刷新/落盘临界区持文件锁 + 双检——并发二次提交
+  旧 refresh 会触发平台复用检测（账号全端下线），同机多 agent host 并发是现实场景；
+  `invalid_grant` 即清本地凭据并以 `LoginRequiredError` 引导重登（文案含全端下线风险）。
+- **`login` 平台工具**（MCP/CLI 同面，`mflowy login '{}'` 免注册即用）：幂等——同环境已有
+  凭据直返 `already_logged_in` 不弹浏览器，`force=true` 强制重授权；scope 缺省拉服务端
+  元数据 `scopes_supported` 全目录整体同意（客户端不拷目录，单源）；`base_url` 三级优先
+  参数 > `MFLOWY_BASE_URL` > `http://localhost:30080`。JWT 本地仅解码展示不验签
+  （资源侧统一验）。平台工具 8→9、总数 32→33。
+- **消费接线点**：`ensure_access_token()` / `LoginRequiredError` 供未来远程 JobProvider
+  附 Bearer（401 单次刷新重试），不重造轮子。
+- 顺手收敛：mcp 包显式声明 `mflowy-utils` 依赖（tools.py 直接 import 的存量缺口，红线 6）。
+
 ### Fixed（#77）：inverse_optimization 模板补渲染 n_trials/random_seed——调用方传参不再被 Jinja 静默丢弃
 
 - LocalJobProvider 恒把 `n_trials`/`random_seed` 放进模板 env，但

@@ -11,6 +11,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Annotated
 
+from mflowy.utils import auth
 from mflowy.utils.file import sha256_of
 from pydantic import Field
 
@@ -365,3 +366,38 @@ def _md_table(df, cell_cap: int = 40) -> str:
     for _, row in df.iterrows():
         lines.append("| " + " | ".join(cell(v) for v in row) + " |")
     return "\n".join(lines)
+
+
+def login(
+    base_url: Annotated[
+        str | None,
+        Field(description="平台地址；缺省读 MFLOWY_BASE_URL 环境变量，再缺省 http://localhost:30080"),
+    ] = None,
+    scopes: Annotated[
+        list[str] | None,
+        Field(description="申请的 scope 列表；缺省取服务端元数据 scope 目录全集（整体同意）"),
+    ] = None,
+    timeout_seconds: Annotated[int, Field(description="等待浏览器完成登录的时限秒数（缺省 300）")] = 300,
+    force: Annotated[
+        bool,
+        Field(description="已登录时是否强制重新走浏览器授权（缺省 False：已登录直接返回状态）"),
+    ] = False,
+    device_name: Annotated[
+        str | None,
+        Field(description="设备显示名（平台 /account 已登录设备列表可见）；缺省 hostname (OS)"),
+    ] = None,
+) -> dict:
+    """登录 mflowy 平台（OAuth 2.1：PKCE + 本机浏览器授权），凭据原子落盘 ~/.mflowy/credentials.json。
+
+    何时使用 login：
+    - 调用远程工具（训练/推理/部署）前建立或确认平台身份
+    - 收到「需重新登录」提示后主动重新授权（force=true）
+    - 检查当前登录状态（已登录则直接返回，不弹浏览器）
+    """
+    return auth.login(
+        base_url=base_url,
+        scopes=scopes,
+        timeout_seconds=timeout_seconds,
+        force=force,
+        device_name=device_name,
+    )
