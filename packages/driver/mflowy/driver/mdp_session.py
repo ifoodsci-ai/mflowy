@@ -129,7 +129,7 @@ class MDPSessionHandle(Protocol):
 
     无状态 sid 寻址——每调用从盘重水化（会话比 agent 上下文与包版本长寿）；
     ``load(sid) -> 绑定句柄`` 为后置扩展点（当前不设）。统一"具名核心 +
-    ``*args: Any`` 域尾巴"：域选项（preview/dry_run/min_quality/deliver_keys，
+    ``*args: Any`` 域尾巴"：域选项（preview/min_quality/deliver_keys，
     语义域定）不进契约签名；``action`` 与 Candidate.action 同源词表。仓内零实现
     者——活参考 = data/model 两域会话模块的函数组（#30/#31 迁移后结构等价）。
     """

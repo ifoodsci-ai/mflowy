@@ -149,21 +149,21 @@ def clean_apply(
     session_id: Annotated[str, Field(description="会话 ID")],
     node: Annotated[str, Field(description="clean 词表动作名（clean_propose 的 action 字段）")],
     params: Annotated[dict, Field(description="动作参数（clean_propose 的 params 字段）")] = None,
-    dry_run: Annotated[
-        bool, Field(description="样本上预览 diff（行列增删与变格数）——不提交版本、不带检测指标")
-    ] = False,
 ) -> dict:
     """执行一个清洗动作：守卫 → 转移 → 快照 → diff/错误清单/质量分（s′ 观测）→ 决策日志。
 
     响应自带 reward（本步 ΔΦ 质量差，舍入 4 位，正值 = 改善）与 state_digest
     （缺陷摘要指纹）——直接读数决策，无需从决策日志做减法。
 
+    失败即免费异常（不耗预算、不落版本）——不确定动作的试探面 = 提交后读 s′，
+    负 reward 即 clean_rollback。
+
     何时使用 clean_apply：
-    - 从候选中选定动作后提交执行；不确定时先 dry_run 预览
+    - 从候选中选定动作后提交执行（响应自带 reward 与 state_digest——直接读数决策）
     """
     from . import cleaning_session
 
-    return cleaning_session.apply_action(session_id, node, params or {}, dry_run=dry_run)
+    return cleaning_session.apply_action(session_id, node, params or {})
 
 
 def clean_rollback(
