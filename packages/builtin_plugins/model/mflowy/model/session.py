@@ -1224,9 +1224,7 @@ def propose_actions(session_id: str) -> list[dict]:
         "fe_slots_ok": fe_slots_ok,
     }
     # 会话实例从盘加载/复制（默认 = modelRuleEngine 注册面；自定义规则 pkl 持载）
-    with rule_engine_rwa(
-        str(store.session_dir(session_id) / "rules.pkl"), propose_rules.default_engine()
-    ) as engine:
+    with rule_engine_rwa(str(store.session_dir(session_id) / "rules.pkl"), propose_rules.default_engine()) as engine:
         engine.fire(R={"findings": findings, "ctx": ctx})
         activations = engine.poll_proposals()
         subscribed = {getattr(r, "kind", None) for r in engine.rules.values()}

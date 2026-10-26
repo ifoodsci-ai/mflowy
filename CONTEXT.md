@@ -106,8 +106,8 @@ _Avoid_: ExperimentCard、ModelBrief、ModelingCard（协议卡禁用别名）
 实现 `driver.rule.Rule` 协议的出题知识对象（`key` 身份 + `propose(R) -> list[Activation]`），
 声明"什么触发上下文下我是好的一步"。词表知识源随词汇主人居住（clean `.repair` /
 model 族自声明），经域适配器（data `repair_rules` / model `propose_rules`）包装注册到
-域默认 RuleEngine 实例；会话实例经 `open_engine(session_dir/rules.pkl, default=…)` 从盘
-加载/复制（自定义规则 pkl 持载，激活态清空起步）。
+域默认 RuleEngine 实例；会话实例经 `rule_engine_rwa(session_dir/rules.pkl, default=…)`
+整读→用→整写（缺 pkl 时默认实例直接作工作实例，无克隆；自定义规则 pkl 持载）。
 _Avoid_: 以「规则引擎」裸指 RETE/DSL 类推理引擎（明确非需求——本仓自研件全称「规则引擎 SDK」）；rules. 前缀 entry point 注册桶（#37 旧稿已废弃）；节点属性挂载 `node.rule = {kind: fn}`（0.2.0 随实例门面重构退役）
 
 **资格门（gate）**:

@@ -158,6 +158,7 @@ class RuleEngine:
             raise ValueError(f"未知规则 key：{unknown}（可用: {sorted(self._rules)}）")
         return list(dict.fromkeys(keys))
 
+
 def load_rule_engine(path: str) -> RuleEngine | None:
     """从盘加载实例：缺文件 → None（回退归调用方）；损坏/异类 → raise 带路径。
 

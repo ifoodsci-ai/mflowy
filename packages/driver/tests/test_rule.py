@@ -203,7 +203,7 @@ def test_rwa_exception_no_save(tmp_path):
 def test_load_rule_engine_missing_none_corrupt_fail_loud(tmp_path):
     """load 纯函数契约：缺文件 → None（回退归调用方）；损坏/异类 → raise 带路径
     （不静默重建默认——自定义规则不允许被静默换掉）。"""
-    from mflowy.driver.rule import RuleEngine, load_rule_engine
+    from mflowy.driver.rule import load_rule_engine
 
     pkl = tmp_path / "rules.pkl"
     assert load_rule_engine(str(pkl)) is None  # 缺文件：None，非异常

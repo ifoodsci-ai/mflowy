@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - Unreleased
 
-### BREAKING：规则引擎重构——散落规则聚合到实例（Rule/Activation/RuleEngine + open_engine 落盘），两域 MDP 统一 fire/poll 入口
+### BREAKING：规则引擎重构——散落规则聚合到实例（Rule/Activation/RuleEngine + load/save 纯函数落盘），两域 MDP 统一 fire/poll 入口
 
 - **实例门面取代节点属性挂载**：规则 = 实现 `driver.rule.Rule` 协议的对象（`key` 身份 +
   `propose(R) -> list[Activation]`），经 `RuleEngine.register(*rules)` 聚合；`fire(*keys, R)`
@@ -15,12 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   action/params + salience 记分牌 + rationale/evidence 解释面）在实例内累积，
   `poll_proposals()` 按 salience 降序（同分 rule_key/action/params 字典序）聚合排空——
   连续 fire 一次取走，菜单确定性不变
-- **实例落盘**：pkl 承载注册面（含运行期注册的自定义规则）与未 poll 激活态；
-  `open_engine(path, default=域默认实例)` 盘上有则加载（损坏 fail-loud 带路径，不静默重建）、
-  无则从默认实例复制（激活态清空起步）；with 正常退出原子落盘（走
-  `mflowy.utils.file.write_bytes_atomic` 单源原语）、异常不落盘（失败调用零副作用）。
-  规则须可 pickle——域规则 = 模块级 frozen dataclass 只持 str/num，词表/注册表对象在
-  propose 内现查
+- **落盘与状态解耦**：引擎纯内存（注册面 + 激活缓冲，零路径状态）；盘 IO 纯函数对
+  `load_rule_engine`（缺文件 → None；损坏/异类 → raise 带路径——自定义规则不允许被
+  静默换掉）+ `save_rule_engine`（dumps 后走 `mflowy.utils.file.write_bytes_atomic`
+  单源原语）；`rule_engine_rwa(path, default)` 四行门面（整读→用→整写）：缺 pkl 时
+  默认实例直接作工作实例（无克隆——调用方传干净模板，域侧每次现建），with 正常退出
+  整体落盘（含运行期注册的自定义规则与未 poll 激活态）、异常不落盘。规则须可
+  pickle——域规则 = 模块级 frozen dataclass 只持 str/num，词表/注册表对象在 propose 内现查
 - **data 域统一接入**（此前 `.repair` 直扫绕开引擎）：`repair_rules.py` 新模块——词表
   `.repair` 声明（知识仍随词汇主人居住）包装为 `RepairRule`（key = `node.kind`）注册进
   cleanRuleEngine 默认实例；`propose_actions` 走 fire（R = defects/card/df）/poll，菜单响应

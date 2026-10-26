@@ -14,6 +14,6 @@ plot EDA 图族（族内扁平，直住 `plot/`）。数据栈为硬依赖，装
   `middlewares/`（数据面遥测 + df_columns 诊断）
 - 类型：`types.py`（TASKTYPE 任务类型——target 列的数据事实；DomainCard 领域建档卡）
 - 规则聚合：`repair_rules.py`（cleanRuleEngine 默认实例——词表 `.repair` 声明包装注册为
-  RepairRule；propose 走 `open_engine` → fire/poll，会话实例 pkl 持载自定义规则）
+  RepairRule；propose 走 `rule_engine_rwa` → fire/poll，会话实例 pkl 持载自定义规则）
 - 判据：镜像路径有对应测试（`tests/`），`uv sync` 后 `list-nodes` 可见（新模块须重跑 `uv sync`）
 - 第三方插件参考：以 mflowy 为 base 依赖，声明 `[project.entry-points."mflowy.plugins"]` 即成插件

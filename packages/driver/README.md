@@ -277,7 +277,7 @@ uvx --from "mflowy[mcp,modeling]" --with mflowy-extra mflowy-mcp
 - 消费者以**组名**（`load`）或**节点名**（归组 `namespace__node`——`__` 连接符，如 `load__feather`；非归组裸节点名）寻址你的节点；返回注解不参与寻址（仅文档与构建期一致性校验）
 - 扩展单元 = namespace + 节点 + 边函数；`get_node_info` 的 `NodeInfo.upstream` 与 `list_nodes` 节点条目 `{name=node_key, upstream}` 均下发**结构化元数据**——`UpstreamMeta` 扁平投影（`via` 标注消费途经的边、`expect` 类型渲染、`required`/`default` 可选性；`name == via` 的边自指条目过滤，边信息由 edges 词表承载）；缺 extra 降级 `upstream=None`
 - 参考实现：`packages/builtin_plugins/`（mflowy-data / mflowy-model 两包；hatch 构建期扫描 `@handler` 的 `namespace=` 与 `@edge` 生成 entry points，抄走改 group 即可）
-- SDK 面 = `driver/handler.py` + `driver/edge.py` 装饰器 + `driver/rule.py` 规则引擎实例（Rule/Activation/RuleEngine/open_engine 落盘） + `driver/builtin_middleware.py` 尾链 + 两域 `middlewares/` 遥测面；破坏性变更受 CHANGELOG 语义化版本约束
+- SDK 面 = `driver/handler.py` + `driver/edge.py` 装饰器 + `driver/rule.py` 规则引擎实例（Rule/Activation/RuleEngine + load/save_rule_engine/rule_engine_rwa 落盘） + `driver/builtin_middleware.py` 尾链 + 两域 `middlewares/` 遥测面；破坏性变更受 CHANGELOG 语义化版本约束
 
 ## 会话 SDK（MDP 契约与生命周期基座）
 
