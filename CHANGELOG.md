@@ -99,6 +99,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   StrictUndefined 下 env 缺键即 fail-loud。`test_ns_return_contract.py` 编译测试
   env 补两键，并断言渲染值真进了节点 params（取非默认值 200/7 钉住渲染行为，
   恰等于默认值的断言钉不住）。
+### BREAKING（#65）：清洗 MDP 度量层修复——Φ 单调化 + 先验观测 + dry_run 退役
+
+- **Φ 聚合按 kind 均值改求和**：消除任何缺陷都使质量分不降（单调奖励）——三反例
+  （删常量列/修共线弱对/单修低缺失列）钉成回归测试；数值整体下移、定义域放开为
+  (−∞, 1]，θ 门跨数据集按相对差分读数
+- **新 detect 词表节点 `range_violation`**（声明式轴）：问卷 `expected_ranges` 的
+  物理违例进观测通道（severity = 列越界率；会话路径由引擎从冻结卡注入，DAG 路径
+  显式传参）；kind 进 KINDS 闭合注册表与记分牌默认权重（0.10）；
+  `range_clip`（温和档）/`drop_outside`（激进档）挂 `.repair` 进候选菜单——
+  判断与执行同尺，问卷先验全程可观测
+- **`clean_apply` 的 dry_run 参数退役**（引擎/MCP 工具 schema/剧本/测试四处）：
+  样本预览双合同皆死（安全承诺假 + 忠实性假），失败 apply 本就免费（异常在 commit
+  点前抛出——不耗预算、不落版本、不进决策日志）；试探走「提交 → 免费 s′ →
+  负 reward 即 rollback」
+- **propose 证据富化**：`.repair` 生成器产出支持可选三元组
+  `(params, label, extra_evidence)`；`fill_median`/`fill_mean` 候选携带目标列
+  偏度/四分位（计算单源 = statistic 域 `univariate_facts`，候选侧只投影）——
+  稳健档 vs 正态档的选择从标签变读数
+- 会话 finish 的终态质量分与回路同尺（卡权重 `defect_priority` 全程生效）
+- 剧本引用面谓词入 AGENTS.md：操作 skill 参考节只允许工具名与入仓文档
+  （clean skill 的实现路径引用已删除）；两份被剧本引用的 MDP 设计快照
+  （`docs/research/2026-10-09-{cleaning,modeling}-mdp-design.md`）随 .gitignore
+  反向规则入仓（M11 引用文档入仓），`test_workspace` 增文档引用面断链测试
 
 ### BREAKING：规则引擎重构——散落规则聚合到实例（Rule/Activation/RuleEngine + load/save 纯函数落盘），两域 MDP 统一 fire/poll 入口
 

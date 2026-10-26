@@ -126,3 +126,19 @@ def test_skill_tool_names_in_tools_list():
             used.setdefault(tok, str(skill.relative_to(ROOT)))
     unknown = {t: p for t, p in used.items() if t not in allowed}
     assert not unknown, f"SKILL 引用不在运行期词表（工具名 ⊆ tools/list 断链）: {unknown}"
+
+
+def test_skill_doc_references_stay_in_repo():
+    """#65/M11：剧本参考节引用的仓内路径必须真实入仓（引用被 ignore 的文档 = 断链——
+    干净检出里不存在即测试红）。实现路径引用已被剧本层谓词禁止（AGENTS.md 防漂移），
+    本测兜「入仓文档」那半边。"""
+    import re
+
+    skills_dir = ROOT / ".agents" / "skills"
+    assert skills_dir.is_dir()
+    broken: dict[str, str] = {}
+    for md in skills_dir.rglob("*.md"):
+        for ref in re.findall(r"docs/[A-Za-z0-9_./-]+?\.md", md.read_text(encoding="utf-8")):
+            if not (ROOT / ref).is_file():
+                broken.setdefault(ref, str(md.relative_to(ROOT)))
+    assert not broken, f"SKILL 引用了未入仓的文档（M11 引用文档入仓断链）: {broken}"
