@@ -40,6 +40,13 @@ def _call_make(make, errs, card, df):
     return make(errs, card, df)
 
 
+def _iter_candidates(produced):
+    """产出元素归一化：(params, label) 对 / (params, label, extra_evidence) 三元组——
+    第三元素并入候选 evidence（#65 证据富化：分布统计等档位选择读数）。"""
+    for item in produced:
+        yield item[0], item[1], (item[2] if len(item) > 2 else None)
+
+
 @dataclass(frozen=True)
 class RepairRule:
     """clean 词表动作的 .repair 声明适配器：kind 缺陷 → 该动作的参数化走法。
@@ -76,7 +83,7 @@ class RepairRule:
             )
         severity_max = round(max((e.severity for e in errs), default=0.0), 4)
         score = salience(kind_weight(self.kind, card.get("defect_priority")), severity_max)
-        evidence = {
+        base_evidence = {
             "kind": self.kind,
             "columns": sorted({e.column for e in errs if e.column}),
             "n": len(errs),
@@ -88,9 +95,11 @@ class RepairRule:
                 proposal={"action": self.node, "params": params},
                 salience=score,
                 rationale=rationale,
-                evidence=evidence,
+                evidence={**base_evidence, **(extra or {})},
             )
-            for params, rationale in _call_make(declared[self.kind], errs, card, R["df"])
+            for params, rationale, extra in _iter_candidates(
+                _call_make(declared[self.kind], errs, card, R["df"])
+            )
         ]
 
     def _resolve_node(self, nodes: Mapping[str, Any]) -> Any:

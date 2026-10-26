@@ -695,3 +695,18 @@ def test_expected_ranges_observable_repairable_rewarded(sessions_root, ranged_cs
     r = cs.apply_action(sid, "range_clip", {"ranges": {"temp": [0.0, 100.0]}})
     assert r["reward"] > 0
     assert r["report"]["defects"].get("range_violation", 0) == 0
+
+
+def test_fill_candidates_carry_distribution_evidence(sessions_root, dirty_csv):
+    """#65 证据富化：fill_median/fill_mean 候选 evidence 携带目标列偏度/四分位——
+    稳健档 vs 正态档的选择基于读数而非标签。"""
+    s = cs.start_session(dirty_csv, card=CARD)
+    menu = cs.propose_actions(s["session_id"])
+    by_action = {c["action"]: c for c in menu}
+
+    for action in ("fill_median", "fill_mean"):
+        shape = by_action[action]["evidence"]["col_shape"]
+        assert "hole" in shape
+        stats = shape["hole"]
+        assert set(stats) == {"skew", "q1", "q2", "q3"}
+        assert stats["q1"] <= stats["q2"] <= stats["q3"]
