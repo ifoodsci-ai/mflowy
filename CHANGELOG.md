@@ -17,9 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   连续 fire 一次取走，菜单确定性不变
 - **实例落盘**：pkl 承载注册面（含运行期注册的自定义规则）与未 poll 激活态；
   `open_engine(path, default=域默认实例)` 盘上有则加载（损坏 fail-loud 带路径，不静默重建）、
-  无则从默认实例复制（激活态清空起步）；with 正常退出原子落盘（tmp+rename）、异常不落盘
-  （失败调用零副作用）。规则须可 pickle——域规则 = 模块级 frozen dataclass 只持 str/num，
-  词表/注册表对象在 propose 内现查
+  无则从默认实例复制（激活态清空起步）；with 正常退出原子落盘（走
+  `mflowy.utils.file.write_bytes_atomic` 单源原语）、异常不落盘（失败调用零副作用）。
+  规则须可 pickle——域规则 = 模块级 frozen dataclass 只持 str/num，词表/注册表对象在
+  propose 内现查
 - **data 域统一接入**（此前 `.repair` 直扫绕开引擎）：`repair_rules.py` 新模块——词表
   `.repair` 声明（知识仍随词汇主人居住）包装为 `RepairRule`（key = `node.kind`）注册进
   cleanRuleEngine 默认实例；`propose_actions` 走 fire（R = defects/card/df）/poll，菜单响应

@@ -27,6 +27,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+from mflowy.utils.file import write_bytes_atomic
+
 # ── 实例门面（2026-10 重构）：Rule/Activation/RuleEngine ───────────────────
 
 
@@ -156,15 +158,14 @@ class RuleEngine:
         return clone
 
     def save(self) -> None:
-        """原子落盘（tmp+rename）：注册面 + 未 poll 激活态整体一个 pkl。"""
+        """原子落盘：注册面 + 未 poll 激活态整体一个 pkl。
+
+        走 ``write_bytes_atomic`` 单源原语（tmp+rename）；先 ``pickle.dumps`` 后
+        落盘——序列化失败发生在任何文件效果之前（不留空 tmp 垃圾）。
+        """
         if self.path is None:
             raise ValueError("engine 无落盘路径（open_engine 复制时绑定，或构造时传入）")
-        p = Path(self.path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_name(p.name + ".tmp")
-        with open(tmp, "wb") as fh:
-            pickle.dump(self, fh, protocol=pickle.HIGHEST_PROTOCOL)
-        tmp.replace(p)
+        write_bytes_atomic(self.path, pickle.dumps(self, protocol=pickle.HIGHEST_PROTOCOL))
 
     @classmethod
     def load(cls, path: str) -> RuleEngine:

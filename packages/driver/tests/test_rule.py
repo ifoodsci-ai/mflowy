@@ -164,7 +164,7 @@ def test_open_engine_fresh_path_copies_default_and_saves_on_exit(tmp_path):
         assert sorted(engine.rules) == ["a", "b"]
         assert engine.poll_proposals() == []  # 激活态清空
         engine.fire(R={})
-    assert pkl.exists() and not pkl.with_name(pkl.name + ".tmp").exists()  # 原子：无残留 tmp
+    assert pkl.exists() and not pkl.with_name(f".{pkl.name}.tmp").exists()  # 原子：无点前缀 tmp 残留
 
 
 def test_open_engine_loads_custom_rules_and_pending_activations(tmp_path):
