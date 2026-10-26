@@ -16,6 +16,7 @@ _TOOL_FNS = [
     tools.list_run_artifacts,
     tools.read_artifact,
     tools.sessions_gc,
+    tools.login,
     *[ep.load() for ep in entry_points(group="mflowy.tools")],
 ]
 
