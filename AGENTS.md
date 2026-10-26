@@ -106,7 +106,7 @@ uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 | 用户方法论 / 案例叙事      | [docs/research-flow.md](docs/research-flow.md)                                         |
 | 规划新功能 / 查路线图      | [docs/roadmap.md](docs/roadmap.md)（已实现清单以 `tools/list` 为真源，roadmap 只留规划） |
 
-**防漂移**：代码已表达的只链接不复述（文件树/签名/行号锚点留给代码）；只写追加式文档（新案例 → `examples/` 快照，新版本 → `CHANGELOG.md`）；"漂移可接受"仅限用户文档，release 边界回填——本文件与 skills 除外（见同步规则）。新建文档先过漂移测试："这文件里哪句话会因下次代码 PR 失效？"有答案就不建。
+**防漂移**：代码已表达的只链接不复述（文件树/签名/行号锚点留给代码）；只写追加式文档（新案例 → `examples/` 快照，新版本 → `CHANGELOG.md`）；"漂移可接受"仅限用户文档，release 边界回填——本文件与 skills 除外（见同步规则）。**剧本引用面谓词**（#65 裁定）：操作 skill（`.agents/skills/*`）参考节只允许引用工具名与入仓文档——引用实现路径（含包结构迁移前的旧路径）即 P0 漂移，删除而非修正。新建文档先过漂移测试："这文件里哪句话会因下次代码 PR 失效？"有答案就不建。
 
 ## Issue Tracker（gh CLI）
 
