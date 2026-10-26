@@ -5,8 +5,7 @@ plot EDA 图族（族内扁平，直住 `plot/`）。数据栈为硬依赖，装
 
 ## 清洗会话 POMDP 元素表（O/S/A/P·T/R）
 
-契约下限与校验器住 `driver/mdp_session.py`（Observation / FinishVerdict / Candidate——模块名
-为代码锚点，不随术语改名）；本域语义如下（引擎 = `cleaning_session.py`。转移确定性——无概率
+契约下限与校验器住 `driver/pomdp.py`（Observation / FinishVerdict / Candidate）；本域语义如下（引擎 = `cleaning_session.py`。转移确定性——无概率
 转移表；可观测性 = 检测算子覆盖面：O 是检测算子族的确定性多对一投影，覆盖外缺陷对 π 不可见
 （态混叠），终局 U（可学性）依赖观测未含的态——「干净但不可学」即其症状）：
 

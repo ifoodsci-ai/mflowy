@@ -151,7 +151,7 @@ def test_active_docs_use_pomdp_not_mdp():
     排除面各有其据：CHANGELOG（已发布历史条目——追加式纪律）、docs/research（历史
     设计快照，文件名即 mdp）、benchmark_readiness_report（自declared 一次性评估
     快照）、.agents/skills/kaggle-competition（「外环 MDP」为该 skill 自身的形式化
-    设计词）、代码文件（mdp_session/MDPSessionHandle/.mdp_family 为代码锚点，标识
+    设计词）、代码文件（MDPSessionHandle/.mdp_family 为代码锚点，标识
     符不随术语改名）；CONTEXT.md 的 _Avoid_ 行例外——禁用别名表本就该点名旧称。"""
     import re
 

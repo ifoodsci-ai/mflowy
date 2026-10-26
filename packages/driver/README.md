@@ -281,7 +281,7 @@ uvx --from "mflowy[mcp,modeling]" --with mflowy-extra mflowy-mcp
 
 ## 会话 SDK（POMDP 契约与生命周期基座）
 
-`mdp_session.py`——两个 POMDP 会话域（clean/modeling）共用的契约类型与生命周期机制，也是第三方域作者实现**整个 POMDP 环境**（而非只加节点）的扩展形态（模块名为代码锚点，不随 0.2.0 术语统一改名）：
+`pomdp.py`——两个 POMDP 会话域（clean/modeling）共用的契约类型与生命周期机制，也是第三方域作者实现**整个 POMDP 环境**（而非只加节点）的扩展形态：
 
 - **投影类型**：`Observation` / `Candidate` / `FinishVerdict` 三个 TypedDict——POMDP 会话响应的 agent 可见契约，核心键为下限、域可加字段；`verify_*` 校验器是契约的牙齿（缺核心键/顶层类型不符 fail-loud；域测试以 `verify_*` 对账真实响应——生产路径零开销，牙齿长在域侧测试；浅层即止，嵌套结构域自验）
 - **决策权地图**：引擎=事实（合法走法/转移/守卫/预算/信号），π=选择（选动作/回滚时机/收局时机/弃局）；守卫拦"事实不成立"不拦"程序下一步"，菜单与信号（`should_stop`）都是建议不是边界；结算可拒收且拒收后可续局

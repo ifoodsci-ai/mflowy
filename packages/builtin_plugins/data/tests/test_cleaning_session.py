@@ -430,7 +430,7 @@ def test_budget_stops_apply(sessions_root, dirty_csv):
 def test_real_responses_satisfy_mdp_contract(sessions_root, dirty_csv):
     """#30 合规：#29 契约校验器跑真实响应——契约的牙齿在域侧咬合
     （clean 会话 = 会话 SDK 的活参考实现）。"""
-    from mflowy.driver.mdp_session import verify_candidate, verify_observation, verify_verdict
+    from mflowy.driver.pomdp import verify_candidate, verify_observation, verify_verdict
 
     verify_observation(cs.start_session(dirty_csv, card=CARD))  # reward=None 白名单
     s = cs.start_session(dirty_csv, card=CARD)

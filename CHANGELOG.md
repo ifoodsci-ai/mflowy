@@ -25,8 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   （O/S/A/P·T/R）」——各域五元组定义与居所锚点）/ driver README / skills ×5 /
   docs（research-flow / roadmap）/ 代码 docstring 与模板注释 / pyproject 包描述；
   活性文档零 "MDP" 残留由 `test_workspace` 断言钉住（防回潮）
-- **代码锚点不随术语改名**（SDK 面零破坏）：`mdp_session` 模块、`MDPSessionHandle`、
-  `.mdp_family` 声明键等标识符保持原名；kaggle 外环 skill 的「外环 MDP」为该 skill
+- **代码锚点**：`mdp_session` 模块随术语统一改名 `pomdp.py`（import 面 `mflowy.driver.pomdp`；
+  rules.pkl 等盘上件引用 `rule.py` 与域规则模块的类路径，均未移动——存量会话不受影响）；`MDPSessionHandle`、
+  `.mdp_family` 声明键等标识符保持原名（SDK 面最小破坏）；kaggle 外环 skill 的「外环 MDP」为该 skill
   自身的形式化设计词，不在清扫面
 - 本 unreleased 区历史条目措辞随之统一（已发布版本不动——追加式纪律）
 
@@ -464,7 +465,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **fire/prioritize 门面**：`fire(findings, ctx, nodes)` 纯函数（节点集显式注入、零目录查询）
   → `FireResult(candidates, skipped, unconsumed)`（findings 消费闭环）；`prioritize(cands,
   overrides)` 委托人权重覆盖 + `_score` 分解进 evidence（排序可审计）
-- 候选契约复用 `mdp_session.verify_candidate` 单源；声明/挂载/输出 fail-loud 七路契约测试
+- 候选契约复用 `pomdp.verify_candidate` 单源；声明/挂载/输出 fail-loud 七路契约测试
 
 ### BREAKING：data 域评审落地——kind 分类学门守 + 检测正交化 + 观测去冗余（#51 阶段一 + B1）
 

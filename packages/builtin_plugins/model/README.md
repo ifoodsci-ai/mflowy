@@ -7,8 +7,7 @@ extra（uvx 安装需 `--index https://download.pytorch.org/whl/cpu`，仅 MLP f
 
 ## 会话 POMDP 元素表（O/S/A/P·T/R）
 
-契约下限与校验器住 `driver/mdp_session.py`（Observation / FinishVerdict / Candidate——模块名
-为代码锚点，不随术语改名）；本域语义如下（引擎 = `session.py`，s 元组与八动作面的完整定义见
+契约下限与校验器住 `driver/pomdp.py`（Observation / FinishVerdict / Candidate）；本域语义如下（引擎 = `session.py`，s 元组与八动作面的完整定义见
 模块 docstring。转移确定性——无概率转移表；可观测性 = diagnose/规则覆盖面：board 聚合与
 findings 是真态的多对一投影——同聚合不同病灶不可分；u_inner/std 是隐藏真值的带噪估计
 （fold_std 观测即为此设）；report_findings（#36）= π 自带传感器的私有观测落账，补程序化观测

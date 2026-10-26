@@ -91,8 +91,8 @@ POMDP 的环境面载体：转移/观测/奖励/预算在域包，π 在调用�
 各持版本树与决策日志 (s,a,r,s′)，终态导出可全量重放的计划。协议/先验在 episode 内冻结。
 回合步数（`Observation.steps`/`max_steps`）是会话预算计数，与 flow 词条的退役词
 "steps"（YAML 控制结构旧称）不同物。
-_Avoid_: 环境引擎（与 runner 混淆）；MDP（0.2.0 起的旧称——prose 统一 POMDP；
-代码锚点 `mdp_session`/`MDPSessionHandle`/`.mdp_family` 为标识符不随术语改名）
+_Avoid_: 环境引擎（与 runner 混淆）；MDP（0.2.0 起的旧称——prose 统一 POMDP，模块随术语
+改名 `pomdp.py`；代码锚点 `MDPSessionHandle`/`.mdp_family` 为标识符不随术语改名）
 
 **先验卡（DomainCard）/ 协议卡（CVCard）**:
 两个 POMDP 的冻结输入：先验卡 = 数据域先验（target/id_columns/单位/范围/protected，survey

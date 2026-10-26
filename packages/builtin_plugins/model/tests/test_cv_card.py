@@ -14,7 +14,7 @@ import json
 import numpy as np
 import pandas as pd
 import pytest
-from mflowy.driver.mdp_session import verify_observation
+from mflowy.driver.pomdp import verify_observation
 from mflowy.model import session as ms
 from mflowy.model.protocol import CVCard
 

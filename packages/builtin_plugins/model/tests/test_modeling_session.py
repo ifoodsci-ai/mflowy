@@ -14,7 +14,7 @@ import json
 import numpy as np
 import pandas as pd
 import pytest
-from mflowy.driver.mdp_session import verify_candidate, verify_observation, verify_verdict
+from mflowy.driver.pomdp import verify_candidate, verify_observation, verify_verdict
 from mflowy.model import session as ms
 
 _K_RF = "RF|passthrough|passthrough"
