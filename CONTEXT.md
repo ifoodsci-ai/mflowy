@@ -27,7 +27,7 @@ _Avoid_: 注入器、injector、getter（第一代退役词）
 **工具（tool）**:
 域包自持的编排入口（pyproject 注册表声明进 entry points 组 ``mflowy.tools``），host
 （server/runner）发现并包装。工具组合节点，工具不是节点；平台工具（词表/mlflow 观测/
-工件读取）住 host 自带注册。
+工件读取/登录）住 host 自带注册。
 
 **目录（词表）**:
 运行期全部节点与边函数的枚举，机器可查、构建期校验。两词同义："目录"强调查询面，"词表"强调语言约束面。

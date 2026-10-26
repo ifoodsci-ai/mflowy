@@ -20,6 +20,7 @@ MFlowy 以 MCP 为架构主体：本包的 `tools.py` 定义全部工具（pyfun
 | 分析与问卷 | `data_profile` / `eda` / `propose_questions` | 始终本地（轻量、无跨环境状态） |
 | 建模 | `modeling` / `explanation` / `predict` / `inverse_optimization` | **JobProvider 委派** |
 | mlflow | `list_runs` / `get_run` / `list_run_artifacts` | 始终本地 |
+| 平台登录 | `login` | 本地（拉起浏览器授权，loopback 回调） |
 
 建模类经 JobProvider 委派：内置 `local` 实现（LocalJobProvider，[modeling] extra 直调 driver 编排），远程实现接管执行环境。
 
@@ -39,6 +40,19 @@ uvx --from "mflowy[mcp,modeling]" mflowy-mcp
 
 - `MFLOWY_JOB_PROVIDER`：`local`（默认）或 `module:Class`；模块经宿主 `sys.path` 解析，provider 以标准 Python 包交付
 - 规划预留：底层资源装载的 `JobProvisioner` 契约（mount / create / unmount / get_output）见 [roadmap](../../docs/roadmap.md)
+
+## 平台登录（login）
+
+远程工具（经 JobProvider 回调平台 API）需要平台身份：`login` 一次调用完成 OAuth 2.1 授权码流——PKCE S256 + 本机浏览器授权 + loopback 回调（127.0.0.1 随机端口）+ 凭据原子落盘。契约对端为平台 OAuth 授权服务器（快照见平台仓 `docs/OAUTH_CLI.md`）。
+
+- **幂等**：已有同环境凭据直接返回 `already_logged_in` 摘要（不弹浏览器）；`force=true` 强制重授权
+- **scope 缺省**：登录时拉服务端元数据 `scopes_supported` 全目录整体同意——客户端不拷目录，服务端目录变更零漂移；显式传 `scopes` 可收窄
+- **环境**：`base_url` 参数 > `MFLOWY_BASE_URL` env > `http://localhost:30080`（本地 gateway NodePort；生产/自建网关经 env 指向）
+- **凭据**：`~/.mflowy/credentials.json`（0600）单文件整替——refresh 为轮换制，旧值复用会触发平台复用检测（账号全端下线），故刷新/落盘临界区持文件锁（同机多 agent host 并发安全）
+- **消费接线**：`mflowy.utils.auth.ensure_access_token()` / `LoginRequiredError`——未来远程 JobProvider 以此附 Bearer（401 单次刷新重试），不重造轮子
+- **边界**：首版需本机浏览器（headless/SSH 场景明确报错；PAT 通道随平台侧后续）；JWT 本地仅解码展示不验签（资源侧统一验）
+
+实现：`mflowy/utils/auth.py`（纯 stdlib）；行为契约见 `packages/utils/tests/test_auth.py`。
 
 ## 遥测与同意门
 
