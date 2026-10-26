@@ -22,7 +22,6 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from collections.abc import Iterator
 from pathlib import Path
 
 import numpy as np
@@ -454,81 +453,44 @@ def rollback(session_id: str, to_version: int) -> dict:
     return _state_response(manifest, report, quality, df, reward=round(quality["score"] - pre_quality["score"], 4))
 
 
-def _iter_repairs(repair) -> Iterator[tuple[str, object]]:
-    """归一化 .repair 声明：v1 单 kind 元组 / v2 多 kind 映射 → yield (kind, make)。
-
-    v2 多 kind 让一个原子（drop_cols）声明 {id_like, constant, collinear} 三条修复；
-    v1 元组永久兼容（第三方插件 SDK 的平滑迁移面）。
-    """
-    if isinstance(repair, dict):
-        yield from repair.items()
-    else:
-        kind, make = repair
-        yield kind, make
-
-
-def _call_make(make, errs, card, df):
-    """生成器双签名兼容：v1 (errors, card) / v2 (errors, card, df)——v2 注入当前数据
-    （collinear 的方差启发、outlier 的列聚合需要）；按形参数分发，不猜异常。"""
-    import inspect
-
-    if len(inspect.signature(make).parameters) < 3:
-        return make(errs, card)
-    return make(errs, card, df)
-
-
 def propose_actions(session_id: str) -> list[dict]:
-    """候选聚合：clean 词表各动作的 ``fn.repair`` 声明（知识随词汇主人居住）。
+    """候选聚合（规则引擎实例统一入口）：词表 ``.repair`` 知识聚合在
+    cleanRuleEngine 默认实例上（``repair_rules``），会话实例经 ``rule_engine_rwa``
+    整读→用→整写（缺 pkl 时默认实例直接作工作实例；自定义规则 pkl 持载）。
 
-    引擎只做聚合——错误类型 → 声明该 kind 的动作产出参数化候选（合法走法生成器，
-    agent 只做选择）；无 ``.repair`` 声明的动作（python/range_clip 等条件型）不参与。
-    每候选自带 evidence（kind/列/计数/最重 severity）——触发它的规则快照，决策有据。
-    终态（收局/弃局）返回 []——菜单与终态一致。
+    fire 全量激活（R = 检测算子输出 + card + df），poll 按记分牌序聚合——
+    权重×severity 降序（salience 同尺），置顶即事实默认档，噪声由排序治理。
+    菜单响应形状不变（action/params/source_kinds/rationale/evidence，每候选
+    自带触发它的规则快照）；无 ``.repair`` 声明的动作（python/range_clip 等
+    条件型）不参与。终态（收局/弃局）返回 []——菜单与终态一致。
     """
-    manifest = _store().read_manifest(session_id)
+    from mflowy.data.repair_rules import default_engine
+    from mflowy.driver.rule import rule_engine_rwa
+
+    store = _store()
+    manifest = store.read_manifest(session_id)
     if _is_terminal(manifest):
         return []
     df = current_df(session_id)
     report = _detect_all(df)
     card = manifest.get("card") or {}
 
-    by_kind: dict[str, list] = {}
-    for e in report.errors:
-        by_kind.setdefault(e.kind, []).append(e)
-
-    proposals: list[dict] = []
-    from mflowy.data.detect.scoring import kind_weight
-    from mflowy.driver.discover import namespace_nodes
-
-    prio = card.get("defect_priority") or {}
-
-    for node, ep in sorted(namespace_nodes("clean").items()):
-        fn = ep.load()
-        repair = getattr(fn, "repair", None)
-        if not repair:
-            continue
-        for kind, make in _iter_repairs(repair):
-            errs = by_kind.get(kind)
-            if not errs:
-                continue
-            for params, rationale in _call_make(make, errs, card, df):
-                proposals.append(
-                    {
-                        "action": node,
-                        "params": params,
-                        "source_kinds": [kind],
-                        "rationale": rationale,
-                        "evidence": {
-                            "kind": kind,
-                            "columns": sorted({e.column for e in errs if e.column}),
-                            "n": len(errs),
-                            "severity_max": round(max((e.severity for e in errs), default=0.0), 4),
-                        },
-                    }
-                )
-    # Story 13：菜单按记分牌排序——权重×severity 降序，置顶即事实默认档，噪声由排序治理
-    proposals.sort(key=lambda p: -(kind_weight(p["evidence"]["kind"], prio) * p["evidence"]["severity_max"]))
-    return proposals
+    with rule_engine_rwa(str(store.session_dir(session_id) / "rules.pkl"), default_engine()) as engine:
+        engine.fire(R={"defects": report, "card": card, "df": df})
+        activations = engine.poll_proposals()
+    menu = []
+    for a in activations:
+        kind = (a.evidence or {}).get("kind")  # 规则快照自带订阅 kind（无 kind 的自定义规则记空）
+        menu.append(
+            {
+                "action": a.proposal["action"],
+                "params": dict(a.proposal["params"]),
+                "source_kinds": [kind] if kind else [],
+                "rationale": a.rationale,
+                "evidence": dict(a.evidence or {}),
+            }
+        )
+    return menu
 
 
 def finish_session(session_id: str, min_quality: float | None = None, preview: bool = False) -> dict:

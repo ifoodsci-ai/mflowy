@@ -1170,13 +1170,16 @@ def _plan_yaml(m: dict, key: str, final_params: dict | None = None) -> str:
 
 
 def propose_actions(session_id: str) -> list[dict]:
-    """菜单（pull-only，#38 规则引擎基座）：findings 驱动层（fire + 记分牌序，浮于
-    顶部）+ 基座谓词机层（类型可用(s) ∧ 参数合法(s,a)——策展序）。
+    """菜单（pull-only，规则引擎实例统一入口）：findings 驱动层（rule_engine_rwa →
+    fire/poll，salience 记分牌序浮于顶部）+ 基座谓词机层（类型可用(s) ∧ 参数
+    合法(s,a)——策展序）。
 
-    - findings 驱动：fold_std → 加深（n_trials 门控回归防线）；complexity_edge /
-      overfit_gap → 正则收窄/pin（族自声明 .regularizers）；slice_collapse →
-      类别权重提示；error_concentrated → FE 换档（规则挂词表节点——知识随词汇
-      主人居住）；无 leader（S 无模型信息）时 FE 候选零出现（引擎级 gate）
+    - findings 驱动：modelRuleEngine 默认实例注册族级/FE 规则（propose_rules）；
+      会话实例经 rule_engine_rwa 整读→用→整写（自定义规则 pkl 持载）；fold_std →
+      加深（n_trials 门控回归防线）；complexity_edge / overfit_gap → 正则收窄/
+      pin（族自声明 .regularizers）；slice_collapse → 类别权重提示；
+      error_concentrated → FE 换档；无 leader（S 无模型信息）时 FE 候选零出现
+      （规则资格内联，非权重压序）
     - 基座层：select_model 候选（baseline 第一、未跑在前、已训未全冻结降级末位）、
       run_hpo 首搜、final_train_test 交付、配置编辑动作面
     - LLM findings（#36）与规则 findings 均匀聚合（同一 fire 入口，无来源区分）
@@ -1184,14 +1187,13 @@ def propose_actions(session_id: str) -> list[dict]:
     """
     import logging
 
-    from mflowy.driver.discover import get_node
-    from mflowy.driver.rule import fire, prioritize
+    from mflowy.driver.rule import rule_engine_rwa
     from mflowy.model import propose_rules
 
-    m = _store().read_manifest(session_id)
+    store = _store()
+    m = store.read_manifest(session_id)
     if _is_terminal(m):
         return []
-    propose_rules.attach_rules()  # 幂等：族级规则（.regularizers 面）+ FE 词表规则
 
     fams = registry.families()
     cursor = m["cursor"]
@@ -1221,13 +1223,25 @@ def propose_actions(session_id: str) -> list[dict]:
         "regularizers_of": {fam: tuple(getattr(fams[fam]["pyfunc"], "regularizers", ()) or ()) for fam in fams},
         "fe_slots_ok": fe_slots_ok,
     }
-    nodes = [fams[f]["pyfunc"] for f in fams] + [
-        get_node(f"x_transformer__{node}", raw=True) for node in registry.fe_vocab()
+    # 会话实例从盘加载/复制（默认 = modelRuleEngine 注册面；自定义规则 pkl 持载）
+    with rule_engine_rwa(str(store.session_dir(session_id) / "rules.pkl"), propose_rules.default_engine()) as engine:
+        engine.fire(R={"findings": findings, "ctx": ctx})
+        activations = engine.poll_proposals()
+        subscribed = {getattr(r, "kind", None) for r in engine.rules.values()}
+    if unconsumed := sorted({f["kind"] for f in findings} - subscribed):
+        logging.getLogger(__name__).warning("findings 无规则订阅（无静默丢弃——补订阅或修 kind）：%s", unconsumed)
+    driven = [
+        {
+            "action": a.proposal["action"],
+            "params": dict(a.proposal["params"]),
+            "rationale": a.rationale,
+            "evidence": {
+                **(a.evidence or {}),
+                "_rule": {"rule_key": a.rule_key, "kind": engine.kind_of(a.rule_key), "salience": a.salience},
+            },
+        }
+        for a in activations
     ]
-    result = fire(findings, ctx, nodes)
-    if result.unconsumed:
-        logging.getLogger(__name__).warning("findings 无规则订阅（无静默丢弃——补订阅或修 kind）：%s", result.unconsumed)
-    driven = prioritize(result.candidates)
 
     # ── 基座谓词机层（策展序） ──
     proposals: list[dict] = []
@@ -1321,7 +1335,7 @@ def propose_actions(session_id: str) -> list[dict]:
             }
         )
         # select_FE 基座档：有模型账本信息（leader）才出现——S 无模型信息时 FE
-        # 候选零出现（引擎级 gate，非权重压序；动作边界只看 cursor.m——菜单是建议不是边界）
+        # 候选零出现（规则资格内联早退，非记分压序；动作边界只看 cursor.m——菜单是建议不是边界）
         if m["models"]:
             _fe_base_entries(m, cursor, fams, proposals)
     return _merge_menu(driven + proposals)
@@ -1331,7 +1345,7 @@ def _merge_menu(items: list[dict]) -> list[dict]:
     """(action, params) 键合并（#38 会话侧补位——引擎不去重）：同动作同参 = 同一
     建议的多重证据，浮出一项——rationale 并集（保序去重、"；"连接）；命中的规则
     溯源并列进 ``evidence["co_hits"]``（每条含 rationale 与 ``_rule`` 分解——合并
-    不静默）。记分牌位与 ``_score`` 保首现实体（prioritize 已按分排序——排序
+    不静默）。记分牌位保首现实体（poll 已按 salience 分排序——排序
     确定性与可审计不变）。
     """
     out: list[dict] = []

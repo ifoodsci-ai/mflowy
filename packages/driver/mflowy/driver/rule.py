@@ -1,159 +1,208 @@
-"""规则引擎 SDK：rule = 节点附加属性（词表项级出题知识），fire/prioritize 门面。
+"""规则引擎 SDK：实例门面（Rule/Activation/RuleEngine + load/save 纯函数落盘）。
 
-设计定案（#37 调研 + 2026-10 评审会话）：
+设计定案（2026-10 重构——散落规则聚合到引擎实例）：
 
-- **节点属性而非注册桶**：driver 经 entry points 已枚举节点，规则知识随词汇主人
-  居住（``node.rule = {kind: fn}``，与 clean 域 ``.repair`` 同构）；消费方注入已
-  加载的候选节点集，引擎零目录查询、零 import 边际成本。
-- **三轴正交**：订阅（kind）/ 资格（gate——读 ctx 的具名谓词，显式声明）/
-  排序（记分牌 weight×severity）。资格与权重互不代偿：S 无模型信息时 FE 规则
-  恒零产出，而非靠权重压序。
-- **观测钩子**：溯源进 ``evidence["_rule"]``、资格未过进 ``skipped``、无人订阅的
-  findings 进 ``unconsumed``——菜单可解释是 fail-loud 的菜单侧对应物。
-- **引擎不去重**：同动作多规则命中由会话按 (action, params) 合并（frontier 决策）。
+- **实例聚合**：规则 = 实现 ``Rule`` 协议的对象（``key`` 身份 + ``propose(R)``
+  出题），经 ``engine.register()`` 聚合；两域词表知识（clean ``.repair`` /
+  model 族与 FE）由域适配器（``repair_rules`` / ``propose_rules``）包装注册。
+  知识源仍随词汇主人居住，引擎只做聚合与调度。
+- **fire/poll 两段**：``fire(*keys, R)`` 按 key 激活（空 = 全部；未知 key
+  fail-loud 带候选），产出 ``Activation`` 累积在实例内；连续 fire 由
+  ``poll_proposals()`` 一次聚合（记分牌序：salience 降序，同分 rule_key
+  字典序——确定性菜单）并排空。
+- **落盘与状态解耦**：引擎是纯内存对象（注册面 + 激活缓冲，零路径状态）；
+  盘 IO 是纯函数对——``load_rule_engine(path)``（缺文件 → None；损坏/异类 →
+  raise 带路径，不静默重建默认）与 ``save_rule_engine(path, engine)``（dumps
+  后走 ``write_bytes_atomic`` 单源原语）；``rule_engine_rwa(path, default)``
+  四行门面（整读→用→整写）：盘上有则加载、缺则默认实例直接作工作实例
+  （无克隆——调用方传干净模板），with 正常退出整体落盘、异常不落盘。pkl
+  承载注册面（含运行期注册的自定义规则）与未 poll 激活态；规则对象须可
+  pickle（域规则 = 模块级 dataclass、只持 str/num 配置）。
+- **引擎不去重**：同 (action, params) 多规则命中由会话合并（frontier 决策）。
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+import json
+import pickle
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, NamedTuple, TypedDict
+from pathlib import Path
+from typing import Any, Protocol
 
-from mflowy.driver.mdp_session import Candidate, verify_candidate
+from mflowy.utils.file import write_bytes_atomic
+
+# ── 实例门面（2026-10 重构）：Rule/Activation/RuleEngine ───────────────────
 
 
-class Finding(TypedDict, total=False):
-    """诊断观测（消费侧最小契约）：kind 必带，severity 缺省记 0.0。"""
+class Rule(Protocol):
+    """规则契约：key 身份（引擎内唯一）+ propose(R) 出题。
 
-    kind: str
-    severity: float
-    evidence: Mapping[str, Any] | None
-    message: str | None
+    ``R`` 为触发上下文（域自定义——clean 域 = 检测算子输出等；model 域 =
+    findings + 会话态）。落盘要求：实现须可 pickle（模块级类、只持 str/num
+    配置；词表/注册表对象在 propose 内现查，不持引用）。
+    """
+
+    key: str
+
+    def propose(self, R: Any) -> list[Activation]: ...
+
+
+# salience 整数化放大系数：域先验权重(≤个位数) × 证据强度(∈[0,1]) 保序映到 int
+SALIENCE_SCALE = 1_000_000
+
+
+def salience(weight: float, severity: float) -> int:
+    """记分牌单源：weight × severity 放大取整（两域共用，口径分歧从结构上根除）。"""
+    return round(weight * float(severity) * SALIENCE_SCALE)
 
 
 @dataclass(frozen=True)
-class RuleSpec:
-    """规则身份元数据：订阅 kind（全等）、记分牌权重、资格门谓词。"""
+class Activation:
+    """规则激活产出：proposal 走法 + 记分牌 salience + 解释面。
 
-    kind: str | None
-    weight: float
-    gate: Callable[[Any], bool] | None
-
-
-class FireResult(NamedTuple):
-    """fire 产出：候选 + 缺席解释 + findings 消费闭环。"""
-
-    candidates: list[Candidate]
-    skipped: list[dict]
-    unconsumed: list[str]
-
-
-def rule(kind: str | None = None, *, weight: float = 1.0, gate: Callable[[Any], bool] | None = None):
-    """声明出题规则（挂载到被提议节点的 ``.rule`` 属性上）。
-
-    - ``kind``：订阅的 finding kind——**全等匹配**（前缀/词干语义是否引入待 #35
-      kind 词表定案）；``None`` = 探索/状态驱动规则（不依赖 finding，severity 记
-      0——无证据 = 零证据强度）
-    - ``weight``：记分牌权重（域先验），只回答"多值得做"，不编码资格
-    - ``gate``：资格门 ``(ctx) -> bool``——S 态前置条件，未过则规则零产出并进
-      ``skipped``（缺席可观测，与权重无关）
+    proposal 只收 ``{"action": str, "params": Mapping}``——rationale/evidence
+    是 Activation 的一等字段，不塞 proposal。
     """
-    if not isinstance(weight, (int, float)) or weight <= 0:
-        raise ValueError(f"weight 须为正数（域先验），得到 {weight!r}")
-    if gate is not None and not callable(gate):
-        raise TypeError(f"gate 须为 (ctx) -> bool 的可调用或 None，得到 {gate!r}")
-    if getattr(gate, "__name__", "") == "<lambda>":
-        raise TypeError("gate 须为具名谓词（缺席解释进 skipped 要可读）——请 def 命名后传入，不接受 lambda")
 
-    def decorator(fn):
-        fn.rule_spec = RuleSpec(kind=kind, weight=float(weight), gate=gate)
-        return fn
-
-    return decorator
+    rule_key: str
+    proposal: Mapping[str, Any]
+    salience: int
+    rationale: str
+    evidence: Mapping[str, Any] | None = None
 
 
-def fire(findings: list[Finding], ctx: Any, nodes: list) -> FireResult:
-    """对注入节点集点火：命中订阅 kind 的规则逐 finding 求值，产出候选。
+def _validate_activation(a: Any, rule_key: str) -> None:
+    """Activation fail-loud 校验：实例类型、字段类型、rule_key 与宿主规则一致。"""
+    if not isinstance(a, Activation):
+        raise TypeError(f"规则 {rule_key!r} 的 propose 产出须为 Activation 实例，得到 {type(a).__name__}")
+    if a.rule_key != rule_key:
+        raise ValueError(f"Activation.rule_key={a.rule_key!r} 与宿主规则 {rule_key!r} 不一致")
+    where = f"Activation（rule={rule_key!r}）"
+    p = a.proposal
+    if not isinstance(p, Mapping) or set(p) != {"action", "params"}:
+        raise ValueError(
+            f"{where}.proposal 须为恰含 action/params 两键的 Mapping，得到 {dict(p) if isinstance(p, Mapping) else p!r}"
+        )
+    if not isinstance(p["action"], str) or not p["action"]:
+        raise TypeError(f"{where}.action 期望非空 str")
+    if not isinstance(p["params"], Mapping):
+        raise TypeError(f"{where}.params 期望 Mapping")
+    if isinstance(a.salience, bool) or not isinstance(a.salience, int):
+        raise TypeError(f"{where}.salience 期望 int，得到 {a.salience!r}")
+    if not isinstance(a.rationale, str):
+        raise TypeError(f"{where}.rationale 期望 str")
+    if a.evidence is not None and not isinstance(a.evidence, Mapping):
+        raise TypeError(f"{where}.evidence 期望 Mapping | None")
 
-    候选经 ``verify_candidate`` 校验后附 ``evidence["_rule"]`` 溯源（引擎保留键，
-    规则自带 evidence 的其余键原样保留）。消费闭环语义：**已订阅即算有人接**——
-    gate 拒绝的缺席走 ``skipped``，``unconsumed`` 只报无人订阅的 kind（双层不混）。
+
+class RuleEngine:
+    """规则引擎实例：注册面 + 激活缓冲（纯内存对象——盘读写走 load/save 纯函数）。"""
+
+    def __init__(self) -> None:
+        self._rules: dict[str, Rule] = {}
+        self._activations: list[Activation] = []
+
+    def register(self, *rules: Rule) -> RuleEngine:
+        """注册规则（可链式）：key 撞名 fail-loud 带已注册候选清单。"""
+        for r in rules:
+            key = getattr(r, "key", None)
+            if not isinstance(key, str):
+                raise TypeError(f"规则 key 期望 str，得到 {type(key).__name__}（{r!r}）")
+            if not key:
+                raise ValueError(f"规则 key 不得为空（{r!r}）")
+            if key in self._rules:
+                raise ValueError(f"规则 key 撞名：{key!r} 已注册（可用: {sorted(self._rules)}）")
+            self._rules[key] = r
+        return self
+
+    @property
+    def rules(self) -> Mapping[str, Rule]:
+        """注册面只读视图（消费方读订阅元数据，不改装）。"""
+        return dict(self._rules)
+
+    def kind_of(self, key: str) -> str | None:
+        """规则的订阅 kind（自声明面 ``rule.kind``；未声明/未注册 → None——可审计不臆造）。"""
+        return getattr(self._rules.get(key), "kind", None)
+
+    def fire(self, *keys: str, R: Any) -> list[Activation]:
+        """按 key 激活规则（空 keys = 全部；未知 key fail-loud 带候选清单）。
+
+        每命中规则调 ``propose(R)``，产出经校验的 ``Activation`` 累积进实例
+        缓冲（连续 fire 聚合，``poll_proposals`` 一次取走）并即时返回本次产出。
+        """
+        produced: list[Activation] = []
+        for key in self._select(keys):
+            for a in self._rules[key].propose(R):
+                _validate_activation(a, key)
+                self._activations.append(a)
+                produced.append(a)
+        return produced
+
+    def poll_proposals(self) -> list[Activation]:
+        """聚合排空：salience 降序，同分按 (rule_key, action, params 序列化) 字典序。"""
+        ordered = sorted(
+            self._activations,
+            key=lambda a: (-a.salience, a.rule_key, a.proposal["action"], _stable_params(a)),
+        )
+        self._activations = []
+        return ordered
+
+    def _select(self, keys: tuple[str, ...]) -> list[str]:
+        """key 选择：空 = 全部注册规则；未知 fail-loud；重复去重保序。"""
+        if not keys:
+            return list(self._rules)
+        unknown = [k for k in keys if k not in self._rules]
+        if unknown:
+            raise ValueError(f"未知规则 key：{unknown}（可用: {sorted(self._rules)}）")
+        return list(dict.fromkeys(keys))
+
+
+def load_rule_engine(path: str) -> RuleEngine | None:
+    """从盘加载实例：缺文件 → None（回退归调用方）；损坏/异类 → raise 带路径。
+
+    语义二分是显式契约：None 只代表"还没有会话实例"（调用方回退默认实例），
+    损坏/异类内容一律 fail-loud——运行期注册的自定义规则不允许被静默换掉。
     """
-    candidates: list[dict] = []
-    skipped: list[dict] = []
-    consumed: set[str] = set()
-    for f in findings:
-        if not isinstance(f.get("kind"), str) or not f["kind"]:
-            raise ValueError(f"finding 缺 kind：{sorted(f)}")
-    for node in nodes:
-        owner = getattr(node, "node_key", None) or getattr(node, "__name__", str(node))
-        entries = getattr(node, "rule", None)
-        if entries is None:
-            continue
-        if not isinstance(entries, Mapping):
-            raise TypeError(f"{owner}.rule 须为 {{kind: fn}} Mapping（与 .repair 同构），得到 {type(entries).__name__}")
-        for key, fn in entries.items():
-            spec = getattr(fn, "rule_spec", None)
-            if spec is None:
-                raise TypeError(f"{owner}.rule[{key!r}] 的 {getattr(fn, '__name__', fn)!r} 未经 @rule 装饰")
-            if key != spec.kind:
-                raise ValueError(f"{owner}.rule[{key!r}] 键与 @rule(kind={spec.kind!r}) 不一致")
-            if spec.kind is not None:
-                consumed.add(spec.kind)  # 已订阅即算有人接——gate 拒绝的缺席走 skipped，两层不混
-            if spec.gate is not None and not spec.gate(ctx):
-                skipped.append({"owner": owner, "kind": spec.kind, "gate": _gate_name(spec.gate)})
-                continue
-            hits: list[Finding | None] = (
-                [None] if spec.kind is None else [f for f in findings if f.get("kind") == spec.kind]
-            )
-            for f in hits:
-                severity = 0.0 if f is None else float(f.get("severity", 0.0))
-                for cand in fn(f, ctx):
-                    verify_candidate(cand)
-                    provenance = {"owner": owner, "kind": spec.kind, "weight": spec.weight, "severity": severity}
-                    out = dict(cand)
-                    out["evidence"] = {**(cand.get("evidence") or {}), "_rule": provenance}
-                    candidates.append(out)
-    unconsumed = sorted({f["kind"] for f in findings} - consumed)
-    return FireResult(candidates=candidates, skipped=skipped, unconsumed=unconsumed)
+    p = Path(path)
+    if not p.exists():
+        return None
+    try:
+        with open(p, "rb") as fh:
+            obj = pickle.load(fh)
+    except Exception as e:  # 任何读/反序列化失败都归一为带路径的 fail-loud
+        raise RuntimeError(f"规则引擎实例损坏（{p}）：{e!r}") from e
+    if not isinstance(obj, RuleEngine):
+        raise TypeError(f"{p} 不是 RuleEngine 实例，得到 {type(obj).__name__}")
+    return obj
 
 
-def _gate_name(gate: Callable[[Any], bool]) -> str:
-    """缺席解释用的 gate 名（具名谓词可读，匿名退 repr）。"""
-    return getattr(gate, "__name__", None) or repr(gate)
+def save_rule_engine(path: str, engine: RuleEngine) -> None:
+    """原子落盘：注册面 + 未 poll 激活态整体一个 pkl。
 
-
-def prioritize(candidates: list[Candidate], overrides: Mapping[str, float] | None = None) -> list[Candidate]:
-    """记分牌：weight×severity 降序，同分按 (owner, kind) 字典序——确定性菜单。
-
-    ``overrides`` 键为 owner（词表 node_key）——委托人权重覆盖，只改权重不越资格，
-    值复验为正（weight 域先验不变量不因覆盖而破）。不改入参：返回浅拷贝，分值分解
-    附 ``evidence["_score"]``（排序可审计）。
+    走 ``write_bytes_atomic`` 单源原语（tmp+rename）；先 ``pickle.dumps`` 后
+    落盘——序列化失败发生在任何文件效果之前（不留空 tmp 垃圾）。
     """
-    ov = overrides or {}
-    scored: list[tuple[float, str, str, float, dict]] = []
-    for c in candidates:
-        r = c["evidence"]["_rule"]
-        weight = ov.get(r["owner"], r["weight"])
-        if not isinstance(weight, (int, float)) or weight <= 0:
-            raise ValueError(f"overrides[{r['owner']!r}] 权重须为正数（域先验不变量），得到 {weight!r}")
-        weight = float(weight)
-        scored.append((-(weight * r["severity"]), r["owner"], r["kind"] or "", weight, c))
-    scored.sort(key=lambda s: s[:3])
+    write_bytes_atomic(path, pickle.dumps(engine, protocol=pickle.HIGHEST_PROTOCOL))
 
-    ranked = []
-    for _, _, _, weight, c in scored:
-        r = c["evidence"]["_rule"]
-        out = dict(c)
-        out["evidence"] = {
-            **c["evidence"],
-            "_rule": dict(r),
-            "_score": {
-                "weight": weight,
-                "severity": r["severity"],
-                "score": weight * r["severity"],
-                "overridden": r["owner"] in ov,
-            },
-        }
-        ranked.append(out)
-    return ranked
+
+@contextmanager
+def rule_engine_rwa(path: str, default: RuleEngine) -> Iterator[RuleEngine]:
+    """业务接口入口（整读→用→整写）：盘上有 pkl 则加载，缺则默认实例直接作工作实例。
+
+    - 无克隆（草案语义）：``default`` 即工作实例——调用方须传干净模板（域侧
+      每次现建、激活态空）；pkl 命中时 default 被弃用不消费
+    - with 正常退出整体落盘（注册面 + 未 poll 激活态）；异常透传且不落盘——
+      失败调用零副作用（事务性）
+    - 规则对象须可 pickle（``Rule`` 协议文档）；``default`` 必填——无默认
+      实例的引擎不该有落盘通道
+    """
+    r = load_rule_engine(path) or default
+    yield r
+    save_rule_engine(path, r)
+
+
+def _stable_params(a: Activation) -> str:
+    """tie-break 用的 params 稳定序列化（同 rule 多走法的确定性排序）。"""
+    return json.dumps(a.proposal["params"], sort_keys=True, ensure_ascii=False, default=str)
