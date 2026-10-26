@@ -46,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   删除；交付物拷贝（session.py copy-from-file 流式）非 write-from-buffer 算子，单站点
   保持原地
 - 行为可见变化：driver 侧 tmp 垃圾名 `manifest.json.tmp` → `.manifest.json.tmp`（点
-  前缀隐藏不进 glob/目录列举；仓内无消费方按旧名寻址，非 breaking）BREAKING)
+  前缀隐藏不进 glob/目录列举；仓内无消费方按旧名寻址，非 breaking）
 
 ### 单源红线收敛（#83，#66 验收跟进）：cv/max_steps 缺省单点 + 泰勒图名单源 + 片段门共享谓词
 

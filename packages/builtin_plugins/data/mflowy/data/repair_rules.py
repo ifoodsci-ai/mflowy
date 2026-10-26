@@ -45,8 +45,9 @@ class RepairRule:
     """clean 词表动作的 .repair 声明适配器：kind 缺陷 → 该动作的参数化走法。
 
     落盘安全：只持 (node, kind) 字符串对，动作函数在 propose 内经
-    ``namespace_nodes("clean")`` 现查（与 ``default_engine`` 同缝——插件热装/
-    测试替身即刻可见；pickle 按类引用，跨进程稳定）。salience = kind_weight × 组内最重
+    ``namespace_nodes("clean")`` 现查（词表 miss/声明撤走 fail-loud 带候选）。
+    热更新语义分层：默认实例每次现建（插件热装/测试替身即刻可见）；已落盘的
+    会话实例注册面随 pkl 冻结——盘上规则遇到卸载节点在 propose 期报错指路重建。salience = kind_weight × 组内最重
     severity（放大取整保序）——与质量分 Φ 同尺，委托人记分牌（card 的
     ``defect_priority``）同时决定扣分与看单顺序。
     """

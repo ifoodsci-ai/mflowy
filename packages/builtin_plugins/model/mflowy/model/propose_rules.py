@@ -110,7 +110,7 @@ def _fe_switch_rule(f: dict, node: str, slot: str, ctx: dict) -> list[Activation
 # ── 规则实例 ────────────────────────────────────────────────────────────────
 
 # 族级出题面单源：kind → (规则体, 记分牌权重)——加 kind 只动这里（词表/权重/
-# 分派三方同表派生， KNOWN_FINDING_KINDS 与 default_engine 均从此投影）
+# 分派三方同表派生，KNOWN_FINDING_KINDS 与 default_engine 均从此投影）
 _FAMILY_KINDS: dict[str, tuple[Any, float]] = {
     "fold_std": (_deeper_rule, 1.2),
     "overfit_gap": (_regularize_rule, 1.1),

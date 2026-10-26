@@ -119,6 +119,10 @@ class RuleEngine:
         """注册面只读视图（消费方读订阅元数据，不改装）。"""
         return dict(self._rules)
 
+    def kind_of(self, key: str) -> str | None:
+        """规则的订阅 kind（自声明面 ``rule.kind``；未声明/未注册 → None——可审计不臆造）。"""
+        return getattr(self._rules.get(key), "kind", None)
+
     def fire(self, *keys: str, R: Any) -> list[Activation]:
         """按 key 激活规则（空 keys = 全部；未知 key fail-loud 带候选清单）。
 

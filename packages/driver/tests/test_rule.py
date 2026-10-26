@@ -218,3 +218,20 @@ def test_salience_shared_scale_keeps_order():
     assert salience(1.2, 0.5) == 600_000
     assert salience(0.35, 1.0) > salience(0.10, 1.0)  # 权重序保持
     assert salience(0.35, 0.0) == 0  # 无证据 = 零证据强度
+
+
+def test_save_fail_loud_on_unpicklable_rule_zero_file_effect(tmp_path):
+    """不可 pickle 规则：save 报错且零文件效果（不落 pkl、不留 tmp 垃圾）。"""
+    from mflowy.driver.rule import RuleEngine
+
+    class _Local:
+        key = "x.unpicklable"
+
+        def propose(self, R):  # pragma: no cover - 替身不被调用
+            return []
+
+    pkl = tmp_path / "rules.pkl"
+    engine = RuleEngine(path=str(pkl)).register(_Local())
+    with pytest.raises(AttributeError, match="local"):
+        engine.save()
+    assert not pkl.exists() and not (tmp_path / f".{pkl.name}.tmp").exists()

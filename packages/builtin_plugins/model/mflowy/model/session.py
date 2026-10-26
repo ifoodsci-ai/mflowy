@@ -1239,7 +1239,7 @@ def propose_actions(session_id: str) -> list[dict]:
             "rationale": a.rationale,
             "evidence": {
                 **(a.evidence or {}),
-                "_rule": {"rule_key": a.rule_key, "kind": subscribed_kind(engine, a.rule_key), "salience": a.salience},
+                "_rule": {"rule_key": a.rule_key, "kind": engine.kind_of(a.rule_key), "salience": a.salience},
             },
         }
         for a in activations
@@ -1341,11 +1341,6 @@ def propose_actions(session_id: str) -> list[dict]:
         if m["models"]:
             _fe_base_entries(m, cursor, fams, proposals)
     return _merge_menu(driven + proposals)
-
-
-def subscribed_kind(engine, rule_key: str) -> str | None:
-    """激活溯源的订阅 kind：规则自声明面（自定义规则缺省 None——可审计不臆造）。"""
-    return getattr(engine.rules.get(rule_key), "kind", None)
 
 
 def _merge_menu(items: list[dict]) -> list[dict]:
