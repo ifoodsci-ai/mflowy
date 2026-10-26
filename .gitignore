@@ -31,6 +31,9 @@ mlruns/
 *.tar.gz
 out
 docs/research
+# 剧本引用的设计快照入仓（M11 引用文档入仓——skills 参考节引用面）：
+!docs/research/2026-10-09-cleaning-mdp-design.md
+!docs/research/2026-10-09-modeling-mdp-design.md
 examples/2026-10-11-challenge-02-errors-integrity*
 .kaggle/ps-s6e10/SPEC.md
 .zcode-survey/01-starch-extrusion.xlsx
