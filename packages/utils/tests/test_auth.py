@@ -6,9 +6,7 @@
 """
 
 import base64
-import hashlib
 import json
-import os
 import platform
 import stat
 import threading
@@ -16,6 +14,7 @@ import time
 import types
 import urllib.parse
 import urllib.request
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
@@ -347,6 +346,59 @@ def test_ensure_access_token_concurrent_refresh_single_network_call(monkeypatch,
     assert len(network_calls) == 1, f"并发刷新应恰好一次网络往返，实际 {len(network_calls)}"
     assert results == [rotated["access_token"]] * 2
     assert json.loads((tmp_path / "credentials.json").read_text())["refresh_token"] == "rf-rotated"
+
+
+# ── 真 transport 线上契约（本地 socket 桩——不替换 _http_json，钉 JSON 体语义）──
+
+
+class _OAuthStubHandler(BaseHTTPRequestHandler):
+    """真跑桩：记录原始请求（方法/头/原始 body），回固定 JSON。"""
+
+    records: list[dict] = []
+
+    def _handle(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        self.records.append({
+            "method": self.command,
+            "path": self.path,
+            "content_type": self.headers.get("Content-Type"),
+            "raw_body": self.rfile.read(length).decode() if length else "",
+        })
+        body = json.dumps({"scopes_supported": ["data:read"]} if "well-known" in self.path
+                          else {"access_token": _jwt(_token_payload()), "refresh_token": "rf", "scope": "s"}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    do_GET = do_POST = _handle
+
+    def log_message(self, *_args):
+        pass
+
+
+def test_http_json_wire_is_json_not_form():
+    """真 transport：POST 走 application/json（契约明确非 RFC 6749 form）；GET 元数据纯 JSON 往返。"""
+    stub = HTTPServer(("127.0.0.1", 0), _OAuthStubHandler)
+    worker = threading.Thread(target=stub.serve_forever, daemon=True)
+    worker.start()
+    try:
+        base = f"http://127.0.0.1:{stub.server_address[1]}"
+        meta = auth._http_json(f"{base}/.well-known/oauth-authorization-server")
+        assert meta["scopes_supported"] == ["data:read"]
+
+        token = auth._http_json(f"{base}/oauth/token", {"grant_type": "refresh_token", "refresh_token": "x", "client_id": "mflowy-cli"})
+        assert token["refresh_token"] == "rf"
+
+        get_req, post_req = _OAuthStubHandler.records
+        assert get_req["method"] == "GET" and get_req["raw_body"] == ""
+        assert post_req["content_type"] == "application/json"
+        assert json.loads(post_req["raw_body"])["grant_type"] == "refresh_token"
+    finally:
+        stub.shutdown()
+        stub.server_close()
+        _OAuthStubHandler.records.clear()
 
 
 # ── PKCE（S256）──────────────────────────────────────────────────────────────
