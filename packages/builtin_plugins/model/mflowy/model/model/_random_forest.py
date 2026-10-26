@@ -17,7 +17,7 @@ class _RFMixin(TreeExplainMixin):
     """RandomForest estimator 子类。
 
     特殊点：
-    - 不支持 ``eval_set``/早停——fit 签名忽略之；OOB score 在训练尾部由 _pipeline 打印
+    - 不支持独立 val/早停——fit 签名忽略之；OOB score 在训练尾部由 _pipeline 打印
     - 无 loss_curve：OOB 是单点标量，画曲线需 ``warm_start`` 逐棵加树，与 mlflow autolog
       「参数不可变」约束冲突
     """

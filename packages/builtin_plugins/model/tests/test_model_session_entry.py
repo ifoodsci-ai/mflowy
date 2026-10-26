@@ -109,3 +109,22 @@ def test_explicit_params_override_card_background(sessions_root, reg_csv):
         ms.start_session(reg_csv, CV_CARD, task="regression", card={"domain": "无 target 背景"})
     with pytest.raises(ValueError, match="task 必填"):
         ms.start_session(reg_csv, CV_CARD, card={"domain": "无 task 背景", "target": "target"})
+
+
+def test_max_steps_zero_fail_loud(sessions_root, reg_csv):
+    """max_steps=0 显式传参 fail-loud（须 ≥ 1）——绝不被 falsy 静默回退缺省（#83 单源红线）。"""
+    with pytest.raises(ValueError, match="max_steps 须 ≥ 1"):
+        _start(sessions_root, reg_csv, max_steps=0)
+
+
+def test_absent_defaults_come_from_build_signature(sessions_root, reg_csv):
+    """未传 max_steps、cv_card 不含 cv → 落 CVCard.build 签名缺省（10/5）——会话层零缺省复述（#83）。"""
+    import pickle as _pickle
+
+    s = _start(sessions_root, reg_csv, max_steps=None, cv_card="test_size: 0.2")
+    assert s["max_steps"] == 10
+    m = json.loads((sessions_root / s["session_id"] / "manifest.json").read_text(encoding="utf-8"))
+    assert m["protocol"]["cv"] == 5
+    # 物化折数取冻结协议值（非 cv.split 签名缺省二落）——inner 折数与协议逐位一致
+    with open(sessions_root / s["session_id"] / "split.pkl", "rb") as f:
+        assert _pickle.load(f).spec.inner.n_splits == m["protocol"]["cv"]

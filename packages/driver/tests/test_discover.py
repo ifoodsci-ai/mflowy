@@ -232,3 +232,84 @@ class TestHandlerNamespaceDecl:
 
         assert _plain.namespace == ""
         assert _plain.node_key == "_plain"  # 裸名只剥空组连接符——私有前导保留，寻址键忠实（与 NodeConf 语义统一）
+
+
+class TestRenameHint:
+    """#86 词表 miss 文案带改名去向：词干后缀建议（唯一命中才出）+ 一般情形不退化。"""
+
+    def test_retired_key_hints_current(self, fake_entry_points):
+        fake_entry_points.append(_ep("shap.explanation", "mflowy.model.x_y:x_y"))
+        with pytest.raises(CatalogMiss, match="候选：'shap__explanation'"):
+            get_node("plot__shap_explanation")
+
+    def test_bare_retired_key_hints_namespaced(self, fake_entry_points):
+        fake_entry_points.append(_ep("shap.explanation", "mflowy.model.x_y:x_y"))
+        with pytest.raises(CatalogMiss, match="候选：'shap__explanation'"):
+            get_node("shap_explanation")
+
+    def test_retired_ns_key_hints_edge_bare_name(self, fake_entry_points):
+        """model__predict → 边键以裸名提示（YAML 边寻址面）。"""
+        fake_entry_points.append(_ep("edges.predict", "mflowy.model.x_y:x_y"))
+        with pytest.raises(CatalogMiss, match="候选：'predict'"):
+            get_node("model__predict")
+
+    def test_gibberish_miss_no_hint_available_intact(self, fake_entry_points):
+        """纯拼错/不存在键：无候选行（不误导），Available 清单语义保持。"""
+        fake_entry_points.append(_ep("load.csv", "mflowy.data.load.csv_loader:csv"))
+        with pytest.raises(CatalogMiss) as ei:
+            get_node("load__zzqqxx")
+        assert "候选" not in str(ei.value)
+        assert "Available: ['csv']" in str(ei.value)
+
+    def test_ambiguous_match_suppressed(self, fake_entry_points):
+        """同名裸名跨组（a__widget/b__widget）多义 → 不出建议（宁缺毋滥）。"""
+        fake_entry_points.append(_ep("a.widget", "mflowy.model.x_y:x_y"))
+        fake_entry_points.append(_ep("b.widget", "mflowy.model.x_y:x_y"))
+        with pytest.raises(CatalogMiss) as ei:
+            get_node("model__widget")
+        assert "候选" not in str(ei.value)
+
+
+@pytest.mark.parametrize(
+    ("retired", "current"),
+    [
+        ("plot__shap_explanation", "shap__explanation"),
+        ("shap_explanation", "shap__explanation"),
+        ("model__predict", "predict"),
+        ("model__search_input", "search_input"),
+    ],
+)
+def test_retired_keys_hint_current_vocab(retired, current):
+    """#86/#67 验收：四个历史寻址键的 CatalogMiss 文案带对应现行键（真目录 seam）。"""
+    if "shap__explanation" not in discover():
+        pytest.skip("无插件安装（driver-only 环境），内置目录断言不适用")
+    with pytest.raises(CatalogMiss, match=f"候选：'{current}'"):
+        get_node(retired)
+
+
+class TestCollisionWarnDedup:
+    """#55 撞名 warning 进程内去重：目录零缓存现算——同键冲突每次扫描都撞，恰发一次。"""
+
+    def test_same_group_override_warns_once(self, fake_entry_points, monkeypatch, caplog):
+        import logging
+
+        monkeypatch.setattr(discover_mod, "_warned", set())
+        fake_entry_points.append(_ep("load.dup", "mflowy.model.x_y:x_y"))
+        fake_entry_points.append(_ep("load.dup", "mflowy.model.x_y:x_y_v2"))  # 同组覆盖 → warning
+        with caplog.at_level(logging.WARNING):
+            discover()
+            discover()  # 第二次扫描：零缓存现算，同一冲突不重发
+        hits = [r for r in caplog.records if "冲突" in r.getMessage()]
+        assert len(hits) == 1, [r.getMessage() for r in caplog.records]
+
+    def test_cross_tier_collision_warns_once(self, fake_entry_points, monkeypatch, caplog):
+        import logging
+
+        monkeypatch.setattr(discover_mod, "_warned", set())
+        fake_entry_points.append(_ep("edges.load", "mflowy.model.x_y:x_y"))  # 边名撞组名
+        fake_entry_points.append(_ep("load.csv", "mflowy.data.load.csv_loader:csv"))
+        with caplog.at_level(logging.WARNING):
+            discover()
+            discover()
+        hits = [r for r in caplog.records if "同名" in r.getMessage()]
+        assert len(hits) == 1, [r.getMessage() for r in caplog.records]

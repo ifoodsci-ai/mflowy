@@ -120,8 +120,10 @@ class MLPEstimator(BaseEstimator):
         self.early_stopping_rounds = early_stopping_rounds
         self.random_state = random_state
 
-    def fit(self, X: pd.DataFrame, y: pd.DataFrame, eval_set=None, **_):
+    def fit(self, X: pd.DataFrame, y: pd.DataFrame, eval_X=None, eval_y=None, **_):
         pl.seed_everything(self.random_state, workers=True)
+        if "eval_set" in _:  # 旧 kwarg 不静默吞（#61 迁移）——stale 调用方立即暴露
+            raise TypeError("eval_set 已迁移为 eval_X/eval_y 双参 seam（独立 val，#61）")
         y = as_y_frame(y)  # B2 双态：sklearn cross_val_predict(proba) 传标签编码 ndarray
         validate_input(X, y)
         output_dims, loss_func, dtypes = derive_task_params(y, self.task)
@@ -147,14 +149,14 @@ class MLPEstimator(BaseEstimator):
         train_loader = build_loader(X, y_t, dtypes, self.batch_size, shuffle=True, drop_last=True)
         callbacks: list[pl.Callback] = [net.loss_result]
         val_loader = None
-        if eval_set is not None:
-            X_val, y_val = eval_set
+        if eval_X is not None:
+            X_val, y_val = eval_X, eval_y
             val_loader = build_loader(X_val, net.transform_y(y_val), dtypes, self.batch_size, shuffle=False)
             if self.early_stopping_rounds:
                 callbacks.append(EarlyStopping(monitor="val_loss", patience=self.early_stopping_rounds))
         elif self.early_stopping_rounds:
             logger.warning(
-                "early_stopping_rounds=%s 已设但 eval_set 为 None —— 不挂早停（监控 train_loss 单调下降通常不会触发）",
+                "early_stopping_rounds=%s 已设但未带独立 val —— 不挂早停（监控 train_loss 单调下降通常不会触发）",
                 self.early_stopping_rounds,
             )
 

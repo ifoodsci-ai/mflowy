@@ -15,7 +15,8 @@ from mflowy.data.middlewares import log_plot
 from mflowy.driver.handler import handler
 from mflowy.utils.constants import RANDOM_STATE
 
-from ...utils import iter_output_blocks, shap_values_to_df
+from ...utils import shap_values_to_df
+from .contract import iter_output_blocks
 
 logger = logging.getLogger(__name__)
 

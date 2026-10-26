@@ -11,6 +11,7 @@ MCP 客户端（agent）才能拿到详情自我纠正。
 import asyncio
 import csv
 
+import pytest
 from mcp.server.mcpserver import MCPServer
 from mflowy.model import tools
 
@@ -88,3 +89,16 @@ def test_fragment_contract_documented_in_param_descriptions():
     for name in ("validate_modeling_steps", "modeling", "explanation"):
         desc = by_name[name].input_schema["properties"]["modeling_steps"]["description"]
         assert "步骤列表" in desc, f"{name} 参数描述未写明片段格式契约"
+
+
+def test_fragment_gate_single_predicate():
+    """#83 单源红线：片段门谓词住 templates.parse_steps_fragment——预检面与提交侧同一拒绝集。"""
+    from mflowy.model.job_provider.local import _require_steps
+    from mflowy.model.templates import parse_steps_fragment
+
+    for bad in ["", "   ", _FULL_DOCUMENT, "42"]:
+        with pytest.raises(ValueError, match="步骤列表片段"):
+            parse_steps_fragment(bad)
+        assert tools.validate_modeling_steps(bad)["valid"] is False
+        with pytest.raises(ValueError, match="步骤列表片段"):
+            _require_steps(bad)

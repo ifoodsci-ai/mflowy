@@ -29,6 +29,19 @@ from .config import node_key, split_node_key
 
 logger = logging.getLogger(__name__)
 
+# 撞名/坏名 warning 进程内去重（#55）：目录零缓存现算——同进程每次扫描重复发射，
+# 真撞名即刷屏；热更新赌注保持（新 entry point 即时可见，去重只针对已报过的同一对）
+_warned: set[tuple[str, str]] = set()
+
+
+def _warn_once(kind: str, key: str, msg: str) -> None:
+    """同进程同类同键 warning 恰发一次（刷屏即噪音——诊断价值在首报）。"""
+    if (kind, key) in _warned:
+        return
+    _warned.add((kind, key))
+    logger.warning(msg)
+
+
 GROUPS = ("mflowy.builtin_plugins", "mflowy.plugins")  # 后组覆盖前组
 
 
@@ -41,14 +54,24 @@ def discover() -> dict[str, EntryPoint]:
             if "." in ep.name:
                 namespace, node_name = ep.name.split(".", 1)
                 if not namespace or not node_name:
-                    logger.warning(f"entry point 名 {ep.name!r} 不满足 namespace.node_name（{g}: {ep.value}），跳过")
+                    _warn_once(
+                        "malformed",
+                        f"{g}:{ep.name}",
+                        f"entry point 名 {ep.name!r} 不满足 namespace.node_name（{g}: {ep.value}），跳过",
+                    )
                     continue
             else:
                 namespace, node_name = "", ep.name  # 非归组节点：裸节点名
             key = node_key(namespace, node_name)
             if (prev := table.get(key)) is not None:
-                level = logger.warning if prev.group == g else logger.info
-                level(f"插件 {ep.name} 冲突：{ep.group}:{ep.value} 覆盖 {prev.group}:{prev.value}")
+                if prev.group == g:
+                    _warn_once(
+                        "override",
+                        f"{key}:{ep.value}",
+                        f"插件 {ep.name} 冲突：{ep.group}:{ep.value} 覆盖 {prev.group}:{prev.value}",
+                    )
+                else:
+                    logger.info(f"插件 {ep.name} 冲突：{ep.group}:{ep.value} 覆盖 {prev.group}:{prev.value}")
                 if origins.get(key) != (namespace, node_name):
                     raise ValueError(
                         f"目录键 {key!r} 歧义：{(namespace, node_name)} 与 {origins.get(key)} "
@@ -78,14 +101,44 @@ def _warn_cross_tier_collisions(table: dict[str, EntryPoint], origins: dict[str,
     namespaces = {ns for ns, _ in origins.values()} - {"", "edges"}
     for edge_name in edges:
         if edge_name in namespaces or edge_name in table:
-            logger.warning(f"边 {edge_name!r} 与节点/组同名：解析优先级边>组>节点，同名图的绑定将改写为边")
+            _warn_once(
+                "cross", edge_name, f"边 {edge_name!r} 与节点/组同名：解析优先级边>组>节点，同名图的绑定将改写为边"
+            )
+
+
+def _rename_hint(namespace: str, name: str) -> str | None:
+    """历史/拼错寻址键 → 现行键一行迁移建议（#86 词干后缀匹配，唯一命中才出）。
+
+    规范化（小写、去 ``_``）后整等或互为后缀（短侧 ≥5 字符防短名误配）且候选
+    唯一才出——多义/无线索不出（宁缺毋滥不误导）；边键以裸名显示（YAML 边寻址面）。
+    只改文案：旧键仍拒绝（不引入静默别名），用户按报错改一行 YAML 即命中现行键。
+    """
+    import re
+
+    def _norm(s: str) -> str:
+        return re.sub(r"_+", "", s.lower())
+
+    missed = _norm(f"{namespace}__{name}") if namespace else _norm(name)
+    hits: set[str] = set()
+    for key in discover():
+        key_ns, bare = split_node_key(key)
+        for cand in (_norm(key), _norm(bare)):
+            if min(len(cand), len(missed)) >= 5 and (cand == missed or cand.endswith(missed) or missed.endswith(cand)):
+                hits.add(bare if key_ns == "edges" else key)
+                break
+    if len(hits) == 1:
+        return f"改名/拼写候选：{next(iter(hits))!r}（历史键只拒绝不接受——改用现行键）"
+    return None
 
 
 def _node_miss_msg(node_name: str, namespace: str, available) -> str:
-    """目录 miss 报错文案（单一契约源）。"""
+    """目录 miss 报错文案（单一契约源）——带改名/拼写候选（#86 一行迁移，无候选零附加）。"""
     if namespace == "edges":
         return f"Edge '{node_name}' not found. Available: {sorted(available)}"
-    return f"Node '{node_name}' not found for namespace '{namespace}'. Available: {sorted(available)}"
+    msg = f"Node '{node_name}' not found for namespace '{namespace}'. Available: {sorted(available)}"
+    if hint := _rename_hint(namespace, node_name):
+        msg = f"{msg}. {hint}"
+    return msg
 
 
 class CatalogMiss(ModuleNotFoundError):

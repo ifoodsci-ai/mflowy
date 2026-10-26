@@ -247,3 +247,19 @@ def test_modeling_finish_tool_face(delivered, tmp_path):
     v = modeling_finish(session_id=sid, pdf=str(pdf))
     verify_verdict(v)
     assert v["accepted"] is True and v["report"]["file"].startswith("deliverables/")
+
+
+def test_taylor_figure_name_single_source():
+    """#83 单源红线：``taylor_diagram.png`` 字面量全仓包源码唯一（常量定义处）——skeleton 清单与图写入方同源。"""
+    import mflowy.model.report
+
+    pkg = Path(mflowy.model.report.__file__).parent
+    root = pkg.parents[4]  # 仓根（editable 安装即工作树源码）
+    occurrences = [
+        f"{p.relative_to(root)}:{i}"
+        for p in sorted(root.joinpath("packages").rglob("*.py"))
+        if "tests" not in p.parts
+        for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
+        if "taylor_diagram.png" in line
+    ]
+    assert occurrences == ["packages/builtin_plugins/model/mflowy/model/report.py:27"], occurrences

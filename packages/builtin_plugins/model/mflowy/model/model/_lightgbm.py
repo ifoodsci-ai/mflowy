@@ -20,13 +20,23 @@ class _LGBMMixin(LossCurveMixin, TreeExplainMixin):
     """LightGBM estimator 子类。
 
     fit 流程：SubTask.from_y(y, self.task) → set_params 增量调 objective → 底层 fit。
-    不支持多目标回归与多标签分类；early_stopping_rounds 经 fit 参数透传（需 eval_set）。
+    不支持多目标回归与多标签分类；early_stopping_rounds 经 fit 参数透传（需独立 val）。
     """
 
     task: TASKTYPE  # 子类类属性声明——SubTask 路由用（sklearn clone 存活）
 
-    def fit(self, X: pd.DataFrame, y: pd.DataFrame, eval_set=None, early_stopping_rounds: int | None = None, **_):
+    def fit(
+        self,
+        X: pd.DataFrame,
+        y: pd.DataFrame,
+        eval_X=None,
+        eval_y=None,
+        early_stopping_rounds: int | None = None,
+        **_,
+    ):
         y = as_y_frame(y)  # B2 双态：sklearn cross_val_predict(proba) 传标签编码 ndarray
+        if "eval_set" in _:  # 旧 kwarg 不静默吞（#61 迁移）——stale 调用方立即暴露
+            raise TypeError("eval_set 已迁移为 eval_X/eval_y 双参 seam（独立 val，#61）")
         validate_input(X, y)
         subtask = SubTask.from_y(y, self.task)
         import lightgbm as lgb
@@ -41,15 +51,17 @@ class _LGBMMixin(LossCurveMixin, TreeExplainMixin):
         self.set_params(**params)
 
         # eval 指标只在有显式 val 时收集（train-in-eval 供 loss curve 的 Train 段）；
-        # 无 eval_set 时不挂任何 eval——K 折 trial 零 eval 开销
+        # 无独立 val 时不挂任何 eval——K 折 trial 零 eval 开销。
+        # #61 弃用迁移：eval_set → 元组形式 eval_X/eval_y（含 train 面，零 LGBMDeprecationWarning）
         fit_params: dict = {}
-        if eval_set is not None:
+        if eval_X is not None:
             callbacks: list[Callable] = []
             if is_verbose():
                 callbacks.append(lgb.log_evaluation(period=0))
             if early_stopping_rounds:
                 callbacks.append(lgb.early_stopping(early_stopping_rounds, verbose=is_verbose()))
-            fit_params["eval_set"] = [(X, y), eval_set]
+            fit_params["eval_X"] = (X, eval_X)
+            fit_params["eval_y"] = (y, eval_y)
             if callbacks:
                 fit_params["callbacks"] = callbacks
         return super().fit(X, y, **fit_params)

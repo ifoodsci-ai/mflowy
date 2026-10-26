@@ -71,5 +71,7 @@ def mlflow_log(ctx: Context, next: Handler):
             # 声明消费集血缘：成败皆落盘——失败 run 的输入证据
             if lineage := ctx.lineage:
                 t.set_tag(ctx.LINEAGE_TAG_KEY, lineage)
-    print()  # handler之间空一行
+    logger.debug(
+        "(handler 间隔空行)"
+    )  # 通道纪律（#55）：空行分隔属 CLI 观感——非 CLI 宿主（MCP 进程内调用）不可强制写 stdout
     return result

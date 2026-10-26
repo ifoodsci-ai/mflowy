@@ -22,6 +22,108 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 行为可见变化：driver 侧 tmp 垃圾名 `manifest.json.tmp` → `.manifest.json.tmp`（点
   前缀隐藏不进 glob/目录列举；仓内无消费方按旧名寻址，非 breaking）
 
+### 单源红线收敛（#83，#66 验收跟进）：cv/max_steps 缺省单点 + 泰勒图名单源 + 片段门共享谓词
+
+- **cv/max_steps 缺省仅由 `CVCard.build` 签名持有**（BREAKING：`CVCard` 卡字段
+  `cv`/`max_steps` 转必填——直接构造卡的字段缺省拷贝删除，仓内构造唯一路径本就是
+  `build`）：会话开局装配纯透传（未指定即不传——落签名缺省），manifest 的
+  `max_steps` 直抄冻结协议值——`int(max_steps or 协议值)` 二次合并退役（显式传 0
+  原路径已被 build 校验拦下，现路径直连且钉测试：0 值 fail-loud 绝不 falsy 回退）；
+  split 物化折数同步取冻结协议值，不再二落 `cv.split` 签名缺省（两活缺省源 = 漂移面）
+- **泰勒图产物名单源**：`report._TAYLOR_FIGURE` → 公开常量 `TAYLOR_FIGURE`，
+  `report_skeleton` 图片清单与 `taylor_for_runs` 写入方共用——`taylor_diagram.png`
+  字面量全仓唯一（常量定义处，源扫描钉测试）
+- **步骤片段门共享谓词**：`templates.parse_steps_fragment` 单源谓词，MCP 预检面
+  （`validate_modeling_steps`，结构化 `valid=False` 返回）与提交侧
+  （`LocalJobProvider._require_steps`，raise fail-loud）同拒绝集（等价性钉测试）；
+  两侧对外行为不变，文案统一收敛到谓词
+
+### M6 缺依赖优雅降级（#49）：families() 装载守卫——无 torch 环境开得了建模会话
+
+- **`registry.families()` ep.load() 增 ImportError 守卫**（同 `module.py` 富化降级
+  姿势）：缺 extra 的族条目跳过 + `logger.warning`（消息带条目路径与缺失模块名），其余族照常
+  ——修复 CPU-only 安装（无 `[deep]`）连 RF 会话都开不了（`start_session`/`apply_action`
+  /`propose_actions` 主链全经 families()）。词表 miss 仍 fail-loud（CatalogMiss 不受影响）
+- **`test_registry` 期望集随 torch 可用性二分**：有 `[deep]` 五族全集 / 无则减 MLP；
+  新增确定性守卫钉测（monkeypatch 坏 ep → 跳过 + warning，其余族在册）
+- 迁移表 M6 行同步（存量违规点已收敛；CI no-torch job = #43 后续交付）
+
+### driver 内核卫生（#55）：撞名 warning 去重 + 内核 print 通道收尾
+
+- **撞名/坏名 warning 进程内去重**（``discover._warn_once``）：目录零缓存现算——
+  同键冲突每次扫描都撞真撞名即刷屏；同进程同类同键恰发一次（热更新赌注保持：
+  新 entry point 即时可见，去重只针对已报过的同一对）。覆盖三发射点：坏名
+  跳过、同组覆盖冲突、跨层撞名（边名撞节点/组）
+- **内核 print 通道收尾（通道纪律最后一角）**：``mlflow_log`` 中间件 handler 间
+  空行 ``print()`` → ``logger.debug``（非 CLI 宿主不可强制写 stdout）；
+  ``DAG.run`` 增 ``echo: bool = True`` 逃生门——节点输出回显属入口层，默认开
+  （CLI 观感不变），MCP 进程内调用传 False 保 stdout 纯净
+- 钉测：同组覆盖/跨层撞名 warning 两扫描恰一次 ×2；``echo=False`` 零 stdout
+  （默认开保持回显）
+
+### lightgbm eval_set → eval_X/eval_y 弃用迁移（#61）
+
+- **统一 seam 迁移**：``fit_with_eval`` 签名 ``eval_set`` 元组 → ``eval_X``/``eval_y``
+  双参（keyword-only）；四族 estimator mixin fit 同步（XGB/LGBM/CAT/MLP）——各族
+  **原生 API 翻译住在各自 mixin**（xgboost/catboost 原生仍是 eval_set 无弃用，
+  lightgbm 走元组形式 eval_X/eval_y 含 train 面，零 LGBMDeprecationWarning）
+- ``_inner_cv_plan`` 返回值 (cv, X_fit, y_fit, eval_set) → (…, X_val, y_val)；
+  training/oof_predictions 调用点随迁；早停/loss-curve/train-in-eval 行为不变
+- 文档措辞同步（lightgbm/random_forest/_loss_curve/_mlp 警示文案——「eval_set」
+  →「独立 val」）；钉测：新 seam 下早停行为不变 + catch_warnings(error) 断言零
+  弃用告警 + 旧 kwarg TypeError fail-loud（不静默吞）
+
+### run_hpo 盘上 study sampler 随 seed 建（#84 flake 根治）
+
+- **根因**：会话路径 `_open_study` 以 optuna 缺省 sampler（未钉种子的 TPESampler）
+  开/载盘上 study，`hyperparameters_search` 的 `seed` 形参在该路径被静默丢弃
+  （仅 study=None 的 DAG 路径经 search_ml 吃到）——θ* 每进程吃熵漂移，OOF/findings
+  出题面抖动致 `test_findings_drive_only_same_combo` 非确定性失败（跨进程复现率
+  ~1/8，与 PYTHONHASHSEED 无因果——hash 序只是碰巧放大了观察差异）
+- **修复**：`_open_study` 增 seed 形参，create/load study 均挂 `TPESampler(seed=seed)`
+  ——sampler 种子与 objective_id（已含 seed）的目标同一性同步（换 seed = 换目标 =
+  study 重开，语义自洽）
+- **钉测**：同数据两个全新会话首 trial θ* 逐位一致
+  （`test_run_hpo_theta_deterministic_across_studies`——同进程内两个未钉 sampler
+  必不同，等价断言真咬合缺陷）；原 flaky 用例补 #84 根因注记
+### shap 副产物契约单源化（#85，#67 验收残留）：写读产三方共享件 + 注记缺失 fail-loud
+
+- **契约住 ``shap/contract.py``（单源）**：列前缀（``shap__``/``value__``/``cat__``）
+  、记账列（``class``/``sample_idx``/``y_name``）、注记三元组 accessor/组装
+  （``annotation_triple``/``attach_annotations``）、3D 分块迭代
+  （``iter_output_blocks``——自 plot/utils 迁入，写方分块与 plot 侧迭代共用）、
+  宽表组装（``explanation_to_frame``）
+- **三方收敛**：写方 ``log_shap_explanation`` 中间件、读方 ``shap__load``、生产方
+  ``shap__explanation``/``shap__load`` 全部 import 契约件——前缀/列名/注记字面量
+  副本删除（源扫描钉测：三前缀字面量全仓唯一）
+- **注记缺失 fail-loud**：裸 ``shap.Explanation`` 缺 ``y_name``/
+  ``categorical_features``/``classes`` 时 ``annotation_triple`` 带产出面指引报错
+  ——``'-'`` 占位静默回退退役（占位符落盘即断链）
+- **顺手卫生**：plot 三消费方（summary/dependence/sample_waterfall）对 ``shap``
+  参数遮蔽统一为 ``import shap as shap_lib`` 一式；``search_input`` 死别名
+  ``model_loader = model`` 删除
+- **round-trip 真跑钉测**：middleware 落 parquet → ``shap__load`` 重建与真算
+  逐位同形（2D/3D）
+
+### CatalogMiss 文案带改名去向（#86，#67 验收残留 Story 9）
+
+- 词表 miss 报错文案增**词干后缀建议**（``discover._rename_hint``）：历史寻址键
+  （``plot__shap_explanation``/``shap_explanation``/``model__predict``/
+  ``model__search_input``）与拼错键按规范化（小写去 ``_``）整等/后缀匹配现行键，
+  **唯一命中才出**（多义/无线索不出——宁缺毋滥）；边键以裸名显示。旧键仍拒绝
+  （不引入静默别名），用户按报错改一行 YAML 即命中现行键
+- 一般情形不退化：纯拼错/不存在键无候选行，``Available`` 清单语义保持；
+  happy path 零开销（仅 miss 错误路径计算）；driver-only 环境真目录用例带跳过守卫
+- 钉测：假词表机制用例 ×5 + 真目录四键 seam 参数化 + Builder 编译缝文案用例
+
+### 词表身份钉测试补判据③（#87，#67 验收残留）
+
+- ns 返回契约套件（`test_ns_return_contract.py`）新增判据③最小流：
+  `load__file → x_y → model__loader → predict → shap__explanation → plot__shap_summary`
+  编译通过即断言（单值 ``model`` 边未吃到 predict 的 DataFrame 返回）——predict
+  若回流 model ns，类型门经此用例报警而非等用户流炸；测试文件头部判据清单
+  （①②③）同步补全
+
 ### 基准建模就绪（#70 决策图执行）：B1/B2/B3 三 P0 修复 + 基准任务落仓 + e2e-bench 冒烟门
 
 - **B1（#71）`model__MLP` 全路径修复**：`MLPEstimator.__init__` 增 `random_state` 形参

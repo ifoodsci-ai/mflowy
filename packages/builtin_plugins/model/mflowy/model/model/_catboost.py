@@ -25,8 +25,10 @@ class _CATMixin(LossCurveMixin, TreeExplainMixin):
 
     task: TASKTYPE  # 子类类属性声明——SubTask 路由用（sklearn clone 存活）
 
-    def fit(self, X: pd.DataFrame, y: pd.DataFrame, eval_set=None, **_):
+    def fit(self, X: pd.DataFrame, y: pd.DataFrame, eval_X=None, eval_y=None, **_):
         y = as_y_frame(y)  # B2 双态：sklearn cross_val_predict(proba) 传标签编码 ndarray
+        if "eval_set" in _:  # 旧 kwarg 不静默吞（#61 迁移）——stale 调用方立即暴露
+            raise TypeError("eval_set 已迁移为 eval_X/eval_y 双参 seam（独立 val，#61）")
         validate_input(X, y)
         subtask = SubTask.from_y(y, self.task)
 
@@ -51,8 +53,9 @@ class _CATMixin(LossCurveMixin, TreeExplainMixin):
                     "fill_mode/缺失标记）或 x_transformer 编码（ordinal/onehot）后再入 CAT"
                 )
             fit_params["cat_features"] = cat_features
-        if eval_set is not None:
-            fit_params["eval_set"] = [eval_set]
+        if eval_X is not None:
+            # CatBoost 原生 API 仍是 eval_set（无弃用）——统一 seam 在此翻译（#61）
+            fit_params["eval_set"] = [(eval_X, eval_y)]
         return super().fit(X, y, verbose=is_verbose(), **fit_params)
 
     def get_loss_curve(self, **_):

@@ -14,12 +14,11 @@ from __future__ import annotations
 
 from typing import Annotated
 
-import yaml
 from mflowy.driver.dag import DAGResult
 from pydantic import Field
 
 from .job_provider import get_job_provider as _get_job_provider
-from .templates import MODELING_TEMPLATE, count_model_steps
+from .templates import MODELING_TEMPLATE, count_model_steps, parse_steps_fragment
 
 try:  # SDK 仅 server 形态需要（[mcp] extra）——runner 路径零 SDK 可导入；
     from mcp.server.mcpserver import Context
@@ -45,24 +44,14 @@ def validate_modeling_steps(
 
     校验失败（片段格式/YAML 语法/DAG 构建）返回 ``{"valid": False, "error": ...}``
     而非抛异常——MCP 层对非 ToolError 异常只回裸错误串，失败原因走返回值才能到达客户端。
+    片段门谓词与提交侧（LocalJobProvider）共享 templates.parse_steps_fragment（#83 单源）。
     """
     from mflowy.driver.builder import Builder
 
     steps_text = modeling_steps
 
     try:
-        parsed = yaml.safe_load(steps_text)
-        if isinstance(parsed, dict):
-            return {
-                "valid": False,
-                "error": "内容须为顶层步骤列表片段（- name: 开头的 YAML list）；检测到完整文档（顶层 mapping）"
-                "——name/description/flow 外壳由建模模板自动包装，请剔除顶层外壳键，只保留 flow 列表内的步骤项",
-            }
-        if not isinstance(parsed, list):
-            return {
-                "valid": False,
-                "error": "内容须为顶层步骤列表片段（- name: 开头的 YAML list）；当前内容为空或顶层不是列表",
-            }
+        parse_steps_fragment(steps_text)
 
         from .model.step_options import prune_x_transformer_step
 

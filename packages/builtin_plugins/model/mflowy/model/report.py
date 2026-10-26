@@ -23,7 +23,8 @@ import pandas as pd
 from mflowy.driver.edge import edge
 from mflowy.model.model.types import TASKTYPE
 
-_TAYLOR_FIGURE = "taylor_diagram.png"
+# 泰勒图产物名（单源，#83）——图写入方（taylor_for_runs）与 skeleton 清单（session.report_skeleton）共用
+TAYLOR_FIGURE = "taylor_diagram.png"
 
 
 # ── OOF 图集 ───────────────────────────────────────────────────────────────
@@ -145,8 +146,8 @@ def taylor_for_runs(runs: list[tuple[str, str]], task, out_dir: Path) -> dict:
     """多终训 run 副产物 fan-in → (corr, σ, rmse) + 泰勒图（落 ``out_dir``）。
 
     ``runs`` = (combo label, run_id) 清单；副产物缺 fail-loud；单模型不出图
-    （多模型对比图——统计照出）；分类任务不出统计面。图名恒 ``taylor_diagram.png``
-    （确定性产物名，重复绘制覆盖）。
+    （多模型对比图——统计照出）；分类任务不出统计面。图名恒 ``TAYLOR_FIGURE``
+    常量（确定性产物名，重复绘制覆盖）。
     """
     from mflowy.model.model._pipeline import HOLDOUT_BYPRODUCTS
     from mflowy.utils.mlflow import download_run_artifact, run_artifacts
@@ -187,6 +188,6 @@ def taylor_for_runs(runs: list[tuple[str, str]], task, out_dir: Path) -> dict:
         from mflowy.model.plot.model_evaluation.regression.taylor_diagram import taylor_diagram as taylor_plot
 
         _, fig = taylor_plot(model_test_predictions=(TASKTYPE(task), plot_df))
-        figure = out_dir / _TAYLOR_FIGURE
+        figure = out_dir / TAYLOR_FIGURE
         fig.savefig(figure, dpi=150, bbox_inches="tight")
     return {"stats": rows, "figure": figure, "note": note}

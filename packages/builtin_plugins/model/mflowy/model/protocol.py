@@ -77,9 +77,9 @@ class CVCard:
     """
 
     task: TASKTYPE
+    cv: int  # inner CV 折数——缺省仅由 build 签名持有（#83 单源，字段无第二份拷贝）
+    max_steps: int  # 单一预算：只有计算动作（run_hpo/final_train_test）吃步——缺省仅由 build 签名持有
     metric: MetricName | None = None  # None = 任务自动选（infer_metric）
-    cv: int = 5
-    max_steps: int = 10  # 单一预算：只有计算动作（run_hpo/final_train_test）吃步
     candidates: tuple[dict, ...] = ()  # 空 = 全部已声明族开放（首个 baseline）
     goal: str = ""  # 建模成功判据（业务口径，区别于 survey 的研究目标）
     external_baseline: str = ""  # 外部基线对标（自由文本，board 对照面）

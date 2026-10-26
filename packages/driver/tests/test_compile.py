@@ -414,3 +414,35 @@ class TestPruneAtCompile:
 
         dag = Builder(_yaml(tmp_path, "选项", _node("a", "load", "a")), rename).build()
         assert [c.conf.name for c in dag.nodes] == ["改名"]
+
+
+def test_vocab_miss_carries_rename_hint(tmp_path):
+    """#86：编译缝 fail-loud 文案带改名去向（沿词表 miss 文案契约先例）——旧键只拒绝，文案给现行键。"""
+    from mflowy.driver.discover import CatalogMiss, discover
+
+    if "shap__explanation" not in discover():
+        pytest.skip("无插件安装（driver-only 环境），内置目录断言不适用")
+    with pytest.raises(CatalogMiss, match="候选：'shap__explanation'"):
+        Builder(_yaml(tmp_path, "历史键迁移", "- plot__shap_explanation:\n    name: 旧键")).build()
+
+
+def test_run_echo_false_zero_stdout(fake_plugins, tmp_path, capsys):
+    """#55 通道纪律逃生门：``DAG.run(echo=False)`` 零 stdout——回显属入口层，非 CLI 宿主（MCP 进程内调用）可关；默认开（CLI 观感不变）。"""
+
+    @handler()
+    def alpha() -> int:
+        return 1
+
+    fake_plugins.setdefault("load", {})["alpha"] = alpha
+    from mflowy.utils.mlflow import FakeTracking, use_tracking
+
+    with use_tracking(FakeTracking()):
+        dag = Builder(_yaml(tmp_path, "echo关", _node("a", "load", "alpha"))).build()
+        res = dag.run(echo=False)
+    assert res.status == "finished"
+    assert capsys.readouterr().out == ""  # 纯净 stdout：业务数据只走捕获窗口
+
+    with use_tracking(FakeTracking()):
+        res2 = Builder(_yaml(tmp_path, "echo开", _node("a", "load", "alpha"))).build().run()
+    assert res2.status == "finished"
+    assert capsys.readouterr().out != ""  # 默认回显保持
