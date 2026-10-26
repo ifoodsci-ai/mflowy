@@ -1,6 +1,7 @@
 ---
 name: model-brief
 description: 建模协议问卷(mflowy)。清洗收局后、开始建模前使用——用户要求"建模/训练模型"且清洗已完成时触发。规则预填候选，用户只确认四项必答，剧本层产出开局入参（cv_card = cv.split 配置 yaml 明文 + 显式协议参数）后 modeling_session_start 直进建模 POMDP。前置:clean skill 已 finish。
+disable-model-invocation: true
 ---
 
 # Model-Brief Skill：建模协议问卷（剧本层谈判）
