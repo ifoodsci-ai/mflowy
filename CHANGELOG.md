@@ -80,6 +80,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **round-trip 真跑钉测**：middleware 落 parquet → ``shap__load`` 重建与真算
   逐位同形（2D/3D）
 
+### CatalogMiss 文案带改名去向（#86，#67 验收残留 Story 9）
+
+- 词表 miss 报错文案增**词干后缀建议**（``discover._rename_hint``）：历史寻址键
+  （``plot__shap_explanation``/``shap_explanation``/``model__predict``/
+  ``model__search_input``）与拼错键按规范化（小写去 ``_``）整等/后缀匹配现行键，
+  **唯一命中才出**（多义/无线索不出——宁缺毋滥）；边键以裸名显示。旧键仍拒绝
+  （不引入静默别名），用户按报错改一行 YAML 即命中现行键
+- 一般情形不退化：纯拼错/不存在键无候选行，``Available`` 清单语义保持；
+  happy path 零开销（仅 miss 错误路径计算）；driver-only 环境真目录用例带跳过守卫
+- 钉测：假词表机制用例 ×5 + 真目录四键 seam 参数化 + Builder 编译缝文案用例
+
 ### 基准建模就绪（#70 决策图执行）：B1/B2/B3 三 P0 修复 + 基准任务落仓 + e2e-bench 冒烟门
 
 - **B1（#71）`model__MLP` 全路径修复**：`MLPEstimator.__init__` 增 `random_state` 形参

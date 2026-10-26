@@ -81,11 +81,39 @@ def _warn_cross_tier_collisions(table: dict[str, EntryPoint], origins: dict[str,
             logger.warning(f"边 {edge_name!r} 与节点/组同名：解析优先级边>组>节点，同名图的绑定将改写为边")
 
 
+def _rename_hint(namespace: str, name: str) -> str | None:
+    """历史/拼错寻址键 → 现行键一行迁移建议（#86 词干后缀匹配，唯一命中才出）。
+
+    规范化（小写、去 ``_``）后整等或互为后缀（短侧 ≥5 字符防短名误配）且候选
+    唯一才出——多义/无线索不出（宁缺毋滥不误导）；边键以裸名显示（YAML 边寻址面）。
+    只改文案：旧键仍拒绝（不引入静默别名），用户按报错改一行 YAML 即命中现行键。
+    """
+    import re
+
+    def _norm(s: str) -> str:
+        return re.sub(r"_+", "", s.lower())
+
+    missed = _norm(f"{namespace}__{name}") if namespace else _norm(name)
+    hits: set[str] = set()
+    for key in discover():
+        key_ns, bare = split_node_key(key)
+        for cand in (_norm(key), _norm(bare)):
+            if min(len(cand), len(missed)) >= 5 and (cand == missed or cand.endswith(missed) or missed.endswith(cand)):
+                hits.add(bare if key_ns == "edges" else key)
+                break
+    if len(hits) == 1:
+        return f"改名/拼写候选：{next(iter(hits))!r}（历史键只拒绝不接受——改用现行键）"
+    return None
+
+
 def _node_miss_msg(node_name: str, namespace: str, available) -> str:
-    """目录 miss 报错文案（单一契约源）。"""
+    """目录 miss 报错文案（单一契约源）——带改名/拼写候选（#86 一行迁移，无候选零附加）。"""
     if namespace == "edges":
         return f"Edge '{node_name}' not found. Available: {sorted(available)}"
-    return f"Node '{node_name}' not found for namespace '{namespace}'. Available: {sorted(available)}"
+    msg = f"Node '{node_name}' not found for namespace '{namespace}'. Available: {sorted(available)}"
+    if hint := _rename_hint(namespace, node_name):
+        msg = f"{msg}. {hint}"
+    return msg
 
 
 class CatalogMiss(ModuleNotFoundError):
