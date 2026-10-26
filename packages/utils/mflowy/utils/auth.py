@@ -29,7 +29,6 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
-
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -46,8 +45,12 @@ ENV_BASE_URL = "MFLOWY_BASE_URL"  # 平台地址逃生舱：生产/自建网关�
 DEFAULT_BASE_URL = "http://localhost:30080"  # 本地 gateway NodePort；生产经 env 覆盖
 
 _CALLBACK_PATH = "/callback"
-_LOCK_TIMEOUT_SECONDS = 10.0  # 凭据锁竞争上限：另一进程刷新卡死时不无限等待
+# 锁等待上限须大于单次 HTTP 超时（30s）：持锁者的合法刷新不该让等锁者伪失败，
+# 只在持有者真正卡死（>45s）时才 fail-loud
+_LOCK_TIMEOUT_SECONDS = 45.0
 _EXPIRY_SKEW_SECONDS = 30.0  # access 视为过期的提前量（时钟漂移/请求在途）
+
+_NOT_LOGGED_IN = "未登录：请先调用 login 工具完成平台授权"
 
 
 class LoginDenied(RuntimeError):
@@ -70,6 +73,10 @@ class LoginRequiredError(RuntimeError):
     """本地凭据缺失/失效——消费方应引导用户重新调用 login。"""
 
 
+class CorruptCredentialsError(RuntimeError):
+    """凭据文件损坏（非法 JSON/未知字段）——删除后重新 login 可恢复。"""
+
+
 # ── PKCE（S256）──────────────────────────────────────────────────────────────
 
 
@@ -81,7 +88,7 @@ def pkce_challenge(verifier: str) -> str:
 
 def pkce_pair() -> tuple[str, str]:
     """(verifier, challenge)：verifier 高熵随机、长度 ∈ [43,128]。"""
-    verifier = secrets.token_urlsafe(64)[:128]  # 86 字符，落在 RFC 区间
+    verifier = secrets.token_urlsafe(64)  # 86 字符，天然落在 RFC 区间
     return verifier, pkce_challenge(verifier)
 
 
@@ -97,6 +104,7 @@ class Credentials:
     """凭据单形状：登录/轮换/展示共用，整文件原子替换。"""
 
     base_url: str
+    client_id: str
     access_token: str
     refresh_token: str
     scope: str
@@ -108,7 +116,42 @@ class Credentials:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Credentials:
-        return cls(**{f: d[f] for f in cls.__dataclass_fields__ if f in d})
+        """fail-loud：未知字段 = 损坏/篡改信号，不静默过滤（红线 1）。"""
+        unknown = set(d) - set(cls.__dataclass_fields__)
+        if unknown:
+            raise CorruptCredentialsError(
+                f"凭据文件 {credentials_path()} 含未知字段 {sorted(unknown)}——疑似损坏或被篡改，请删除该文件后重新 login"
+            )
+        return cls(**d)  # 缺字段 → TypeError，同为 fail-loud
+
+    @classmethod
+    def from_token_response(
+        cls,
+        base_url: str,
+        token: dict,
+        *,
+        device_name: str | None,
+        fallback_scope: str = "",
+        prev: Credentials | None = None,
+    ) -> Credentials:
+        """token 端点响应 → 凭据（登录与轮换共用的单源构造）。
+
+        claims 缺失时：轮换路径（prev 在场）回退旧凭据对应字段，登录路径回退
+        请求 scope（fallback_scope）；过期时刻以 JWT ``exp`` 为准（服务端时钟真源）。
+        """
+        claims = jwt_payload(token["access_token"])
+        return cls(
+            base_url=base_url,
+            client_id=CLIENT_ID,
+            access_token=token["access_token"],
+            refresh_token=token["refresh_token"],
+            scope=token.get("scope") or (prev.scope if prev else fallback_scope),
+            user_id=claims.get("sub", prev.user_id if prev else None),
+            session_id=claims.get("session_id", prev.session_id if prev else None),
+            device_name=device_name if device_name is not None else (prev.device_name if prev else None),
+            obtained_at=time.time(),
+            expires_at=float(claims.get("exp", time.time() + token.get("expires_in", 900))),
+        )
 
     def summary(self, status: str) -> dict:
         """login 返回摘要：JWT claims 解码展示（不验签）。"""
@@ -132,11 +175,18 @@ def jwt_payload(token: str) -> dict:
 
 
 def _load() -> Credentials | None:
+    """读凭据：缺失 = None（未登录）；损坏 = raise（不与未登录静默合并，红线 1）。"""
     path = credentials_path()
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
         return None
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise CorruptCredentialsError(f"凭据文件 {path} 已损坏（非法 JSON: {e}）——请删除该文件后重新 login") from e
+    if not isinstance(data, dict):
+        raise CorruptCredentialsError(f"凭据文件 {path} 形状损坏（顶层应为 JSON 对象）——请删除后重新 login")
     return Credentials.from_dict(data)
 
 
@@ -189,7 +239,7 @@ def _credentials_lock(timeout: float = _LOCK_TIMEOUT_SECONDS):
                 break
             except OSError:
                 if time.monotonic() >= deadline:
-                    raise TimeoutError(f"凭据锁竞争超时（>{timeout:g}s）：另一 mflowy 进程正持有锁")
+                    raise TimeoutError(f"凭据锁竞争超时（>{timeout:g}s）：另一 mflowy 进程正持有锁") from None
                 time.sleep(0.05)
         yield
     finally:
@@ -217,7 +267,9 @@ def _http_json(url: str, payload: dict | None = None, *, method: str | None = No
             parsed = json.loads(body)
         except json.JSONDecodeError:
             parsed = {}
-        raise OAuthHttpError(url, e.code, str(parsed.get("error", "unknown")), str(parsed.get("error_description", body[:200]))) from e
+        raise OAuthHttpError(
+            url, e.code, str(parsed.get("error", "unknown")), str(parsed.get("error_description", body[:200]))
+        ) from e
 
 
 def _resolve_base_url(base_url: str | None) -> str:
@@ -225,8 +277,13 @@ def _resolve_base_url(base_url: str | None) -> str:
 
 
 def _resolve_scope(base_url: str, scopes: list[str] | str | None) -> str:
-    """缺省拉服务端 scope 目录全集（单源：目录真源在服务端）；显式传参原样上送。"""
-    if scopes:
+    """缺省（None）拉服务端 scope 目录全集（单源：目录真源在服务端）；显式传参原样上送。
+
+    显式空（``[]``/``""``）是明确的收窄意图，静默回退全集 = 静默改写语义（红线 1）——拒绝。
+    """
+    if scopes is not None:
+        if not scopes:
+            raise ValueError("scopes 显式为空——拒绝以空 scope 发起授权（收窄请至少给一项；缺省全集传 None）")
         return scopes if isinstance(scopes, str) else " ".join(scopes)
     meta = _http_json(f"{base_url}/.well-known/oauth-authorization-server")
     supported = meta.get("scopes_supported")
@@ -251,13 +308,14 @@ def _callback_handler(state: str, result: dict, done: threading.Event) -> type[B
                 result["error"] = query["error"]
             elif query.get("state") == state and query.get("code"):
                 result["code"] = query["code"]
-            else:
-                result["state_ok"] = False  # state 不符或既无 code 又无 error
+            # 其余（state 不符/既无 code 又无 error）：不记录——login 侧以无 code 判串台
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             ok = "code" in result
-            self.wfile.write(("mflowy 登录成功，可关闭此页。" if ok else "mflowy 登录未完成，可关闭此页后重试。").encode("utf-8"))
+            self.wfile.write(
+                ("mflowy 登录成功，可关闭此页。" if ok else "mflowy 登录未完成，可关闭此页后重试。").encode("utf-8")
+            )
             done.set()
 
         def log_message(self, *_args):  # 回调页非诊断面，静默
@@ -285,10 +343,15 @@ def login(
     ``RuntimeError``（无法拉起浏览器——附手动 URL，首版需本机浏览器）。
     """
     base = _resolve_base_url(base_url)
-    if not force:
+    try:
         existing = _load()
-        if existing is not None and existing.base_url == base and existing.refresh_token:
-            return existing.summary("already_logged_in")
+    except CorruptCredentialsError as e:
+        logger.warning("凭据文件损坏，将重新授权覆写：%s", e)
+        existing = None
+    if existing is not None and existing.base_url != base:
+        logger.warning("切换平台环境：%s → %s，旧环境凭据将被覆写", existing.base_url, base)
+    elif not force and existing is not None and existing.base_url == base and existing.refresh_token:
+        return existing.summary("already_logged_in")
 
     scope = _resolve_scope(base, scopes)
     verifier, challenge = pkce_pair()
@@ -300,8 +363,8 @@ def login(
     server = ThreadingHTTPServer(("127.0.0.1", 0), _callback_handler(state, result, done))
     port = server.server_address[1]
     redirect_uri = f"http://127.0.0.1:{port}{_CALLBACK_PATH}"
-    authorize_url = (
-        f"{base}/oauth/authorize?" + urllib.parse.urlencode({
+    authorize_url = f"{base}/oauth/authorize?" + urllib.parse.urlencode(
+        {
             "response_type": "code",
             "client_id": CLIENT_ID,
             "redirect_uri": redirect_uri,
@@ -310,7 +373,7 @@ def login(
             "code_challenge": challenge,
             "code_challenge_method": "S256",
             "device_name": device,
-        })
+        }
     )
 
     worker = threading.Thread(target=server.serve_forever, daemon=True)
@@ -332,25 +395,17 @@ def login(
     if "code" not in result:
         raise StateMismatch("loopback 回调 state 不符——疑似回调串台，请重试 login")
 
-    token = _token_request(base, {
-        "grant_type": "authorization_code",
-        "code": result["code"],
-        "code_verifier": verifier,
-        "client_id": CLIENT_ID,
-        "redirect_uri": redirect_uri,
-    })
-    claims = jwt_payload(token["access_token"])
-    creds = Credentials(
-        base_url=base,
-        access_token=token["access_token"],
-        refresh_token=token["refresh_token"],
-        scope=token.get("scope", scope),
-        user_id=claims.get("sub"),
-        session_id=claims.get("session_id"),
-        device_name=device,
-        obtained_at=time.time(),
-        expires_at=float(claims.get("exp", time.time() + token.get("expires_in", 900))),
+    token = _token_request(
+        base,
+        {
+            "grant_type": "authorization_code",
+            "code": result["code"],
+            "code_verifier": verifier,
+            "client_id": CLIENT_ID,
+            "redirect_uri": redirect_uri,
+        },
     )
+    creds = Credentials.from_token_response(base, token, device_name=device, fallback_scope=scope)
     with _credentials_lock():
         _store(creds)
     logger.info("login 完成：user_id=%s scope=%s", creds.user_id, creds.scope)
@@ -368,7 +423,7 @@ def ensure_access_token(base_url: str | None = None) -> str:
     """
     creds = _load()
     if creds is None:
-        raise LoginRequiredError("未登录：请先调用 login 工具完成平台授权")
+        raise LoginRequiredError(_NOT_LOGGED_IN)
     if base_url is not None and base_url != creds.base_url:
         raise LoginRequiredError(f"本地凭据属于 {creds.base_url}，与请求环境 {base_url} 不符——请用对应环境重新 login")
     if time.time() < creds.expires_at - _EXPIRY_SKEW_SECONDS:
@@ -377,15 +432,18 @@ def ensure_access_token(base_url: str | None = None) -> str:
     with _credentials_lock():
         creds = _load()  # 双检：等锁期间他人已刷新则直接复用
         if creds is None:
-            raise LoginRequiredError("未登录：请先调用 login 工具完成平台授权")
+            raise LoginRequiredError(_NOT_LOGGED_IN)
         if time.time() < creds.expires_at - _EXPIRY_SKEW_SECONDS:
             return creds.access_token
         try:
-            token = _token_request(creds.base_url, {
-                "grant_type": "refresh_token",
-                "refresh_token": creds.refresh_token,
-                "client_id": CLIENT_ID,
-            })
+            token = _token_request(
+                creds.base_url,
+                {
+                    "grant_type": "refresh_token",
+                    "refresh_token": creds.refresh_token,
+                    "client_id": creds.client_id,
+                },
+            )
         except OAuthHttpError as e:
             if e.error == "invalid_grant":
                 _clear()
@@ -395,18 +453,7 @@ def ensure_access_token(base_url: str | None = None) -> str:
                     "请到平台 /account 检查已登录设备列表。"
                 ) from e
             raise
-        claims = jwt_payload(token["access_token"])
-        rotated = Credentials(
-            base_url=creds.base_url,
-            access_token=token["access_token"],
-            refresh_token=token["refresh_token"],
-            scope=token.get("scope", creds.scope),
-            user_id=claims.get("sub", creds.user_id),
-            session_id=claims.get("session_id", creds.session_id),
-            device_name=creds.device_name,
-            obtained_at=time.time(),
-            expires_at=float(claims.get("exp", time.time() + token.get("expires_in", 900))),
-        )
+        rotated = Credentials.from_token_response(creds.base_url, token, device_name=None, prev=creds)
         _store(rotated)
         logger.info("token 已轮换：user_id=%s", rotated.user_id)
         return rotated.access_token

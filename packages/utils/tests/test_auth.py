@@ -15,11 +15,10 @@ import types
 import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from typing import ClassVar
 
 import pytest
-
 from mflowy.utils import auth
-
 
 # ── 测试地基：JWT 桩 / 浏览器桩 / transport 缝 / 凭据缝 ─────────────────────
 
@@ -66,7 +65,11 @@ def _fake_transport(monkeypatch, *, scopes_supported: list | None = None, token:
     def _http_json(url, payload=None, *, method=None, timeout=30.0):
         calls.append({"url": url, "payload": payload, "method": method or ("POST" if payload is not None else "GET")})
         if url.endswith("/.well-known/oauth-authorization-server"):
-            return {"issuer": "mflowy", "scopes_supported": scopes_supported, "code_challenge_methods_supported": ["S256"]}
+            return {
+                "issuer": "mflowy",
+                "scopes_supported": scopes_supported,
+                "code_challenge_methods_supported": ["S256"],
+            }
         if url.endswith("/oauth/token"):
             if isinstance(token, Exception):
                 raise token
@@ -79,15 +82,28 @@ def _fake_transport(monkeypatch, *, scopes_supported: list | None = None, token:
 
 def _token_payload(**over) -> dict:
     now = int(time.time())
-    payload = {"iss": "mflowy", "sub": "user-42", "client_id": auth.CLIENT_ID, "scope": "data:read train:run",
-               "session_id": "sess-7", "consent_id": "cons-1", "exp": now + 900, "iat": now}
+    payload = {
+        "iss": "mflowy",
+        "sub": "user-42",
+        "client_id": auth.CLIENT_ID,
+        "scope": "data:read train:run",
+        "session_id": "sess-7",
+        "consent_id": "cons-1",
+        "exp": now + 900,
+        "iat": now,
+    }
     payload.update(over)
     return payload
 
 
 def _token_response(payload: dict | None = None, refresh: str = "rf-new") -> dict:
-    return {"access_token": _jwt(payload or _token_payload()), "token_type": "Bearer", "expires_in": 899,
-            "refresh_token": refresh, "scope": "data:read train:run"}
+    return {
+        "access_token": _jwt(payload or _token_payload()),
+        "token_type": "Bearer",
+        "expires_in": 899,
+        "refresh_token": refresh,
+        "scope": "data:read train:run",
+    }
 
 
 # ── login 全链（loopback 真socket + 浏览器桩 + transport 缝）─────────────────
@@ -98,8 +114,7 @@ def test_login_happy_path_authorizes_and_stores_credentials(monkeypatch, tmp_pat
     creds_file = _use_credentials(monkeypatch, tmp_path)
     monkeypatch.delenv(auth.ENV_BASE_URL, raising=False)
     browser = _fake_browser(monkeypatch, code="c0de-1")
-    calls = _fake_transport(monkeypatch, scopes_supported=["data:read", "train:run"],
-                            token=_token_response())
+    calls = _fake_transport(monkeypatch, scopes_supported=["data:read", "train:run"], token=_token_response())
 
     result = auth.login(timeout_seconds=10)
 
@@ -134,6 +149,7 @@ def test_login_happy_path_authorizes_and_stores_credentials(monkeypatch, tmp_pat
     stored = json.loads(creds_file.read_text())
     assert stat.S_IMODE(creds_file.stat().st_mode) == 0o600
     assert stored["base_url"] == auth.DEFAULT_BASE_URL
+    assert stored["client_id"] == auth.CLIENT_ID
     assert stored["refresh_token"] == "rf-new"
     assert stored["user_id"] == "user-42" and stored["session_id"] == "sess-7"
     assert stored["scope"] == "data:read train:run"
@@ -212,6 +228,7 @@ def _seed_credentials(monkeypatch, tmp_path, *, base_url: str | None = None, **o
     _use_credentials(monkeypatch, tmp_path)
     stored = {
         "base_url": base_url or auth.DEFAULT_BASE_URL,
+        "client_id": auth.CLIENT_ID,
         "access_token": _jwt(_token_payload()),
         "refresh_token": "rf-old",
         "scope": "data:read train:run",
@@ -241,17 +258,22 @@ def test_login_idempotent_when_credentials_exist(monkeypatch, tmp_path):
     assert result["user_id"] == "user-42" and result["scopes"] == ["data:read", "train:run"]
 
 
-def test_login_force_reruns_flow_and_base_switch_overwrites(monkeypatch, tmp_path):
-    """force=True 重走浏览器授权；切换 base_url 视为有意切换——覆写旧凭据。"""
+def test_login_force_reruns_flow_and_base_switch_overwrites(monkeypatch, tmp_path, caplog):
+    """force=True 重走浏览器授权；切换 base_url 视为有意切换——覆写旧凭据 + warning。"""
     _seed_credentials(monkeypatch, tmp_path)  # 缺省 base 的旧凭据
     browser = _fake_browser(monkeypatch, code="c0de-2")
-    _fake_transport(monkeypatch, scopes_supported=["data:read"],
-                    token=_token_response(_token_payload(sub="user-99"), refresh="rf-new"))
+    _fake_transport(
+        monkeypatch,
+        scopes_supported=["data:read"],
+        token=_token_response(_token_payload(sub="user-99"), refresh="rf-new"),
+    )
 
-    result = auth.login(timeout_seconds=10, base_url="http://other-base:3", force=True)
+    with caplog.at_level("WARNING", logger="mflowy.utils.auth"):
+        result = auth.login(timeout_seconds=10, base_url="http://other-base:3", force=True)
 
     assert result["status"] == "logged_in" and result["user_id"] == "user-99"
     assert browser["url"].startswith("http://other-base:3/oauth/authorize?")
+    assert any("切换平台环境" in r.message for r in caplog.records)
     stored = json.loads((tmp_path / "credentials.json").read_text())
     assert stored["base_url"] == "http://other-base:3" and stored["refresh_token"] == "rf-new"
 
@@ -277,7 +299,11 @@ def test_ensure_access_token_refreshes_and_replaces_whole_file(monkeypatch, tmp_
 
     assert token == rotated["access_token"]
     refresh_call = next(c for c in calls if c["url"].endswith("/oauth/token"))
-    assert refresh_call["payload"] == {"grant_type": "refresh_token", "refresh_token": "rf-old", "client_id": auth.CLIENT_ID}
+    assert refresh_call["payload"] == {
+        "grant_type": "refresh_token",
+        "refresh_token": "rf-old",
+        "client_id": auth.CLIENT_ID,
+    }
     creds_file = tmp_path / "credentials.json"
     stored = json.loads(creds_file.read_text())
     assert stored["refresh_token"] == "rf-rotated"
@@ -288,8 +314,9 @@ def test_ensure_access_token_refreshes_and_replaces_whole_file(monkeypatch, tmp_
 def test_ensure_access_token_invalid_grant_clears_and_warns_full_logout(monkeypatch, tmp_path):
     """refresh 失效 → 清本地凭据 + LoginRequiredError，文案含全端下线风险提示。"""
     _seed_credentials(monkeypatch, tmp_path, expires_at=time.time() - 1)
-    _fake_transport(monkeypatch, token=auth.OAuthHttpError(
-        "http://x/oauth/token", 400, "invalid_grant", "invalid or expired grant"))
+    _fake_transport(
+        monkeypatch, token=auth.OAuthHttpError("http://x/oauth/token", 400, "invalid_grant", "invalid or expired grant")
+    )
 
     with pytest.raises(auth.LoginRequiredError, match="全端下线"):
         auth.ensure_access_token()
@@ -333,14 +360,16 @@ def test_ensure_access_token_concurrent_refresh_single_network_call(monkeypatch,
     def _worker():
         try:
             results.append(auth.ensure_access_token())
-        except BaseException as e:  # noqa: BLE001——把线程内失败带回主线程断言
+        except BaseException as e:  # 把线程内失败带回主线程断言
             errors.append(e)
 
     t1, t2 = threading.Thread(target=_worker), threading.Thread(target=_worker)
-    t1.start(); t2.start()
+    t1.start()
+    t2.start()
     time.sleep(0.3)  # 两线程都撞上过期分支/锁窗口
     gate.set()
-    t1.join(timeout=10); t2.join(timeout=10)
+    t1.join(timeout=10)
+    t2.join(timeout=10)
 
     assert errors == []
     assert len(network_calls) == 1, f"并发刷新应恰好一次网络往返，实际 {len(network_calls)}"
@@ -354,18 +383,23 @@ def test_ensure_access_token_concurrent_refresh_single_network_call(monkeypatch,
 class _OAuthStubHandler(BaseHTTPRequestHandler):
     """真跑桩：记录原始请求（方法/头/原始 body），回固定 JSON。"""
 
-    records: list[dict] = []
+    records: ClassVar[list[dict]] = []
 
     def _handle(self):
         length = int(self.headers.get("Content-Length") or 0)
-        self.records.append({
-            "method": self.command,
-            "path": self.path,
-            "content_type": self.headers.get("Content-Type"),
-            "raw_body": self.rfile.read(length).decode() if length else "",
-        })
-        body = json.dumps({"scopes_supported": ["data:read"]} if "well-known" in self.path
-                          else {"access_token": _jwt(_token_payload()), "refresh_token": "rf", "scope": "s"}).encode()
+        self.records.append(
+            {
+                "method": self.command,
+                "path": self.path,
+                "content_type": self.headers.get("Content-Type"),
+                "raw_body": self.rfile.read(length).decode() if length else "",
+            }
+        )
+        body = json.dumps(
+            {"scopes_supported": ["data:read"]}
+            if "well-known" in self.path
+            else {"access_token": _jwt(_token_payload()), "refresh_token": "rf", "scope": "s"}
+        ).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
@@ -388,7 +422,9 @@ def test_http_json_wire_is_json_not_form():
         meta = auth._http_json(f"{base}/.well-known/oauth-authorization-server")
         assert meta["scopes_supported"] == ["data:read"]
 
-        token = auth._http_json(f"{base}/oauth/token", {"grant_type": "refresh_token", "refresh_token": "x", "client_id": "mflowy-cli"})
+        token = auth._http_json(
+            f"{base}/oauth/token", {"grant_type": "refresh_token", "refresh_token": "x", "client_id": "mflowy-cli"}
+        )
         assert token["refresh_token"] == "rf"
 
         get_req, post_req = _OAuthStubHandler.records
@@ -424,3 +460,38 @@ def test_pkce_pair_verifier_length_in_rfc_range():
         verifier, challenge = auth.pkce_pair()
         assert 43 <= len(verifier) <= 128
         assert challenge == auth.pkce_challenge(verifier)
+
+
+# ── 凭据损坏面（fail-loud：损坏 ≠ 未登录）与空 scope 拒绝 ─────────────────────
+
+
+def test_corrupt_credentials_unknown_field_fails_loud(monkeypatch, tmp_path):
+    """盘上凭据含未知字段 = 损坏/篡改信号 → CorruptCredentialsError，不静默过滤。"""
+    _seed_credentials(monkeypatch, tmp_path, evil_extra="x")
+    with pytest.raises(auth.CorruptCredentialsError, match="未知字段"):
+        auth.ensure_access_token()
+
+
+def test_corrupt_credentials_bad_json_fails_loud_but_login_recovers(monkeypatch, tmp_path, caplog):
+    """非法 JSON → ensure 侧 raise（带修复指引）；login 侧 warning 后重新授权覆写恢复。"""
+    _use_credentials(monkeypatch, tmp_path)
+    (tmp_path / "credentials.json").write_text("{not-json", encoding="utf-8")
+
+    with pytest.raises(auth.CorruptCredentialsError, match="损坏"):
+        auth.ensure_access_token()
+
+    _fake_browser(monkeypatch, code="c0de-3")
+    _fake_transport(monkeypatch, scopes_supported=["data:read"], token=_token_response())
+    with caplog.at_level("WARNING", logger="mflowy.utils.auth"):
+        result = auth.login(timeout_seconds=10)  # 非 force：损坏不阻断重新授权
+    assert result["status"] == "logged_in"
+    assert any("损坏" in r.message for r in caplog.records)
+    assert json.loads((tmp_path / "credentials.json").read_text())["refresh_token"] == "rf-new"
+
+
+def test_explicitly_empty_scopes_rejected(monkeypatch, tmp_path):
+    """scopes=[]/'' 是明确收窄意图——拒绝而非静默回退全集（红线 1）。"""
+    _use_credentials(monkeypatch, tmp_path)
+    for empty in ([], ""):
+        with pytest.raises(ValueError, match="空"):
+            auth.login(timeout_seconds=5, scopes=empty)

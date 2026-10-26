@@ -19,7 +19,13 @@ def test_login_delegates_to_auth(monkeypatch):
     monkeypatch.setattr(auth, "login", fake)
     result = tools.login(base_url="http://b:1", scopes=["data:read"], timeout_seconds=7, force=True, device_name="dev")
 
-    assert seen == {"base_url": "http://b:1", "scopes": ["data:read"], "timeout_seconds": 7, "force": True, "device_name": "dev"}
+    assert seen == {
+        "base_url": "http://b:1",
+        "scopes": ["data:read"],
+        "timeout_seconds": 7,
+        "force": True,
+        "device_name": "dev",
+    }
     assert result == {"status": "logged_in", "user_id": "u"}
 
 
@@ -33,6 +39,7 @@ def test_login_defaults_flow_through(monkeypatch):
 
 def test_login_errors_pass_through(monkeypatch):
     """auth 的 fail-loud 异常不被包装吞掉——agent 能拿到 LoginDenied 等原语义。"""
+
     def fake(**_kwargs):
         raise auth.LoginDenied("用户在授权页拒绝了本次登录")
 
