@@ -1649,6 +1649,7 @@ version = "0.2.0"
 source = { editable = "packages/mcp" }
 dependencies = [
     { name = "mflowy-driver" },
+    { name = "mflowy-utils" },
 ]
 
 [package.optional-dependencies]
@@ -1663,6 +1664,7 @@ requires-dist = [
     { name = "agentcat", marker = "extra == 'mcp'", specifier = ">=2.0.2" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=2.0.0" },
     { name = "mflowy-driver", editable = "packages/driver" },
+    { name = "mflowy-utils", editable = "packages/utils" },
     { name = "py-machineid", marker = "extra == 'mcp'", specifier = ">=1.0.0" },
 ]
 provides-extras = ["mcp"]

@@ -7,6 +7,8 @@ license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
     "mflowy-driver",
+    # 平台工具直接消费（file_hash→file、login→auth）；依赖声明完整（红线 6）
+    "mflowy-utils",
 ]
 
 [project.optional-dependencies]
@@ -35,6 +37,7 @@ include = ["mflowy", "pyproject.toml"]
 
 [tool.uv.sources]
 mflowy-driver = { workspace = true }
+mflowy-utils = { workspace = true }
 
 [project.scripts]
 # 双入口重命名：mflowy = CLI（JSON runner，原 cmd）；mflowy-mcp = MCP server（原 mcpSrv）
