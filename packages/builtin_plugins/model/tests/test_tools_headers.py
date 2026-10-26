@@ -100,9 +100,7 @@ def test_headers_none_when_meta_absent():
     provider = RecordingProvider()
     jp.set_job_provider(provider)
 
-    asyncio.run(
-        tools.predict(data="a.csv", model="XGB=abc", ctx=_ctx_with_meta(None))
-    )
+    asyncio.run(tools.predict(data="a.csv", model="XGB=abc", ctx=_ctx_with_meta(None)))
 
     assert provider.calls[0]["headers"] is None
 

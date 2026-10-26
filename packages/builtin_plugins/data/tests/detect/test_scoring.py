@@ -45,14 +45,17 @@ def test_phi_monotone_under_any_error_removal():
     ]
     s0 = quality_score(_report(*base))["score"]
     for i in range(len(base)):
-        s1 = quality_score(_report(*(base[:i] + base[i + 1:])))["score"]
+        s1 = quality_score(_report(*(base[:i] + base[i + 1 :])))["score"]
         assert s1 >= s0, f"移除 {base[i]} 后 Φ 下降（{s0} → {s1}）——奖励非单调"
 
 
 def test_removing_constant_column_is_rewarded():
     """反例一：多常量列删一个——均值口径恒零奖励；求和口径每列计价 weight×1.0。"""
-    s_two = quality_score(_report(DataError(kind="constant", column="a", severity=1.0),
-                                  DataError(kind="constant", column="b", severity=1.0)))["score"]
+    s_two = quality_score(
+        _report(
+            DataError(kind="constant", column="a", severity=1.0), DataError(kind="constant", column="b", severity=1.0)
+        )
+    )["score"]
     s_one = quality_score(_report(DataError(kind="constant", column="a", severity=1.0)))["score"]
 
     assert s_one - s_two == pytest.approx(0.10)  # weight(constant) = 0.10
@@ -60,8 +63,11 @@ def test_removing_constant_column_is_rewarded():
 
 def test_fixing_weaker_collinear_pair_is_not_penalized():
     """反例二：修共线弱对不因剩余强对抬组均值而得负奖励。"""
-    s0 = quality_score(_report(DataError(kind="collinear", column="a", severity=0.9),
-                               DataError(kind="collinear", column="b", severity=0.3)))["score"]
+    s0 = quality_score(
+        _report(
+            DataError(kind="collinear", column="a", severity=0.9), DataError(kind="collinear", column="b", severity=0.3)
+        )
+    )["score"]
     s1 = quality_score(_report(DataError(kind="collinear", column="a", severity=0.9)))["score"]
 
     assert s1 > s0
@@ -69,8 +75,11 @@ def test_fixing_weaker_collinear_pair_is_not_penalized():
 
 def test_filling_low_missing_column_is_not_penalized():
     """反例三：单修低缺失率列不因剩余高缺失列抬组均值而得负奖励。"""
-    s0 = quality_score(_report(DataError(kind="missing", column="a", severity=0.8),
-                               DataError(kind="missing", column="b", severity=0.2)))["score"]
+    s0 = quality_score(
+        _report(
+            DataError(kind="missing", column="a", severity=0.8), DataError(kind="missing", column="b", severity=0.2)
+        )
+    )["score"]
     s1 = quality_score(_report(DataError(kind="missing", column="a", severity=0.8)))["score"]
 
     assert s1 > s0

@@ -117,7 +117,10 @@ _GOOD_STRUCTURE = {"cat_support": "native", "scaling_need": False, "min_samples"
             "scaling_need",
         ),  # structure 缺键
         (
-            {"structure": {"cat_support": "maybe", "scaling_need": False, "min_samples": 30}, "machinery": lambda *a: None},
+            {
+                "structure": {"cat_support": "maybe", "scaling_need": False, "min_samples": 30},
+                "machinery": lambda *a: None,
+            },
             "native",
         ),  # cat_support 值域
         (
