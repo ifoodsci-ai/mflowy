@@ -1,7 +1,7 @@
 [project]
 name = "mflowy-model"
 version = "0.2.0"
-description = "MFlowy model domain — x_y / cross_validation / x_transformer / model / plots(evaluation+interpretability)（建模训练 MDP 的动作域）"
+description = "MFlowy model domain — x_y / cross_validation / x_transformer / model / plots(evaluation+interpretability)（建模训练 POMDP 的动作域）"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"

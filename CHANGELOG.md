@@ -99,6 +99,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   StrictUndefined 下 env 缺键即 fail-loud。`test_ns_return_contract.py` 编译测试
   env 补两键，并断言渲染值真进了节点 params（取非默认值 200/7 钉住渲染行为，
   恰等于默认值的断言钉不住）。
+### Changed（术语统一 MDP→POMDP）：两域会话 prose 全量改称 POMDP
+
+- 术语权威 CONTEXT.md 会话词条改称 **POMDP** 并增可观测性界定：引擎簿记态（光标/
+  账本/预算）对 π 全可见，环境真态部分可见——可观测性以域观测函数覆盖面为界
+  （清洗 = 检测算子族、建模 = diagnose/规则面；态混叠），终局 U 依赖观测未含的态
+  （「干净但不可学」即其症状）；MDP 入词条 _Avoid_（旧称）
+- 全库 prose 清扫：AGENTS / 根 README / 两域 README（新增「会话 POMDP 元素表
+  （O/S/A/P·T/R）」——各域五元组定义与居所锚点）/ driver README / skills ×5 /
+  docs（research-flow / roadmap）/ 代码 docstring 与模板注释 / pyproject 包描述；
+  活性文档零 "MDP" 残留由 `test_workspace` 断言钉住（防回潮）
+- **代码锚点**：`mdp_session` 模块随术语统一改名 `pomdp.py`（import 面 `mflowy.driver.pomdp`；
+  rules.pkl 等盘上件引用 `rule.py` 与域规则模块的类路径，均未移动——存量会话不受影响）；`MDPSessionHandle`、
+  `.mdp_family` 声明键等标识符保持原名（SDK 面最小破坏）；kaggle 外环 skill 的「外环 MDP」为该 skill
+  自身的形式化设计词，不在清扫面
+- 本 unreleased 区历史条目措辞随之统一（已发布版本不动——追加式纪律）
+
 ### Changed（#58）：model 会话引擎收敛——headers 契约单源自省 + 族目录准入校验 + 陈账清理
 
 - **JobProvider headers 契约清单从 Protocol 自省单源生成**：工具×方法清单、样本
@@ -117,7 +133,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   注入——会话恒单目标）；registry 陈账清理（families() docstring 已退役资源轴
   描述删除）
 
-### BREAKING（#65）：清洗 MDP 度量层修复——Φ 单调化 + 先验观测 + dry_run 退役
+### BREAKING（#65）：清洗 POMDP 度量层修复——Φ 单调化 + 先验观测 + dry_run 退役
 
 - **Φ 聚合按 kind 均值改求和**：消除任何缺陷都使质量分不降（单调奖励）——三反例
   （删常量列/修共线弱对/单修低缺失列）钉成回归测试；数值整体下移、定义域放开为
@@ -137,11 +153,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   稳健档 vs 正态档的选择从标签变读数
 - 会话 finish 的终态质量分与回路同尺（卡权重 `defect_priority` 全程生效）
 - 剧本引用面谓词入 AGENTS.md：操作 skill 参考节只允许工具名与入仓文档
-  （clean skill 的实现路径引用已删除）；两份被剧本引用的 MDP 设计快照
+  （clean skill 的实现路径引用已删除）；两份被剧本引用的 POMDP 设计快照
   （`docs/research/2026-10-09-{cleaning,modeling}-mdp-design.md`）随 .gitignore
   反向规则入仓（M11 引用文档入仓），`test_workspace` 增文档引用面断链测试
 
-### BREAKING：规则引擎重构——散落规则聚合到实例（Rule/Activation/RuleEngine + load/save 纯函数落盘），两域 MDP 统一 fire/poll 入口
+### BREAKING：规则引擎重构——散落规则聚合到实例（Rule/Activation/RuleEngine + load/save 纯函数落盘），两域 POMDP 统一 fire/poll 入口
 
 - **实例门面取代节点属性挂载**：规则 = 实现 `driver.rule.Rule` 协议的对象（`key` 身份 +
   `propose(R) -> list[Activation]`），经 `RuleEngine.register(*rules)` 聚合；`fire(*keys, R)`
@@ -463,7 +479,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   写入）；test_workspace 增 **M11 断言**（SKILL 反引号调用形引用 ⊆ tools/list ∪
   运行期节点/动作面词表——剧本改名漂移即测试红）
 
-### BREAKING：modeling MDP 升级收尾——回路状态机重构 + 输入面结构化 + 观察面与终局报告（#62/#63/#64/#34/#35/#36/#38）
+### BREAKING：modeling POMDP 升级收尾——回路状态机重构 + 输入面结构化 + 观察面与终局报告（#62/#63/#64/#34/#35/#36/#38）
 
 - **#62 回路与状态机重构（BREAKING）**：s = 光标（m/H/h_space/seed/F）+ 账本（per
   (family,F) 条目，真源 = 盘上 sqlite study——append-only）+ history；动作面从「族名
@@ -533,7 +549,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **fire/prioritize 门面**：`fire(findings, ctx, nodes)` 纯函数（节点集显式注入、零目录查询）
   → `FireResult(candidates, skipped, unconsumed)`（findings 消费闭环）；`prioritize(cands,
   overrides)` 委托人权重覆盖 + `_score` 分解进 evidence（排序可审计）
-- 候选契约复用 `mdp_session.verify_candidate` 单源；声明/挂载/输出 fail-loud 七路契约测试
+- 候选契约复用 `pomdp.verify_candidate` 单源；声明/挂载/输出 fail-loud 七路契约测试
 
 ### BREAKING：data 域评审落地——kind 分类学门守 + 检测正交化 + 观测去冗余（#51 阶段一 + B1）
 
@@ -741,7 +757,7 @@ std ddof 口径分歧从事故变结构）/ 执行归命名原子 / 映射归 `.
   消费方扩为 detect/clean/statistic 三家
 - `effect_size` 退役时序：随 #28（应用层）模板改写同批收口——模板仍引用，本批不删
 
-### Changed（BREAKING — load 遥测隐式清洗退役：三黑盒动作白盒化进 MDP 回路）
+### Changed（BREAKING — load 遥测隐式清洗退役：三黑盒动作白盒化进 POMDP 回路）
 
 - `log_load_profile` 中间件删除（审计逃逸闭合：删全空行/删全空列/删常量列三动作曾
   只走 stderr logger、先于 detect 执行使 constant 缺陷在 DAG 侧结构性不可见）——
@@ -750,7 +766,7 @@ std ddof 口径分歧从事故变结构）/ 执行归命名原子 / 映射归 `.
   drop_missing_rows 增 empty_row 候选档（`{"how": "all"}` 零信息行清理）；
   drop_cols 增 missing 候选档（率≥80% 高缺失列整列删——兑现退役 drop_missing 时
   "阈值判断上移候选层"的迁移承诺，全空列 rate=1.0 自然入选）；常量列走既有 constant 档
-- 中间件的内部执行顺序（先删空行再判常量）成为显式 MDP 序贯两步：空行在场时
+- 中间件的内部执行顺序（先删空行再判常量）成为显式 POMDP 序贯两步：空行在场时
   nunique(dropna=False) 不认常量，删行后常量浮现——决策顺序从黑盒顺序变为
   agent 可见可回滚的步序
 - scoring 补 empty_row 权重 0.10
@@ -802,7 +818,7 @@ std ddof 口径分歧从事故变结构）/ 执行归命名原子 / 映射归 `.
 
 ### Changed（BREAKING — model.auto 节点退役）
 
-- **`model.auto` 删除（词表 65→64）**：内嵌 beam π 与「决策权放行 LLM」冲突——建模 MDP
+- **`model.auto` 删除（词表 65→64）**：内嵌 beam π 与「决策权放行 LLM」冲突——建模 POMDP
   以会话引擎（modeling_session）落地，beam 降级为参考策略的历史使命完成；其搜索机器
   （fast 配置表/结构组装/相容性）抽入 `mflowy.model.registry` 供会话与候选生成共用；
   直接测试随节点退役，相容性契约由 `test_registry.py` 承接
@@ -815,7 +831,7 @@ std ddof 口径分歧从事故变结构）/ 执行归命名原子 / 映射归 `.
 
 ### Changed（BREAKING — 域即包：mflowy-builtin-plugins 拆分为 mflowy-data / mflowy-model）
 
-- **`mflowy-builtin-plugins` 退役，按 MDP 域拆为两 distribution**（六 dist 锁步）：`mflowy-data`（数据域：loaders/statistic/detect/cleaners + EDA 图 + DomainCard/TASKTYPE——任务类型=target 列数据事实，随产生侧居住）与 `mflowy-model`（建模域：x_y/cross_validation/x_transformer/model + 评估/解释图）；依赖链 `utils ← driver ← data ← model ← mcp` 单向，**data 不得 import model**（测试断言）；共享件归上游（RANDOM_STATE→utils、plots 主题基座→data、middlewares 按消费面拆分）
+- **`mflowy-builtin-plugins` 退役，按 POMDP 域拆为两 distribution**（六 dist 锁步）：`mflowy-data`（数据域：loaders/statistic/detect/cleaners + EDA 图 + DomainCard/TASKTYPE——任务类型=target 列数据事实，随产生侧居住）与 `mflowy-model`（建模域：x_y/cross_validation/x_transformer/model + 评估/解释图）；依赖链 `utils ← driver ← data ← model ← mcp` 单向，**data 不得 import model**（测试断言）；共享件归上游（RANDOM_STATE→utils、plots 主题基座→data、middlewares 按消费面拆分）
 - **extras 降格为域选择器，`[stats]`/`[modeling]` 退役**：`mflowy[data]`/`[model]`/`[mcp]`/`[deep]`；数据栈与 CPU 建模栈（sklearn/boosters/optuna/shap）成为域包**硬依赖**——装包即得完整域，裸装词表=已安装能力；**唯一可选 extra = model 包 `[deep]`**（torch/pytorch-lightning，MLP flavor，uvx 需 CPU 索引）；`mflowy[model]` 从此干净安装不碰 torch 索引；psycopg2-binary / iterative-stratification / numba / llvmlite 显式声明随批退役（全仓零 import：postgres 直连与 multilabel 切分为用户侧/未来需求，numba/llvmlite 由 shap 传递依赖）
 - 两域包 entry points 共投 `mflowy.builtin_plugins` 组（组名不变，discover 零改动）；`list_nodes` 缺依赖降级面收缩至 `[deep]` 一档
 
@@ -858,8 +874,8 @@ std ddof 口径分歧从事故变结构）/ 执行归命名原子 / 映射归 `.
   计划重放（Builder 全量执行 = 会话终态同一语义）`tests/test_research_flow_e2e.py`
 
 - **``list_nodes`` 缺依赖降级**：节点模块或其边探针 import 失败（缺 extra）时降级裸名 + warning——词表完整列出而非整查询崩掉（对齐目录命题「不静默消失」）；双入口守卫的契约测试随批
-- **自主研究流（两个隔离 MDP，π 在 LLM 的会话版）**：建档问卷 + 自主清洗 + 自主建模——
-  - 清洗 MDP 会话引擎 `packages/mcp/mflowy/mcp/cleaning_session.py`（环境面：转移/观测/
+- **自主研究流（两个隔离 POMDP，π 在 LLM 的会话版）**：建档问卷 + 自主清洗 + 自主建模——
+  - 清洗 POMDP 会话引擎 `packages/mcp/mflowy/mcp/cleaning_session.py`（环境面：转移/观测/
     奖励/预算，π 在调用方 LLM）+ 五工具 `clean_session_start` / `clean_propose` /
     `clean_apply`（dry_run 预览）/ `clean_rollback` / `clean_finish`：parquet 版本树快照、
     守卫（never_drop 列存活、目标列值禁改）、免费观测（每步 diff + 缺陷清单 + 质量分差分，
@@ -869,16 +885,16 @@ std ddof 口径分歧从事故变结构）/ 执行归命名原子 / 映射归 `.
   - survey skill（`.agents/skills/survey/`，**非节点**）：两段式建档问卷（核心五问 +
     证据接地深问，"你不出清洗决策"）；`compile_survey` 工具把答案编译为 `DomainCard`
     （列引用/物理范围 fail-loud 校验）；`read_artifact` parquet token 友好钻取
-  - `model.auto`：建模 MDP 搜索版节点（beam：类别编码 × 数值缩放 × 模型族 + EVAL 两档——
+  - `model.auto`：建模 POMDP 搜索版节点（beam：类别编码 × 数值缩放 × 模型族 + EVAL 两档——
     mini = 快速配置 inner-CV 不触 test 不进 mlflow；full = 委派真实 model 族节点全量训练，
     TPE + holdout 唯一触碰 + ModelLoader + 遥测全复用；建档卡 ID 列自动剔除防泄漏）——
-    定位为参考策略，会话化（modeling_session）落地后退役，见 roadmap「两 MDP 优化」
+    定位为参考策略，会话化（modeling_session）落地后退役，见 roadmap「两 POMDP 优化」
   - 新增 detect 缺陷算子族：`detect.missing` / `detect.duplicates` / `detect.outliers` /
     `detect.pattern`（stringly-numeric 单位污染），统一错误契约 `ErrorReport`
-    （kind/位置/严重度/证据，行号采样封顶）+ `quality_score` 规则加权质量分（清洗 MDP 的 R 侧）
+    （kind/位置/严重度/证据，行号采样封顶）+ `quality_score` 规则加权质量分（清洗 POMDP 的 R 侧）
   - 新增清洗动作节点：`clean.drop_duplicates`（按行去重，first/last/none）、
     `clean.range_clip`（物理范围裁剪，问卷 expected_ranges 消费端）
-  - 端到端装配测试（会话清洗 → 冻结 → 建模 MDP DAG）
+  - 端到端装配测试（会话清洗 → 冻结 → 建模 POMDP DAG）
     `packages/builtin_plugins/tests/autoflow/test_end_to_end_flow.py`；设计快照
     `docs/research/2026-10-09-cleaning-mdp-design.md` / `2026-10-09-modeling-mdp-design.md`
 

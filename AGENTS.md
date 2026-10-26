@@ -35,14 +35,14 @@ uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 | 层     | 位置                              | 职责                                                       |
 | ------ | --------------------------------- | ---------------------------------------------------------- |
 | MCP    | `packages/mcp/mflowy/mcp/`        | 工具注册面、stdio server、runner、遥测                     |
-| Data   | `packages/builtin_plugins/data/mflowy/data/`      | 清洗 MDP 动作域（load/statistic/detect/clean/plot + DomainCard） |
-| Model  | `packages/builtin_plugins/model/mflowy/model/`    | 建模 MDP 动作域（x_y/cv/x_transformer/model + plot——cv 族 = split 参数构建/load 引用加载）+ JobProvider + diagnose/report 观察面 |
-| Driver | `packages/driver/mflowy/driver/`  | YAML→DAG 编译调度、@handler/@edge 插件 SDK、MDP 会话基座、规则引擎 SDK |
+| Data   | `packages/builtin_plugins/data/mflowy/data/`      | 清洗 POMDP 动作域（load/statistic/detect/clean/plot + DomainCard） |
+| Model  | `packages/builtin_plugins/model/mflowy/model/`    | 建模 POMDP 动作域（x_y/cv/x_transformer/model + plot——cv 族 = split 参数构建/load 引用加载）+ JobProvider + diagnose/report 观察面 |
+| Driver | `packages/driver/mflowy/driver/`  | YAML→DAG 编译调度、@handler/@edge 插件 SDK、POMDP 会话基座、规则引擎 SDK |
 | Utils  | `packages/utils/mflowy/utils/`    | mlflow seam、OAuth 2.1 客户端（login/token 库）、脚本安全扫描、capture/path/logging/jinja |
 
-依赖方向保持单向：utils ← driver ← data ← model ← mcp（内核零域感知、两 MDP 域隔离——`tests/test_workspace.py` 断言，改动 import 保持全绿）。模块内相对导入、跨模块绝对导入。
+依赖方向保持单向：utils ← driver ← data ← model ← mcp（内核零域感知、两 POMDP 域隔离——`tests/test_workspace.py` 断言，改动 import 保持全绿）。模块内相对导入、跨模块绝对导入。
 
-工具六组共 33 个（真源 = `tools/list`）：平台 9（info 3 + mlflow 观测 4 + 会话回收 1 + 登录 1，本地）；本地分析 5（`data_profile`/`eda`/`propose_questions`/`draw_taylor_diagram`/`modeling_report_skeleton`）；YAML 预检 1（`validate_modeling_steps`）；compute 5（`hyperparameters_search`/`modeling`/`explanation`/`predict`/`inverse_optimization`，经 JobProvider 委派，协议在 model 包）；MDP 会话 13（`clean_*`×6 + `modeling_*`×7——含 `modeling_report_findings`，引擎在两域 session 模块，动作面 = modeling 八动作面）。
+工具六组共 33 个（真源 = `tools/list`）：平台 9（info 3 + mlflow 观测 4 + 会话回收 1 + 登录 1，本地）；本地分析 5（`data_profile`/`eda`/`propose_questions`/`draw_taylor_diagram`/`modeling_report_skeleton`）；YAML 预检 1（`validate_modeling_steps`）；compute 5（`hyperparameters_search`/`modeling`/`explanation`/`predict`/`inverse_optimization`，经 JobProvider 委派，协议在 model 包）；POMDP 会话 13（`clean_*`×6 + `modeling_*`×7——含 `modeling_report_findings`，引擎在两域 session 模块，动作面 = modeling 八动作面）。
 
 插件身份静态声明：`@handler(namespace=...)` 标记（裸命名参数=参数边，Annotated=用户可配）+ 域包 pyproject `[project.entry-points."mflowy.builtin_plugins"]` 手写条目（0.2.0 起构建期 AST 扫描钩子退役，与第三方包声明方式同构），运行期 `driver/discover.py` 按元数据解析——声明与装饰器的一致性由 CR 交叉检查兜底（见「添加能力」）。
 

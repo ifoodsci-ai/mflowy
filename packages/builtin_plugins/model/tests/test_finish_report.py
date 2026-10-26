@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-from mflowy.driver.mdp_session import verify_verdict
+from mflowy.driver.pomdp import verify_verdict
 from mflowy.model import session as ms
 from mflowy.model.tools import draw_taylor_diagram, modeling_finish, modeling_report_skeleton
 

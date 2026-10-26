@@ -1,4 +1,4 @@
-"""清洗 MDP 会话引擎契约:apply/snapshot/rollback + 候选生成 + 决策日志 + 预算。
+"""清洗 POMDP 会话引擎契约:apply/snapshot/rollback + 候选生成 + 决策日志 + 预算。
 
 环境面(转移/观测/奖励)在引擎;π 在调用方(agent 经 MCP 工具驱动)——检测与修复
 分离、内生质量奖励、never_drop 守卫、目标列禁改。
@@ -345,7 +345,7 @@ def test_whitebox_loop_covers_load_hygiene(sessions_root, tmp_path):
 
     相一：全空行(empty_row)与全空列(missing 1.0)同屏出候选;常量列因空行在场
     (nunique(dropna=False) 把 NaN 计为一个值)暂不报——中间件的内部执行顺序
-    (先删空行再判常量)变成显式的 MDP 两步;问卷认领列不入候选。
+    (先删空行再判常量)变成显式的 POMDP 两步;问卷认领列不入候选。
     相二：删空行后 const 列的常量缺陷浮现。
     """
     df = pd.DataFrame(
@@ -430,7 +430,7 @@ def test_budget_stops_apply(sessions_root, dirty_csv):
 def test_real_responses_satisfy_mdp_contract(sessions_root, dirty_csv):
     """#30 合规：#29 契约校验器跑真实响应——契约的牙齿在域侧咬合
     （clean 会话 = 会话 SDK 的活参考实现）。"""
-    from mflowy.driver.mdp_session import verify_candidate, verify_observation, verify_verdict
+    from mflowy.driver.pomdp import verify_candidate, verify_observation, verify_verdict
 
     verify_observation(cs.start_session(dirty_csv, card=CARD))  # reward=None 白名单
     s = cs.start_session(dirty_csv, card=CARD)

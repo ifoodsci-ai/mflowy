@@ -71,7 +71,7 @@ _Avoid_: 环境容器、执行上下文、DI 容器
 ### 会话与域（0.2.0）
 
 **域包（domain package）**:
-按 MDP 域切分的能力包：`mflowy-data`（load/statistic/detect/clean + 清洗会话）、
+按 POMDP 域切分的能力包：`mflowy-data`（load/statistic/detect/clean + 清洗会话）、
 `mflowy-model`（x_y/cv/x_transformer/model + 建模会话——cv 族 = cv.split 参数构建 /
 cv.load 引用加载，下游经 `cv` namespace 参数消费）。依赖单向
 data ← model；安装形态即域选择（`mflowy[data]` / `mflowy[model]`）。两包住分组目录
@@ -85,14 +85,17 @@ builtin_plugins 只作分组目录名与 entry points 组名使用）
 schema），host（server/runner）发现并包装。镜像测试断言 entry points ≡ 工具模块公有函数。
 
 **会话（session）**:
-MDP 的环境面载体：转移/观测/奖励/预算在域包，π 在调用方（LLM）。清洗会话与建模会话
+POMDP 的环境面载体：转移/观测/奖励/预算在域包，π 在调用方（LLM）。可观测性以域
+观测函数覆盖面为界（清洗 = 检测算子族、建模 = diagnose/规则面）——引擎簿记态对
+π 全可见，环境真态部分可见（态混叠；终局 U 依赖观测未含的态）。清洗会话与建模会话
 各持版本树与决策日志 (s,a,r,s′)，终态导出可全量重放的计划。协议/先验在 episode 内冻结。
 回合步数（`Observation.steps`/`max_steps`）是会话预算计数，与 flow 词条的退役词
 "steps"（YAML 控制结构旧称）不同物。
-_Avoid_: 环境引擎（与 runner 混淆）
+_Avoid_: 环境引擎（与 runner 混淆）；MDP（0.2.0 起的旧称——prose 统一 POMDP，模块随术语
+改名 `pomdp.py`；代码锚点 `MDPSessionHandle`/`.mdp_family` 为标识符不随术语改名）
 
 **先验卡（DomainCard）/ 协议卡（CVCard）**:
-两个 MDP 的冻结输入：先验卡 = 数据域先验（target/id_columns/单位/范围/protected，survey
+两个 POMDP 的冻结输入：先验卡 = 数据域先验（target/id_columns/单位/范围/protected，survey
 问卷经 compile_survey 编译）；协议卡 = 建模域对局规则（task/metric/CV/预算/约束，
 model-brief 问卷编译）。协议卡的引擎入参形态（#66）：cv_card = cv.split 配置 yaml
 明文（划分构建参数）+ start 显式参数（target/task/metric/candidates/max_steps/
