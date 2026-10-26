@@ -10,6 +10,10 @@ from typing import Protocol
 
 from mflowy.driver.dag import DAGResult
 
+# headers 形参的共享类型（请求 _meta 直传；runner 场景恒 None）——protocol/local
+# 两处签名单源引用（#58），工具包装侧的 ctx 提取语义见 tools.py docstring
+type Headers = Mapping[str, str] | None
+
 
 class JobProvider(Protocol):
     """Modeling 工具的执行策略接口。"""
@@ -20,7 +24,7 @@ class JobProvider(Protocol):
         modeling_steps: str,
         name: str,
         desc: str,
-        headers: Mapping[str, str] | None = None,
+        headers: Headers = None,
     ) -> DAGResult: ...
 
     async def modeling(
@@ -31,7 +35,7 @@ class JobProvider(Protocol):
         desc: str,
         experiment_id: str | None = None,
         prune_missing: bool = False,
-        headers: Mapping[str, str] | None = None,
+        headers: Headers = None,
     ) -> DAGResult: ...
 
     async def explanation(
@@ -42,7 +46,7 @@ class JobProvider(Protocol):
         name: str,
         desc: str,
         lowess_frac: float = 0.3,
-        headers: Mapping[str, str] | None = None,
+        headers: Headers = None,
     ) -> DAGResult: ...
 
     async def predict(
@@ -50,7 +54,7 @@ class JobProvider(Protocol):
         *,
         data: str,
         model: str,
-        headers: Mapping[str, str] | None = None,
+        headers: Headers = None,
     ) -> DAGResult: ...
 
     async def inverse_optimization(
@@ -63,5 +67,5 @@ class JobProvider(Protocol):
         cross_rules: str | None = None,
         n_trials: int = 10000,
         seed: int = 42,
-        headers: Mapping[str, str] | None = None,
+        headers: Headers = None,
     ) -> DAGResult: ...
