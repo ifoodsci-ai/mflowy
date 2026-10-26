@@ -8,8 +8,11 @@ seam（公共接口，2026-10 重构定案）：
 - ``fire(*keys, R)``：按 key 激活（空 = 全部；未知 key fail-loud），产出
   ``Activation``，连续 fire 在实例内累积
 - ``poll_proposals()``：聚合 + 记分牌序（salience 降序，同分 rule_key 字典序）+ 排空
-- ``open_engine(path, default=...)``：盘上有 pkl 则加载，否则从默认实例复制
-  （激活态清空）；with 正常退出原子落盘，异常不落盘
+- 落盘 = 纯函数对（引擎不持路径状态）：``load_rule_engine(path)``（缺文件 →
+  None；损坏/异类 → raise 带路径）+ ``save_rule_engine(path, engine)``（dumps 后
+  ``write_bytes_atomic``）；``rule_engine_rwa(path, default)`` 四行门面——盘上
+  有则加载、缺则默认实例直接作工作实例（无克隆），with 正常退出整体落盘、
+  异常不落盘
 """
 
 import pytest
@@ -149,75 +152,72 @@ def test_fire_fail_loud_on_malformed_activation():
         engine4.fire(R={})
 
 
-# ── 落盘：save/load/copy + open_engine ─────────────────────────────────────
+# ── 落盘：load/save 纯函数 + rule_engine_rwa 门面（引擎零路径状态） ─────────
 
 
-def test_open_engine_fresh_path_copies_default_and_saves_on_exit(tmp_path):
-    """盘上无 pkl：从默认实例复制（激活态清空）；with 正常退出原子落盘。"""
-    from mflowy.driver.rule import RuleEngine, open_engine
+def test_rwa_fresh_path_yields_default_and_saves_on_exit(tmp_path):
+    """盘上无 pkl：默认实例直接作工作实例（草案语义，无克隆——调用方传干净模板）；
+    with 正常退出原子落盘。"""
+    from mflowy.driver.rule import RuleEngine, rule_engine_rwa
 
     default = RuleEngine().register(_EchoRule("a"), _EchoRule("b"))
-    default.fire(R={})  # 默认实例被误点火也不得带进会话实例
-
     pkl = tmp_path / "rules.pkl"
-    with open_engine(pkl, default=default) as engine:
-        assert sorted(engine.rules) == ["a", "b"]
-        assert engine.poll_proposals() == []  # 激活态清空
+    with rule_engine_rwa(str(pkl), default) as engine:
+        assert engine is default  # 无克隆：pkl 缺席即默认实例本体
         engine.fire(R={})
-    assert pkl.exists() and not pkl.with_name(f".{pkl.name}.tmp").exists()  # 原子：无点前缀 tmp 残留
+    assert pkl.exists() and not (tmp_path / f".{pkl.name}.tmp").exists()  # 原子：无点前缀 tmp 残留
 
 
-def test_open_engine_loads_custom_rules_and_pending_activations(tmp_path):
+def test_rwa_loads_custom_rules_and_pending_activations(tmp_path):
     """盘上有 pkl：加载实例——运行期注册的自定义规则与未 poll 激活态跨调用存活。"""
-    from mflowy.driver.rule import RuleEngine, open_engine
+    from mflowy.driver.rule import RuleEngine, rule_engine_rwa
 
     default = RuleEngine().register(_EchoRule("a"))
     pkl = tmp_path / "rules.pkl"
 
-    with open_engine(pkl, default=default) as engine:
+    with rule_engine_rwa(str(pkl), default) as engine:
         engine.register(_CustomRule("custom.x", salience=7))
         engine.fire("custom.x", R={})  # 不 poll——挂起态落盘
 
-    with open_engine(pkl, default=default) as engine:
+    with rule_engine_rwa(str(pkl), default) as engine:
         assert "custom.x" in engine.rules
-        acts = engine.poll_proposals()
-        assert [a.rule_key for a in acts] == ["custom.x"]  # 挂起激活态恢复
+        assert [a.rule_key for a in engine.poll_proposals()] == ["custom.x"]  # 挂起激活态恢复
 
-    with open_engine(pkl, default=default) as engine:
+    with rule_engine_rwa(str(pkl), default) as engine:
         assert engine.poll_proposals() == []  # 上一轮已 poll 排空并落盘
 
 
-def test_open_engine_exception_no_save(tmp_path):
+def test_rwa_exception_no_save(tmp_path):
     """with 内异常：异常透传且不落盘（事务性——失败调用零副作用）。"""
-    import pytest as _pytest
-    from mflowy.driver.rule import RuleEngine, open_engine
+    from mflowy.driver.rule import RuleEngine, rule_engine_rwa
 
     default = RuleEngine().register(_EchoRule("a"))
     pkl = tmp_path / "rules.pkl"
-    with _pytest.raises(RuntimeError, match="boom"):
-        with open_engine(pkl, default=default) as engine:
+    with pytest.raises(RuntimeError, match="boom"):
+        with rule_engine_rwa(str(pkl), default) as engine:
             engine.register(_EchoRule("custom"))
             raise RuntimeError("boom")
     assert not pkl.exists()
 
 
-def test_open_engine_fail_loud_on_corrupt_pkl(tmp_path):
-    """损坏 pkl：fail-loud 带路径与成因，不静默重建默认。"""
-    from mflowy.driver.rule import RuleEngine, open_engine
+def test_load_rule_engine_missing_none_corrupt_fail_loud(tmp_path):
+    """load 纯函数契约：缺文件 → None（回退归调用方）；损坏/异类 → raise 带路径
+    （不静默重建默认——自定义规则不允许被静默换掉）。"""
+    from mflowy.driver.rule import RuleEngine, load_rule_engine
 
     pkl = tmp_path / "rules.pkl"
+    assert load_rule_engine(str(pkl)) is None  # 缺文件：None，非异常
+
     pkl.write_bytes(b"\x80\x04 not-a-pickle")
     with pytest.raises(RuntimeError, match=r"rules\.pkl"):
-        open_engine(pkl, default=RuleEngine()).__enter__()
+        load_rule_engine(str(pkl))
 
+    pkl.write_bytes(b"")  # 可 pickle 但异类内容
+    import pickle as _pickle
 
-def test_salience_shared_scale_keeps_order():
-    """记分牌单源：weight×severity 保序映 int（两域共用，近并列取整可并列）。"""
-    from mflowy.driver.rule import salience
-
-    assert salience(1.2, 0.5) == 600_000
-    assert salience(0.35, 1.0) > salience(0.10, 1.0)  # 权重序保持
-    assert salience(0.35, 0.0) == 0  # 无证据 = 零证据强度
+    pkl.write_bytes(_pickle.dumps({"not": "an engine"}))
+    with pytest.raises(TypeError, match="RuleEngine"):
+        load_rule_engine(str(pkl))
 
 
 def test_save_fail_loud_on_unpicklable_rule_zero_file_effect(tmp_path):
@@ -230,8 +230,10 @@ def test_save_fail_loud_on_unpicklable_rule_zero_file_effect(tmp_path):
         def propose(self, R):  # pragma: no cover - 替身不被调用
             return []
 
+    from mflowy.driver.rule import save_rule_engine
+
     pkl = tmp_path / "rules.pkl"
-    engine = RuleEngine(path=str(pkl)).register(_Local())
+    engine = RuleEngine().register(_Local())
     with pytest.raises(AttributeError, match="local"):
-        engine.save()
+        save_rule_engine(str(pkl), engine)
     assert not pkl.exists() and not (tmp_path / f".{pkl.name}.tmp").exists()

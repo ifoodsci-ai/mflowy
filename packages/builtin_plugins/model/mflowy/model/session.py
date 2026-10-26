@@ -1170,12 +1170,12 @@ def _plan_yaml(m: dict, key: str, final_params: dict | None = None) -> str:
 
 
 def propose_actions(session_id: str) -> list[dict]:
-    """菜单（pull-only，规则引擎实例统一入口）：findings 驱动层（open_engine →
+    """菜单（pull-only，规则引擎实例统一入口）：findings 驱动层（rule_engine_rwa →
     fire/poll，salience 记分牌序浮于顶部）+ 基座谓词机层（类型可用(s) ∧ 参数
     合法(s,a)——策展序）。
 
     - findings 驱动：modelRuleEngine 默认实例注册族级/FE 规则（propose_rules）；
-      会话实例经 open_engine 从盘加载/复制（自定义规则 pkl 持载）；fold_std →
+      会话实例经 rule_engine_rwa 整读→用→整写（自定义规则 pkl 持载）；fold_std →
       加深（n_trials 门控回归防线）；complexity_edge / overfit_gap → 正则收窄/
       pin（族自声明 .regularizers）；slice_collapse → 类别权重提示；
       error_concentrated → FE 换档；无 leader（S 无模型信息）时 FE 候选零出现
@@ -1187,7 +1187,7 @@ def propose_actions(session_id: str) -> list[dict]:
     """
     import logging
 
-    from mflowy.driver.rule import open_engine
+    from mflowy.driver.rule import rule_engine_rwa
     from mflowy.model import propose_rules
 
     store = _store()
@@ -1224,8 +1224,8 @@ def propose_actions(session_id: str) -> list[dict]:
         "fe_slots_ok": fe_slots_ok,
     }
     # 会话实例从盘加载/复制（默认 = modelRuleEngine 注册面；自定义规则 pkl 持载）
-    with open_engine(
-        str(store.session_dir(session_id) / "rules.pkl"), default=propose_rules.default_engine()
+    with rule_engine_rwa(
+        str(store.session_dir(session_id) / "rules.pkl"), propose_rules.default_engine()
     ) as engine:
         engine.fire(R={"findings": findings, "ctx": ctx})
         activations = engine.poll_proposals()

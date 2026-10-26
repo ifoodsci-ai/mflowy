@@ -3,7 +3,7 @@
 散落在词表节点上的修复知识（知识随词汇主人居住）经 ``RepairRule`` 适配器
 聚合到引擎实例上——统一两域对规则引擎的使用姿势（fire/poll/落盘，见
 ``driver.rule``）。默认实例每次现建（词表 entry points 现算零缓存——插件
-热装与测试替身即刻可见）；会话实例经 ``open_engine`` 从盘加载/复制，pkl
+热装与测试替身即刻可见）；会话实例经 ``rule_engine_rwa`` 整读→用→整写，pkl
 持载运行期注册的自定义规则。``R`` 触发上下文 = ``{"defects": ErrorReport,
 "card": DomainCard, "df": 当前数据}``——检测算子输出直灌规则。
 """

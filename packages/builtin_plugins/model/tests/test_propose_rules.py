@@ -2,7 +2,7 @@
 
 - report_findings 控制面：schema 校验（kind ⊆ 词表/severity ∈ [0,1]/未知键拒绝）、
   落诊进 models[key]、决策日志审计；propose 对规则与 LLM findings 均匀聚合
-- 规则引擎实例（driver.rule.RuleEngine + open_engine 落盘）：modelRuleEngine
+- 规则引擎实例（driver.rule.RuleEngine + load/save 纯函数落盘）：modelRuleEngine
   默认实例注册族级/FE 规则（propose_rules）；findings 驱动层浮于菜单顶部；
   fold_std 门控加深（无 n_trials 族不出）；无 leader → FE 候选零出现（规则
   资格内联）；排序确定性（salience 降序，同分 rule_key 字典序）
@@ -97,13 +97,13 @@ def test_default_engine_subscribes_exactly_known_finding_kinds():
 
 def test_engine_pkl_persisted_in_session_dir(searched, sessions_root):
     """会话实例落盘：propose 后 session 目录有 rules.pkl，可再加载（自定义规则持载面）。"""
-    from mflowy.driver.rule import open_engine
+    from mflowy.driver.rule import rule_engine_rwa
 
     s = searched
     ms.propose_actions(s["session_id"])
     pkl = sessions_root / s["session_id"] / "rules.pkl"
     assert pkl.exists()
-    with open_engine(str(pkl), default=propose_rules.default_engine()) as engine:
+    with rule_engine_rwa(str(pkl), propose_rules.default_engine()) as engine:
         assert engine.rules  # 盘上实例注册面完整
 
 

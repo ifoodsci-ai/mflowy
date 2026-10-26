@@ -455,8 +455,8 @@ def rollback(session_id: str, to_version: int) -> dict:
 
 def propose_actions(session_id: str) -> list[dict]:
     """候选聚合（规则引擎实例统一入口）：词表 ``.repair`` 知识聚合在
-    cleanRuleEngine 默认实例上（``repair_rules``），会话实例经 ``open_engine``
-    从盘加载/复制（自定义规则 pkl 持载，激活态清空起步）。
+    cleanRuleEngine 默认实例上（``repair_rules``），会话实例经 ``rule_engine_rwa``
+    整读→用→整写（缺 pkl 时默认实例直接作工作实例；自定义规则 pkl 持载）。
 
     fire 全量激活（R = 检测算子输出 + card + df），poll 按记分牌序聚合——
     权重×severity 降序（salience 同尺），置顶即事实默认档，噪声由排序治理。
@@ -465,7 +465,7 @@ def propose_actions(session_id: str) -> list[dict]:
     条件型）不参与。终态（收局/弃局）返回 []——菜单与终态一致。
     """
     from mflowy.data.repair_rules import default_engine
-    from mflowy.driver.rule import open_engine
+    from mflowy.driver.rule import rule_engine_rwa
 
     store = _store()
     manifest = store.read_manifest(session_id)
@@ -475,7 +475,7 @@ def propose_actions(session_id: str) -> list[dict]:
     report = _detect_all(df)
     card = manifest.get("card") or {}
 
-    with open_engine(str(store.session_dir(session_id) / "rules.pkl"), default=default_engine()) as engine:
+    with rule_engine_rwa(str(store.session_dir(session_id) / "rules.pkl"), default_engine()) as engine:
         engine.fire(R={"defects": report, "card": card, "df": df})
         activations = engine.poll_proposals()
     menu = []

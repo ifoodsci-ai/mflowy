@@ -1,4 +1,4 @@
-"""规则引擎 SDK：实例门面（Rule/Activation/RuleEngine + open_engine 落盘）。
+"""规则引擎 SDK：实例门面（Rule/Activation/RuleEngine + load/save 纯函数落盘）。
 
 设计定案（2026-10 重构——散落规则聚合到引擎实例）：
 
@@ -10,10 +10,14 @@
   fail-loud 带候选），产出 ``Activation`` 累积在实例内；连续 fire 由
   ``poll_proposals()`` 一次聚合（记分牌序：salience 降序，同分 rule_key
   字典序——确定性菜单）并排空。
-- **实例可落盘**：pkl 承载注册面（含运行期注册的自定义规则）与未 poll 的
-  激活态；``open_engine(path, default=...)`` 盘上有则加载、无则从默认实例
-  复制（激活态清空），with 正常退出原子落盘（tmp+rename）、异常不落盘。
-  规则对象须可 pickle（域规则 = 模块级 dataclass、只持 str/num 配置）。
+- **落盘与状态解耦**：引擎是纯内存对象（注册面 + 激活缓冲，零路径状态）；
+  盘 IO 是纯函数对——``load_rule_engine(path)``（缺文件 → None；损坏/异类 →
+  raise 带路径，不静默重建默认）与 ``save_rule_engine(path, engine)``（dumps
+  后走 ``write_bytes_atomic`` 单源原语）；``rule_engine_rwa(path, default)``
+  四行门面（整读→用→整写）：盘上有则加载、缺则默认实例直接作工作实例
+  （无克隆——调用方传干净模板），with 正常退出整体落盘、异常不落盘。pkl
+  承载注册面（含运行期注册的自定义规则）与未 poll 激活态；规则对象须可
+  pickle（域规则 = 模块级 dataclass、只持 str/num 配置）。
 - **引擎不去重**：同 (action, params) 多规则命中由会话合并（frontier 决策）。
 """
 
@@ -94,10 +98,9 @@ def _validate_activation(a: Any, rule_key: str) -> None:
 
 
 class RuleEngine:
-    """规则引擎实例：注册面 + 激活缓冲 + pkl 落盘（域默认实例 → 会话实例）。"""
+    """规则引擎实例：注册面 + 激活缓冲（纯内存对象——盘读写走 load/save 纯函数）。"""
 
-    def __init__(self, path: str | None = None) -> None:
-        self.path = path
+    def __init__(self) -> None:
         self._rules: dict[str, Rule] = {}
         self._activations: list[Activation] = []
 
@@ -155,48 +158,48 @@ class RuleEngine:
             raise ValueError(f"未知规则 key：{unknown}（可用: {sorted(self._rules)}）")
         return list(dict.fromkeys(keys))
 
-    def copy(self, path: str | None = None) -> RuleEngine:
-        """复制为新实例：注册面携带、激活态清空（默认实例 → 会话实例的通道）。"""
-        clone = RuleEngine(path=path)
-        clone._rules = dict(self._rules)
-        return clone
+def load_rule_engine(path: str) -> RuleEngine | None:
+    """从盘加载实例：缺文件 → None（回退归调用方）；损坏/异类 → raise 带路径。
 
-    def save(self) -> None:
-        """原子落盘：注册面 + 未 poll 激活态整体一个 pkl。
+    语义二分是显式契约：None 只代表"还没有会话实例"（调用方回退默认实例），
+    损坏/异类内容一律 fail-loud——运行期注册的自定义规则不允许被静默换掉。
+    """
+    p = Path(path)
+    if not p.exists():
+        return None
+    try:
+        with open(p, "rb") as fh:
+            obj = pickle.load(fh)
+    except Exception as e:  # 任何读/反序列化失败都归一为带路径的 fail-loud
+        raise RuntimeError(f"规则引擎实例损坏（{p}）：{e!r}") from e
+    if not isinstance(obj, RuleEngine):
+        raise TypeError(f"{p} 不是 RuleEngine 实例，得到 {type(obj).__name__}")
+    return obj
 
-        走 ``write_bytes_atomic`` 单源原语（tmp+rename）；先 ``pickle.dumps`` 后
-        落盘——序列化失败发生在任何文件效果之前（不留空 tmp 垃圾）。
-        """
-        if self.path is None:
-            raise ValueError("engine 无落盘路径（open_engine 复制时绑定，或构造时传入）")
-        write_bytes_atomic(self.path, pickle.dumps(self, protocol=pickle.HIGHEST_PROTOCOL))
 
-    @classmethod
-    def load(cls, path: str) -> RuleEngine:
-        """从盘加载实例：损坏 fail-loud 带路径与成因（不静默重建默认）。"""
-        p = Path(path)
-        try:
-            with open(p, "rb") as fh:
-                obj = pickle.load(fh)
-        except Exception as e:  # 任何读/反序列化失败都归一为带路径的 fail-loud
-            raise RuntimeError(f"规则引擎实例损坏（{p}）：{e!r}") from e
-        if not isinstance(obj, cls):
-            raise TypeError(f"{p} 不是 {cls.__name__} 实例，得到 {type(obj).__name__}")
-        obj.path = str(p)
-        return obj
+def save_rule_engine(path: str, engine: RuleEngine) -> None:
+    """原子落盘：注册面 + 未 poll 激活态整体一个 pkl。
+
+    走 ``write_bytes_atomic`` 单源原语（tmp+rename）；先 ``pickle.dumps`` 后
+    落盘——序列化失败发生在任何文件效果之前（不留空 tmp 垃圾）。
+    """
+    write_bytes_atomic(path, pickle.dumps(engine, protocol=pickle.HIGHEST_PROTOCOL))
 
 
 @contextmanager
-def open_engine(path: str, default: RuleEngine) -> Iterator[RuleEngine]:
-    """业务接口入口：盘上有 pkl 则加载，否则从默认实例复制（激活态清空）。
+def rule_engine_rwa(path: str, default: RuleEngine) -> Iterator[RuleEngine]:
+    """业务接口入口（整读→用→整写）：盘上有 pkl 则加载，缺则默认实例直接作工作实例。
 
-    with 正常退出原子落盘（注册面 + 未 poll 激活态）；异常透传且不落盘——
-    失败调用零副作用（事务性）。规则对象须可 pickle（``Rule`` 协议文档）。
-    ``default`` 必填——无默认实例的引擎不该有落盘通道。
+    - 无克隆（草案语义）：``default`` 即工作实例——调用方须传干净模板（域侧
+      每次现建、激活态空）；pkl 命中时 default 被弃用不消费
+    - with 正常退出整体落盘（注册面 + 未 poll 激活态）；异常透传且不落盘——
+      失败调用零副作用（事务性）
+    - 规则对象须可 pickle（``Rule`` 协议文档）；``default`` 必填——无默认
+      实例的引擎不该有落盘通道
     """
-    engine = RuleEngine.load(path) if Path(path).exists() else default.copy(str(path))
-    yield engine
-    engine.save()
+    r = load_rule_engine(path) or default
+    yield r
+    save_rule_engine(path, r)
 
 
 def _stable_params(a: Activation) -> str:

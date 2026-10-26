@@ -95,12 +95,12 @@ def test_propose_actions_via_engine_keeps_menu_shape(sessions_root, tmp_path):
 def test_session_engine_pkl_carries_custom_rule_across_calls(sessions_root, tmp_path):
     """自定义规则进会话实例：pkl 持载，propose 菜单带出（盘上实例活语义）。"""
     from mflowy.data import cleaning_session as cs
-    from mflowy.driver.rule import open_engine
+    from mflowy.driver.rule import rule_engine_rwa
 
     s = cs.start_session(_dirty_csv(tmp_path), card={"domain": "t"})
     cs.propose_actions(s["session_id"])  # 首调用建 pkl
 
-    with open_engine(str(sessions_root / s["session_id"] / "rules.pkl"), default=repair_rules.default_engine()) as e:
+    with rule_engine_rwa(str(sessions_root / s["session_id"] / "rules.pkl"), repair_rules.default_engine()) as e:
         e.register(_ImputeFallbackRule())
 
     props = cs.propose_actions(s["session_id"])
