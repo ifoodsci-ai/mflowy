@@ -1,6 +1,7 @@
 ---
 name: research-review
 description: 文献候选评审(mflowy)。model-brief 问卷前使用——用户确认开始建模且需要文献依据选模型候选时触发。相似/跨领域研究问题 → 结构化模型候选清单（candidates：baseline 锚点 + space_hints + seed），经 CVCard 进建模 POMDP。前置:clean skill 已 finish。
+disable-model-invocation: true
 ---
 
 # Research-Review Skill：文献候选评审（剧本层，接 model-brief 之前）

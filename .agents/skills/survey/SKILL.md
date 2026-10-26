@@ -1,6 +1,7 @@
 ---
 name: survey
 description: 数据领域建档问卷(mflowy)。用户上传数据后需要收集领域先验——目标列/标识列/单位/物理范围/受保护列——或提到"建档""数据问卷""开始清洗"时使用。嵌套研究流的外层剧本：data_profile(warm-up 证据) → 问卷 → eda(单变量+双变量+图) → dive-in 问卷(propose_questions 出题) → clean_session_start(card) 直进清洗 POMDP。仅适用于已配置 mflowy MCP server 的会话。
+disable-model-invocation: true
 ---
 
 # Survey Skill：嵌套研究流外层剧本（warm-up → eda → dive-in → clean_mdp）

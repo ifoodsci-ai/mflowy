@@ -1,6 +1,7 @@
 ---
 name: clean
 description: 数据清洗 POMDP 回合操作手册(mflowy)。用户要求"开始清洗/自主清洗/修数据"，或清洗会话进行中(收到 session_id)时使用。配合 mflowy MCP 工具 clean_session_start / clean_propose / clean_apply / clean_rollback / clean_finish / clean_abandon 驱动回合循环——环境面在引擎，π(策略)是你。前置:survey skill 已产出 DomainCard。
+disable-model-invocation: true
 ---
 
 # Clean Skill：清洗 POMDP 回合循环
