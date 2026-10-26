@@ -29,6 +29,19 @@ from .config import node_key, split_node_key
 
 logger = logging.getLogger(__name__)
 
+# 撞名/坏名 warning 进程内去重（#55）：目录零缓存现算——同进程每次扫描重复发射，
+# 真撞名即刷屏；热更新赌注保持（新 entry point 即时可见，去重只针对已报过的同一对）
+_warned: set[tuple[str, str]] = set()
+
+
+def _warn_once(kind: str, key: str, msg: str) -> None:
+    """同进程同类同键 warning 恰发一次（刷屏即噪音——诊断价值在首报）。"""
+    if (kind, key) in _warned:
+        return
+    _warned.add((kind, key))
+    logger.warning(msg)
+
+
 GROUPS = ("mflowy.builtin_plugins", "mflowy.plugins")  # 后组覆盖前组
 
 
@@ -41,14 +54,24 @@ def discover() -> dict[str, EntryPoint]:
             if "." in ep.name:
                 namespace, node_name = ep.name.split(".", 1)
                 if not namespace or not node_name:
-                    logger.warning(f"entry point 名 {ep.name!r} 不满足 namespace.node_name（{g}: {ep.value}），跳过")
+                    _warn_once(
+                        "malformed",
+                        f"{g}:{ep.name}",
+                        f"entry point 名 {ep.name!r} 不满足 namespace.node_name（{g}: {ep.value}），跳过",
+                    )
                     continue
             else:
                 namespace, node_name = "", ep.name  # 非归组节点：裸节点名
             key = node_key(namespace, node_name)
             if (prev := table.get(key)) is not None:
-                level = logger.warning if prev.group == g else logger.info
-                level(f"插件 {ep.name} 冲突：{ep.group}:{ep.value} 覆盖 {prev.group}:{prev.value}")
+                if prev.group == g:
+                    _warn_once(
+                        "override",
+                        f"{key}:{ep.value}",
+                        f"插件 {ep.name} 冲突：{ep.group}:{ep.value} 覆盖 {prev.group}:{prev.value}",
+                    )
+                else:
+                    logger.info(f"插件 {ep.name} 冲突：{ep.group}:{ep.value} 覆盖 {prev.group}:{prev.value}")
                 if origins.get(key) != (namespace, node_name):
                     raise ValueError(
                         f"目录键 {key!r} 歧义：{(namespace, node_name)} 与 {origins.get(key)} "
@@ -78,7 +101,9 @@ def _warn_cross_tier_collisions(table: dict[str, EntryPoint], origins: dict[str,
     namespaces = {ns for ns, _ in origins.values()} - {"", "edges"}
     for edge_name in edges:
         if edge_name in namespaces or edge_name in table:
-            logger.warning(f"边 {edge_name!r} 与节点/组同名：解析优先级边>组>节点，同名图的绑定将改写为边")
+            _warn_once(
+                "cross", edge_name, f"边 {edge_name!r} 与节点/组同名：解析优先级边>组>节点，同名图的绑定将改写为边"
+            )
 
 
 def _rename_hint(namespace: str, name: str) -> str | None:

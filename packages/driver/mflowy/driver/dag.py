@@ -80,20 +80,23 @@ class DAG:
         self.conf = conf
         self.nodes = nodes
 
-    def run(self, *, tags: dict[str, str] | None = None) -> DAGResult:
+    def run(self, *, tags: dict[str, str] | None = None, echo: bool = True) -> DAGResult:
         """运行工作流；``tags`` 为 run 级指纹（如文件 sha256），经 ContextVar 注入由 mlflow_log
         应用到本 DAG 的每个 node run——任意 run 可自定位其输入工件。
+
+        ``echo``（#55 逃生门）：节点输出回显属入口层观感——默认开（CLI 形态不变）；
+        非 CLI 宿主（MCP 进程内调用）传 False 保 stdout 纯净（业务数据只走捕获窗口）。
 
         LIFO 让刚解锁的下游任务（如 RF）立刻压栈顶优先执行，
         独立分支按声明逆序运行；总时间不变（串行求和），但下游结果更早产出。
         """
         tags_token = set_workflow_tags(tags)
         try:
-            return self._run()
+            return self._run(echo=echo)
         finally:
             reset_workflow_tags(tags_token)
 
-    def _run(self) -> DAGResult:
+    def _run(self, echo: bool = True) -> DAGResult:
         logger.info(self)  # 执行头信息
         exp = active_tracking().ensure_experiment(self.conf.name, self.conf.description)
         # 内核发布实验 id（ContextVar 随并发 workflow 隔离）——任何 adapter 的 node_run
@@ -129,7 +132,8 @@ class DAG:
                 completed += 1
             finally:
                 flow.runs.append(node_result)
-            print(node_result.output)  # 回显属入口层（pull 子调用不回显）——写失败（管道关闭）不误记节点失败
+            if echo:  # 回显属入口层（pull 子调用不回显）——写失败（管道关闭）不误记节点失败
+                print(node_result.output)
 
         if failures:
             # 有失败且有完成节点 → partial；全灭 → failed（独立路径也可能全被剪掉）

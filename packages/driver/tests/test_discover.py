@@ -285,3 +285,31 @@ def test_retired_keys_hint_current_vocab(retired, current):
         pytest.skip("无插件安装（driver-only 环境），内置目录断言不适用")
     with pytest.raises(CatalogMiss, match=f"候选：'{current}'"):
         get_node(retired)
+
+
+class TestCollisionWarnDedup:
+    """#55 撞名 warning 进程内去重：目录零缓存现算——同键冲突每次扫描都撞，恰发一次。"""
+
+    def test_same_group_override_warns_once(self, fake_entry_points, monkeypatch, caplog):
+        import logging
+
+        monkeypatch.setattr(discover_mod, "_warned", set())
+        fake_entry_points.append(_ep("load.dup", "mflowy.model.x_y:x_y"))
+        fake_entry_points.append(_ep("load.dup", "mflowy.model.x_y:x_y_v2"))  # 同组覆盖 → warning
+        with caplog.at_level(logging.WARNING):
+            discover()
+            discover()  # 第二次扫描：零缓存现算，同一冲突不重发
+        hits = [r for r in caplog.records if "冲突" in r.getMessage()]
+        assert len(hits) == 1, [r.getMessage() for r in caplog.records]
+
+    def test_cross_tier_collision_warns_once(self, fake_entry_points, monkeypatch, caplog):
+        import logging
+
+        monkeypatch.setattr(discover_mod, "_warned", set())
+        fake_entry_points.append(_ep("edges.load", "mflowy.model.x_y:x_y"))  # 边名撞组名
+        fake_entry_points.append(_ep("load.csv", "mflowy.data.load.csv_loader:csv"))
+        with caplog.at_level(logging.WARNING):
+            discover()
+            discover()
+        hits = [r for r in caplog.records if "同名" in r.getMessage()]
+        assert len(hits) == 1, [r.getMessage() for r in caplog.records]
