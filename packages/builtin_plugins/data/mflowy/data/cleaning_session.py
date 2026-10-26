@@ -33,6 +33,7 @@ from mflowy.data.detect.errors import ErrorReport
 from mflowy.data.detect.id_like import id_like as detect_id_like
 from mflowy.data.detect.missing import missing as detect_missing
 from mflowy.data.detect.outliers import outliers as detect_outliers
+from mflowy.data.detect.range_violation import range_violation as detect_range_violation
 from mflowy.data.detect.scoring import quality_score as _qs_raw
 from mflowy.data.detect.stringly import stringly as detect_stringly
 from mflowy.data.fingerprint import fingerprint
@@ -69,17 +70,22 @@ def never_drop(card: dict | None) -> list[str]:
     return [c for c in dict.fromkeys(c for c in cols if c)]
 
 
-def _detect_all(df: pd.DataFrame) -> ErrorReport:
-    """观测通道：检测算子合并（正交拆分后七算子）（s′ 免费自带，agent 不需要花一步申请观测）。
+def _detect_all(df: pd.DataFrame, card: dict | None = None) -> ErrorReport:
+    """观测通道：检测算子合并（正交拆分后七算子 + 卡先验的 range_violation）。
 
-    L1 状态同一性 memo：同指纹（=同内容）不重跑全量检测——纯函数备忘录化，
+    s′ 免费自带，agent 不需要花一步申请观测。card 的 expected_ranges 注入声明式
+    算子（#65 先验观测——问卷成本在会话循环内兑现）；DAG 路径由用户 YAML 显式传参。
+
+    L1 状态同一性 memo：同（指纹 × 先验）不重跑全量检测——纯函数备忘录化，
     零近似、零失效逻辑（与列级增量 L2 的本质区别：这是删同态冗余，不是换
-    增量语义）。键 = `_fingerprint`（每次 apply 本就计算）；返回实例跨调用
-    共享，调用方只读。容量超限整体清空（多会话进程内防膨胀；清空只损失
-    命中率，语义不变）。
+    增量语义）。键 = (`_fingerprint`（每次 apply 本就计算）, ranges 序列化)——
+    同数据不同卡（跨会话同进程）不互撞；返回实例跨调用共享，调用方只读。
+    容量超限整体清空（多会话进程内防膨胀；清空只损失命中率，语义不变）。
     """
-    fp = _fingerprint(df)
-    hit = _REPORT_MEMO.get(fp)
+    ranges = (card or {}).get("expected_ranges") or {}
+    ranges_key = json.dumps(ranges, sort_keys=True, ensure_ascii=False) if ranges else ""
+    memo_key = (_fingerprint(df), ranges_key)
+    hit = _REPORT_MEMO.get(memo_key)
     if hit is not None:
         return hit
     reports = [
@@ -94,14 +100,16 @@ def _detect_all(df: pd.DataFrame) -> ErrorReport:
             detect_collinear,
         )
     ]
+    if ranges:
+        reports.append(detect_range_violation(load=df, ranges=ranges))
     report = ErrorReport(shape=df.shape, errors=[e for r in reports for e in r.errors])
     if len(_REPORT_MEMO) >= _REPORT_MEMO_CAP:
         _REPORT_MEMO.clear()
-    _REPORT_MEMO[fp] = report
+    _REPORT_MEMO[memo_key] = report
     return report
 
 
-_REPORT_MEMO: dict[str, ErrorReport] = {}
+_REPORT_MEMO: dict[tuple[str, str], ErrorReport] = {}
 _REPORT_MEMO_CAP = 256
 
 
@@ -286,7 +294,7 @@ def start_session(file_path: str, card: dict | None = None, max_steps: int = 15)
     d.mkdir(parents=True, exist_ok=False)
     df.to_parquet(d / "v0.parquet", index=False)
 
-    report = _detect_all(df)
+    report = _detect_all(df, card)
     quality = _quality_score(report, card=card)
     manifest = {
         "session_id": session_id,
@@ -380,13 +388,13 @@ def apply_action(session_id: str, node: str, params: dict | None = None, dry_run
     _guard(df, out, manifest["card"])
     diff = _diff_summary(df, out)
 
-    before_report = _detect_all(df)
+    before_report = _detect_all(df, manifest.get("card"))
     before_quality = _quality_score(before_report, card=manifest.get("card"))  # 与 after 同尺（卡权重双侧生效）
     version = manifest["versions"][-1]["v"] + 1
     fname = f"v{version}.parquet"
     out.reset_index(drop=True).to_parquet(store.session_dir(session_id) / fname, index=False)
 
-    report = _detect_all(out)
+    report = _detect_all(out, manifest.get("card"))
     quality = _quality_score(report, baseline=df.shape, card=manifest.get("card"))
     card = manifest.get("card") or {}
     if quality.get("info_loss"):
@@ -444,11 +452,11 @@ def rollback(session_id: str, to_version: int) -> dict:
     if target is None:
         raise ValueError(f"版本 {to_version} 不存在（可用: {[v['v'] for v in manifest['versions']]}）")
     pre_df = pd.read_parquet(store.session_dir(session_id) / manifest["versions"][-1]["file"])
-    pre_quality = _quality_score(_detect_all(pre_df), card=manifest.get("card"))
+    pre_quality = _quality_score(_detect_all(pre_df, manifest.get("card")), card=manifest.get("card"))
     manifest["versions"] = [v for v in manifest["versions"] if v["v"] <= to_version]
     store.write_manifest(session_id, manifest)
     df = current_df(session_id)
-    report = _detect_all(df)
+    report = _detect_all(df, manifest.get("card"))
     quality = _quality_score(report, card=manifest.get("card"))
     return _state_response(manifest, report, quality, df, reward=round(quality["score"] - pre_quality["score"], 4))
 
@@ -472,8 +480,8 @@ def propose_actions(session_id: str) -> list[dict]:
     if _is_terminal(manifest):
         return []
     df = current_df(session_id)
-    report = _detect_all(df)
     card = manifest.get("card") or {}
+    report = _detect_all(df, card)
 
     with rule_engine_rwa(str(store.session_dir(session_id) / "rules.pkl"), default_engine()) as engine:
         engine.fire(R={"defects": report, "card": card, "df": df})
@@ -512,8 +520,9 @@ def finish_session(session_id: str, min_quality: float | None = None, preview: b
 
     final = store.session_dir(session_id) / manifest["versions"][-1]["file"]
     final_df = pd.read_parquet(final)
-    report = _detect_all(final_df)
-    quality = _quality_score(report)
+    card = manifest.get("card") or {}
+    report = _detect_all(final_df, card)
+    quality = _quality_score(report, card=card)  # 与回路同尺（卡权重全程生效）
     utility = _terminal_utility(final_df, manifest["card"])
     steps = len(manifest["decision_log"])
 
@@ -559,8 +568,8 @@ def finish_session(session_id: str, min_quality: float | None = None, preview: b
     store.write_manifest(session_id, manifest)
 
     final = store.session_dir(session_id) / manifest["versions"][-1]["file"]
-    report = _detect_all(pd.read_parquet(final))
-    quality = _quality_score(report)
+    report = _detect_all(pd.read_parquet(final), manifest.get("card"))
+    quality = _quality_score(report, card=manifest.get("card"))  # 与回路同尺
     return {
         "session_id": session_id,
         "accepted": True,

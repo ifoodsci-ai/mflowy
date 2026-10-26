@@ -194,3 +194,20 @@ drop_cols.repair = {
 }
 drop_outlier_iqr.repair = {"outlier": tier_repair("numeric", "IQR 栅栏外行删除(激进档)", {"k": 1.5})}
 drop_outlier_z.repair = {"outlier": tier_repair("numeric", "3σ 外行删除(正态激进档)", {"k": 3.0})}
+
+
+def _drop_outside_repair(errors, card, df):
+    """range_violation 激进档：越界行整行删除（逐列一候选——lo/hi 边界来自 detect 证据）。"""
+    out = []
+    for e in errors:
+        if e.column and e.column in df.columns and {"lo", "hi"} <= set(e.evidence):
+            out.append(
+                (
+                    {"cols": [e.column], "lo": e.evidence["lo"], "hi": e.evidence["hi"]},
+                    f"删除 {e.column} 越界行(激进档,越界率 {e.evidence.get('violation_rate')})",
+                )
+            )
+    return out
+
+
+drop_outside.repair = {"range_violation": _drop_outside_repair}

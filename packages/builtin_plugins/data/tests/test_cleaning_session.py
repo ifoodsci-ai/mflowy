@@ -646,3 +646,52 @@ def test_finish_plan_replays(sessions_root, dirty_csv, tmp_path, monkeypatch):
     # manifest 的版本工件 sha（同值不同路径：buffer 序列化 vs 盘上文件）
     manifest = json.loads((sessions_root / s["session_id"] / "manifest.json").read_text(encoding="utf-8"))
     assert cs._fingerprint(result.runs[-1].value) == manifest["versions"][-1]["artifact_sha256"]
+
+
+# ── #65 先验观测：expected_ranges 全程可观测（观测→菜单→奖励全链） ──────────
+
+
+@pytest.fixture
+def ranged_csv(tmp_path) -> str:
+    n = 40
+    rng = np.random.default_rng(9)
+    temp = rng.uniform(10, 90, n).tolist()
+    temp[3], temp[7] = 150.0, -5.0  # 注入物理越界（传感器/录入错误）
+    df = pd.DataFrame(
+        {
+            "temp": temp,
+            "x": rng.normal(size=n),
+            "target": rng.normal(size=n),
+        }
+    )
+    path = tmp_path / "ranged.csv"
+    df.to_csv(path, index=False)
+    return str(path)
+
+
+RANGED_CARD = {
+    "domain": "过程工业",
+    "target": "target",
+    "expected_ranges": {"temp": [0.0, 100.0]},
+}
+
+
+def test_expected_ranges_observable_repairable_rewarded(sessions_root, ranged_csv):
+    """#65 先验观测：物理越界进缺陷清单/候选菜单/正奖励——问卷成本在循环内兑现。"""
+    s = cs.start_session(ranged_csv, card=RANGED_CARD)
+    sid = s["session_id"]
+
+    # ① 观测：物理越界进缺陷清单（kind × count + 证据）
+    assert s["report"]["defects"].get("range_violation") == 1
+
+    # ② 菜单：range_clip 温和档 / drop_outside 激进档双档入单（边界证据同尺）
+    menu = cs.propose_actions(sid)
+    by_action = {c["action"]: c for c in menu}
+    assert set(by_action) >= {"range_clip", "drop_outside"}
+    assert by_action["range_clip"]["params"]["ranges"] == {"temp": [0.0, 100.0]}
+    assert by_action["drop_outside"]["params"] == {"cols": ["temp"], "lo": 0.0, "hi": 100.0}
+
+    # ③ 转移：修越界得正奖励（求和口径——消除缺陷不减分）
+    r = cs.apply_action(sid, "range_clip", {"ranges": {"temp": [0.0, 100.0]}})
+    assert r["reward"] > 0
+    assert r["report"]["defects"].get("range_violation", 0) == 0

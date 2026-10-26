@@ -16,6 +16,7 @@ _WEIGHTS: dict[str, float] = {
     "collinear": 0.10,
     "empty_row": 0.10,
     "id_like": 0.05,
+    "range_violation": 0.10,
 }
 _DEFAULT_WEIGHT = 0.05
 

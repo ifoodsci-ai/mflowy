@@ -55,6 +55,7 @@ dependencies = [
 "detect.id_like" = "mflowy.data.detect.id_like:id_like"
 "detect.missing" = "mflowy.data.detect.missing:missing"
 "detect.outliers" = "mflowy.data.detect.outliers:outliers"
+"detect.range_violation" = "mflowy.data.detect.range_violation:range_violation"
 "detect.stringly" = "mflowy.data.detect.stringly:stringly"
 "load.csv" = "mflowy.data.load.csv_loader:csv"
 "load.excel" = "mflowy.data.load.excel_loader:excel"

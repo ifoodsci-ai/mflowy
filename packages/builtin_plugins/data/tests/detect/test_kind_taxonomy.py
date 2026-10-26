@@ -22,6 +22,7 @@ _EXPECTED = frozenset(
         "constant",  # 常量死列
         "stringly_numeric",  # 单位污染的字符串数值
         "id_like",  # 标识列疑似（advisory）
+        "range_violation",  # 问卷 expected_ranges 物理范围违例（声明式）
     }
 )
 
@@ -33,7 +34,11 @@ OPERATORS = [
     "stringly",
     "id_like",
     "collinear",
+    "range_violation",
 ]
+
+# 声明式算子的必填先验参数（其余算子零参数直调）
+_OP_KWARGS = {"range_violation": {"ranges": {"x1": [-3.0, 3.0]}}}
 
 
 def _dirty_df() -> pd.DataFrame:
@@ -72,7 +77,7 @@ def test_operators_emit_only_registered_kinds(op_name):
     df = _dirty_df()
     if op_name == "id_like":
         df = df.drop_duplicates().reset_index(drop=True)
-    report = op(load=df)
+    report = op(load=df, **_OP_KWARGS.get(op_name, {}))
 
     assert report.errors, f"{op_name} 空跑——夹具应保证有缺陷可检"
     assert {e.kind for e in report.errors} <= KINDS
