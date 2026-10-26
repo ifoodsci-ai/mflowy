@@ -350,10 +350,12 @@ def current_df(session_id: str) -> pd.DataFrame:
     return pd.read_parquet(store.session_dir(session_id) / manifest["versions"][-1]["file"])
 
 
-def apply_action(session_id: str, node: str, params: dict | None = None, dry_run: bool = False) -> dict:
+def apply_action(session_id: str, node: str, params: dict | None = None) -> dict:
     """执行一个 clean 词表动作：守卫 → 转移 → 快照 → 观测/奖励 → 决策日志。
 
-    dry_run：样本预览 diff，不提交版本。
+    失败即免费异常（守卫/校验在 commit 点前抛出——不耗预算、不落版本、不进
+    决策日志）；dry_run 已退役（#65——样本预览双合同皆死，试探走「提交 →
+    免费 s′ → 负 reward 即 rollback」）。
     """
     params = params or {}
     store = _store()
@@ -369,21 +371,6 @@ def apply_action(session_id: str, node: str, params: dict | None = None, dry_run
         raise ValueError(f"动作 `{node}` 不在 clean 词表中（词表 = 运行期 clean 目录）") from e
 
     df = pd.read_parquet(store.session_dir(session_id) / manifest["versions"][-1]["file"])
-    if dry_run:
-        sample = df.head(min(len(df), 200))
-        out = fn(load=sample, **params)
-        _guard(sample, out, manifest["card"])
-        # 去检测化（禁止采样裁定）：样本统计不冒充观测——真 s′ 随正式 apply 免费自带
-        diff = _diff_summary(sample, out)
-        return {
-            "session_id": session_id,
-            "dry_run": True,
-            "action": node,
-            "params": params,
-            "version": manifest["versions"][-1]["v"],
-            "diff": diff,
-        }
-
     out = fn(load=df, **params)
     _guard(df, out, manifest["card"])
     diff = _diff_summary(df, out)

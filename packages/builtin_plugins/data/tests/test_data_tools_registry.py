@@ -25,3 +25,19 @@ def test_registry_matches_tools_module():
     for name, ep in declared.items():
         fn = ep.load()
         assert callable(fn) and getattr(fn, "__name__", "") == name
+
+
+def test_clean_apply_schema_has_no_dry_run():
+    """#65 dry_run 退役的 schema 面钉住：工具入参 schema 不再出现 dry_run
+    （docstring 编译的 schema 随签名自动更新——本测防参数回潮）。"""
+    import asyncio
+
+    from mcp.server.mcpserver import MCPServer
+    from mflowy.data import tools
+
+    server = MCPServer(name="schema-test")
+    server.tool()(tools.clean_apply)
+    schema = asyncio.run(server.list_tools())[0].input_schema
+
+    assert "dry_run" not in schema.get("properties", {})
+    assert {"session_id", "node", "params"} <= set(schema.get("properties", {}))

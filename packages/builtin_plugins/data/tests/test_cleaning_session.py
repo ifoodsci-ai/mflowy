@@ -128,22 +128,22 @@ def test_apply_action_improves_quality_and_logs(sessions_root, dirty_csv):
     assert set(df["target"]) <= set(raw["target"])
 
 
-def test_apply_dry_run_no_commit(sessions_root, dirty_csv):
-    """dry_run:预览 diff 不落版本，且不带检测语义的面具（禁止采样裁定）。
+def test_failed_apply_is_free(sessions_root, dirty_csv):
+    """#65 dry_run 退役后的试探契约：失败 apply 免费——异常在 commit 点前抛出，
+    不耗预算、不落版本、不进决策日志（审计面只记录真实转移）。
 
-    样本上算 quality/digest 是"带着检测语义的面具"——真观测随 apply 的 s′ 免费
-    自带；预览的本分只是"看动作改了什么"。
+    不确定动作的试探面 = 「提交 → 免费 s′ → 负 reward 即 rollback」（全量真值
+    决策，试错价格明确 = 一步预算），不再有样本预览。
     """
     s = cs.start_session(dirty_csv, card=CARD)
 
-    r = cs.apply_action(s["session_id"], "drop_duplicate", {}, dry_run=True)
+    with pytest.raises(ValueError, match="不在数据框中"):
+        cs.apply_action(s["session_id"], "drop_cols", {"cols": ["nope"]})
 
-    assert r.get("dry_run") is True
-    assert r["version"] == 0  # 未提交
-    assert "diff" in r
-    # 去检测化：样本统计不冒充观测
-    assert "report" not in r
-    assert "quality_preview" not in r
+    r = cs.apply_action(s["session_id"], "fill_median", {"cols": ["hole"]})
+    assert r["steps"] == 1  # 失败尝试不计步
+    assert r["version"] == 1  # 失败尝试不落版本
+    assert len(r["decision_log"]) == 1  # 失败尝试不进决策日志
 
 
 def test_observation_computed_once_per_state(sessions_root, dirty_csv, monkeypatch):
