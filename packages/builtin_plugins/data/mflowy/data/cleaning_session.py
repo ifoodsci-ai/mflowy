@@ -1,4 +1,4 @@
-"""清洗 MDP 会话引擎（应用层）：环境面的转移/观测/奖励/预算，π 在调用方。
+"""清洗 POMDP 会话引擎（应用层）：环境面的转移/观测/奖励/预算，π 在调用方。
 
 按 handoff 工具集落位：
 - apply/snapshot/rollback（工具 2）：每动作一个 parquet 版本，坏动作可撤销；
@@ -37,7 +37,7 @@ from mflowy.data.detect.range_violation import range_violation as detect_range_v
 from mflowy.data.detect.scoring import quality_score as _qs_raw
 from mflowy.data.detect.stringly import stringly as detect_stringly
 from mflowy.data.fingerprint import fingerprint
-from mflowy.driver.mdp_session import SessionStore
+from mflowy.driver.pomdp import SessionStore
 from mflowy.utils.file import sha256_of
 
 

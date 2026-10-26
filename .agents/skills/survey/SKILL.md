@@ -1,11 +1,11 @@
 ---
 name: survey
-description: 数据领域建档问卷(mflowy)。用户上传数据后需要收集领域先验——目标列/标识列/单位/物理范围/受保护列——或提到"建档""数据问卷""开始清洗"时使用。嵌套研究流的外层剧本：data_profile(warm-up 证据) → 问卷 → eda(单变量+双变量+图) → dive-in 问卷(propose_questions 出题) → clean_session_start(card) 直进清洗 MDP。仅适用于已配置 mflowy MCP server 的会话。
+description: 数据领域建档问卷(mflowy)。用户上传数据后需要收集领域先验——目标列/标识列/单位/物理范围/受保护列——或提到"建档""数据问卷""开始清洗"时使用。嵌套研究流的外层剧本：data_profile(warm-up 证据) → 问卷 → eda(单变量+双变量+图) → dive-in 问卷(propose_questions 出题) → clean_session_start(card) 直进清洗 POMDP。仅适用于已配置 mflowy MCP server 的会话。
 ---
 
 # Survey Skill：嵌套研究流外层剧本（warm-up → eda → dive-in → clean_mdp）
 
-外层是**剧本协议**（零引擎：无转移分支/无奖励/无回放），内层才是 MDP。
+外层是**剧本协议**（零引擎：无转移分支/无奖励/无回放），内层才是 POMDP。
 你的职责：按剧本节奏引导问卷、把答案攒成 `DomainCard`、开局内层清洗会话后交棒
 （clean skill）。**你不出清洗决策**；audit 分层——外层审计=对话本身，内层=manifest
 决策日志。

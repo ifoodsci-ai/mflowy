@@ -1,9 +1,9 @@
-"""MDP 会话契约与生命周期基座 —— 投影类型 / fail-loud 校验器 / SessionStore。
+"""POMDP 会话契约与生命周期基座 —— 投影类型 / fail-loud 校验器 / SessionStore。
 
 决策权地图：引擎=事实（合法走法/转移/守卫/预算/信号），π=选择（选动作/回滚时机/
 收局时机/弃局）。守卫拦"事实不成立"不拦"程序下一步"；菜单是建议不是边界；结算可
 拒收且拒收后可续局；持久化格式不进公共契约。第三方域作者以本模块为"会话 SDK"
-基座实现自己的 MDP 环境；活参考 = data/model 两域的会话模块。
+基座实现自己的 POMDP 环境；活参考 = data/model 两域的会话模块。
 """
 
 from __future__ import annotations
@@ -125,7 +125,7 @@ def verify_candidate(candidate: Mapping[str, Any]) -> None:
 
 
 class MDPSessionHandle(Protocol):
-    """MDP 会话服务面：第三方域作者实现一个 MDP 环境的类型锚点（会话 SDK）。
+    """POMDP 会话服务面：第三方域作者实现一个 POMDP 环境的类型锚点（会话 SDK）。
 
     无状态 sid 寻址——每调用从盘重水化（会话比 agent 上下文与包版本长寿）；
     ``load(sid) -> 绑定句柄`` 为后置扩展点（当前不设）。统一"具名核心 +

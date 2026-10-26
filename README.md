@@ -38,8 +38,8 @@ Person(dev, "能力作者", "写 @handler 插件的开发者")
 
 System_Boundary(sys, "MFlowy —— uv workspace · PEP 420 namespace · 五 distribution 锁步") {
     Container(mcp, "mflowy-mcp", "MCP 层", "全部工具定义（tools.py）· mflowy-mcp stdio server · mflowy JSON runner · JobProvider 执行策略 · 遥测")
-    Container(data, "mflowy-data", "数据域", "清洗 MDP 动作域：load/statistic/detect/clean + plot(data_analysis)；数据栈硬依赖，装包即得完整数据域")
-    Container(model, "mflowy-model", "建模域", "建模 MDP 动作域：x_y/cv/x_transformer/model + plot(evaluation/interpretability)；CPU 建模栈硬依赖，torch 栈隔离 [deep]")
+    Container(data, "mflowy-data", "数据域", "清洗 POMDP 动作域：load/statistic/detect/clean + plot(data_analysis)；数据栈硬依赖，装包即得完整数据域")
+    Container(model, "mflowy-model", "建模域", "建模 POMDP 动作域：x_y/cv/x_transformer/model + plot(evaluation/interpretability)；CPU 建模栈硬依赖，torch 栈隔离 [deep]")
     Container(driver, "mflowy-driver", "DAG 内核", "Builder YAML 增量编译（平铺叙事·编译即校验）· Context 血缘 DAG · LIFO 拓扑调度 + 失败血缘剪枝 · discover 插件目录（零 import 查询/惰性加载）· @handler/@edge 插件 SDK + mlflow 默认尾链")
     Container(utils, "mflowy-utils", "共享工具", "mlflow 封装 · jinja 沙箱 · 日志与 stdout 捕获 · 文件指纹 · 脚本安全门")
 }
@@ -66,8 +66,8 @@ Rel(mcp, remote, "建模类工具执行委派", "JobProvider 协议")
 | ------------ | ---- | ---- |
 | `mflowy` | 聚合包（PyPI 入口） | extras = 域选择器：`[data]` / `[model]` / `[mcp]` / `[deep]`——`mflowy[mcp]` 起 server、`mflowy[data|model]` 直接走 runner；`[stats]`/`[modeling]` 已退役 |
 | `mflowy-mcp` | 用户面 | 全部 MCP 工具与三种入口、执行策略（JobProvider）、遥测与同意门 |
-| `mflowy-data` | 数据域 | 清洗 MDP 动作域（load/statistic/detect/clean + EDA 图）；数据栈硬依赖 |
-| `mflowy-model` | 建模域 | 建模 MDP 动作域（x_y/cv/x_transformer/model + 评估/解释图）；CPU 建模栈硬依赖，torch 栈住 `[deep]`；两域包同为第三方插件的活参考（抄走 pyproject + hook，改 entry points 组即成插件包） |
+| `mflowy-data` | 数据域 | 清洗 POMDP 动作域（load/statistic/detect/clean + EDA 图）；数据栈硬依赖 |
+| `mflowy-model` | 建模域 | 建模 POMDP 动作域（x_y/cv/x_transformer/model + 评估/解释图）；CPU 建模栈硬依赖，torch 栈住 `[deep]`；两域包同为第三方插件的活参考（抄走 pyproject + hook，改 entry points 组即成插件包） |
 | `mflowy-driver` | 内核 | 编译与调度，不实现任何业务能力；插件 SDK 与词表校验所在 |
 | `mflowy-utils` | 底座 | 无业务语义的共享工具层 |
 

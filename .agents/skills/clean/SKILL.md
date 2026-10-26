@@ -1,11 +1,11 @@
 ---
 name: clean
-description: 数据清洗 MDP 回合操作手册(mflowy)。用户要求"开始清洗/自主清洗/修数据"，或清洗会话进行中(收到 session_id)时使用。配合 mflowy MCP 工具 clean_session_start / clean_propose / clean_apply / clean_rollback / clean_finish / clean_abandon 驱动回合循环——环境面在引擎，π(策略)是你。前置:survey skill 已产出 DomainCard。
+description: 数据清洗 POMDP 回合操作手册(mflowy)。用户要求"开始清洗/自主清洗/修数据"，或清洗会话进行中(收到 session_id)时使用。配合 mflowy MCP 工具 clean_session_start / clean_propose / clean_apply / clean_rollback / clean_finish / clean_abandon 驱动回合循环——环境面在引擎，π(策略)是你。前置:survey skill 已产出 DomainCard。
 ---
 
-# Clean Skill：清洗 MDP 回合循环
+# Clean Skill：清洗 POMDP 回合循环
 
-三段式研究流第二段：`建档与 EDA →(冻结)→ 清洗 MDP →(冻结)→ 建模 MDP`。
+三段式研究流第二段：`建档与 EDA →(冻结)→ 清洗 POMDP →(冻结)→ 建模 POMDP`。
 你的职责是**策略（π）**：读观测、选动作、必要时回滚、决定收局。环境面（转移/
 观测/奖励/预算/守卫）在会话引擎——你不重算状态，引擎每步免费给你 s′ 观测。
 

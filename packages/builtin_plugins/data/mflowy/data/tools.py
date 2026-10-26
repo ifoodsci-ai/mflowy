@@ -1,4 +1,4 @@
-"""mflowy 数据域 MCP 工具 — 分析类（data_profile/eda）+ 清洗 MDP 会话（本地执行）。
+"""mflowy 数据域 MCP 工具 — 分析类（data_profile/eda）+ 清洗 POMDP 会话（本地执行）。
 
 注册：pyproject 手工声明 entry points 组 ``mflowy.tools``（host 经该组发现包装，
 镜像测试断言 entry points ≡ 本模块公有函数）；模板随域居住（``templates/``）。
@@ -24,7 +24,7 @@ EDA_TEMPLATE = TEMPLATES_DIR / "eda.yaml.j2"
 def _run_analysis(template: Path, env_extra: dict, file_path: str) -> DAGResult:
     """分析类工具共享编排（本地直调）：引用解析 → Builder 渲染执行，附 data 指纹 tags。
 
-    模板只组装 statistic/plot（检测是内层 MDP 的观测基质，不进外层编排）；
+    模板只组装 statistic/plot（检测是内层 POMDP 的观测基质，不进外层编排）；
     findings 编译层已随 detect 步撤出退役。表与图经 print/parquet 落盘归档。
     """
     from mflowy.driver.builder import Builder
@@ -110,7 +110,7 @@ def propose_questions(
     return questionnaire.propose_questions(file_path, card_partial, eda_findings)
 
 
-# ── 清洗 MDP 会话工具（本地执行；π 在 agent，环境面在 cleaning_session）──────
+# ── 清洗 POMDP 会话工具（本地执行；π 在 agent，环境面在 cleaning_session）────
 # 问卷在剧本层（propose_questions 出题）；start(card) 唯一主通道直进动作面。
 
 
@@ -124,7 +124,7 @@ def clean_session_start(
     ] = None,
     max_steps: Annotated[int, Field(description="清洗预算（最大动作步数）")] = 15,
 ) -> dict:
-    """开局清洗 MDP 会话：v0 快照 + 初始错误清单 + 内生质量分。
+    """开局清洗 POMDP 会话：v0 快照 + 初始错误清单 + 内生质量分。
 
     何时使用 clean_session_start：
     - 建档问卷完成后，开始自主清洗的回合循环

@@ -1,9 +1,25 @@
 # mflowy-model（建模域）
 
-MFlowy 建模域包：建模训练 MDP 的动作域——x_y / cv / x_transformer / model /
+MFlowy 建模域包：建模训练 POMDP 的动作域——x_y / cv / x_transformer / model /
 plot(model_evaluation + model_interpretability)。CPU 建模栈为硬依赖；torch 栈在 `[deep]`
 extra（uvx 安装需 `--index https://download.pytorch.org/whl/cpu`，仅 MLP flavor 需要——
 缺它时 `list-nodes` 降级标注，不影响其余能力）。
+
+## 会话 POMDP 元素表（O/S/A/P·T/R）
+
+契约下限与校验器住 `driver/pomdp.py`（Observation / FinishVerdict / Candidate）；本域语义如下（引擎 = `session.py`，s 元组与八动作面的完整定义见
+模块 docstring。转移确定性——无概率转移表；可观测性 = diagnose/规则覆盖面：board 聚合与
+findings 是真态的多对一投影——同聚合不同病灶不可分；u_inner/std 是隐藏真值的带噪估计
+（fold_std 观测即为此设）；report_findings（#36）= π 自带传感器的私有观测落账，补程序化观测
+函数的覆盖缺口）：
+
+| 元素          | 本域定义                                                                                   | 居所                                        |
+| ------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------- |
+| O 观测        | `_observe` 域加字段（candidates / cursor / board / budget）——簿记态全可见；OOF 观察面（见下节）随 run_hpo 免费出，病灶可见性以 diagnose/规则覆盖面为界 | `_observe` / `diagnose.py` / `report.py`    |
+| S 状态        | 真态 = s 元组（光标 m/H/seed/F, 账本 board, oof, budget, done, history）+ 未探 combo 的真值景观（不可直读，仅经带噪 u_inner 间接观测）；真源 = 盘上 sqlite study（append-only），账本条目为派生缓存 | 模块 docstring / `_board` / `_digest`       |
+| A 动作        | 八动作面：配置编辑 ×5（零步费零奖励）∪ 计算动作 ×2（吃步）∪ done（= finish 独立入口）；词表外 fail-loud 带清单 | `ACTIONS` / `COMPUTE_ACTIONS` / `apply_action` |
+| P·T 转移      | 光标编辑推快照；run_hpo 增量追加 study（目标同一性判据）；final_train_test 冻结 combo（holdout 读恰一次）；rollback 只回退光标——账本 / 预算 / 盘上 study 永不回退 | `_select_*` / `_run_hpo` / `_final_train_test` / `rollback` |
+| R 奖励        | run_hpo = Δu_inner（新键 = u_inner 绝对值）；配置编辑与终训 r = 0；终局 = verdict（holdout u + rank 一致性，accepted 恒真） | `_run_hpo` / `finish_session`               |
 
 - 动作族：`model/`（XGB/LGBM/CAT/RF/MLP/loader——全部返回 ModelLoader，组寻址契约单一）、
   `x_transformer/`（编码 ×5 + 数值变换 ×8）、`cv/`（types.py 契约叶子 + split 参数构建 + load 引用加载——契约与节点同族居住）、

@@ -1,7 +1,7 @@
 [project]
 name = "mflowy-data"
 version = "0.2.0"
-description = "MFlowy data domain — load / statistic / detect / clean + plot（数据清洗 MDP 的动作域；第三方插件包的活参考）"
+description = "MFlowy data domain — load / statistic / detect / clean + plot（数据清洗 POMDP 的动作域；第三方插件包的活参考）"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"

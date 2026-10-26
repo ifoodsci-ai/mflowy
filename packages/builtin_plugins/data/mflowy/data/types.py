@@ -1,6 +1,6 @@
 """数据域共享类型：任务类型 TASKTYPE（target 列的数据事实）+ 领域建档卡 DomainCard。
 
-两个 MDP（clean.auto / model.auto）隔离任务的唯一通信载体——问卷答案的结构化产物，
+两个 POMDP（清洗/建模会话）隔离任务的唯一通信载体——问卷答案的结构化产物，
 经参数边只读注入；清洗链的产物本身走 df 数据边，不经此卡。
 """
 
@@ -141,7 +141,7 @@ class TASKTYPE(DualFormStrEnum):
 
 @dataclass
 class DomainCard:
-    """数据领域建档卡：问卷答案的结构化产物，两个 MDP 的先验输入。
+    """数据领域建档卡：问卷答案的结构化产物，两个 POMDP 的先验输入。
 
     由 survey 节点产出（列引用已对 df 校验，撒谎 fail-loud）。消费约定：
     - clean.auto：never_drop 列免删、unit_hints 供 strip_units、expected_ranges 供 range_clip、target 指明标签列

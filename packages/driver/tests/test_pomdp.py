@@ -1,4 +1,4 @@
-"""mdp_session 契约：投影类型 / fail-loud 校验器 / SessionStore 生命周期基座。
+"""pomdp 契约：投影类型 / fail-loud 校验器 / SessionStore 生命周期基座。
 
 seam 即 interface，测试即消费方（先例：test_binding.py）——只测外部行为；
 #30/#31 的合规测试以本契约对账真实域响应（契约的牙齿在域侧咬合）。
@@ -9,7 +9,7 @@ import os
 import time
 
 import pytest
-from mflowy.driver.mdp_session import (
+from mflowy.driver.pomdp import (
     MDPSessionHandle,
     SessionStore,
     is_terminal_state,
@@ -22,7 +22,7 @@ from mflowy.driver.mdp_session import (
 class TestExports:
     def test_contract_surface(self):
         """会话 SDK 公开面：三投影类型 + 三校验器 + Handle + SessionStore 齐备。"""
-        import mflowy.driver.mdp_session as m
+        import mflowy.driver.pomdp as m
 
         for name in (
             "Observation",
