@@ -237,6 +237,16 @@ class POMDPSession:
         o = self._load_observation()
         return o.finished or o.abandoned
 
+    @property
+    def observation(self) -> Observation:
+        """只读观测视图（preview/终局计算等零副作用读；可变面走操作上下文）。"""
+        return self._load_observation()
+
+    @property
+    def decision_log(self) -> _DecisionLog:
+        """只读决策日志（append 即 raise——读历史用）。"""
+        return _DecisionLog(self._dir / DECISION_LOG_FILE, readonly=True)
+
     # ── 六操作上下文（公共 interface）───────────────────────────────────────
 
     @contextmanager
