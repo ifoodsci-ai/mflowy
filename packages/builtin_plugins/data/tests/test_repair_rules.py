@@ -85,26 +85,27 @@ def test_propose_actions_via_engine_keeps_menu_shape(sessions_root, tmp_path):
     from mflowy.data import cleaning_session as cs
 
     s = cs.start_session(_dirty_csv(tmp_path), card={"domain": "t"})
-    props = cs.propose_actions(s["session_id"])
+    props = [cs.menu_of(a) for a in cs.propose_actions(s.session_id)]
     assert props
     for p in props:
         assert set(p) == {"action", "params", "source_kinds", "rationale", "evidence"}
         assert p["evidence"]["kind"] in p["source_kinds"]
-    assert (sessions_root / s["session_id"] / "rules.pkl").exists()
+    assert (sessions_root / s.session_id / "rules.pkl").exists()
 
 
 def test_session_engine_pkl_carries_custom_rule_across_calls(sessions_root, tmp_path):
     """自定义规则进会话实例：pkl 持载，propose 菜单带出（盘上实例活语义）。"""
     from mflowy.data import cleaning_session as cs
-    from mflowy.driver.rule import rule_engine_rwa
+    from mflowy.driver.rule import load_rule_engine, save_rule_engine
 
     s = cs.start_session(_dirty_csv(tmp_path), card={"domain": "t"})
-    cs.propose_actions(s["session_id"])  # 首调用建 pkl
 
-    with rule_engine_rwa(str(sessions_root / s["session_id"] / "rules.pkl"), repair_rules.default_engine()) as e:
-        e.register(_ImputeFallbackRule())
+    pkl = sessions_root / s.session_id / "rules.pkl"
+    e = load_rule_engine(str(pkl)) or repair_rules.default_engine()
+    e.register(_ImputeFallbackRule())
+    save_rule_engine(str(pkl), e)
 
-    props = cs.propose_actions(s["session_id"])
+    props = [cs.menu_of(a) for a in cs.propose_actions(s.session_id)]
     assert any(p["action"] == "impute" and p["rationale"] == "自定义兜底" for p in props)
 
 

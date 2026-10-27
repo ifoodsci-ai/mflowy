@@ -46,9 +46,12 @@ def test_start_with_card_enters_actions_directly(sessions_root, dirty_csv):
     """start(card) 唯一主通道:动作面即 clean 词表,相位字段不复存在。"""
     s = cs.start_session(dirty_csv, card={"domain": "t", "target": "target", "id_columns": ["sid"]})
 
-    assert "phase" not in s  # 相位坍缩
-    assert "fill_median" in s["allowed"]
-    assert "card_update" not in s["allowed"] and "commit_card" not in s["allowed"]
+    assert "phase" not in s.model_dump()  # 相位坍缩
+    from mflowy.driver.discover import namespace_nodes
+
+    vocab = set(namespace_nodes("clean"))  # 动作面 = 运行期 clean 词表（allowed 键随 #89 退役——词表即真源）
+    assert "fill_median" in vocab
+    assert "card_update" not in vocab and "commit_card" not in vocab
 
 
 def test_p0_meta_actions_rejected_as_off_vocabulary(sessions_root, dirty_csv):
@@ -56,9 +59,9 @@ def test_p0_meta_actions_rejected_as_off_vocabulary(sessions_root, dirty_csv):
     s = cs.start_session(dirty_csv, card={"domain": "t", "target": "target", "id_columns": ["sid"]})
 
     with pytest.raises(ValueError, match="clean"):
-        cs.apply_action(s["session_id"], "card_update", {"domain": "x"})
+        cs.apply_action(s.session_id, "card_update", {"domain": "x"})
     with pytest.raises(ValueError, match="clean"):
-        cs.apply_action(s["session_id"], "commit_card", {})
+        cs.apply_action(s.session_id, "commit_card", {})
 
 
 def test_start_validates_card_fail_loud(sessions_root, dirty_csv):
@@ -69,5 +72,5 @@ def test_start_validates_card_fail_loud(sessions_root, dirty_csv):
     s = cs.start_session(
         dirty_csv, card={"domain": "t", "target": "target", "id_columns": ["sid"], "defect_priority": {"missing": 0.5}}
     )
-    assert s["card"]["never_drop"] == ["target", "sid"]  # 校验后富化的 never_drop 就位
-    assert s["card"]["defect_priority"] == {"missing": 0.5}  # 记分牌等扩展字段随卡透传
+    assert s.prior["never_drop"] == ["target", "sid"]  # 校验后富化的 never_drop 就位
+    assert s.prior["defect_priority"] == {"missing": 0.5}  # 记分牌等扩展字段随卡透传

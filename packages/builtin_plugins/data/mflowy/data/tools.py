@@ -131,7 +131,7 @@ def clean_session_start(
     """
     from . import cleaning_session
 
-    return cleaning_session.start_session(file_path, card=card, max_steps=max_steps)
+    return cleaning_session.start_session(file_path, card=card, max_steps=max_steps).model_dump()
 
 
 def clean_propose(session_id: Annotated[str, Field(description="会话 ID")]) -> list[dict]:
@@ -142,7 +142,7 @@ def clean_propose(session_id: Annotated[str, Field(description="会话 ID")]) ->
     """
     from . import cleaning_session
 
-    return cleaning_session.propose_actions(session_id)
+    return [cleaning_session.menu_of(a) for a in cleaning_session.propose_actions(session_id)]
 
 
 def clean_apply(
@@ -163,7 +163,7 @@ def clean_apply(
     """
     from . import cleaning_session
 
-    return cleaning_session.apply_action(session_id, node, params or {})
+    return cleaning_session.apply_action(session_id, node, params or {}).model_dump()
 
 
 def clean_rollback(
@@ -183,7 +183,7 @@ def clean_rollback(
     """
     from . import cleaning_session
 
-    return cleaning_session.rollback(session_id, to_version)
+    return cleaning_session.rollback(session_id, to_version).model_dump()
 
 
 def clean_finish(
@@ -213,7 +213,8 @@ def clean_finish(
     """
     from . import cleaning_session
 
-    return cleaning_session.finish_session(session_id, min_quality=min_quality, preview=preview)
+    out = cleaning_session.finish_session(session_id, min_quality=min_quality, preview=preview)
+    return out.model_dump() if hasattr(out, "model_dump") else out
 
 
 def clean_abandon(
