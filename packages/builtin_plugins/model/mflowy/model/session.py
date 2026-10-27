@@ -1598,9 +1598,18 @@ def _json(v) -> str:
 
 
 def save_loader(session_id: str, loader, key: str) -> None:
-    """final_train_test 后持久化 loader 门面（键 = 结构键；多模型会话各持一份，sid 相对寻址）。"""
-    with open(_root() / session_id / f"loader_{_key_file(key)}.pkl", "wb") as f:
-        pickle.dump(loader, f)
+    """final_train_test 后持久化 loader 门面（键 = 结构键；多模型会话各持一份，sid 相对寻址）。
+
+    M5（#89 ④片）：freeze-once（combo 冻结后不可再终训）⇒ 每 key 恰写一次——
+    文件名即版本（无覆写路径）；写走 write_bytes_atomic（先 dumps 后落盘，
+    红线 3）。
+    """
+    from mflowy.utils.file import write_bytes_atomic
+
+    write_bytes_atomic(
+        str(_root() / session_id / f"loader_{_key_file(key)}.pkl"),
+        pickle.dumps(loader, protocol=pickle.HIGHEST_PROTOCOL),
+    )
 
 
 def load_loader(session_id: str, key: str):
