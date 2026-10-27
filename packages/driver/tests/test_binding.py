@@ -11,8 +11,8 @@ from typing import Annotated
 
 import pytest
 from mflowy.driver.binding import (
-    MISSING,
     _NOT_RUN,
+    MISSING,
     Upstream,
     UpstreamMeta,
     check_value,

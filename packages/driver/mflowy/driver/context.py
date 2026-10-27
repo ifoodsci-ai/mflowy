@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any, get_type_hints
 from mflowy.utils.capture import capture_prints
 from mflowy.utils.mlflow import active_tracking
 
-from .binding import MISSING, Upstream, _NOT_RUN
+from .binding import _NOT_RUN, MISSING, Upstream
 from .config import NodeConf
 from .discover import get_node
 

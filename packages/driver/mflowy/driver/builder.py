@@ -27,11 +27,9 @@ from mflowy.utils.file import read_text
 from mflowy.utils.jinja import get_yaml_template_env
 
 from .binding import (
-    MISSING,
     Upstream,
     UpstreamMeta,
     address_kind,
-    check_value,
     edge_hint,
     non_annotated_params,
     param_edge_names,
@@ -39,7 +37,7 @@ from .binding import (
     verify_output_hint,
 )
 from .config import Conf, NodeConf, parse_flow_item, split_node_key
-from .context import _NOT_RUN, Context
+from .context import Context
 from .dag import DAG, lineage_closure
 from .discover import find_edge, get_node
 
@@ -96,23 +94,6 @@ def _match_upstream(
         return [], False, expect  # 可选零命中：省略注入，签名默认值原生生效
     elem, collect = edge_hint(expect)
     return (matched if collect else matched[-1:]), collect, elem if collect else expect
-
-
-def _fetch(name: str, check_expect: object, chosen: list[Context], collect: bool) -> Callable:
-    """取值闭包（wet 单点）：惰性拉起（哨兵去重）+ 值级复核 + collect/single 整形。"""
-
-    def call():
-        values = []
-        for c in chosen:
-            if c.result is _NOT_RUN:
-                c.run()  # 惰性拉起：绑定/子图入口发现前驱未执行
-            check_value(name, check_expect, c.result)
-            values.append(c.result)
-        if not values:
-            return MISSING
-        return iter(values) if collect else values[0]
-
-    return call
 
 
 def _reverse_bfs(nodes: list[Context]) -> list[Context]:
@@ -272,11 +253,8 @@ class Builder:
             pairs.append((up, None))
         by_param.setdefault(name, []).extend(chosen)
         direct.append(
-            Upstream(
-                UpstreamMeta(name, not optional, table.kind(name)),
-                expect,
-                _fetch(name, elem, chosen, collect),
-                chosen,  # 与 call 闭包共享同一列表——剪枝就地过滤两边同步
+            Upstream.node(
+                UpstreamMeta(name, not optional, table.kind(name)), expect, chosen, check_expect=elem, collect=collect
             )
         )
 
@@ -304,28 +282,13 @@ class Builder:
             for up in chosen:
                 verify_output_hint(f"{name}.{n}", h, up.handler_raw)
                 pairs.append((up, name))
-            fetch = _fetch(n, elem, chosen, collect)
-            via_inner.append(
-                Upstream(
-                    UpstreamMeta(n, not opt, table.kind(n), name),
-                    h,
-                    fetch,
-                    chosen,  # 与 call 闭包共享同一列表——剪枝就地过滤两边同步
-                )
+            u = Upstream.node(
+                UpstreamMeta(n, not opt, table.kind(n), name), h, chosen, check_expect=elem, collect=collect
             )
-            inner[n] = fetch
+            via_inner.append(u)
+            inner[n] = u.call
 
-        def edge_call():
-            params = {}
-            for n, fetch in inner.items():
-                v = fetch()
-                if v is not MISSING:  # 零命中省略参数：边函数签名默认值原生生效
-                    params[n] = v
-            result = edge_raw(**params)
-            check_value(name, expect, result)  # 边返回值复核（与节点输出对称的撒谎防线）
-            return result
-
-        direct.append(Upstream(UpstreamMeta(name, not optional, "edge", via=name), expect, edge_call))
+        direct.append(Upstream.edge(edge_raw, name, expect, required=not optional, inner=inner))
 
     def _prune_disabled(self, nodes: list[Context]) -> list[Context]:
         """disabled = 必选依赖闭包剪枝（``lineage_closure(required_only=True)`` 单源）：
