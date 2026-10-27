@@ -3,9 +3,10 @@
 - **编译期**（builder）：签名对节点表解析，产出 ``(direct, via)`` 两列 ``Upstream``
   挂到 ``ctx.upstreams``；``ctx._upstream_pairs`` 为 (上游 ctx, 边名|None) 绑定序记录，
   供图物化与中间件侧信道（``upstream_contexts``）消费。
-- **运行期**：``_bind`` 逐 direct 项惰性取值——闭包内完成拉起未执行上游（哨兵去重）、
-  值级复核（``check_value``）与 collect/single 整形（血缘 = ``_prevs`` 派生视图）；``MISSING``（零命中）
-  省略参数，Python 签名默认值原生生效。
+- **运行期**：``_bind`` 逐 direct 项惰性取值——取值闭包（``binding.Upstream.node``/
+  ``Upstream.edge`` 构造，拉起/哨兵去重/值级复核/整形居 binding）完成拉起未执行
+  上游与整形（血缘 = ``prevs`` 血缘视图派生）；``MISSING``（零命中）省略参数，
+  Python 签名默认值原生生效。
 
 注入契约（注解驱动，判定源在 ``binding.edge_hint``）：
 
@@ -25,15 +26,13 @@ from typing import TYPE_CHECKING, Any, get_type_hints
 from mflowy.utils.capture import capture_prints
 from mflowy.utils.mlflow import active_tracking
 
-from .binding import MISSING, Upstream
+from .binding import MISSING, Upstream, _NOT_RUN
 from .config import NodeConf
 from .discover import get_node
 
 logger = logging.getLogger(__name__)
 
 _counter: ContextVar[itertools.count | None] = ContextVar("node_counter_id", default=None)
-# 执行哨兵：区分"未执行"与"已执行返回 None"；恒等（is）判定，== 遇 DataFrame 会崩
-_NOT_RUN = object()
 
 
 @dataclass
