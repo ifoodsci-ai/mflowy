@@ -1224,15 +1224,15 @@ def propose_actions(session_id: str) -> list[dict]:
     }
     # 会话实例从盘加载/复制（默认 = modelRuleEngine 注册面；自定义规则 pkl 持载）
     with rule_engine_rwa(str(store.session_dir(session_id) / "rules.pkl"), propose_rules.default_engine()) as engine:
-        engine.fire(R={"findings": findings, "ctx": ctx})
+        engine.fire(o={"findings": findings, "ctx": ctx})
         activations = engine.poll_proposals()
         subscribed = {getattr(r, "kind", None) for r in engine.rules.values()}
     if unconsumed := sorted({f["kind"] for f in findings} - subscribed):
         logging.getLogger(__name__).warning("findings 无规则订阅（无静默丢弃——补订阅或修 kind）：%s", unconsumed)
     driven = [
         {
-            "action": a.proposal["action"],
-            "params": dict(a.proposal["params"]),
+            "action": a.action,
+            "params": dict(a.params),
             "rationale": a.rationale,
             "evidence": {
                 **(a.evidence or {}),

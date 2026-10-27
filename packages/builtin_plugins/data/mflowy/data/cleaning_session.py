@@ -471,15 +471,15 @@ def propose_actions(session_id: str) -> list[dict]:
     report = _detect_all(df, card)
 
     with rule_engine_rwa(str(store.session_dir(session_id) / "rules.pkl"), default_engine()) as engine:
-        engine.fire(R={"defects": report, "card": card, "df": df})
+        engine.fire(o={"defects": report, "card": card, "df": df})
         activations = engine.poll_proposals()
     menu = []
     for a in activations:
         kind = (a.evidence or {}).get("kind")  # 规则快照自带订阅 kind（无 kind 的自定义规则记空）
         menu.append(
             {
-                "action": a.proposal["action"],
-                "params": dict(a.proposal["params"]),
+                "action": a.action,
+                "params": dict(a.params),
                 "source_kinds": [kind] if kind else [],
                 "rationale": a.rationale,
                 "evidence": dict(a.evidence or {}),

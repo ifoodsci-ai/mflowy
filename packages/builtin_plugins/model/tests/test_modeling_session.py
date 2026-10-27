@@ -14,10 +14,33 @@ import json
 import numpy as np
 import pandas as pd
 import pytest
-from mflowy.driver.pomdp import verify_candidate, verify_observation, verify_verdict
 from mflowy.model import session as ms
 
 _K_RF = "RF|passthrough|passthrough"
+
+
+# ── #89 过渡钉：#29 契约地板（域迁移上壳后改 Observation.model_validate——
+#    封闭模型拒域尾巴，尾巴届时归位 prior/state_digest） ─────────────────────
+
+
+def _floor_observation(resp):
+    assert isinstance(resp["session_id"], str) and resp["state_digest"] is not None
+    assert resp["reward"] is None or (isinstance(resp["reward"], (int, float)) and type(resp["reward"]) is not bool)
+    assert type(resp["should_stop"]) is bool
+    assert type(resp["steps"]) is int and type(resp["max_steps"]) is int
+
+
+def _floor_verdict(v):
+    assert type(v["accepted"]) is bool
+    assert isinstance(v["deliverables"], dict) and isinstance(v["decision_log"], list)
+    if not v["accepted"]:
+        assert v.get("reason")  # 拒收必附 reason
+
+
+def _floor_candidate(c):
+    assert isinstance(c["action"], str) and isinstance(c["params"], dict)
+    assert isinstance(c["rationale"], str)
+    assert c["evidence"] is None or isinstance(c["evidence"], dict)
 
 
 @pytest.fixture(autouse=True)
@@ -99,7 +122,7 @@ def _pdf(tmp_path, name="final_report.pdf") -> str:
 def test_start_cursor_and_budget(sessions_root, reg_csv):
     """start：光标空位（m=None/H/seed 空、F 双 passthrough——#66 单表 H 无 h_space 成员）+ split 物化。"""
     s = _start(sessions_root, reg_csv)
-    verify_observation(s)
+    _floor_observation(s)
     assert s["reward"] is None and s["steps"] == 0 and s["max_steps"] == 8
     assert s["cursor"] == {
         "m": None,
@@ -118,7 +141,7 @@ def test_start_cursor_and_budget(sessions_root, reg_csv):
 def test_select_model_sets_cursor_zero_cost(sessions_root, reg_csv):
     s = _start(sessions_root, reg_csv)
     r = ms.apply_action(s["session_id"], "select_model", {"family": "RF"})
-    verify_observation(r)
+    _floor_observation(r)
     assert r["cursor"]["m"] == "RF" and r["steps"] == 0 and r["reward"] == 0  # 配置编辑零步费零奖励
     with pytest.raises(ValueError, match="候选"):
         ms.apply_action(s["session_id"], "select_model", {"family": "NOPE"})
@@ -207,7 +230,7 @@ def test_select_fe_guards_and_slot_update(sessions_root, cat_csv):
 def test_run_hpo_returns_delta_reward_and_writes_study(sessions_root, reg_csv):
     """run_hpo：新键 reward = u_inner；study sqlite 落会话目录；OOF 观察面挂 run。"""
     s, r = _hpo(sessions_root, reg_csv, n_trials=2)
-    verify_observation(r)
+    _floor_observation(r)
     assert r["reward"] is not None and r["steps"] == 1
     assert r["board"][_K_RF]["u_inner"] == r["reward"]
     m = _manifest(sessions_root, s["session_id"])
@@ -226,7 +249,7 @@ def test_final_train_test_freezes_and_reads_holdout_once(sessions_root, reg_csv,
     （交付的 plan_yaml 就是那次终训本身，重放承诺与执行事实同一）。"""
     s, _ = _hpo(sessions_root, reg_csv, n_trials=2)
     r = ms.apply_action(s["session_id"], "final_train_test")
-    verify_observation(r)
+    _floor_observation(r)
     assert r["reward"] == 0 and r["steps"] == 2
     m = _manifest(sessions_root, s["session_id"])
     entry = m["models"][_K_RF]
@@ -410,7 +433,7 @@ def test_finish_delivers_frozen_combos_idempotent(sessions_root, reg_csv, tmp_pa
     ms.apply_action(s["session_id"], "final_train_test")
     v = ms.finish_session(s["session_id"], pdf=_pdf(tmp_path))
     again = ms.finish_session(s["session_id"], pdf=_pdf(tmp_path))  # 同报告源重入 = 幂等重导出
-    verify_verdict(v)
+    _floor_verdict(v)
     assert v["accepted"] is True
     assert v["terminal_utility"][_K_RF] is not None
     assert v["deliverables"][_K_RF]["loader"] and v["deliverables"][_K_RF]["plan_yaml"]
@@ -504,7 +527,7 @@ def test_propose_menu_covers_action_faces(sessions_root, reg_csv):
     s = _start(sessions_root, reg_csv)
     props = ms.propose_actions(s["session_id"])
     assert [p["action"] for p in props] == ["select_model"]
-    verify_candidate(props[0])
+    _floor_candidate(props[0])
 
     ms.apply_action(s["session_id"], "select_model", {"family": "RF"})
     props2 = ms.propose_actions(s["session_id"])
@@ -544,7 +567,7 @@ def test_propose_merges_same_action_params(sessions_root, reg_csv):
     assert len(deepen) == 1  # 多条 fold_std 命中同一加深题（n_trials 同式）→ 一项
     assert "；" in deepen[0]["rationale"]  # rationale 并集
     assert len(deepen[0]["evidence"]["co_hits"]) >= 2  # 命中溯源并列（不静默吸收）
-    verify_candidate(deepen[0])
+    _floor_candidate(deepen[0])
 
 
 # ── split 身份 tag 落 run ───────────────────────────────────────────────────

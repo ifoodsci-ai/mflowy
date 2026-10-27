@@ -203,7 +203,7 @@ def test_deeper_rule_respects_n_trials_signature():
 
     ctx_ok = {**ctx, "has_n_trials": {"FAKE": True}}
     acts2 = rule.propose({"findings": [{"kind": "fold_std", "severity": 0.5}], "ctx": ctx_ok})
-    assert acts2 and acts2[0].proposal["params"]["n_trials"] >= 6
+    assert acts2 and acts2[0].params["n_trials"] >= 6
 
 
 def test_findings_driven_menu_deterministic_order(searched):
