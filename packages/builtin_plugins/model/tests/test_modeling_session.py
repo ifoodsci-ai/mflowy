@@ -685,3 +685,38 @@ def test_catboost_category_nan_fail_loud():
     est = model_cls[TASKTYPE.CLASSIFICATION](iterations=2)
     with pytest.raises(ValueError, match="NaN"):
         est.fit(X, y)
+
+
+def test_rollback_after_rerun_preserves_deliverables(sessions_root, reg_csv, tmp_path):
+    """#89 ④片 M5 验收（model 侧）：冻结 combo 的 loader/plan 在回滚与重跑后完好。
+
+    append-only 账本 + freeze-once（同键不可再终训）⇒ 已交付/将交付指针永不
+    悬空——loader 每 key 恰写一次（文件名即版本），光标回退不动账本与冻结面。
+    """
+    from mflowy.utils.file import sha256_of
+
+    s = _start(sessions_root, reg_csv, fams=("RF", "XGB"))
+    ms.apply_action(s.session_id, "select_model", {"family": "RF"})
+    ms.apply_action(s.session_id, "run_hpo", {"n_trials": 2})
+    sid = s.session_id
+    ms.apply_action(sid, "final_train_test")  # RF 冻结 + loader/plan 落盘
+    loader_file = sessions_root / sid / f"loader_{_K_RF.replace('|', '__')}.pkl"
+    plan_file = sessions_root / sid / "plans" / f"final_{_K_RF.replace('|', '__')}.yaml"
+    sha_before = sha256_of(loader_file)
+    assert plan_file.exists()
+
+    ms.rollback(sid)  # 光标回退（账本/冻结面不动——盘上 append-only）
+    ms.apply_action(sid, "select_model", {"family": "XGB"})  # 重跑另一 combo
+    ms.apply_action(sid, "set_hp", {"n_estimators": 15})
+    ms.apply_action(sid, "run_hpo", {"n_trials": 2})
+    ms.apply_action(sid, "final_train_test")
+
+    # 旧分支工件零变更；指针仍可载
+    assert sha256_of(loader_file) == sha_before
+    assert ms.load_loader(sid, _K_RF) is not None
+
+    v = ms.finish_session(sid, pdf=_pdf(tmp_path))
+    delivered = v.deliverables
+    assert set(delivered) == {_K_RF, "XGB|passthrough|passthrough"}  # 双冻结 combo 全交付
+    assert delivered[_K_RF]["loader"]["file"] == loader_file.name  # 指针 = 盘上实物名
+    assert (sessions_root / sid / delivered[_K_RF]["loader"]["file"]).exists()
