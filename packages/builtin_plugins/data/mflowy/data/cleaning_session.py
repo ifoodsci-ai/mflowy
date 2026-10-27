@@ -37,7 +37,7 @@ from mflowy.data.detect.range_violation import range_violation as detect_range_v
 from mflowy.data.detect.scoring import quality_score as _qs_raw
 from mflowy.data.detect.stringly import stringly as detect_stringly
 from mflowy.data.fingerprint import fingerprint
-from mflowy.driver.pomdp import SessionStore
+from mflowy.driver.session import SessionStore
 from mflowy.utils.file import sha256_of
 
 
