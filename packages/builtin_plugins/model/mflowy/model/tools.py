@@ -265,7 +265,7 @@ def modeling_session_start(
         goal=goal,
         external_baseline=external_baseline,
         card=card,
-    )
+    ).model_dump()
 
 
 def modeling_propose(session_id: Annotated[str, Field(description="会话 ID")]) -> list[dict]:
@@ -278,7 +278,7 @@ def modeling_propose(session_id: Annotated[str, Field(description="会话 ID")])
     """
     from . import session
 
-    return session.propose_actions(session_id)
+    return [a.model_dump() for a in session.propose_actions(session_id)]
 
 
 def modeling_apply(
@@ -311,7 +311,7 @@ def modeling_apply(
     """
     from . import session
 
-    return session.apply_action(session_id, node, params)
+    return session.apply_action(session_id, node, params).model_dump()
 
 
 def modeling_rollback(session_id: Annotated[str, Field(description="会话 ID")]) -> dict:
@@ -322,7 +322,7 @@ def modeling_rollback(session_id: Annotated[str, Field(description="会话 ID")]
     """
     from . import session
 
-    return session.rollback(session_id)
+    return session.rollback(session_id).model_dump()
 
 
 def modeling_finish(
@@ -348,7 +348,7 @@ def modeling_finish(
 
     from . import session
 
-    return session.finish_session(session_id, pdf=pdf)
+    return session.finish_session(session_id, pdf=pdf).model_dump()
 
 
 def draw_taylor_diagram(
@@ -406,7 +406,7 @@ def modeling_report_findings(
     """
     from . import session
 
-    return session.report_findings(session_id, key, findings)
+    return session.report_findings(session_id, key, findings).model_dump()
 
 
 def modeling_abandon(

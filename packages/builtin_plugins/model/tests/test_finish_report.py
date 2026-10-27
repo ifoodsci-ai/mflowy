@@ -71,7 +71,21 @@ def _start(root, csv, fams=("RF",)):
 
 
 def _manifest(root, sid):
-    return json.loads((root / sid / "manifest.json").read_text(encoding="utf-8"))
+    """盘上状态合并视图（observation + board——#89 壳三件替代 manifest）。"""
+    o = json.loads((root / sid / "observation.json").read_text(encoding="utf-8"))
+    b = json.loads((root / sid / "board.json").read_text(encoding="utf-8"))
+    log = [json.loads(x) for x in (root / sid / "decision.log").read_text(encoding="utf-8").splitlines() if x.strip()]
+    return {
+        **o["prior"],
+        "split": o["state_digest"]["split"],
+        "cursor": b["cursor"],
+        "snapshots": b["snapshots"],
+        "models": b["models"],
+        "verdict": b.get("verdict"),
+        "steps": o["steps"],
+        "max_steps": o["max_steps"],
+        "decision_log": log,
+    }
 
 
 def _pdf(tmp_path, name="final_report.pdf") -> Path:
@@ -84,7 +98,7 @@ def _pdf(tmp_path, name="final_report.pdf") -> Path:
 def delivered(sessions_root, reg_csv):
     """双模型终态会话：RF + XGB 各搜一次并 final_train_test。"""
     s = _start(sessions_root, reg_csv, fams=("RF", "XGB"))
-    sid = s["session_id"]
+    sid = s.session_id
     for fam, params in (("RF", {"n_estimators": 15}), ("XGB", {"n_estimators": 15})):
         ms.apply_action(sid, "select_model", {"family": fam})
         ms.apply_action(sid, "set_hp", params)  # 收敛 trial 成本
@@ -99,7 +113,7 @@ def delivered(sessions_root, reg_csv):
 def test_run_hpo_writes_oof_plot_album(sessions_root, reg_csv):
     """OOF 图集：run_hpo 产物挂 run 下（run_id 寻址）——图集可按 run 列出。"""
     s = _start(sessions_root, reg_csv)
-    sid = s["session_id"]
+    sid = s.session_id
     ms.apply_action(sid, "select_model", {"family": "RF"})
     ms.apply_action(sid, "set_hp", {"n_estimators": 15})
     ms.apply_action(sid, "run_hpo", {"n_trials": 2})
@@ -118,9 +132,9 @@ def test_run_hpo_writes_oof_plot_album(sessions_root, reg_csv):
 
 def test_draw_taylor_diagram_multi_model(delivered, sessions_root):
     s = delivered
-    m = _manifest(sessions_root, s["session_id"])
+    m = _manifest(sessions_root, s.session_id)
     run_ids = [m["models"][k]["run_id"] for k in (_K, _K2)]
-    out = draw_taylor_diagram(session_id=s["session_id"], run_ids=run_ids)
+    out = draw_taylor_diagram(session_id=s.session_id, run_ids=run_ids)
     stats = out["stats"]
     assert set(stats) == {_K, _K2}  # stats 键 = combo key（ledger 反查）
     for row in stats.values():
@@ -132,8 +146,8 @@ def test_draw_taylor_diagram_multi_model(delivered, sessions_root):
 def test_draw_taylor_diagram_single_model_edge(delivered, sessions_root):
     """单模型：泰勒为多模型对比图——不出图，统计照出（边界显式）。"""
     s = delivered
-    m = _manifest(sessions_root, s["session_id"])
-    out = draw_taylor_diagram(session_id=s["session_id"], run_ids=[m["models"][_K]["run_id"]])
+    m = _manifest(sessions_root, s.session_id)
+    out = draw_taylor_diagram(session_id=s.session_id, run_ids=[m["models"][_K]["run_id"]])
     assert out["figure"] is None and "单模型" in out["note"]
 
 
@@ -141,7 +155,7 @@ def test_draw_taylor_diagram_missing_artifact_fail_loud(delivered):
     """run 不在账本终训面 = fail-loud 带可用清单（无终训副产物的 run 不可入图）。"""
     s = delivered
     with pytest.raises(ValueError, match="终训面"):
-        draw_taylor_diagram(session_id=s["session_id"], run_ids=["no_such_run"])
+        draw_taylor_diagram(session_id=s.session_id, run_ids=["no_such_run"])
 
 
 def test_taylor_byproducts_refuses_mismatched_y_test():
@@ -164,7 +178,7 @@ def test_taylor_byproducts_refuses_mismatched_y_test():
 def test_report_skeleton_renders_from_ledger(delivered, sessions_root):
     """skeleton：表格数字与账本逐位相等（抄文件非默写）+ 图片清单 + 叙事槽；
     只读零副作用（manifest 不动）。"""
-    sid = delivered["session_id"]
+    sid = delivered.session_id
     before = _manifest(sessions_root, sid)
     out = modeling_report_skeleton(session_id=sid)
 
@@ -192,7 +206,7 @@ def test_report_skeleton_renders_from_ledger(delivered, sessions_root):
 
 def test_report_skeleton_includes_taylor_after_draw(delivered, sessions_root):
     """收局剧本序（画泰勒 → 看 skeleton）：泰勒图路径进图片清单。"""
-    sid = delivered["session_id"]
+    sid = delivered.session_id
     m = _manifest(sessions_root, sid)
     out_draw = draw_taylor_diagram(session_id=sid, run_ids=[m["models"][k]["run_id"] for k in (_K, _K2)])
     sk = modeling_report_skeleton(session_id=sid)
@@ -205,25 +219,25 @@ def test_report_skeleton_includes_taylor_after_draw(delivered, sessions_root):
 def test_finish_missing_pdf_fail_loud(delivered, tmp_path):
     """收局带不存在的报告路径 = fail-loud（素材面先经 draw_taylor/skeleton 两工具）。"""
     with pytest.raises(ValueError, match="报告文件不存在"):
-        ms.finish_session(delivered["session_id"], pdf=str(_pdf(tmp_path, "nope.pdf").with_name("absent.pdf")))
+        ms.finish_session(delivered.session_id, pdf=str(_pdf(tmp_path, "nope.pdf").with_name("absent.pdf")))
 
 
 def test_finish_pdf_required(delivered):
     """BREAKING：pdf 必填——preview 分支退役（无 pdf 调用即 TypeError）。"""
     with pytest.raises(TypeError):
-        ms.finish_session(delivered["session_id"])
+        ms.finish_session(delivered.session_id)
 
 
 def test_finish_pdf_adoption_and_verdict(delivered, sessions_root, tmp_path):
     """真收局：收编 π 产报告（tmp/rename 落 deliverables、内容不验）+ verdict 落账。"""
-    sid = delivered["session_id"]
+    sid = delivered.session_id
     pdf = _pdf(tmp_path)
     v = ms.finish_session(sid, pdf=str(pdf))
-    assert type(v["accepted"]) is bool and isinstance(v["deliverables"], dict)  # #89 过渡地板
-    assert v["accepted"] is True
-    assert {k: v["deliverables"][k]["terminal_utility"] for k in (_K, _K2)} == v["terminal_utility"]
-    assert v["report"]["file"] == "deliverables/final_report.pdf"
-    assert (sessions_root / sid / v["report"]["file"]).read_bytes() == pdf.read_bytes()  # 收编落盘
+    assert type(v.accepted) is bool and isinstance(v.deliverables, dict)  # #89 过渡地板
+    assert v.accepted is True
+    assert {k: v.deliverables[k]["terminal_utility"] for k in (_K, _K2)} == v.terminal_utility["u"]
+    assert v.terminal_utility["report"]["file"] == "deliverables/final_report.pdf"
+    assert (sessions_root / sid / v.terminal_utility["report"]["file"]).read_bytes() == pdf.read_bytes()  # 收编落盘
     assert not list((sessions_root / sid / "deliverables").glob(".*.tmp"))  # tmp 收干净
     m = _manifest(sessions_root, sid)
     assert m["verdict"]["report"]["file"] == "deliverables/final_report.pdf"
@@ -232,7 +246,7 @@ def test_finish_pdf_adoption_and_verdict(delivered, sessions_root, tmp_path):
     )
 
     again = ms.finish_session(sid, pdf=str(pdf))
-    assert again["deliverables"] == v["deliverables"]  # 重入幂等
+    assert again.deliverables == v.deliverables  # 重入幂等
     rewrite = tmp_path / "rewrite.pdf"
     rewrite.write_bytes(b"%PDF-1.4 v2")
     with pytest.raises(ValueError, match="不可变更"):
@@ -241,11 +255,10 @@ def test_finish_pdf_adoption_and_verdict(delivered, sessions_root, tmp_path):
 
 def test_modeling_finish_tool_face(delivered, tmp_path):
     """接缝（session→tools）：modeling_finish 的 pdf 透传可达（工具面=会话面）。"""
-    sid = delivered["session_id"]
+    sid = delivered.session_id
     pdf = _pdf(tmp_path)
-    v = modeling_finish(session_id=sid, pdf=str(pdf))
-    assert type(v["accepted"]) is bool and isinstance(v["deliverables"], dict)  # #89 过渡地板
-    assert v["accepted"] is True and v["report"]["file"].startswith("deliverables/")
+    v = modeling_finish(session_id=sid, pdf=str(pdf))  # 工具面 = model_dump 后的 dict
+    assert v["accepted"] is True and v["terminal_utility"]["report"]["file"].startswith("deliverables/")
 
 
 def test_taylor_figure_name_single_source():

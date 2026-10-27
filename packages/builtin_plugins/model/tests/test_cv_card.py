@@ -109,7 +109,7 @@ def test_cv_card_default_candidates_first_is_baseline(reg_csv):
 def test_start_default_candidates_open_all_families(sessions_root, reg_csv):
     """开局不带 candidates（无 research-review 先验）走缺省全族开放面。"""
     s = ms.start_session(reg_csv, CV_CARD, card={"domain": "t", "target": "target"}, task="regression", metric="mae")
-    assert s["candidates"] == sorted(s["candidates"]) and s["candidates"]
+    assert [c["family"] for c in s.prior["candidates"]] == sorted([c["family"] for c in s.prior["candidates"]]) and [c["family"] for c in s.prior["candidates"]]
 
 
 def test_baseline_exactly_one(reg_csv):
@@ -147,8 +147,8 @@ def test_bad_hints_fail_loud(reg_csv):
 
 def test_start_takes_cv_card_and_stores_candidates(sessions_root, reg_csv):
     s = _start(sessions_root, reg_csv)
-    assert isinstance(s["session_id"], str) and type(s["steps"]) is int  # #89 过渡地板
-    m = json.loads((sessions_root / s["session_id"] / "manifest.json").read_text(encoding="utf-8"))
+    assert isinstance(s.session_id, str) and type(s.steps) is int  # #89 过渡地板
+    m = json.loads((sessions_root / s.session_id / "observation.json").read_text(encoding="utf-8"))["prior"]
     assert [c["family"] for c in m["candidates"]] == ["RF", "XGB"]
     assert m["candidates"][0]["baseline"] is True
 
@@ -167,21 +167,21 @@ def test_start_rejects_dict_cv_card(sessions_root, reg_csv):
 def test_hints_seed_cursor_on_select(sessions_root, reg_csv):
     """select_model 注入该候选的 hints（缺省 pins/narrowing）与 seed。"""
     s = _start(sessions_root, reg_csv)
-    r = ms.apply_action(s["session_id"], "select_model", {"family": "XGB"})
-    assert r["cursor"]["H"] == {"max_depth": {"kind": "continuous", "lo": 3, "hi": 6, "step": None}}
-    assert r["cursor"]["seed"] == 7
-    m = json.loads((sessions_root / s["session_id"] / "manifest.json").read_text(encoding="utf-8"))
-    assert m["cursor"]["seed"] == 7  # 有效种子随候选缺省落光标
+    r = ms.apply_action(s.session_id, "select_model", {"family": "XGB"})
+    assert r.state_digest["cursor"]["H"] == {"max_depth": {"kind": "continuous", "lo": 3, "hi": 6, "step": None}}
+    assert r.state_digest["cursor"]["seed"] == 7
+    board = json.loads((sessions_root / s.session_id / "board.json").read_text(encoding="utf-8"))
+    assert board["cursor"]["seed"] == 7  # 有效种子随候选缺省落光标（board = 光标居所）
 
 
 def test_pi_override_wins_over_hints(sessions_root, reg_csv):
     """卡是先验不是边界：π set_hp/set_hp_space/set_seed 覆盖 hint 缺省。"""
     s = _start(sessions_root, reg_csv)
-    ms.apply_action(s["session_id"], "select_model", {"family": "XGB"})
-    r = ms.apply_action(s["session_id"], "set_hp_space", {"max_depth": [4, 5]})
-    assert r["cursor"]["H"]["max_depth"] == {"kind": "continuous", "lo": 4, "hi": 5, "step": None}
-    r2 = ms.apply_action(s["session_id"], "set_seed", {"seed": 123})
-    assert r2["cursor"]["seed"] == 123
+    ms.apply_action(s.session_id, "select_model", {"family": "XGB"})
+    r = ms.apply_action(s.session_id, "set_hp_space", {"max_depth": [4, 5]})
+    assert r.state_digest["cursor"]["H"]["max_depth"] == {"kind": "continuous", "lo": 4, "hi": 5, "step": None}
+    r2 = ms.apply_action(s.session_id, "set_seed", {"seed": 123})
+    assert r2.state_digest["cursor"]["seed"] == 123
 
 
 def test_scalar_hint_pins(sessions_root, reg_csv):
@@ -191,8 +191,8 @@ def test_scalar_hint_pins(sessions_root, reg_csv):
         reg_csv,
         candidates=[{"family": "RF", "baseline": True, "space_hints": {"n_estimators": 50}}],
     )
-    r = ms.apply_action(s["session_id"], "select_model", {"family": "RF"})
-    assert r["cursor"]["H"] == {"n_estimators": 50}
+    r = ms.apply_action(s.session_id, "select_model", {"family": "RF"})
+    assert r.state_digest["cursor"]["H"] == {"n_estimators": 50}
 
 
 # ── 菜单：baseline 第一 ─────────────────────────────────────────────────────
@@ -200,10 +200,10 @@ def test_scalar_hint_pins(sessions_root, reg_csv):
 
 def test_propose_baseline_first(sessions_root, reg_csv):
     s = _start(sessions_root, reg_csv)
-    props = ms.propose_actions(s["session_id"])
-    sel = [p for p in props if p["action"] == "select_model"]
-    assert sel[0]["params"]["family"] == "RF" and sel[0]["evidence"]["baseline"] is True
-    assert sel[1]["params"]["family"] == "XGB" and sel[1]["evidence"]["baseline"] is False
+    props = ms.propose_actions(s.session_id)
+    sel = [p for p in props if p.action == "select_model"]
+    assert dict(sel[0].params)["family"] == "RF" and sel[0].evidence["baseline"] is True
+    assert sel[1].params["family"] == "XGB" and sel[1].evidence["baseline"] is False
 
 
 def test_defaults_held_only_by_build_signature():
