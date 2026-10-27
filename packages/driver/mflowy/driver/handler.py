@@ -38,8 +38,9 @@ def handler[R](*middlewares: Middleware, namespace: str = ""):
     自定义数据结构的 YAML 值转换一律挂在类型的 ``__get_pydantic_core_schema__`` 上
     （词汇主人侧）。
 
-    ``namespace`` 声明归组（能力族，空串=非归组）——身份声明源，hatch 构建期
-    AST 读取生成 entry point 名（``namespace.node_name`` / 裸 ``node_name``）。
+    ``namespace`` 声明归组（能力族，空串=非归组），运行期挂 ``fn.namespace``/
+    ``fn.node_key`` 元数据；注册身份 = pyproject 静态声明的 entry point 名
+    （``namespace.node_name`` / 裸 ``node_name``），与装饰器逐字一致由 CR 兜底。
     """
 
     def decorator(fn: Callable[..., R]):

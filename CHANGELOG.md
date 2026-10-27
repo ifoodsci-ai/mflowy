@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - Unreleased
 
+### BREAKING：插件注册静态化——构建期 hatch AST 扫描钩子退役，entry points 手写声明（贡献者工作流 breaking，词表零破坏）
+
+- 两份 `hatch_metadata.py`（105 行 × 2，构建期扫描 `@handler`/`@edge` 生成注册）删除：
+  83 条 `mflowy.builtin_plugins`（节点 78 + 边 5）+ 24 条 `mflowy.tools` 全部手写为
+  两域 `[project.entry-points.*]` 静态声明；`[tool.mflowy.tools]` 过渡表、
+  `dynamic=["entry-points"]`、`[tool.hatch.metadata.hooks.custom]` 接线一并退役。
+  内置包与第三方插件的注册方式就此同构（CONTEXT 插件词条宣称成真）。
+- 动机（架构复审候选 4）：插件身份协议原存两套实现 × 两份已互相漂移的拷贝
+  （model 侧 `_EXCLUDED` 多 `"base"`）、纪律同步——删除构建期实现即删除第二份协议定义。
+- 约束机制（决策：不设镜像测试）：注册漂移由 CR + `list-nodes` 交叉检查兜底——
+  AGENTS「添加能力」CR 必查三项：新 `@handler`/`@edge` 必有声明、声明必有函数、
+  namespace 段与装饰器逐字一致。机器兜底仅加载期单向（声明指向未装饰函数即
+  fail-loud，`_load_ep` 属性校验）；忘声明/错 namespace 为静默面，靠 CR。
+- StepType 构建期防线随钩子退役（类全仓已不存在，残留旧签名 import 期 NameError）；
+  `tests/test_hatch_metadata.py`（钩子契约）随之删除；根 pyproject 两处 E402 豁免清除。
+- 迁移验收：`list-nodes` 输出与 107 条 entry points 名单迁移前后逐字节一致（diff=0）。
+- 工作流变化：新增/删除/改名节点或边 = 代码 + pyproject 声明同 PR + `uv sync`
+  （原为仅 `uv sync`）；运行时行为、词表、YAML 兼容性零变化。
+
 ### Added（#88）：login 平台工具——OAuth 2.1 身份地基（PKCE S256 + loopback + token 库）
 
 - **`mflowy.utils.auth`（纯 stdlib）**：平台 OAuth 2.1 客户端——授权码流

@@ -2,7 +2,7 @@
 
 词表来源（按序合并，后组覆盖前组）：
 
-- ``mflowy.builtin_plugins``：本包内置能力，由 ``hatch_metadata.py`` 构建期扫描 ``mflowy.builtin_plugins.**`` 生成
+- ``mflowy.builtin_plugins``：本包内置能力，pyproject ``[project.entry-points]`` 静态声明（声明即词表；与装饰器一致性由 CR 兜底）
 - ``mflowy.plugins``：第三方插件包，声明即注册（随 uv/pip 安装进入环境）
 
 目录表形为**扁平身份键**：``dict[node_key, EntryPoint]``（``组名__节点名``，与
