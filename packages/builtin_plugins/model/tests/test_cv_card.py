@@ -109,7 +109,9 @@ def test_cv_card_default_candidates_first_is_baseline(reg_csv):
 def test_start_default_candidates_open_all_families(sessions_root, reg_csv):
     """开局不带 candidates（无 research-review 先验）走缺省全族开放面。"""
     s = ms.start_session(reg_csv, CV_CARD, card={"domain": "t", "target": "target"}, task="regression", metric="mae")
-    assert [c["family"] for c in s.prior["candidates"]] == sorted([c["family"] for c in s.prior["candidates"]]) and [c["family"] for c in s.prior["candidates"]]
+    assert [c["family"] for c in s.prior["candidates"]] == sorted([c["family"] for c in s.prior["candidates"]]) and [
+        c["family"] for c in s.prior["candidates"]
+    ]
 
 
 def test_baseline_exactly_one(reg_csv):

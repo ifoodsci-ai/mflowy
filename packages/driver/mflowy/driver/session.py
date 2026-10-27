@@ -250,7 +250,9 @@ class POMDPSession:
     # ── 六操作上下文（公共 interface）───────────────────────────────────────
 
     @contextmanager
-    def start_ctx(self, max_steps: int, *, prior: Mapping[str, Any] | None = None, state_digest: Mapping[str, Any] | None = None) -> Iterator[Observation]:
+    def start_ctx(
+        self, max_steps: int, *, prior: Mapping[str, Any] | None = None, state_digest: Mapping[str, Any] | None = None
+    ) -> Iterator[Observation]:
         """开局：body 内物化工件（工件先行），exit 提交观测（开局 commit 点）。"""
         if (self._dir / OBSERVATION_FILE).exists():
             raise FileExistsError(f"会话已开局: {self._id}")

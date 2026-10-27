@@ -130,7 +130,11 @@ def test_report_findings_stores_and_audits(searched, sessions_root):
     m = _manifest(sessions_root, s.session_id)
     kinds = [(f["source"], f["kind"]) for f in m["models"][key]["findings"]]
     assert ("llm", "error_concentrated") in kinds  # 落诊进 models[key]
-    log = [json.loads(x) for x in (sessions_root / s.session_id / "decision.log").read_text(encoding="utf-8").splitlines() if x.strip()]
+    log = [
+        json.loads(x)
+        for x in (sessions_root / s.session_id / "decision.log").read_text(encoding="utf-8").splitlines()
+        if x.strip()
+    ]
     assert any(a["action"] == "report_findings" for a in log)  # 决策日志审计
 
 

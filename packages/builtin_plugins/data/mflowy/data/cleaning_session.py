@@ -383,9 +383,7 @@ def _run_clean_step(ss: POMDPSession, o: Observation, node: str, params: dict, s
     token = set_task_dir(yml)
     try:
         with capture_prints() as buf:  # 通道纪律（M7）：业务输出进 NodeResult，诊断转 logger
-            result = Builder(str(yml)).build().run(
-                tags={"mflowy.session_id": ss.id, "mflowy.action": node}, echo=False
-            )
+            result = Builder(str(yml)).build().run(tags={"mflowy.session_id": ss.id, "mflowy.action": node}, echo=False)
     finally:
         reset_task_dir(token)
     captured = buf.getvalue().strip()
@@ -530,7 +528,11 @@ def _plan_yaml(o: Observation, log) -> str:
                 path.pop()
     flow: list[dict] = [
         # 计划头部补数据源——无 load 节点的 clean 片段参数边无上游供数，Builder 拦截
-        {"load__file": NodeConf(node_key="load__file", name="导入原始数据", params={"file_path": o.state_digest["source_file"]})}
+        {
+            "load__file": NodeConf(
+                node_key="load__file", name="导入原始数据", params={"file_path": o.state_digest["source_file"]}
+            )
+        }
     ]
     flow += [
         {f"clean__{node}": NodeConf(node_key=f"clean__{node}", name=f"自动清洗-{i}", params=params)}
