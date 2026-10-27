@@ -37,7 +37,7 @@ uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 | MCP    | `packages/mcp/mflowy/mcp/`        | 工具注册面、stdio server、runner、遥测                     |
 | Data   | `packages/builtin_plugins/data/mflowy/data/`      | 清洗 POMDP 动作域（load/statistic/detect/clean/plot + DomainCard） |
 | Model  | `packages/builtin_plugins/model/mflowy/model/`    | 建模 POMDP 动作域（x_y/cv/x_transformer/model + plot——cv 族 = split 参数构建/load 引用加载）+ JobProvider + diagnose/report 观察面 |
-| Driver | `packages/driver/mflowy/driver/`  | YAML→DAG 编译调度、@handler/@edge 插件 SDK、POMDP 会话基座、规则引擎 SDK |
+| Driver | `packages/driver/mflowy/driver/`  | YAML→DAG 编译调度、@handler/@edge 插件 SDK、POMDP 会话基座（`pomdp` 契约 + `session` 壳）、规则引擎 SDK |
 | Utils  | `packages/utils/mflowy/utils/`    | mlflow seam、OAuth 2.1 客户端（login/token 库）、脚本安全扫描、capture/path/logging/jinja |
 
 依赖方向保持单向：utils ← driver ← data ← model ← mcp（内核零域感知、两 POMDP 域隔离——`tests/test_workspace.py` 断言，改动 import 保持全绿）。模块内相对导入、跨模块绝对导入。
@@ -63,9 +63,6 @@ uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 
 | #   | 目标态                                                                 | 存量违规点                                        | 验收                                                   |
 | --- | ---------------------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------ |
-| M3  | `SessionStore.create` 只建目录；两域 `_is_terminal` 委托基座 `is_terminal_state` | driver 侧已落地（`write_manifest` tmp+rename / 共享单源 / gc root 守卫，见 CHANGELOG）；余：两域绕过 create、`_is_terminal` 逐字重复 | 两域 `_is_terminal` 逐字重复删除                      |
-| M4  | 会话壳收敛：store/终态/decision_log 形状/plan-YAML emitter 住 driver，域只填转移语义 | 两域 ~1/5 骨架逐字重复、plan YAML 手拼分叉        | 两域 session 各缩 ~150 行；`MDPSessionHandle` 结构等价有测试钉住 |
-| M5  | 版本树 append-only（`current_v` 指针）；loader 工件带版本号，rollback 同步盘上 | clean 截断覆写弃分支；model loader 覆写不同步      | rollback-after-rerun 一致性用例                       |
 | M6  | `registry.families()` 对缺 extra 条目降级跳过                          | 已收敛（#49：ImportError 跳过+warning+钉测）——CI no-torch job 见 #43 | 无 torch 环境 CI job 跑通 RF 会话                     |
 | M7  | 会话引擎路径全捕获（`_detect_all` 包 capture）                         | detect 算子裸 print 污染 stdio                    | MCP stdio e2e 断言纯 JSON-RPC 输出                    |
 | M9  | 遥测端点 env 可覆盖 + agentcat monkeypatch 带 feature-detect           | 端点硬编码；私有内部 monkeypatch 静默失效          | `MFLOWY_TELEMETRY_ENDPOINT` 指向 `docker/telemetry` 可用 |

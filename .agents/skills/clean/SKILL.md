@@ -30,7 +30,7 @@ clean_session_start(file_path, card=<DomainCard>, max_steps=15)   # 唯一主通
    免费异常——不耗预算、不落版本、不进决策日志；试探不确定动作就直接提交，
    负 reward 即回滚，全量真值决策）
    （diff + 缺陷清单）+ 决策日志 (s,a,r,s′)。响应自带 **`reward`**（本步 ΔΦ，
-   舍入 4 位）与 **`state_digest`**（缺陷摘要指纹）——直接读数，不从日志做减法。
+   舍入 4 位）与 **`state_digest`**（结构化状态摘要：defects/quality/当前版本——#89 观测七键之一）——直接读数，不从日志做减法；缺陷清零时菜单尾部出现 `finish` 提议（停止建议 = 普通规则）。
 3. 读 s′ 决策：
    - reward > 0、缺陷减 → 继续 ①；
    - reward < 0 / 引入新缺陷 / 误判 → `clean_rollback(session_id, to_version)`（版本树回退，
