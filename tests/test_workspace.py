@@ -169,3 +169,57 @@ def test_active_docs_use_pomdp_not_mdp():
             text = "\n".join(line for line in text.splitlines() if "_Avoid_" not in line)
         leftover = [line.strip() for line in text.splitlines() if re.search(r"\bMDP\b", line)]
         assert not leftover, f"{f.relative_to(ROOT)} 仍有裸 MDP（术语统一回潮）: {leftover[:3]}"
+
+
+def test_domain_sessions_implement_handle_protocol():
+    """#89 结构等价钉测：两域会话函数组满足 POMDPSessionHandle 协议形状——
+    具名核心（start/propose/apply/rollback/finish/abandon）齐备、apply 的
+    sid/action 具名、响应类型 = 契约模型（活参考从 docstring 升级为被测事实）。"""
+    import inspect
+
+    from mflowy.data import cleaning_session as cs
+    from mflowy.driver.pomdp import Observation, POMDPSessionHandle
+    from mflowy.model import session as ms
+
+    def _shape(mod, prefix_map):
+        for op, fn_name in prefix_map.items():
+            fn = getattr(mod, fn_name, None)
+            assert fn is not None, f"{mod.__name__} 缺 {fn_name}"
+            params = list(inspect.signature(fn).parameters)
+            if op in ("apply",):
+                assert params[:2] == ["session_id", "node"], (mod.__name__, fn_name, params)
+            elif op in ("propose", "rollback", "finish", "abandon"):
+                assert params[0] == "session_id", (mod.__name__, fn_name, params)
+
+    _shape(
+        cs,
+        {
+            "start": "start_session",
+            "propose": "propose_actions",
+            "apply": "apply_action",
+            "rollback": "rollback",
+            "finish": "finish_session",
+            "abandon": "abandon_session",
+        },
+    )
+    _shape(
+        ms,
+        {
+            "start": "start_session",
+            "propose": "propose_actions",
+            "apply": "apply_action",
+            "rollback": "rollback",
+            "finish": "finish_session",
+            "abandon": "abandon_session",
+        },
+    )
+
+    # 响应注解 = 契约模型（六操作面向 π 的三类返回面）
+    assert inspect.signature(cs.start_session).return_annotation.split("[")[0].endswith("Observation")
+    assert inspect.signature(ms.apply_action).return_annotation.split("[")[0].endswith("Observation")
+    assert "FinishVerdict" in inspect.signature(cs.finish_session).return_annotation  # 域尾巴 dict = preview 探针
+    assert inspect.signature(ms.finish_session).return_annotation.split("[")[0].endswith("FinishVerdict")
+    # 协议面自检：六操作齐备（防 Handle 面漂移）
+    for op in ("start", "propose", "apply", "rollback", "finish", "abandon"):
+        assert hasattr(POMDPSessionHandle, op), op
+    assert Observation.model_config.get("extra") == "forbid"  # 封闭契约

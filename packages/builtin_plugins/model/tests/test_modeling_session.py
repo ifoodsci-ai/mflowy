@@ -458,9 +458,15 @@ def test_finish_delivers_frozen_combos_idempotent(sessions_root, reg_csv, tmp_pa
 
 
 def test_finish_requires_frozen_combo(sessions_root, reg_csv):
-    """无 final_train_test 过的 combo 不可交付——finish 的门 = 冻结面（先于文件检查）。"""
+    """无 final_train_test 过的 combo → 拒收 verdict（拒收后可续局——与 data 域 θ 门
+    同一契约路；文件检查在冻结面之后，拒收不触达）。"""
     s, _ = _hpo(sessions_root, reg_csv, n_trials=1)
-    with pytest.raises(RuntimeError, match="final_train_test"):
+    rej = ms.finish_session(s.session_id, pdf="/no/such/report.pdf")
+    assert rej.accepted is False and "final_train_test" in rej.reason
+    assert rej.deliverables == {} and rej.decision_log  # 无交付面、审计面在场
+    # 拒收后可续局：终训后同 pdf 路径收局成功（文件此时才被检查）
+    ms.apply_action(s.session_id, "final_train_test")
+    with pytest.raises(ValueError, match="报告文件不存在"):
         ms.finish_session(s.session_id, pdf="/no/such/report.pdf")
 
 
@@ -495,7 +501,7 @@ def test_abandon_closes_all_planes(sessions_root, reg_csv):
     assert ms.propose_actions(s.session_id) == []
     with pytest.raises(RuntimeError, match="终态"):
         ms.apply_action(s.session_id, "run_hpo", {"n_trials": 1})
-    with pytest.raises(RuntimeError, match="不可收局"):
+    with pytest.raises(RuntimeError, match="弃局"):  # 壳 finish_ctx 的弃局门（改协议重开走新会话）
         ms.finish_session(s.session_id, pdf="/no/such/report.pdf")
 
 

@@ -134,8 +134,10 @@ _Avoid_: ExperimentCard、ModelBrief、ModelingCard（协议卡禁用别名）
 **规则（rule）**:
 实现 `driver.rule.Rule` 协议的出题知识对象（`key` 身份 + `propose(o) -> list[Activation]`）。
 通俗定义：**Rule 定义问题；`Rule.propose` 定义对 o 进行规则校验后输出的解题选项**。
-引擎是服务于 POMDP 的组件——触发上下文 = 观测 o（`fire(*keys, o)`；检测证据由域
-算子写进 `o.state_digest`，规则纯消费 o，不持 df/词表引用——词表在 propose 内现查）。
+引擎是服务于 POMDP 的组件——触发上下文 = 观测 o（`fire(*keys, o)`；model 域已落地：
+findings/菜单上下文写进 `o.state_digest`，规则纯消费 o；data 域 `.repair` 规则过渡期
+仍消费域 R dict（含 df——候选生成器的档位计算依赖），问题导向重设计随检测层证据
+富化收敛，见 roadmap）。
 停止建议是普通规则：`compose_should_stop(when)` 把域停止谓词组合成 action="finish"
 提议（salience=0 垫底；when 须模块级可 pickle）。词表知识源随词汇主人居住（clean
 `.repair` / model 族自声明），经域适配器（data `repair_rules` / model `propose_rules`）

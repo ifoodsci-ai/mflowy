@@ -118,7 +118,7 @@ def defects_cleared(o) -> bool:
     """
     defects = o.get("defects") if isinstance(o, dict) else o.state_digest.get("defects")
     if defects is None:
-        return False
+        raise ValueError("停止谓词缺检测证据（defects）——触发上下文形态不符，宁拒不出错建议")
     return not (defects.errors if hasattr(defects, "errors") else any(defects.values()))
 
 
