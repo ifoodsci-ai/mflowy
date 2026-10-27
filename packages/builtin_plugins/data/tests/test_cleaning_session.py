@@ -752,3 +752,19 @@ def test_fill_candidates_carry_distribution_evidence(sessions_root, dirty_csv):
         stats = shape["hole"]
         assert set(stats) == {"skew", "q1", "q2", "q3"}
         assert stats["q1"] <= stats["q2"] <= stats["q3"]
+
+
+def test_clean_state_proposes_finish(sessions_root, tmp_path):
+    """#89 ③片：缺陷清零 → 菜单尾部出现 finish 提议（停止建议 = 普通规则的资格门
+    产出，salience=0 垫底——建议通道与硬预算门分离）。"""
+    df = pd.DataFrame({"x": [1.0, 5.0, 2.0, 8.0], "y": [9.0, 3.0, 7.0, 4.0]})
+    path = tmp_path / "clean.csv"
+    df.to_csv(path, index=False)
+
+    s = cs.start_session(str(path), card={"domain": "t"})
+    assert not s.state_digest["defects"]  # 干净起点（无缺陷可修）
+
+    acts = cs.propose_actions(s.session_id)
+    assert acts, "规则面应产出（至少停止建议）"
+    assert acts[-1].action == "finish" and acts[-1].salience == 0  # 停止建议恒居末
+    assert all(a.action != "finish" for a in acts[:-1])  # 修复候选在前

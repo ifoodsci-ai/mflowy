@@ -109,16 +109,32 @@ class RepairRule:
         return ep.load()
 
 
+def defects_cleared(o) -> bool:
+    """停止谓词（模块级可 pickle）：缺陷清零即建议收局。
+
+    过渡期消费触发 dict（{"defects": ErrorReport, ...}——fire 的 o 形参）；
+    #89 ③余量（问题导向规则重设计）落地后随 fire(o=Observation) 切
+    state_digest["defects"]。
+    """
+    defects = o.get("defects") if isinstance(o, dict) else o.state_digest.get("defects")
+    if defects is None:
+        return False
+    return not (defects.errors if hasattr(defects, "errors") else any(defects.values()))
+
+
 def default_engine() -> RuleEngine:
-    """cleanRuleEngine 默认实例：注册词表全部 .repair (node, kind) 对（激活态空）。
+    """cleanRuleEngine 默认实例：词表全部 .repair (node, kind) 对 + 停止规则（激活态空）。
 
     每次现建（零缓存）——与 ``discover`` 的热更新语义一致；成本 = entry point
-    元数据扫描 + 模块加载（sys.modules 命中后近零）。
+    元数据扫描 + 模块加载（sys.modules 命中后近零）。停止规则 =
+    compose_should_stop（缺陷清零 → action="finish" 提议，salience=0 垫底——
+    建议不设专用契约键，出现时机由本资格门设计）。
     """
     from mflowy.driver.discover import namespace_nodes
+    from mflowy.driver.rule import compose_should_stop
 
     rules: list[RepairRule] = []
     for node, ep in sorted(namespace_nodes("clean").items()):
         for kind, _make in _iter_repairs(getattr(ep.load(), "repair", None) or {}):
             rules.append(RepairRule(node=node, kind=kind))
-    return RuleEngine().register(*rules)
+    return RuleEngine().register(*rules, compose_should_stop(defects_cleared))

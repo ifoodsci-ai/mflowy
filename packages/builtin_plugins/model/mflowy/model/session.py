@@ -1292,8 +1292,9 @@ def propose_actions(session_id: str) -> list[Activation]:
             "regularizers_of": {fam: tuple(getattr(fams[fam]["pyfunc"], "regularizers", ()) or ()) for fam in fams},
             "fe_slots_ok": fe_slots_ok,
         }
-        # 会话实例从盘加载（默认 = modelRuleEngine 注册面；自定义规则 pkl 持载）
-        engine.fire(o={"findings": findings, "ctx": ctx})  # 过渡：③片改 fire(o) 问题规则
+        # 触发证据写进观测（#89 ③片：规则纯消费 o——findings/菜单上下文 = 检测富化面）
+        o.state_digest = {**o.state_digest, "findings": findings, "menu_ctx": ctx}
+        engine.fire(o=o)
         activations = engine.poll_proposals()
         subscribed = {getattr(r, "kind", None) for r in engine.rules.values()}
         if unconsumed := sorted({f["kind"] for f in findings} - subscribed):
@@ -1422,7 +1423,9 @@ def propose_actions(session_id: str) -> list[Activation]:
             # 候选零出现（规则资格内联早退，非记分压序；动作边界只看 cursor.m——菜单是建议不是边界）
             if m["models"]:
                 _fe_base_entries(m, cursor, fams, proposals)
-        return [menu_activation(c) for c in _merge_menu(driven + proposals)]
+        merged = [menu_activation(c) for c in _merge_menu(driven + proposals)]
+        stop = [a for a in merged if a.action == "finish"]
+        return [a for a in merged if a.action != "finish"] + stop  # 停止建议恒居末
 
 
 def menu_activation(c: dict) -> Activation:

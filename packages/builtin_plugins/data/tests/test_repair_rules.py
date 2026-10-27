@@ -66,7 +66,7 @@ class _ImputeFallbackRule:
 def test_default_engine_aggregates_all_repair_declarations():
     """聚合完整性：默认实例注册面 = 词表全部 .repair (node, kind) 对。"""
     engine = repair_rules.default_engine()
-    assert set(engine.rules) == {key for key, *_ in _iter_declared()}
+    assert set(engine.rules) == {key for key, *_ in _iter_declared()} | {"should_stop"}  # #89 ③片停止规则
 
 
 def test_repair_rule_proposes_only_for_its_kind():
