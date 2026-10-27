@@ -568,8 +568,15 @@ def _set_seed(ss, o, m, board, log, params: dict) -> None:
     _push_snapshot(m)
     m["cursor"]["seed"] = seed
     _commit(
-        ss, o, m, board, log, "set_seed", {"seed": seed},
-        note=f"seed={seed}（下次 run_hpo 生效；目标变即 study 重开）", reward=0,
+        ss,
+        o,
+        m,
+        board,
+        log,
+        "set_seed",
+        {"seed": seed},
+        note=f"seed={seed}（下次 run_hpo 生效；目标变即 study 重开）",
+        reward=0,
     )
 
 
@@ -602,8 +609,15 @@ def _select_fe(ss, o, m, board, log, params: dict) -> None:
     _push_snapshot(m)
     m["cursor"]["F"][slot] = option
     _commit(
-        ss, o, m, board, log, "select_FE", {"node": node},
-        note=f"{slot} 槽 {cur} → {option}（换 FE 后 run_hpo 出新账本条目）", reward=0,
+        ss,
+        o,
+        m,
+        board,
+        log,
+        "select_FE",
+        {"node": node},
+        note=f"{slot} 槽 {cur} → {option}（换 FE 后 run_hpo 出新账本条目）",
+        reward=0,
     )
 
 
@@ -772,7 +786,12 @@ def _run_hpo(ss, o, m, board, log, params: dict) -> None:
     )
     reward = new_u if prev_u is None else round(new_u - prev_u, 4)
     _commit(
-        ss, o, m, board, log, "run_hpo",
+        ss,
+        o,
+        m,
+        board,
+        log,
+        "run_hpo",
         {"n_trials": n_trials, "key": key},
         note=f"u_inner={new_u}（Δ={reward}）trials={len(study.trials)} oof_run={run.info.run_id[:8]}",
         reward=reward,
@@ -886,7 +905,13 @@ def _final_train_test(ss, o, m, board, log, params: dict) -> None:
         }
     )
     _commit(
-        ss, o, m, board, log, "final_train_test", {"key": key},
+        ss,
+        o,
+        m,
+        board,
+        log,
+        "final_train_test",
+        {"key": key},
         note=f"u={holdout['u']} combo 冻结 run={node.run_id[:8]}（终训即 plan：{plan_path.name}）",
         reward=0,
         findings=findings,
@@ -937,8 +962,17 @@ def report_findings(session_id: str, key: str, findings: list[dict]) -> Observat
 
         entry = m["models"][key]
         entry["findings"] = [f for f in entry.get("findings", []) if f.get("source") == "rule"] + validated
-        _commit(ss, o, m, board, log, "report_findings", {"key": key, "n": len(validated)},
-                note="; ".join(f["kind"] for f in validated), findings=validated)
+        _commit(
+            ss,
+            o,
+            m,
+            board,
+            log,
+            "report_findings",
+            {"key": key, "n": len(validated)},
+            note="; ".join(f["kind"] for f in validated),
+            findings=validated,
+        )
     return o
 
 
@@ -1223,9 +1257,13 @@ def _plan_yaml(m: dict, key: str, final_params: dict | None = None) -> str:
     flow: list[dict] = [
         {"load__file": NodeConf(node_key="load__file", name="导入冻结数据", params={"file_path": m["source_file"]})},
         {"x_y": NodeConf(node_key="x_y", name="划分目标", params=xy_params)},
-        {"cv__load": NodeConf(
-            node_key="cv__load", name="引用会话划分（身份按 run 引用）", params={"from_run_id": m["split"]["run_id"]}
-        )},
+        {
+            "cv__load": NodeConf(
+                node_key="cv__load",
+                name="引用会话划分（身份按 run 引用）",
+                params={"from_run_id": m["split"]["run_id"]},
+            )
+        },
     ]
     if fe["cat"] in registry.FE_CAT_NODES:
         nk = f"x_transformer__{registry.FE_CAT_NODES[fe['cat']]}"
@@ -1386,7 +1424,11 @@ def propose_actions(session_id: str) -> list[Activation]:
                         "action": "final_train_test",
                         "params": {},
                         "rationale": f"终训交付（θ* 已在账本：{entry['best_params']}）——holdout 终评恰一次后 combo 冻结",
-                        "evidence": {"key": key, "u_inner": entry["u_inner"], "n_trials": entry["n_trials_at_last_eval"]},
+                        "evidence": {
+                            "key": key,
+                            "u_inner": entry["u_inner"],
+                            "n_trials": entry["n_trials_at_last_eval"],
+                        },
                     }
                 )
             proposals.append(

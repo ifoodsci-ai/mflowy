@@ -195,9 +195,6 @@ def test_compose_should_stop_picklable_via_rules_pkl(tmp_path):
 # ── 落盘：load/save 纯函数（引擎零路径状态；整读整写门面住 POMDPSession） ──
 
 
-
-
-
 def test_load_rule_engine_missing_none_corrupt_fail_loud(tmp_path):
     """load 纯函数契约：缺文件 → None（回退归调用方）；损坏/异类 → raise 带路径
     （不静默重建默认——自定义规则不允许被静默换掉）。"""

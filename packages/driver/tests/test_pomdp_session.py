@@ -50,9 +50,7 @@ class TestLifecycle:
 
     def test_start_ctx_commits_observation_and_artifact_first(self, tmp_path):
         ss = _start(tmp_path)
-        obs = Observation.model_validate(
-            json.loads((ss.dir / OBSERVATION_FILE).read_text(encoding="utf-8"))
-        )
+        obs = Observation.model_validate(json.loads((ss.dir / OBSERVATION_FILE).read_text(encoding="utf-8")))
         assert obs.session_id == ss.id and obs.max_steps == 3 and obs.prior == {"target": "y"}
         assert obs.steps == 0 and obs.recent_decisions == [] and obs.reward is None
         assert (ss.dir / "v0.parquet").exists()  # 工件先于观测（body 内物化）
