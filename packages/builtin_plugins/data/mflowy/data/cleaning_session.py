@@ -337,26 +337,88 @@ def start_session(file_path: str, card: dict | None = None, max_steps: int = 15)
     return o
 
 
+def _session_experiment(session_id: str) -> str:
+    """会话锚定实验（工件根 = 会话目录 .mlruns，M10）：get-or-create，返回
+    experiment_id——apply 的单步流 DAG 以 ``clean_session_{sid}`` 命中同一实验。"""
+    import mlflow
+    from mflowy.utils.mlflow import setup
+
+    setup()
+    d = _root() / session_id
+    name = f"clean_session_{session_id}"
+    exp = mlflow.get_experiment_by_name(name)
+    return exp.experiment_id if exp else mlflow.create_experiment(name, artifact_location=(d / ".mlruns").as_uri())
+
+
+def _run_clean_step(ss: POMDPSession, o: Observation, node: str, params: dict, step_no: int):
+    """单步流编译执行（Conf→Builder→DAG.run，#89 ②片执行面）。
+
+    apply 与导出计划同构（apply 跑的就是计划切片）：编译期校验（词表/类型门）、
+    中间件（mlflow 观测）、捕获窗口、血缘 tag 全免费。执行合同 yaml 落会话目录
+    （steps/step_N.yaml——审计工件）；返回 (df_before, df_after, clean_run_id)。
+    """
+    import logging as _logging
+
+    from mflowy.driver.builder import Builder
+    from mflowy.driver.config import NodeConf
+    from mflowy.driver.serializer import flow_to_yaml
+    from mflowy.utils.capture import capture_prints
+
+    src = str(ss.dir / _current_file(o))
+    flow = flow_to_yaml(
+        (
+            {"load__file": NodeConf(node_key="load__file", name="会话版本装载", params={"file_path": src})},
+            {f"clean__{node}": NodeConf(node_key=f"clean__{node}", name=f"会话动作-{step_no}", params=dict(params))},
+        )
+    )
+    steps_dir = ss.dir / "steps"
+    steps_dir.mkdir(exist_ok=True)
+    yml = steps_dir / f"step_{step_no}.yaml"
+    yml.write_text(
+        f"name: clean_session_{ss.id}\ndescription: 会话动作执行合同（apply 即计划切片）\nflow:\n{flow}",
+        encoding="utf-8",
+    )
+    from mflowy.utils.path import reset_task_dir, set_task_dir
+
+    token = set_task_dir(yml)
+    try:
+        with capture_prints() as buf:  # 通道纪律（M7）：业务输出进 NodeResult，诊断转 logger
+            result = Builder(str(yml)).build().run(
+                tags={"mflowy.session_id": ss.id, "mflowy.action": node}, echo=False
+            )
+    finally:
+        reset_task_dir(token)
+    captured = buf.getvalue().strip()
+    if captured:
+        _logging.getLogger(__name__).info("apply[%s#%s] 节点链输出：\n%s", node, step_no, captured)
+    if result.status != "finished":
+        raise RuntimeError(f"动作 `{node}` 执行失败：{result.error}")
+    load_run = next(r for r in result.runs if r.node == "load__file")
+    clean_run = next(r for r in result.runs if r.node == f"clean__{node}")
+    return load_run.value, clean_run.value, clean_run.run_id
+
+
 def apply_action(session_id: str, node: str, params: dict | None = None) -> Observation:
     """执行一个 clean 词表动作：守卫 → 转移 → 快照 → 观测/奖励 → 决策日志。
 
-    失败即免费异常（守卫/校验在 commit 点前抛出——不耗预算、不落版本、不进
-    决策日志）；dry_run 已退役（#65——试探走「提交 → 免费 s′ → 负 reward 即
-    rollback」）。版本分配 = 日志派生 max+1（append-only——永不复用已 commit 版本）。
+    转移走单步流编译执行（Conf→Builder→DAG.run——编译校验/观测/捕获/血缘免费，
+    apply 与导出计划同构）。失败即免费异常（守卫/校验在 commit 点前抛出——不耗
+    预算、不落版本、不进决策日志）；dry_run 已退役（#65——试探走「提交 → 免费 s′
+    → 负 reward 即 rollback」）。版本分配 = 日志派生 max+1（append-only——永不
+    复用已 commit 版本）。
     """
     params = params or {}
     if node == "finish":
         raise ValueError("`finish` 是操作面不是 apply 动作——菜单出现 finish 提议时走 clean_finish")
     try:
-        fn = get_node(f"clean__{node}", raw=True)
+        get_node(f"clean__{node}", raw=True)  # 词表预检（导入失败原音透传，不误诊）
     except CatalogMiss as e:
-        # 导入失败（装了但缺依赖）非 CatalogMiss 实例——透传原音，不误诊为「不在词表」
         raise ValueError(f"动作 `{node}` 不在 clean 词表中（词表 = 运行期 clean 目录）") from e
 
     ss = _open(session_id)
     with ss.apply_ctx(node) as (o, log):
-        df = pd.read_parquet(ss.dir / _current_file(o))
-        out = fn(load=df, **params)
+        _session_experiment(ss.id)  # 预建会话锚定实验（工件根 = 会话 .mlruns）
+        df, out, run_id = _run_clean_step(ss, o, node, params, step_no=len(log) + 1)
         _guard(df, out, o.prior)
         diff = _diff_summary(df, out)
 
@@ -394,6 +456,7 @@ def apply_action(session_id: str, node: str, params: dict | None = None) -> Obse
                 "v": version,
                 "file": fname,
                 "artifact_sha256": sha256_of(ss.dir / fname),  # 工件溯源（版本内容地址单键）
+                "run_id": run_id,  # 执行血缘（单步流 DAG 的 clean 节点 run——mlflow 可溯）
             }
         )
         o.steps += 1

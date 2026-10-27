@@ -19,6 +19,8 @@ from mflowy.driver.pomdp import FinishVerdict, Observation
 def sessions_root(tmp_path, monkeypatch):
     root = tmp_path / "sessions"
     monkeypatch.setenv("MFLOWY_CLEAN_SESSIONS", str(root))
+    # ②片起 apply 走单步流 DAG（mlflow 观测/血缘）——隔离到 tmp sqlite，不碰用户库
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", f"sqlite:///{tmp_path}/tracking.db")
     return root
 
 
@@ -162,7 +164,8 @@ def test_failed_apply_is_free(sessions_root, dirty_csv):
     """
     s = cs.start_session(dirty_csv, card=CARD)
 
-    with pytest.raises(ValueError, match="不在数据框中"):
+    # ②片起转移走单步流 DAG——节点异常聚合进 DAGResult.error（类型归一，消息保留）
+    with pytest.raises((ValueError, RuntimeError), match="不在数据框中"):
         cs.apply_action(s.session_id, "drop_cols", {"cols": ["nope"]})
 
     r = cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]})
