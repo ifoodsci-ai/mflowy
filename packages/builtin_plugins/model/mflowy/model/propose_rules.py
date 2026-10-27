@@ -142,17 +142,19 @@ class FamilyRule:
     def key(self) -> str:
         return f"{self.family}.{self.kind}"
 
-    def propose(self, R: Any) -> list[Activation]:
+    def propose(self, o: Any) -> list[Activation]:
+        """规则纯消费观测（#89 ③片）：findings/menu_ctx 由会话写进 state_digest。"""
         entry = _FAMILY_KINDS.get(self.kind)
         if entry is None:  # 未知族级 kind fail-loud 带候选（防第三方拼错静默零产出）
             raise ValueError(f"未知族级出题 kind：{self.kind!r}（可用: {sorted(_FAMILY_KINDS)}）")
-        ctx = R["ctx"]
+        sd = o.state_digest
+        ctx = sd["menu_ctx"]
         if ctx.get("family") != self.family:  # 资格：宿主族 = 光标当前候选
             return []
         if self.kind == "fold_std" and not ctx.get("has_n_trials", {}).get(self.family, False):
             return []  # 加深题回归防线：不能搜索的族没深度旋钮
         body = entry[0]
-        return [a for f in R["findings"] if f.get("kind") == self.kind for a in body(f, self.family, ctx)]
+        return [a for f in sd.get("findings", []) if f.get("kind") == self.kind for a in body(f, self.family, ctx)]
 
 
 @dataclass(frozen=True)
@@ -168,25 +170,35 @@ class FERule:
     def key(self) -> str:
         return f"fe.{self.node}"
 
-    def propose(self, R: Any) -> list[Activation]:
-        ctx = R["ctx"]
+    def propose(self, o: Any) -> list[Activation]:
+        """规则纯消费观测（#89 ③片）：FE 换档资格门读 menu_ctx。"""
+        sd = o.state_digest
+        ctx = sd["menu_ctx"]
         if not ctx.get("has_model"):  # 资格：S 无模型信息时 FE 候选恒零产出
             return []
         if not ctx.get("fe_slots_ok", {}).get(self.slot):  # 槽位非冗余（cat native/无类别列、num 免缩放不出）
             return []
         return [
             a
-            for f in R["findings"]
+            for f in sd.get("findings", [])
             if f.get("kind") == self.kind
             for a in _fe_switch_rule(f, self.node, self.slot, ctx)
         ]
 
 
-def default_engine() -> RuleEngine:
-    """modelRuleEngine 默认实例：族级规则（.regularizers 自声明面）+ FE 词表规则。
+def budget_exhausted(o) -> bool:
+    """停止谓词（模块级可 pickle）：预算耗尽即建议收局——建议通道与硬门分离。"""
+    return o.steps >= o.max_steps
 
-    每次现建（零缓存）——正则面/签名由会话 ctx 注入，此处只定注册面；激活态空。
+
+def default_engine() -> RuleEngine:
+    """modelRuleEngine 默认实例：族级规则 + FE 词表规则 + 停止规则（#89 ③片）。
+
+    每次现建（零缓存）——正则面/签名由会话 menu_ctx（state_digest 富化）注入，
+    此处只定注册面；激活态空。停止规则 = compose_should_stop（预算耗尽 →
+    action="finish" 提议，salience=0 垫底——建议不设专用契约键）。
     """
+    from mflowy.driver.rule import compose_should_stop
     from mflowy.model import registry
 
     rules: list[FamilyRule | FERule] = []
@@ -195,4 +207,4 @@ def default_engine() -> RuleEngine:
             rules.append(FamilyRule(family=family, kind=kind))
     for node, slot in registry.fe_vocab().items():
         rules.append(FERule(node=node, slot=slot))
-    return RuleEngine().register(*rules)
+    return RuleEngine().register(*rules, compose_should_stop(budget_exhausted))

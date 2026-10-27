@@ -84,6 +84,7 @@ def test_default_engine_registers_family_and_fe_rules():
     fe = sorted(registry.fe_vocab())
     expected = {f"{f}.{k}" for f in fams for k in ("fold_std", "complexity_edge", "overfit_gap", "slice_collapse")}
     expected |= {f"fe.{n}" for n in fe}
+    expected |= {"should_stop"}  # #89 ③片：停止规则（compose_should_stop）
     assert set(engine.rules) == expected
     assert engine.poll_proposals() == []  # 默认实例激活态空
 
@@ -91,8 +92,8 @@ def test_default_engine_registers_family_and_fe_rules():
 def test_default_engine_subscribes_exactly_known_finding_kinds():
     """订阅面 = #35 词表：规则 kind 并集恰为 KNOWN_FINDING_KINDS（校验面 = 订阅面）。"""
     engine = propose_rules.default_engine()
-    kinds = {r.kind for r in engine.rules.values()}
-    assert kinds == set(propose_rules.KNOWN_FINDING_KINDS)
+    kinds = {getattr(r, "kind", None) for r in engine.rules.values()}
+    assert kinds == set(propose_rules.KNOWN_FINDING_KINDS) | {None}  # None = 停止规则（无 kind 订阅面）
 
 
 def test_engine_pkl_persisted_in_session_dir(searched, sessions_root):
@@ -189,6 +190,17 @@ def test_fold_std_gates_deeper_search(searched):
     assert deeper2[0] == props2[0]  # findings 驱动层浮于菜单顶部（记分牌序）
 
 
+def _obs(findings: list, ctx: dict):
+    """#89 ③片：规则消费 Observation——findings/menu_ctx 由会话写进 state_digest。"""
+    from mflowy.driver.pomdp import Observation
+
+    return Observation(
+        session_id="s",
+        max_steps=1,
+        state_digest={"findings": findings, "menu_ctx": ctx},
+    )
+
+
 def test_deeper_rule_respects_n_trials_signature():
     """回归防线：无 n_trials 形参的族不出加深题（资格内联在规则 propose）。"""
     rule = propose_rules.FamilyRule(family="FAKE", kind="fold_std")
@@ -199,11 +211,11 @@ def test_deeper_rule_respects_n_trials_signature():
         "entry": {"n_trials_at_last_eval": 2},
         "combo_key": "FAKE|a|b",
     }
-    acts = rule.propose({"findings": [{"kind": "fold_std", "severity": 0.5}], "ctx": ctx})
+    acts = rule.propose(_obs([{"kind": "fold_std", "severity": 0.5}], ctx))
     assert acts == []  # 签名无 n_trials → 不出加深题
 
     ctx_ok = {**ctx, "has_n_trials": {"FAKE": True}}
-    acts2 = rule.propose({"findings": [{"kind": "fold_std", "severity": 0.5}], "ctx": ctx_ok})
+    acts2 = rule.propose(_obs([{"kind": "fold_std", "severity": 0.5}], ctx_ok))
     assert acts2 and acts2[0].params["n_trials"] >= 6
 
 
@@ -245,3 +257,23 @@ def test_unconsumed_reported_not_silent(searched):
     key = _K_RF
     with pytest.raises(ValueError, match="超纲"):
         ms.report_findings(s.session_id, key, [{"kind": "no_subscriber_kind"}])
+
+
+def test_budget_exhausted_proposes_finish(searched, sessions_root):
+    """#89 ③片：预算耗尽 → 菜单尾部出现 action="finish" 提议（salience=0 垫底，
+    建议通道与硬预算门分离——apply 被门拒，收局建议照常可见）。"""
+    from mflowy.model import session as ms
+
+    s = searched
+    sid = s.session_id
+    # 预算置 1：run_hpo 已吃 1 步 → 耗尽
+    board = json.loads((sessions_root / sid / "board.json").read_text(encoding="utf-8"))
+    obs = json.loads((sessions_root / sid / "observation.json").read_text(encoding="utf-8"))
+    obs["max_steps"] = 1  # 直接改盘模拟预算恰好耗尽（avoid 多跑一步的开销）
+    (sessions_root / sid / "observation.json").write_text(json.dumps(obs, ensure_ascii=False), encoding="utf-8")
+    assert board
+
+    acts = ms.propose_actions(sid)
+    finish = [a for a in acts if a.action == "finish"]
+    assert finish and finish[-1].salience == 0  # 垫底（真实解题选项在前）
+    assert acts[-1].action == "finish"
