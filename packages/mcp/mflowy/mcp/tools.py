@@ -97,7 +97,7 @@ def sessions_gc(
     - 回收泄漏的弃置会话（活/死/损坏一律按 mtime 龄期，不读 manifest 内容）
     - 审计删除范围：先缺省 dry_run 看清单，确认后再 dry_run=false 执行
     """
-    from mflowy.driver.pomdp import SessionStore, gc_report_key
+    from mflowy.driver.session import SessionStore, gc_report_key
 
     if root is not None:
         roots = [Path(root)]

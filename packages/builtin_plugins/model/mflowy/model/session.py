@@ -45,7 +45,7 @@ import uuid
 from pathlib import Path
 
 import pandas as pd
-from mflowy.driver.pomdp import SessionStore
+from mflowy.driver.session import SessionStore
 from mflowy.model import registry
 from mflowy.model.model._pipeline import oof_predictions, u_inner_of
 from mflowy.model.model.types import MetricName
