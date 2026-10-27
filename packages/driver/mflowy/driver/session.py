@@ -1,4 +1,4 @@
-"""会话基座机制：SessionStore（存量 manifest IO）+ POMDPSession（会话壳，#89）。
+"""会话基座机制：POMDPSession（会话壳，#89）+ SessionStore（存量会话 GC 面）。
 
 driver=机制、域=策略——POMDPSession 吃下壳骨架：六个操作上下文承载业务流程
 （终态门/预算门/prior 冻结/append-only 决策日志/统一盘上写序），域实现
@@ -42,79 +42,20 @@ def gc_report_key(dry_run: bool) -> str:
     return "would_delete" if dry_run else "deleted"
 
 
-def is_terminal_state(manifest: Mapping[str, Any]) -> bool:
-    """manifest 级终态判定（共享单源，M3）：``finished ∨ abandoned``，活会话双缺省。
-
-    SessionStore（存量 manifest 面向）内部消费方走此单源；POMDPSession 走
-    Observation 终态双旗（同一谓词的模型面）。
-    """
-    return bool(manifest.get("finished", False) or manifest.get("abandoned", False))
-
-
 class SessionStore:
-    """会话生命周期机制（存量 manifest 面）：目录/manifest IO、终态、弃局、GC。
+    """会话 GC 面（存量兼容）：manifest.json 随 #89 溶解后仅回收语义仍有消费方
+    （mcp `sessions_gc`）——生命周期（终态/弃局/IO）已全部住 POMDPSession。
 
-    driver=机制、域=策略；本类不读 manifest 业务字段（终态双键与可选
-    ``steps``/``abandon_reason`` 除外）。终态不变式：``finished``/``abandoned``
-    互斥，活会话双缺省（读取向后兼容——存量 manifest 无 abandoned 键按 False）。
+    不读会话内容——损坏/不可读会话照样入删单；mtime 锚 observation.json
+    （#89 新格式），回退 manifest.json（存量）、再回退目录自身 mtime。
     """
 
     def __init__(self, root: Path | str) -> None:
         self.root = Path(root)
 
-    def create(self, sid: str, manifest: Mapping[str, Any]) -> Path:
-        """开局：建会话目录并落初版 manifest（sid 已存在即 FileExistsError）。"""
-        self.root.mkdir(parents=True, exist_ok=True)
-        d = self.root / sid
-        d.mkdir(exist_ok=False)
-        self.write_manifest(sid, manifest)
-        return d
-
-    def session_dir(self, sid: str) -> Path:
-        d = self.root / sid
-        if not d.is_dir():
-            raise FileNotFoundError(f"会话不存在: {sid}")
-        return d
-
-    def read_manifest(self, sid: str) -> dict[str, Any]:
-        return json.loads(self.session_dir(sid).joinpath("manifest.json").read_text(encoding="utf-8"))
-
-    def write_manifest(self, sid: str, manifest: Mapping[str, Any]) -> None:
-        """原子落盘（tmp+rename，M3）：manifest 是会话 commit 点，撕裂写不留半开状态。"""
-        write_text_atomic(
-            self.session_dir(sid) / "manifest.json",
-            json.dumps(manifest, ensure_ascii=False, indent=1, default=str),
-        )
-
-    def is_terminal(self, sid: str) -> bool:
-        """终态判定：finished ∨ abandoned（get 缺省——存量会话文件零迁移）。"""
-        return is_terminal_state(self.read_manifest(sid))
-
-    def abandon(self, sid: str, reason: str | None = None) -> dict[str, Any]:
-        """弃局终态化：置 abandoned、reason 落盘（审计）；保留决策日志与版本树、
-        不导出交付物；已终态再弃即 raise。
-
-        ack = {session_id, abandoned, reason, steps}——steps 取 manifest 的
-        ``steps`` 键（缺省 0；域迁移时显式落盘），记"弃在第几步"。
-        """
-        m = self.read_manifest(sid)
-        if is_terminal_state(m):
-            raise ValueError(f"会话已终态: {sid}")
-        m["abandoned"] = True
-        if reason is not None:
-            m["abandon_reason"] = reason
-        self.write_manifest(sid, m)
-        return {"session_id": sid, "abandoned": True, "reason": reason, "steps": m.get("steps", 0)}
-
     def gc(self, ttl_days: int = 30, dry_run: bool = True) -> dict[str, list]:
-        """状态无关回收：本 root 内按 TTL 清理会话目录（活/死/损坏一律按龄）。
-
-        不读会话内容——损坏/不可读会话照样入删单（GC 的鲁棒性卖点）；
-        mtime 锚 observation.json（#89 新格式），回退 manifest.json（存量）、
-        再回退目录自身 mtime。dry_run=True 只列不删（键 ``would_delete``；
-        执行时键 ``deleted``）；root 内非目录条目不动作（``ignored``）。
-        root 不存在 = 无可回收，返回空报告。
-        """
+        """状态无关回收：按龄清理会话目录（dry_run 只列不删——键随 dry_run 切换）；
+        root 内非目录条目不动作（``ignored``）；root 不存在 = 空报告。"""
         entries: list[dict[str, Any]] = []
         ignored: list[str] = []
         if not self.root.is_dir():

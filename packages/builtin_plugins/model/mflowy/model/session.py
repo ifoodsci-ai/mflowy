@@ -111,7 +111,7 @@ def _mview(o: Observation, board: dict) -> dict:
     }
 
 
-def _digest_state(m: dict) -> dict:
+def _state_projection(m: dict) -> dict:
     """state_digest 投影：划分身份 + 光标 + 账本板面 + 指纹（域逻辑读 m）。"""
     return {
         "split": m["split"],
@@ -319,7 +319,7 @@ def start_session(
         },
     ) as o:
         _board_write(ss, board)  # 域状态先行（开局 commit = 观测落盘）
-        o.state_digest = _digest_state(m)
+        o.state_digest = _state_projection(m)
     return o
 
 
@@ -450,18 +450,10 @@ def _commit(ss, o, m, board, log, action: str, params: dict, note: str = "", rew
     if action in COMPUTE_ACTIONS:
         o.steps += 1
         m["steps"] = o.steps
-    record = {
-        "step": len(log) + 1,
-        "action": action,
-        "params": params,
-        "steps": m["steps"],
-        "budget_left": m["max_steps"] - m["steps"],
-        "note": note,
-    }
     _board_write(ss, board)
-    log.append(record)
+    log.append(_record(log, m, action, params, note))
     o.reward = reward
-    state = _digest_state(m)
+    state = _state_projection(m)
     if findings is not None:
         state["findings"] = findings  # 计算动作的过程决策面浮出（π 读数）
     o.state_digest = state
@@ -1020,18 +1012,18 @@ def rollback(session_id: str) -> Observation:
             "F": dict(snap["F"]),
         }
         board["cursor"] = m["cursor"]
-        record = {
-            "step": len(log) + 1,
-            "action": "rollback",
-            "params": {},
-            "steps": m["steps"],
-            "budget_left": m["max_steps"] - m["steps"],
-            "note": f"光标弹栈（预算不回补：steps={m['steps']}/{m['max_steps']}；账本与盘上 study 一致）",
-        }
         _board_write(ss, board)
-        log.append(record)
+        log.append(
+            _record(
+                log,
+                m,
+                "rollback",
+                {},
+                f"光标弹栈（预算不回补：steps={m['steps']}/{m['max_steps']}；账本与盘上 study 一致）",
+            )
+        )
         o.reward = None
-        o.state_digest = _digest_state(m)
+        o.state_digest = _state_projection(m)
     return o
 
 
@@ -1044,62 +1036,71 @@ def abandon_session(session_id: str, reason: str | None = None) -> dict:
 # ── finish（done）：一次结算、多模型交付 ────────────────────────────────────
 
 
+def _record(log, m: dict, action: str, params: dict, note: str) -> dict:
+    """决策记录单源形状（_commit 与 rollback/finish 控制面共用）。"""
+    return {
+        "step": len(log) + 1,
+        "action": action,
+        "params": params,
+        "steps": m["steps"],
+        "budget_left": m["max_steps"] - m["steps"],
+        "note": note,
+    }
+
+
 def finish_session(session_id: str, *, pdf: str) -> FinishVerdict:
     """收局（done，#66 单动作——报告是 π 的产物，引擎只收编不编译）：
 
     收编 π 产报告进 deliverables（复制 + tmp/rename 原子落盘；文件缺失 fail-loud）
     + verdict（u/findings/rank 一致性）。收编不验内容——报告是给人看的便当，
-    数字权威面是 verdict/board/盘上 study；重入 = 幂等重导出（壳只读重入保证
-    双 commit 不可能；交付报告不可变更——重写须弃局重开）。素材面走
-    draw_taylor_diagram / modeling_report_skeleton 两工具，finish 只做一次收编。
+    数字权威面是 verdict/board/盘上 study。重入 = 幂等重导出——**壳构造保证**
+    （finish_ctx 只读重入：双 commit 不可能、观测零落盘；交付报告不可变更——
+    重写须弃局重开）。素材面走 draw_taylor_diagram / modeling_report_skeleton
+    两工具，finish 只做一次收编。
 
+    无冻结 combo 可交付 → 拒收 verdict（拒收后可续局——先 run_hpo +
+    final_train_test；accepted 恒真的例外路径，reason 即续局指引）；有交付面时
     accepted 恒真（holdout 读在 final_train_test 恰一次，finish 只结算）。
     """
     ss = _open(session_id)
-    board = _board_load(ss)
-    o = ss.observation
-    if o.abandoned:
-        raise RuntimeError("会话已弃局：不可收局（弃局不可复活，改协议重开走新会话）")
-    if board.get("verdict"):  # 已结算：幂等重导出（交付报告不可变更——审计面）
-        adopted = board["verdict"]["report"]["source_pdf"]
-        if pdf != adopted:
-            raise ValueError(f"已收局交付报告不可变更（审计面）——重写报告须弃局重开；已收编报告源：{adopted!r}")
+    with ss.finish_ctx() as (o, log):  # 幂等重入 = 壳只读路径（已收局零落盘）
+        board = _board_load(ss)
         m = _mview(o, board)
-        return _verdict_response(m)
+        if board.get("verdict"):  # 已结算：幂等重导出（交付报告不可变更——审计面）
+            adopted = board["verdict"]["report"]["source_pdf"]
+            if pdf != adopted:
+                raise ValueError(f"已收局交付报告不可变更（审计面）——重写报告须弃局重开；已收编报告源：{adopted!r}")
+            return _verdict_response(m, list(ss.decision_log))
 
-    m = _mview(o, board)
-    keys = sorted(k for k, v in m["models"].items() if v["frozen"])
-    if not keys:
-        raise RuntimeError("无冻结 combo 可交付——先 run_hpo + final_train_test 再收局")
+        keys = sorted(k for k, v in m["models"].items() if v["frozen"])
+        if not keys:
+            return FinishVerdict(  # 拒收：无交付面（先搜后店），拒收后可续局
+                accepted=False,
+                reason="无冻结 combo 可交付——先 run_hpo + final_train_test 再收局",
+                terminal_utility={"steps": m["steps"]},
+                deliverables={},
+                decision_log=list(ss.decision_log),
+            )
 
-    src = Path(pdf)
-    if not src.is_file():
-        raise ValueError(
-            f"报告文件不存在：{pdf!r}（先 draw_taylor_diagram + modeling_report_skeleton 拿素材，π 产报告后带路径收局）"
-        )
-    report = _adopt_report(ss.dir, src)
+        src = Path(pdf)
+        if not src.is_file():
+            raise ValueError(
+                f"报告文件不存在：{pdf!r}（先 draw_taylor_diagram + modeling_report_skeleton 拿素材，π 产报告后带路径收局）"
+            )
+        report = _adopt_report(ss.dir, src)
 
-    verdict_models = {k: {"u": m["models"][k]["u"], "findings": m["models"][k]["findings"]} for k in keys}
-    with ss.finish_ctx() as (fo, log):
+        verdict_models = {k: {"u": m["models"][k]["u"], "findings": m["models"][k]["findings"]} for k in keys}
         board["verdict"] = {
             "deliver_keys": keys,
             "models": verdict_models,
             "rank": _rank_consistency(m, keys),
             "report": report,
         }
-        fo.finished = True
-        record = {
-            "step": len(log) + 1,
-            "action": "finish",
-            "params": {"pdf": str(src)},
-            "steps": fo.steps,
-            "budget_left": fo.max_steps - fo.steps,
-            "note": f"交付 {keys}；报告 {report['file']}",
-        }
+        o.finished = True
         _board_write(ss, board)  # 域状态先行（verdict 缓存）
-        log.append(record)
-    m = _mview(ss.observation, _board_load(ss))
-    return _verdict_response(m)
+        log.append(_record(log, m, "finish", {"pdf": str(src)}, f"交付 {keys}；报告 {report['file']}"))
+        m = _mview(o, board)
+        return _verdict_response(m, list(ss.decision_log))
 
 
 def _adopt_report(session_dir: Path, src: Path) -> dict:
@@ -1212,7 +1213,7 @@ def _rank_consistency(m: dict, keys: list[str]) -> float | None:
     return round(float(rho), 4) if rho == rho else None
 
 
-def _verdict_response(m: dict) -> FinishVerdict:
+def _verdict_response(m: dict, decision_log: list) -> FinishVerdict:
     """FinishVerdict（从 board 的 verdict 缓存确定性重建——幂等重导出的来源）。"""
     v = m["verdict"]
     keys = v["deliver_keys"]
@@ -1235,7 +1236,7 @@ def _verdict_response(m: dict) -> FinishVerdict:
             "steps": m["steps"],
         },
         deliverables=deliverables,
-        decision_log=list(_open(m["session_id"]).decision_log),
+        decision_log=decision_log,
     )
 
 
@@ -1465,12 +1466,12 @@ def propose_actions(session_id: str) -> list[Activation]:
             # 候选零出现（规则资格内联早退，非记分压序；动作边界只看 cursor.m——菜单是建议不是边界）
             if m["models"]:
                 _fe_base_entries(m, cursor, fams, proposals)
-        merged = [menu_activation(c) for c in _merge_menu(driven + proposals)]
+        merged = [to_activation(c) for c in _merge_menu(driven + proposals)]
         stop = [a for a in merged if a.action == "finish"]
         return [a for a in merged if a.action != "finish"] + stop  # 停止建议恒居末
 
 
-def menu_activation(c: dict) -> Activation:
+def to_activation(c: dict) -> Activation:
     """菜单项 → Activation（Handle 契约面）：基座层 rule_key=base.*、salience=-1 垫底。"""
     return Activation(
         rule_key=c.get("rule_key") or f"base.{c['action']}",

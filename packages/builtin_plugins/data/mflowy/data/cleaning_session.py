@@ -1,8 +1,9 @@
 """清洗 POMDP 会话（转移语义层，#89 会话基座上壳）：环境面的转移/观测/奖励/预算。
 
 壳（终态/预算门、决策日志 append-only、观测投影、prior 冻结、统一写序）住
-driver.POMDPSession——本模块只填转移语义：动作面分发（clean 词表 raw 直调；
-Conf→Builder→DAG 化属 #89 ②片）、检测证据（算进 state_digest——s′ 免费自带，
+driver.POMDPSession——本模块只填转移语义：动作面分发（单步流编译执行
+Conf→Builder→DAG.run，#89 ②片——apply 与导出计划同构）、检测证据（算进
+state_digest——s′ 免费自带，
 检测算子是观测通道不是动作）、终局 U + θ 验收门、计划导出（Conf → flow_to_yaml
 单源序列化——apply 与导出同构，Builder 可全量重放）。
 
@@ -42,7 +43,7 @@ from mflowy.data.detect.stringly import stringly as detect_stringly
 from mflowy.data.fingerprint import fingerprint
 from mflowy.driver.pomdp import Activation, FinishVerdict, Observation
 from mflowy.driver.session import POMDPSession
-from mflowy.utils.file import sha256_of
+from mflowy.utils.file import sha256_of, write_text_atomic
 
 
 def _quality_score(report, baseline=None, card: dict | None = None):
@@ -267,7 +268,7 @@ def _freeze_card(df: pd.DataFrame, card: dict) -> dict:
 # ── 观测/记录的域形状 ────────────────────────────────────────────────────────
 
 
-def _digest_state(o: Observation, report: ErrorReport, quality: dict, *, v: int) -> None:
+def _refresh_state_digest(o: Observation, report: ErrorReport, quality: dict, *, v: int) -> None:
     """检测证据写进 state_digest（s′ 免费自带的落点）。"""
     o.state_digest = {
         **o.state_digest,
@@ -333,7 +334,7 @@ def start_session(file_path: str, card: dict | None = None, max_steps: int = 15)
                 "artifact_sha256": sha256_of(v0),  # 工件溯源（版本内容地址单键；行指纹仅作 memo 键）
             },
         }
-        _digest_state(o, report, quality, v=0)
+        _refresh_state_digest(o, report, quality, v=0)
     return o
 
 
@@ -374,9 +375,9 @@ def _run_clean_step(ss: POMDPSession, o: Observation, node: str, params: dict, s
     steps_dir = ss.dir / "steps"
     steps_dir.mkdir(exist_ok=True)
     yml = steps_dir / f"step_{step_no}.yaml"
-    yml.write_text(
+    write_text_atomic(  # 执行合同工件（原子，红线 3）——头两行是域叙事，flow 体 = flow_to_yaml 单源
+        str(yml),
         f"name: clean_session_{ss.id}\ndescription: 会话动作执行合同（apply 即计划切片）\nflow:\n{flow}",
-        encoding="utf-8",
     )
     from mflowy.utils.path import reset_task_dir, set_task_dir
 
@@ -459,7 +460,7 @@ def apply_action(session_id: str, node: str, params: dict | None = None) -> Obse
         )
         o.steps += 1
         o.reward = round(quality["score"] - before_quality["score"], 4)
-        _digest_state(o, report, quality, v=version)
+        _refresh_state_digest(o, report, quality, v=version)
     return o
 
 
@@ -483,7 +484,7 @@ def rollback(session_id: str, to_version: int) -> Observation:
             {"action": "rollback", "to_v": to_version, "quality_before": pre_score, "quality_after": quality["score"]}
         )
         o.reward = round(quality["score"] - pre_score, 4)
-        _digest_state(o, report, quality, v=to_version)
+        _refresh_state_digest(o, report, quality, v=to_version)
     return o
 
 
@@ -499,7 +500,7 @@ def propose_actions(session_id: str) -> list[Activation]:
     with ss.propose_ctx() as (o, engine):
         df = pd.read_parquet(ss.dir / _current_file(o))
         report = _detect_all(df, o.prior)
-        _digest_state(o, report, o.state_digest["quality"], v=o.state_digest["v"])  # 检测证据刷新观测
+        _refresh_state_digest(o, report, o.state_digest["quality"], v=o.state_digest["v"])  # 检测证据刷新观测
         engine.fire(o={"defects": report, "card": o.prior, "df": df})  # 过渡：③片改 fire(o) 问题规则
         activations = engine.poll_proposals()
     return activations
@@ -588,7 +589,7 @@ def finish_session(session_id: str, min_quality: float | None = None, preview: b
 
     with ss.finish_ctx() as (fo, log):
         plan_yaml = _plan_yaml(fo, log)
-        (ss.dir / "plan.yaml").write_text(plan_yaml, encoding="utf-8")  # 交付物工件先行
+        write_text_atomic(str(ss.dir / "plan.yaml"), plan_yaml)  # 交付物工件先行（原子，红线 3）
         if not fo.finished:
             fo.finished = True
             fo.reward = 0.0 if fo.reward is None else fo.reward
