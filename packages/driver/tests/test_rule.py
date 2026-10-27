@@ -13,9 +13,8 @@ seam（公共接口，2026-10 重构定案 + #89 归位——引擎服务于 POM
   （salience=0 垫底；产物可 pickle 随 rules.pkl 持载）
 - 落盘 = 纯函数对（引擎零路径状态）：``load_rule_engine(path)``（缺文件 →
   None；损坏/异类 → raise 带路径）+ ``save_rule_engine(path, engine)``（dumps 后
-  ``write_bytes_atomic``）；``rule_engine_rwa(path, default)`` 四行门面——盘上
-  有则加载、缺则默认实例直接作工作实例（无克隆），with 正常退出整体落盘、
-  异常不落盘
+  ``write_bytes_atomic``）；整读整写的会话门面住 POMDPSession.propose_ctx
+  （#89——rule_engine_rwa 已退役，事务语义在 test_pomdp_session 钉住）
 """
 
 import pickle
@@ -193,52 +192,10 @@ def test_compose_should_stop_picklable_via_rules_pkl(tmp_path):
     assert [a.action for a in loaded.fire(o={"steps": 3, "max_steps": 3})] == ["finish"]
 
 
-# ── 落盘：load/save 纯函数 + rule_engine_rwa 门面（引擎零路径状态） ─────────
+# ── 落盘：load/save 纯函数（引擎零路径状态；整读整写门面住 POMDPSession） ──
 
 
-def test_rwa_fresh_path_yields_default_and_saves_on_exit(tmp_path):
-    """盘上无 pkl：默认实例直接作工作实例（草案语义，无克隆——调用方传干净模板）；
-    with 正常退出原子落盘。"""
-    from mflowy.driver.rule import rule_engine_rwa
 
-    default = RuleEngine().register(_EchoRule("a"), _EchoRule("b"))
-    pkl = tmp_path / "rules.pkl"
-    with rule_engine_rwa(str(pkl), default) as engine:
-        assert engine is default  # 无克隆：pkl 缺席即默认实例本体
-        engine.fire(o={})
-    assert pkl.exists() and not (tmp_path / f".{pkl.name}.tmp").exists()  # 原子：无点前缀 tmp 残留
-
-
-def test_rwa_loads_custom_rules_and_pending_activations(tmp_path):
-    """盘上有 pkl：加载实例——运行期注册的自定义规则与未 poll 激活态跨调用存活。"""
-    from mflowy.driver.rule import rule_engine_rwa
-
-    default = RuleEngine().register(_EchoRule("a"))
-    pkl = tmp_path / "rules.pkl"
-
-    with rule_engine_rwa(str(pkl), default) as engine:
-        engine.register(_CustomRule("custom.x", salience=7))
-        engine.fire("custom.x", o={})  # 不 poll——挂起态落盘
-
-    with rule_engine_rwa(str(pkl), default) as engine:
-        assert "custom.x" in engine.rules
-        assert [a.rule_key for a in engine.poll_proposals()] == ["custom.x"]  # 挂起激活态恢复
-
-    with rule_engine_rwa(str(pkl), default) as engine:
-        assert engine.poll_proposals() == []  # 上一轮已 poll 排空并落盘
-
-
-def test_rwa_exception_no_save(tmp_path):
-    """with 内异常：异常透传且不落盘（事务性——失败调用零副作用）。"""
-    from mflowy.driver.rule import rule_engine_rwa
-
-    default = RuleEngine().register(_EchoRule("a"))
-    pkl = tmp_path / "rules.pkl"
-    with pytest.raises(RuntimeError, match="boom"):
-        with rule_engine_rwa(str(pkl), default) as engine:
-            engine.register(_EchoRule("custom"))
-            raise RuntimeError("boom")
-    assert not pkl.exists()
 
 
 def test_load_rule_engine_missing_none_corrupt_fail_loud(tmp_path):

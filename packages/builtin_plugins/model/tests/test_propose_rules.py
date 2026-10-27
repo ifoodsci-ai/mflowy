@@ -60,15 +60,15 @@ def _start(root, csv, fams=("RF",)):
 
 
 def _manifest(root, sid):
-    return json.loads((root / sid / "manifest.json").read_text(encoding="utf-8"))
+    return json.loads((root / sid / "board.json").read_text(encoding="utf-8"))
 
 
 @pytest.fixture
 def searched(sessions_root, cat_csv):
     """首搜后的会话：RF@ordinal 已入账本。"""
     s = _start(sessions_root, cat_csv)
-    ms.apply_action(s["session_id"], "select_model", {"family": "RF"})
-    ms.apply_action(s["session_id"], "run_hpo", {"n_trials": 2})
+    ms.apply_action(s.session_id, "select_model", {"family": "RF"})
+    ms.apply_action(s.session_id, "run_hpo", {"n_trials": 2})
     return s
 
 
@@ -97,14 +97,14 @@ def test_default_engine_subscribes_exactly_known_finding_kinds():
 
 def test_engine_pkl_persisted_in_session_dir(searched, sessions_root):
     """会话实例落盘：propose 后 session 目录有 rules.pkl，可再加载（自定义规则持载面）。"""
-    from mflowy.driver.rule import rule_engine_rwa
+    from mflowy.driver.rule import load_rule_engine
 
     s = searched
-    ms.propose_actions(s["session_id"])
-    pkl = sessions_root / s["session_id"] / "rules.pkl"
+    ms.propose_actions(s.session_id)
+    pkl = sessions_root / s.session_id / "rules.pkl"
     assert pkl.exists()
-    with rule_engine_rwa(str(pkl), propose_rules.default_engine()) as engine:
-        assert engine.rules  # 盘上实例注册面完整
+    engine = load_rule_engine(str(pkl))
+    assert engine is not None and engine.rules  # 盘上实例注册面完整
 
 
 # ── #36 report_findings ─────────────────────────────────────────────────────
@@ -113,7 +113,7 @@ def test_engine_pkl_persisted_in_session_dir(searched, sessions_root):
 def test_report_findings_stores_and_audits(searched, sessions_root):
     s = searched
     resp = ms.report_findings(
-        s["session_id"],
+        s.session_id,
         _K_RF,
         [
             {
@@ -125,24 +125,25 @@ def test_report_findings_stores_and_audits(searched, sessions_root):
         ],
     )
     key = _K_RF
-    assert resp["findings"][0]["source"] == "llm"
-    m = _manifest(sessions_root, s["session_id"])
+    assert resp.state_digest["findings"][0]["source"] == "llm"
+    m = _manifest(sessions_root, s.session_id)
     kinds = [(f["source"], f["kind"]) for f in m["models"][key]["findings"]]
     assert ("llm", "error_concentrated") in kinds  # 落诊进 models[key]
-    assert any(a["action"] == "report_findings" for a in m["decision_log"])  # 决策日志审计
+    log = [json.loads(x) for x in (sessions_root / s.session_id / "decision.log").read_text(encoding="utf-8").splitlines() if x.strip()]
+    assert any(a["action"] == "report_findings" for a in log)  # 决策日志审计
 
 
 def test_report_findings_schema_fail_loud(searched):
     s = searched
     key = _K_RF
     with pytest.raises(ValueError, match="超纲"):
-        ms.report_findings(s["session_id"], key, [{"kind": "telepathy"}])
+        ms.report_findings(s.session_id, key, [{"kind": "telepathy"}])
     with pytest.raises(ValueError, match="severity"):
-        ms.report_findings(s["session_id"], key, [{"kind": "fold_std", "severity": 7}])
+        ms.report_findings(s.session_id, key, [{"kind": "fold_std", "severity": 7}])
     with pytest.raises(ValueError, match="未知键"):
-        ms.report_findings(s["session_id"], key, [{"kind": "fold_std", "vibes": 1}])
+        ms.report_findings(s.session_id, key, [{"kind": "fold_std", "vibes": 1}])
     with pytest.raises(ValueError, match="不在账本"):
-        ms.report_findings(s["session_id"], "NOPE|a|b", [])
+        ms.report_findings(s.session_id, "NOPE|a|b", [])
 
 
 def test_propose_aggregates_llm_and_rule_findings(searched):
@@ -150,12 +151,12 @@ def test_propose_aggregates_llm_and_rule_findings(searched):
     s = searched
     key = _K_RF
     ms.report_findings(
-        s["session_id"], key, [{"kind": "error_concentrated", "severity": 0.8, "evidence": {"column": "c"}}]
+        s.session_id, key, [{"kind": "error_concentrated", "severity": 0.8, "evidence": {"column": "c"}}]
     )
-    props = ms.propose_actions(s["session_id"])
-    fe = [p for p in props if p["action"] == "select_FE"]
+    props = ms.propose_actions(s.session_id)
+    fe = [p for p in props if p.action == "select_FE"]
     assert fe, "error_concentrated（LLM 落诊）应驱动 FE 换档候选"
-    assert fe[0]["evidence"]["_rule"]["kind"] == "error_concentrated"
+    assert fe[0].evidence["_rule"]["kind"] == "error_concentrated"
 
 
 # ── 规则引擎实例：findings 驱动层 ───────────────────────────────────────────
@@ -164,10 +165,10 @@ def test_propose_aggregates_llm_and_rule_findings(searched):
 def test_no_leader_no_fe_candidates(sessions_root, cat_csv):
     """无 leader（S 无模型信息）→ FE 候选零出现（规则资格内联，非权重压序）。"""
     s = _start(sessions_root, cat_csv)
-    ms.apply_action(s["session_id"], "select_model", {"family": "RF"})
+    ms.apply_action(s.session_id, "select_model", {"family": "RF"})
     # 未 run：无模型账本信息（无 leader）——FE 基座档不出现；error_concentrated findings 也不存在
-    props = ms.propose_actions(s["session_id"])
-    assert not [p for p in props if p["action"] == "select_FE"]
+    props = ms.propose_actions(s.session_id)
+    assert not [p for p in props if p.action == "select_FE"]
 
 
 def test_fold_std_gates_deeper_search(searched):
@@ -175,16 +176,16 @@ def test_fold_std_gates_deeper_search(searched):
     有 → 深化候选浮出且带 _rule 溯源。"""
     s = searched
     key = _K_RF
-    props = ms.propose_actions(s["session_id"])
-    deeper = [p for p in props if p["action"] == "run_hpo" and p["params"]["n_trials"] > 2]
+    props = ms.propose_actions(s.session_id)
+    deeper = [p for p in props if p.action == "run_hpo" and dict(p.params)["n_trials"] > 2]
     # 无 findings 时的基座层不加深（首搜才出 run_hpo；已搜键靠证据）
-    assert not deeper or all(p["params"]["n_trials"] == 2 for p in deeper if "n_trials" in p["params"])
+    assert not deeper or all(dict(p.params)["n_trials"] == 2 for p in deeper if "n_trials" in dict(p.params))
 
-    ms.report_findings(s["session_id"], key, [{"kind": "fold_std", "severity": 0.5, "evidence": {"cv": 0.4}}])
-    props2 = ms.propose_actions(s["session_id"])
-    deeper2 = [p for p in props2 if p["action"] == "run_hpo"]
-    assert deeper2 and deeper2[0]["params"]["n_trials"] >= 6  # max(8, 3×2)
-    assert deeper2[0]["evidence"]["_rule"]["kind"] == "fold_std"  # 溯源可审计
+    ms.report_findings(s.session_id, key, [{"kind": "fold_std", "severity": 0.5, "evidence": {"cv": 0.4}}])
+    props2 = ms.propose_actions(s.session_id)
+    deeper2 = [p for p in props2 if p.action == "run_hpo"]
+    assert deeper2 and deeper2[0].params["n_trials"] >= 6  # max(8, 3×2)
+    assert deeper2[0].evidence["_rule"]["kind"] == "fold_std"  # 溯源可审计
     assert deeper2[0] == props2[0]  # findings 驱动层浮于菜单顶部（记分牌序）
 
 
@@ -211,19 +212,19 @@ def test_findings_driven_menu_deterministic_order(searched):
     s = searched
     key = _K_RF
     ms.report_findings(
-        s["session_id"],
+        s.session_id,
         key,
         [
             {"kind": "fold_std", "severity": 0.5},
             {"kind": "complexity_edge", "severity": 0.5},
         ],
     )
-    a = ms.propose_actions(s["session_id"])
-    b = ms.propose_actions(s["session_id"])
+    a = ms.propose_actions(s.session_id)
+    b = ms.propose_actions(s.session_id)
     assert [json.dumps(p, sort_keys=True, default=str) for p in a] == [
         json.dumps(p, sort_keys=True, default=str) for p in b
     ]
-    driven = [p for p in a if "_rule" in p.get("evidence", {})]
+    driven = [p for p in a if "_rule" in p.evidence]
     assert driven, "findings 驱动层在场"
 
 
@@ -231,10 +232,10 @@ def test_rule_candidates_carry_salience_audit_face(searched):
     """salience 审计面：_rule 分解（rule_key/kind/salience）在 evidence。"""
     s = searched
     key = _K_RF
-    ms.report_findings(s["session_id"], key, [{"kind": "fold_std", "severity": 0.5}])
-    props = ms.propose_actions(s["session_id"])
-    scored = [p for p in props if "_rule" in p.get("evidence", {})]
-    assert scored and all(set(p["evidence"]["_rule"]) == {"rule_key", "kind", "salience"} for p in scored)
+    ms.report_findings(s.session_id, key, [{"kind": "fold_std", "severity": 0.5}])
+    props = ms.propose_actions(s.session_id)
+    scored = [p for p in props if "_rule" in p.evidence]
+    assert scored and all(set(dict(p.evidence or {})["_rule"]) == {"rule_key", "kind", "salience"} for p in scored)
 
 
 def test_unconsumed_reported_not_silent(searched):
@@ -243,4 +244,4 @@ def test_unconsumed_reported_not_silent(searched):
     s = searched
     key = _K_RF
     with pytest.raises(ValueError, match="超纲"):
-        ms.report_findings(s["session_id"], key, [{"kind": "no_subscriber_kind"}])
+        ms.report_findings(s.session_id, key, [{"kind": "no_subscriber_kind"}])

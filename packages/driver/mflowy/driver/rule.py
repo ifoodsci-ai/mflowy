@@ -16,9 +16,8 @@ POMDP 的组件，触发上下文 = 观测 o）：
 - **落盘与状态解耦**：引擎是纯内存对象（注册面 + 激活缓冲，零路径状态）；
   盘 IO 是纯函数对——``load_rule_engine(path)``（缺文件 → None；损坏/异类 →
   raise 带路径，不静默重建默认）与 ``save_rule_engine(path, engine)``（dumps
-  后走 ``write_bytes_atomic`` 单源原语）；``rule_engine_rwa(path, default)``
-  四行门面（整读→用→整写）：盘上有则加载、缺则默认实例直接作工作实例
-  （无克隆——调用方传干净模板），with 正常退出整体落盘、异常不落盘。pkl
+  后走 ``write_bytes_atomic`` 单源原语）。整读→用→整写的会话门面住
+  ``POMDPSession.propose_ctx``（#89——rule_engine_rwa 已随壳迁移退役）。pkl
   承载注册面（含运行期注册的自定义规则）与未 poll 激活态；规则对象须可
   pickle（域规则 = 模块级 dataclass、只持 str/num 配置）。
 - **停止规则合成**：``compose_should_stop(when)`` 把"何时该收局"的域谓词
@@ -32,8 +31,7 @@ from __future__ import annotations
 
 import json
 import pickle
-from collections.abc import Callable, Iterator, Mapping
-from contextlib import contextmanager
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -164,22 +162,6 @@ def save_rule_engine(path: str, engine: RuleEngine) -> None:
     落盘——序列化失败发生在任何文件效果之前（不留空 tmp 垃圾）。
     """
     write_bytes_atomic(path, pickle.dumps(engine, protocol=pickle.HIGHEST_PROTOCOL))
-
-
-@contextmanager
-def rule_engine_rwa(path: str, default: RuleEngine) -> Iterator[RuleEngine]:
-    """业务接口入口（整读→用→整写）：盘上有 pkl 则加载，缺则默认实例直接作工作实例。
-
-    - 无克隆（草案语义）：``default`` 即工作实例——调用方须传干净模板（域侧
-      每次现建、激活态空）；pkl 命中时 default 被弃用不消费
-    - with 正常退出整体落盘（注册面 + 未 poll 激活态）；异常透传且不落盘——
-      失败调用零副作用（事务性）
-    - 规则对象须可 pickle（``Rule`` 协议文档）；``default`` 必填——无默认
-      实例的引擎不该有落盘通道
-    """
-    r = load_rule_engine(path) or default
-    yield r
-    save_rule_engine(path, r)
 
 
 def _stable_params(a: Activation) -> str:
