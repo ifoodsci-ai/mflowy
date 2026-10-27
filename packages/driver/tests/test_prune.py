@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 from mflowy.driver.binding import Upstream, UpstreamMeta
@@ -261,3 +262,84 @@ class TestLineageClosure:
         _bind(b, a, required=True)
         _bind(c, b, required=True)
         assert lineage_closure({a}, required_only=True) == {a, b, c}
+
+
+class TestDisabledPruneRunBehavior:
+    """disabled 剪枝后**运行**（行为级，真实 Builder 图穿过 build/run 公开面）。
+
+    钉的是取值闭包与绑定列表同源在真实图上的语义：被剪上游从收集边消失、
+    可选边成员全灭落签名默认值、被剪节点零执行（没有任何闭包再拉起它）。"""
+
+    def test_collect_edge_shrinks_to_survivors(self, fake_plugins, tmp_path, fake_tracking):
+        """被剪上游从收集边就地消失，幸存者保序；被剪节点零执行。"""
+        calls: list[str] = []
+
+        @handler()
+        def p1(**kw) -> int:
+            calls.append("p1")
+            return 1
+
+        @handler()
+        def p2(**kw) -> int:
+            calls.append("p2")
+            return 2
+
+        @handler()
+        def b(**kw) -> int:
+            calls.append("b")
+            return 10
+
+        @handler()
+        def agg(base: int, feat: Iterator[int] | None = None, **_):
+            calls.append("agg")
+            return {"feats": list(feat) if feat is not None else None, "base": base}
+
+        fake_plugins.setdefault("feat", {})["p1"] = p1
+        fake_plugins.setdefault("feat", {})["p2"] = p2
+        fake_plugins.setdefault("base", {})["b"] = b
+        fake_plugins.setdefault("model", {})["agg"] = agg
+        dag = Builder(
+            _yaml(
+                tmp_path,
+                "剪枝后运行",
+                _node("p1", "feat", "p1"),
+                "- feat__p2:\n    name: p2\n    disabled: true",
+                _node("b", "base", "b"),
+                _node("agg", "model", "agg"),
+            )
+        ).build()
+        flow = dag.run()
+        assert flow.status == "finished"
+        agg_ctx = next(t for t in dag.nodes if t.conf.name == "agg")
+        assert agg_ctx.result == {"feats": [1], "base": 10}
+        assert "p2" not in calls  # 被剪节点零执行——取值闭包看不见出局者
+
+    def test_all_pruned_optional_falls_back_to_default(self, fake_plugins, tmp_path, fake_tracking):
+        """可选边成员全灭 → MISSING 省略注入，签名默认值生效。"""
+        calls: list[str] = []
+
+        @handler()
+        def p2(**kw) -> int:
+            calls.append("p2")
+            return 2
+
+        @handler()
+        def solo(feat__p2: int | None = None, **_):
+            calls.append("solo")
+            return feat__p2
+
+        fake_plugins.setdefault("feat", {})["p2"] = p2
+        fake_plugins.setdefault("model", {})["solo"] = solo
+        dag = Builder(
+            _yaml(
+                tmp_path,
+                "可选全灭默认值",
+                "- feat__p2:\n    name: p2\n    disabled: true",
+                _node("solo", "model", "solo"),
+            )
+        ).build()
+        flow = dag.run()
+        assert flow.status == "finished"
+        solo_ctx = next(t for t in dag.nodes if t.conf.name == "solo")
+        assert solo_ctx.result is None  # 签名默认值生效（MISSING 省略注入）
+        assert calls == ["solo"]  # p2 被剪：零执行
