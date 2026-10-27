@@ -276,7 +276,7 @@ def test_final_train_test_freezes_and_reads_holdout_once(sessions_root, reg_csv,
 
     arts = run_artifacts(entry["run_id"])
     assert {"X_test.parquet", "y_test.parquet", "y_pred.parquet"} <= set(arts)
-    assert (sessions_root / s.session_id / f"loader_{_K_RF.replace('|', '__')}.pkl").exists()
+    assert (sessions_root / s.session_id / f"loader_{_K_RF.replace('|', '__')}_v1.pkl").exists()
     with pytest.raises(RuntimeError, match="冻结"):
         ms.apply_action(s.session_id, "run_hpo", {"n_trials": 1})
     with pytest.raises(RuntimeError, match="冻结"):
@@ -697,7 +697,8 @@ def test_rollback_after_rerun_preserves_deliverables(sessions_root, reg_csv, tmp
     """#89 ④片 M5 验收（model 侧）：冻结 combo 的 loader/plan 在回滚与重跑后完好。
 
     append-only 账本 + freeze-once（同键不可再终训）⇒ 已交付/将交付指针永不
-    悬空——loader 每 key 恰写一次（文件名即版本），光标回退不动账本与冻结面。
+    悬空——loader/plan 文件名带冻结世代 _v{n}（规格字面：freeze-once ⇒ 恒 v1，
+    世代位显式留名与 data 域 v{n}.parquet 同纪律），光标回退不动账本与冻结面。
     """
     from mflowy.utils.file import sha256_of
 
@@ -706,8 +707,8 @@ def test_rollback_after_rerun_preserves_deliverables(sessions_root, reg_csv, tmp
     ms.apply_action(s.session_id, "run_hpo", {"n_trials": 2})
     sid = s.session_id
     ms.apply_action(sid, "final_train_test")  # RF 冻结 + loader/plan 落盘
-    loader_file = sessions_root / sid / f"loader_{_K_RF.replace('|', '__')}.pkl"
-    plan_file = sessions_root / sid / "plans" / f"final_{_K_RF.replace('|', '__')}.yaml"
+    loader_file = sessions_root / sid / f"loader_{_K_RF.replace('|', '__')}_v1.pkl"
+    plan_file = sessions_root / sid / "plans" / f"final_{_K_RF.replace('|', '__')}_v1.yaml"
     sha_before = sha256_of(loader_file)
     assert plan_file.exists()
 
@@ -724,5 +725,5 @@ def test_rollback_after_rerun_preserves_deliverables(sessions_root, reg_csv, tmp
     v = ms.finish_session(sid, pdf=_pdf(tmp_path))
     delivered = v.deliverables
     assert set(delivered) == {_K_RF, "XGB|passthrough|passthrough"}  # 双冻结 combo 全交付
-    assert delivered[_K_RF]["loader"]["file"] == loader_file.name  # 指针 = 盘上实物名
+    assert delivered[_K_RF]["loader"]["file"] == loader_file.name  # 带世代指针 = 盘上实物名
     assert (sessions_root / sid / delivered[_K_RF]["loader"]["file"]).exists()

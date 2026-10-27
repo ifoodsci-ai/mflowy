@@ -835,8 +835,9 @@ def _final_train_test(ss, o, m, board, log, params: dict) -> None:
     if isinstance(seed, int):
         final_params["random_state"] = seed
 
+    loader_v = 1  # 冻结世代：freeze-once ⇒ 恒 1（若未来解冻重训，世代递增——指针永不悬空的结构位）
     plan_text = _plan_yaml(m, key, final_params)
-    plan_path = ss.dir / "plans" / f"final_{_key_file(key)}.yaml"
+    plan_path = ss.dir / "plans" / f"final_{_key_file(key)}_v{loader_v}.yaml"
     plan_path.parent.mkdir(parents=True, exist_ok=True)
     write_text_atomic(plan_path, plan_text)  # 审计工件（执行合同面是明文文本，M4 计划落盘留痕）
 
@@ -884,7 +885,7 @@ def _final_train_test(ss, o, m, board, log, params: dict) -> None:
 
     findings = [{"source": "rule", **f} for f in holdout_findings(ts, y_pred_df, entry.get("u_inner"), holdout["u"])]
 
-    save_loader(m["session_id"], loader, key)
+    save_loader(m["session_id"], loader, key, v=loader_v)
     entry.update(
         {
             "frozen": True,
@@ -894,6 +895,7 @@ def _final_train_test(ss, o, m, board, log, params: dict) -> None:
             "run_id": node.run_id,
             "final_params": final_params,  # 证据配置（= plan 全 pin 面——重放承诺与执行事实同一）
             "byproducts": byproducts,
+            "loader_v": loader_v,  # 冻结世代（loader/plan 文件名版本源）
         }
     )
     _commit(
@@ -1220,7 +1222,10 @@ def _verdict_response(m: dict, decision_log: list) -> FinishVerdict:
     deliverables = {
         k: {
             "plan_yaml": _plan_yaml(m, k),
-            "loader": {"session_id": m["session_id"], "file": f"loader_{_key_file(k)}.pkl"},  # sid 相对寻址
+            "loader": {  # sid 相对寻址 + 冻结世代（#89 M5：带版本文件名）
+                "session_id": m["session_id"],
+                "file": f"loader_{_key_file(k)}_v{m['models'][k].get('loader_v', 1)}.pkl",
+            },
             "run_id": m["models"][k]["run_id"],
             "terminal_utility": v["models"][k]["u"],
             "findings": v["models"][k]["findings"],
@@ -1640,21 +1645,22 @@ def _json(v) -> str:
     return json.dumps(v, ensure_ascii=False)
 
 
-def save_loader(session_id: str, loader, key: str) -> None:
-    """final_train_test 后持久化 loader 门面（键 = 结构键；多模型会话各持一份，sid 相对寻址）。
+def save_loader(session_id: str, loader, key: str, v: int = 1) -> None:
+    """final_train_test 后持久化 loader 门面（键 = 结构键 + _v{n} 冻结世代；
+    多模型会话各持一份，sid 相对寻址）。
 
-    M5（#89 ④片）：freeze-once（combo 冻结后不可再终训）⇒ 每 key 恰写一次——
-    文件名即版本（无覆写路径）；写走 write_bytes_atomic（先 dumps 后落盘，
-    红线 3）。
+    M5（#89 ④片）：freeze-once（combo 冻结后不可再终训）⇒ 世代恒 1——版本号
+    显式落名（规格字面：带版本文件名，与 data 域 v{n}.parquet 同纪律）；写走
+    write_bytes_atomic（先 dumps 后落盘，红线 3）。
     """
     from mflowy.utils.file import write_bytes_atomic
 
     write_bytes_atomic(
-        str(_root() / session_id / f"loader_{_key_file(key)}.pkl"),
+        str(_root() / session_id / f"loader_{_key_file(key)}_v{v}.pkl"),
         pickle.dumps(loader, protocol=pickle.HIGHEST_PROTOCOL),
     )
 
 
-def load_loader(session_id: str, key: str):
-    with open(_root() / session_id / f"loader_{_key_file(key)}.pkl", "rb") as f:
+def load_loader(session_id: str, key: str, v: int = 1):
+    with open(_root() / session_id / f"loader_{_key_file(key)}_v{v}.pkl", "rb") as f:
         return pickle.load(f)

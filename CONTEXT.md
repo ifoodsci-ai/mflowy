@@ -108,7 +108,7 @@ _Avoid_: 环境引擎（与 runner 混淆）；MDP（0.2.0 起的旧称——pro
 会话盘上壳三件之二（之三 = rules.pkl）。观测摘要 = `Observation` 封闭模型的投影
 （七键 + 终态双旗），整读改写、原子落盘、最后写（投影）；决策日志 = append-only
 JSONL 事实流，一行一条 (s,a,r,s′)，rollback/finish/abandon 是记录不是删行——
-**追加即 commit 点**（工件先行、观测最后；崩溃窗口由 open 一致性牙齿捕获）。
+**追加即 commit 点**（工件先行、观测最后；崩溃窗口由 open 一致性牙齿捕获）；交付工件文件名带版本（data = 日志派生 v{n}.parquet；model = 冻结世代 loader/plan `_v{n}`——freeze-once ⇒ 恒 v1，世代位显式留名）。
 域状态文件域自定（如 model 的 board.json：光标/账本/verdict 缓存）。
 _Avoid_: manifest.json（0.2.0 随 #89 溶解——协议状态进观测摘要、历史进决策日志、域状态进域文件）
 
