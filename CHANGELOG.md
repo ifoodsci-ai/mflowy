@@ -143,7 +143,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `_record`；两域函数组 ≡ Handle 协议的结构等价钉测入 `test_workspace`；命名消歧
   （model `_state_projection`/`to_activation` vs data `_refresh_state_digest`/`menu_of`）。
 - **M5 版本树语义（④片）**：clean 单记录版本树（apply 记录含 v/file/sha/run_id）；
-  model `save_loader` 原子写（freeze-once ⇒ 文件名即版本，指针永不悬空）；
+  model `save_loader`/`plans/final_*` 原子写 + **带冻结世代文件名**（
+  `loader_{key}_v{n}.pkl` / `final_{key}_v{n}.yaml`——freeze-once ⇒ 恒 v1，世代位
+  显式留名与 data 域 v{n}.parquet 同纪律；verdict/loader 指针引用带世代实物名）；
   rollback-after-rerun 一致性用例两域钉测。
 - 工具层与 MCP schema **零改动**（六操作门面签名不变——包装层 model_dump 适配）；
   同频：CONTEXT 词条（会话基座/观测摘要/决策日志/Observation·Activation/规则通俗
