@@ -7,7 +7,8 @@ fail-loud）；边完全由签名机器对节点表解析（``edges`` 词表① 
 
 - 增量编译：按 YAML 序逐节点构造 Context → 从节点函数解析 direct 列 Upstream（边内层
   依赖随播种进 ``ctx._via_upstreams``）→ 查表校验 → 接线 prevs/nexts → 入表（组名保序 /
-  node_key 整相双索引）
+  node_key 整相双索引）；取值闭包经 ``binding.Upstream.node``/``Upstream.edge`` 工厂
+  构造——本模块只编译，零运行期代码
 - ``disabled`` = 编译期**必选依赖闭包**剪枝：可选依赖剥除（MISSING 落回签名默认值），
   collect 部分出局只收幸存成员
 - ``structural_rules``：编译后钩子（``Context → Context | None``），从叶子反向

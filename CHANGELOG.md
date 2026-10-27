@@ -49,6 +49,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   注册清单同源」划掉。迁移验收：`tools/list` 名集迁移前后等价（33 工具零丢失——
   旧 server 手写元组本不含导入泄漏名，泄漏面仅存于 runner 反射分发表，随塌缩消失）。
 
+### 取值闭包工厂居 binding——`Upstream.node`/`Upstream.edge` 构造单点，builder 编译面零运行期代码
+
+- 架构复审候选 3 落地：取值闭包（惰性拉起/哨兵去重/值级复核/collect-single 整形）
+  原定义于 `builder._fetch`、在 `context._bind` 调用帧执行——内核最差 locality；
+  且「`Upstream.nodes` 与闭包捕获同一列表」这条剪枝语义不变式只活在三处注释里，
+  全仓零测试保护（test_prune 手搭图的 call 恒为 `lambda: None`，不触该机制）。
+- 工厂 `Upstream.node`/`Upstream.edge`（classmethod，与 `meta.type` 的
+  "node"/"edge" 值域镜像命名）住 binding——域词汇背书：CONTEXT「拉起」词条
+  自定义拉起为**绑定期**行为；binding 模块头本就认领「签名 → 边声明 → 注入值」，
+  工厂补全该终点。宪章「零图知识」精确化为「零拓扑知识」——闭包按鸭子协议消费
+  上游执行面 `result`/`run`，零 Context import、零目录查询。
+- 列表同源从注释约定变为工厂的结构保证：`nodes = chosen` 全仓唯一焊点，剪枝
+  就地过滤（`Context.rewire` 的 `nodes[:] = ...`）两边天然同步——同源焊点唯一，
+  直构数据类不产生取值闭包。`Upstream` 保持普通 dataclass——测试手搭缝位
+  不变（红线 7），工厂为生产代码唯一构造点。
+- `_NOT_RUN` 执行哨兵随迁 binding 与 `MISSING` 并肩（两大协议哨兵同居单源）；
+  builder 两处构造点各缩一行、删 `_fetch`/`edge_call` 定义，从此不含运行期执行的
+  代码。行为零变化（纯搬移 + 封装）。
+- 测试：行为级钉测入 test_prune（真实 Builder 图 + disabled 剪枝 + run：收集边
+  只剩幸存成员、可选成员全灭落签名默认值、被剪节点零拉起）；工厂直测入
+  test_binding（拉起恰一次/同源过滤即视/MISSING/collect-single/撒谎复核点名）；
+  test_compile 八处私有 `_prevs`/`_nexts` 断言公共化（`prevs`/`nexts` 只读视图）。
+
 ### Added（#88）：login 平台工具——OAuth 2.1 身份地基（PKCE S256 + loopback + token 库）
 
 - **`mflowy.utils.auth`（纯 stdlib）**：平台 OAuth 2.1 客户端——授权码流
