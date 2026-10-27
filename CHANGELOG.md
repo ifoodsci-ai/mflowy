@@ -126,19 +126,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   决策记录带 run_id；apply 与导出计划同构）。model `run_hpo` 保持域内 `_pipeline`
   （委派 JobProvider 会 fork 增量 study 真源——约束见 issue #89 评论；终训自 #66 已走
   provider）。
-- **规则引擎归位（③片）**：`fire(*keys, o)` 触发上下文 = 观测（model 域已切——findings/
-  menu_ctx 写进 state_digest，规则纯消费 o；data 域 .repair 规则过渡期仍消费域 R dict，
-  问题导向重设计为③余量）；`compose_should_stop(when)` 停止规则合成器落地两域
-  （data = 缺陷清零、model = 预算耗尽 → action="finish" 提议，salience=0 垫底）；
-  `rule_engine_rwa` 门面随壳迁移退役（语义住 `POMDPSession.propose_ctx`）。
+- **规则引擎归位（③片，含余量落定）**：`fire(*keys, o)` 触发上下文 = 观测（两域
+  均已落地）；data 域检测层证据富化——problems 问题投影 / columns 列画像（dtype
+  族 + skew/四分位 + 方差，计算单源 univariate_facts）/ current_file 写进
+  state_digest；**BREAKING**：clean `.repair` 声明面退役——问题知识（问题 → 候选
+  动作×参数×档位理由）随问题规则居住（`repair_rules.ProblemRule`，key = kind），
+  节点回归纯变换，第三方迁移面 = 注册自己的 ProblemRule；菜单 params 自含
+  `load` 引用（当前版本工件），apply 侧新鲜度门（过期菜单 fail-loud 指路重新
+  propose），计划导出剥 load 寻址键；`compose_should_stop(when)` 停止规则合成器
+  落地两域（data = 缺陷清零、model = 预算耗尽 → action="finish" 提议，salience=0
+  垫底）；`rule_engine_rwa` 门面随壳迁移退役（语义住 `POMDPSession.propose_ctx`）。
 - **复审收敛（#89 code-review 轮）**：model finish 幂等重入改走壳 finish_ctx 只读路径
   （域侧预检删除——构造保证落地为事实）；无冻结 combo 的 finish 从 raise 改**拒收
   verdict**（与 data 域 θ 门同一契约路——拒收后可续局）；data plan.yaml/steps 合同
   原子写；`SessionStore` 裁到 GC 面（manifest 读写面随溶解退役）；决策记录形状单源
   `_record`；两域函数组 ≡ Handle 协议的结构等价钉测入 `test_workspace`；命名消歧
   （model `_state_projection`/`to_activation` vs data `_refresh_state_digest`/`menu_of`）。
-  ③余量明示：data 问题导向规则重设计（`.repair` 退役、params 自含数据引用）依赖
-  检测层证据富化，另行切片（roadmap）。
 - **M5 版本树语义（④片）**：clean 单记录版本树（apply 记录含 v/file/sha/run_id）；
   model `save_loader` 原子写（freeze-once ⇒ 文件名即版本，指针永不悬空）；
   rollback-after-rerun 一致性用例两域钉测。

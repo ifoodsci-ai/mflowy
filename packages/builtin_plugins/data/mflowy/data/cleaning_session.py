@@ -119,6 +119,41 @@ _REPORT_MEMO: dict[tuple[str, str], ErrorReport] = {}
 _REPORT_MEMO_CAP = 256
 
 
+def _num(x):
+    """None-安全的读数形态（NaN/inf → None——不伪装成数值）。"""
+    import math
+
+    return round(float(x), 4) if x is not None and math.isfinite(float(x)) else None
+
+
+def _column_profile(df: pd.DataFrame) -> dict:
+    """列画像（#89 ③片检测层证据富化）：dtype 族 + 数值分布读数（skew/四分位）+
+    总体方差——问题规则的证据基座（dtype 自筛/档位读数/共线方差选择全在此取，
+    规则零 df 引用）。计算单源 = statistic 域 univariate_facts；memo 随指纹。"""
+    memo_key = _fingerprint(df)
+    hit = _PROFILE_MEMO.get(memo_key)
+    if hit is not None:
+        return hit
+    from mflowy.data.statistic.univariate import univariate_facts
+
+    rows, _findings = univariate_facts(df)
+    var = df.select_dtypes(include="number").var().to_dict()
+    profile = {}
+    for r in rows:
+        col: dict = {"family": r["family"]}
+        if r["family"] == "numeric":
+            col |= {k: _num(r.get(k)) for k in ("skew", "q1", "q2", "q3")}
+            col["var"] = _num(var.get(r["name"]))
+        profile[r["name"]] = col
+    if len(_PROFILE_MEMO) >= _REPORT_MEMO_CAP:
+        _PROFILE_MEMO.clear()
+    _PROFILE_MEMO[memo_key] = profile
+    return profile
+
+
+_PROFILE_MEMO: dict[str, dict] = {}
+
+
 def _digest(report: ErrorReport) -> str:
     """决策日志的状态摘要指纹（s/s′）：kind×count。"""
     return ",".join(f"{k}×{v}" for k, v in sorted(report.counts().items())) or "clean"
@@ -268,8 +303,17 @@ def _freeze_card(df: pd.DataFrame, card: dict) -> dict:
 # ── 观测/记录的域形状 ────────────────────────────────────────────────────────
 
 
-def _refresh_state_digest(o: Observation, report: ErrorReport, quality: dict, *, v: int) -> None:
-    """检测证据写进 state_digest（s′ 免费自带的落点）。"""
+def _refresh_state_digest(
+    o: Observation, report: ErrorReport, quality: dict, *, v: int, df: pd.DataFrame, file: str
+) -> None:
+    """检测证据写进 state_digest（s′ 免费自带的落点，#89 ③片富化面）：
+    problems 问题投影 + columns 列画像 + current_file 当前版本工件——问题规则的
+    全部触发证据（规则纯消费 o，零 df 引用；params 的 load 引用源 = current_file）。"""
+    problems: dict[str, list] = {}
+    for e in report.errors:
+        problems.setdefault(e.kind, []).append(
+            {"column": e.column, "severity": e.severity, "evidence": dict(e.evidence or {})}
+        )
     o.state_digest = {
         **o.state_digest,
         "v": v,
@@ -278,6 +322,9 @@ def _refresh_state_digest(o: Observation, report: ErrorReport, quality: dict, *,
         "summary": report.summary(),
         "shape": list(report.shape),
         "quality": quality,
+        "problems": problems,
+        "columns": _column_profile(df),
+        "current_file": file,
     }
 
 
@@ -334,7 +381,7 @@ def start_session(file_path: str, card: dict | None = None, max_steps: int = 15)
                 "artifact_sha256": sha256_of(v0),  # 工件溯源（版本内容地址单键；行指纹仅作 memo 键）
             },
         }
-        _refresh_state_digest(o, report, quality, v=0)
+        _refresh_state_digest(o, report, quality, v=0, df=df, file=str(v0))
     return o
 
 
@@ -406,9 +453,10 @@ def apply_action(session_id: str, node: str, params: dict | None = None) -> Obse
     → 负 reward 即 rollback」）。版本分配 = 日志派生 max+1（append-only——永不
     复用已 commit 版本）。
     """
-    params = params or {}
+    params = dict(params or {})
     if node == "finish":
         raise ValueError("`finish` 是操作面不是 apply 动作——菜单出现 finish 提议时走 clean_finish")
+    load_ref = params.pop("load", None)  # params 自含数据引用（#89）——寻址元数据，非节点参数
     try:
         get_node(f"clean__{node}", raw=True)  # 词表预检（导入失败原音透传，不误诊）
     except CatalogMiss as e:
@@ -416,6 +464,10 @@ def apply_action(session_id: str, node: str, params: dict | None = None) -> Obse
 
     ss = _open(session_id)
     with ss.apply_ctx(node) as (o, log):
+        if load_ref is not None and Path(load_ref).name != _current_file(o):
+            raise ValueError(  # 过期菜单新鲜度门（fail-loud 指路）——commit 前抛 = 免费
+                f"提议的 load 引用已过期（{load_ref} ≠ 当前版本 {_current_file(o)}）——重新 clean_propose 拿新鲜菜单"
+            )
         _session_experiment(ss.id)  # 预建会话锚定实验（工件根 = 会话 .mlruns）
         df, out, run_id = _run_clean_step(ss, o, node, params, step_no=len(log) + 1)
         _guard(df, out, o.prior)
@@ -460,7 +512,7 @@ def apply_action(session_id: str, node: str, params: dict | None = None) -> Obse
         )
         o.steps += 1
         o.reward = round(quality["score"] - before_quality["score"], 4)
-        _refresh_state_digest(o, report, quality, v=version)
+        _refresh_state_digest(o, report, quality, v=version, df=out, file=str(ss.dir / fname))
     return o
 
 
@@ -484,15 +536,15 @@ def rollback(session_id: str, to_version: int) -> Observation:
             {"action": "rollback", "to_v": to_version, "quality_before": pre_score, "quality_after": quality["score"]}
         )
         o.reward = round(quality["score"] - pre_score, 4)
-        _refresh_state_digest(o, report, quality, v=to_version)
+        _refresh_state_digest(o, report, quality, v=to_version, df=df, file=str(ss.dir / fname))
     return o
 
 
 def propose_actions(session_id: str) -> list[Activation]:
-    """候选聚合（规则引擎实例统一入口）：词表 ``.repair`` 知识聚合在会话引擎实例
-    （rules.pkl 持载自定义规则），fire/poll 按记分牌序聚合——权重×severity 降序
-    （salience 同尺），置顶即事实默认档，噪声由排序治理。终态（收局/弃局）返回
-    []——菜单与终态一致。#89 ③片：规则将改从问题出发消费 o（当前过渡 = 域 R dict）。
+    """候选聚合（问题规则统一入口，#89 ③片）：问题知识随问题规则居住
+    （repair_rules——检测证据在 state_digest，规则纯消费 o），fire(o=观测)/poll 按
+    记分牌序聚合——权重×severity 降序（salience 同尺），置顶即事实默认档，噪声由
+    排序治理。params 自含 load（当前版本工件）；终态（收局/弃局）返回 []。
     """
     ss = _open(session_id)
     if ss.is_terminal:
@@ -500,8 +552,10 @@ def propose_actions(session_id: str) -> list[Activation]:
     with ss.propose_ctx() as (o, engine):
         df = pd.read_parquet(ss.dir / _current_file(o))
         report = _detect_all(df, o.prior)
-        _refresh_state_digest(o, report, o.state_digest["quality"], v=o.state_digest["v"])  # 检测证据刷新观测
-        engine.fire(o={"defects": report, "card": o.prior, "df": df})  # 过渡：③片改 fire(o) 问题规则
+        _refresh_state_digest(  # 检测证据富化观测（problems/columns/current_file——规则的触发面）
+            o, report, o.state_digest["quality"], v=o.state_digest["v"], df=df, file=str(ss.dir / _current_file(o))
+        )
+        engine.fire(o=o)  # 触发上下文 = 观测（#89 ③片——问题规则纯消费 o）
         activations = engine.poll_proposals()
     return activations
 
@@ -536,7 +590,11 @@ def _plan_yaml(o: Observation, log) -> str:
         }
     ]
     flow += [
-        {f"clean__{node}": NodeConf(node_key=f"clean__{node}", name=f"自动清洗-{i}", params=params)}
+        {
+            f"clean__{node}": NodeConf(
+                node_key=f"clean__{node}", name=f"自动清洗-{i}", params={k: v for k, v in params.items() if k != "load"}
+            )
+        }
         for i, (node, params) in enumerate(path, 1)
     ]
     return flow_to_yaml(tuple(flow))

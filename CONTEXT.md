@@ -134,15 +134,17 @@ _Avoid_: ExperimentCard、ModelBrief、ModelingCard（协议卡禁用别名）
 **规则（rule）**:
 实现 `driver.rule.Rule` 协议的出题知识对象（`key` 身份 + `propose(o) -> list[Activation]`）。
 通俗定义：**Rule 定义问题；`Rule.propose` 定义对 o 进行规则校验后输出的解题选项**。
-引擎是服务于 POMDP 的组件——触发上下文 = 观测 o（`fire(*keys, o)`；model 域已落地：
-findings/菜单上下文写进 `o.state_digest`，规则纯消费 o；data 域 `.repair` 规则过渡期
-仍消费域 R dict（含 df——候选生成器的档位计算依赖），问题导向重设计随检测层证据
-富化收敛，见 roadmap）。
+引擎是服务于 POMDP 的组件——触发上下文 = 观测 o（`fire(*keys, o)`；检测证据由域
+算子写进 `o.state_digest`——data 域 = problems 问题投影 + columns 列画像（dtype 族/
+分布读数/方差）+ current_file，model 域 = findings/菜单上下文——规则纯消费 o，
+零 df 引用；候选动作在 propose 内现查词表 fail-loud；data 域菜单 params 自含
+`load` 引用（当前版本工件——apply 侧新鲜度校验，过期菜单 fail-loud 指路重新
+propose）。
 停止建议是普通规则：`compose_should_stop(when)` 把域停止谓词组合成 action="finish"
 提议（salience=0 垫底；when 须模块级可 pickle）。词表知识源随词汇主人居住（clean
 `.repair` / model 族自声明），经域适配器（data `repair_rules` / model `propose_rules`）
 注册进会话引擎实例（rules.pkl 持载自定义规则；整读整写门面住 `POMDPSession.propose_ctx`）。
-_Avoid_: 以「规则引擎」裸指 RETE/DSL 类推理引擎（明确非需求——本仓自研件全称「规则引擎 SDK」）；R 触发上下文（随 #89 归位退役——上下文即观测）；rule_engine_rwa（随壳迁移退役）；rules. 前缀 entry point 注册桶（#37 旧稿已废弃）；节点属性挂载 `node.rule = {kind: fn}`（0.2.0 随实例门面重构退役）
+_Avoid_: 以「规则引擎」裸指 RETE/DSL 类推理引擎（明确非需求——本仓自研件全称「规则引擎 SDK」）；R 触发上下文（随 #89 归位退役——上下文即观测）；rule_engine_rwa（随壳迁移退役）；rules. 前缀 entry point 注册桶（#37 旧稿已废弃）；节点属性挂载 `node.rule = {kind: fn}`（0.2.0 随实例门面重构退役）；clean 节点 `.repair` 声明（随 #89 ③片退役——问题知识随问题规则居住，节点回归纯变换）
 
 **资格门（gate）**:
 规则 propose 内的前置早退（读 o 的会话态，不满足即零产出）。未过则候选恒不出现——
