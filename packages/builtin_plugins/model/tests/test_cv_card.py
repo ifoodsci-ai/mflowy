@@ -14,7 +14,6 @@ import json
 import numpy as np
 import pandas as pd
 import pytest
-from mflowy.driver.pomdp import verify_observation
 from mflowy.model import session as ms
 from mflowy.model.protocol import CVCard
 
@@ -148,7 +147,7 @@ def test_bad_hints_fail_loud(reg_csv):
 
 def test_start_takes_cv_card_and_stores_candidates(sessions_root, reg_csv):
     s = _start(sessions_root, reg_csv)
-    verify_observation(s)
+    assert isinstance(s["session_id"], str) and type(s["steps"]) is int  # #89 过渡地板
     m = json.loads((sessions_root / s["session_id"] / "manifest.json").read_text(encoding="utf-8"))
     assert [c["family"] for c in m["candidates"]] == ["RF", "XGB"]
     assert m["candidates"][0]["baseline"] is True

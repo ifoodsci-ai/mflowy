@@ -54,7 +54,8 @@ class _ImputeFallbackRule:
         return [
             Activation(
                 rule_key=self.key,
-                proposal={"action": "impute", "params": {"cols": ["x"]}},
+                action="impute",
+                params={"cols": ["x"]},
                 salience=0,
                 rationale="自定义兜底",
                 evidence={"kind": "missing"},
@@ -73,10 +74,10 @@ def test_repair_rule_proposes_only_for_its_kind():
     engine = repair_rules.default_engine()
     df = pd.DataFrame({"x": [1.0, 2.0]})
     report = ErrorReport(shape=df.shape, errors=[DataError(kind="missing", column="x", severity=0.6)])
-    acts = engine.fire(R={"defects": report, "card": {}, "df": df})
+    acts = engine.fire(o={"defects": report, "card": {}, "df": df})
     assert acts, "missing 有修复者，应产出候选"
     assert all(a.evidence["kind"] == "missing" for a in acts)
-    assert {a.proposal["action"] for a in acts}  # action = clean 词表节点名
+    assert {a.action for a in acts}  # action = clean 词表节点名
 
 
 def test_propose_actions_via_engine_keeps_menu_shape(sessions_root, tmp_path):

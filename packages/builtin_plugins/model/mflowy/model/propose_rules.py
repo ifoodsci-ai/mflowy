@@ -36,7 +36,8 @@ def _deeper_rule(f: dict, family: str, ctx: dict) -> list[Activation]:
     return [
         Activation(
             rule_key=f"{family}.fold_std",
-            proposal={"action": "run_hpo", "params": {"n_trials": n}},
+            action="run_hpo",
+            params={"n_trials": n},
             salience=salience(_FAMILY_KINDS["fold_std"][1], f.get("severity", 0.0)),
             rationale=f"折间不稳（std/|mean|={f.get('evidence', {}).get('cv')}）——加深搜索至 n_trials={n}",
             evidence={"finding": dict(f), "key": ctx["combo_key"], "n_trials": n},
@@ -60,7 +61,8 @@ def _regularize_rule(f: dict, family: str, ctx: dict) -> list[Activation]:
         return [
             Activation(
                 rule_key=f"{family}.{f['kind']}",
-                proposal={"action": "set_hp_space", "params": {param: [lo, declared.end]}},
+                action="set_hp_space",
+                params={param: [lo, declared.end]},
                 salience=salience(_FAMILY_KINDS[f["kind"]][1], f.get("severity", 0.0)),
                 rationale=f"{f['kind']}（{f.get('message', '')}）——正则收窄 {param} 至上半区 [{lo:.4g}, {declared.end:.4g}]",
                 evidence=evidence | {"narrow": [lo, declared.end]},
@@ -69,7 +71,8 @@ def _regularize_rule(f: dict, family: str, ctx: dict) -> list[Activation]:
     return [
         Activation(
             rule_key=f"{family}.{f['kind']}",
-            proposal={"action": "set_hp", "params": {param: declared}},
+            action="set_hp",
+            params={param: declared},
             salience=salience(_FAMILY_KINDS[f["kind"]][1], f.get("severity", 0.0)),
             rationale=f"{f['kind']}（{f.get('message', '')}）——正则 pin {param}={declared}（静态面无收窄余地）",
             evidence=evidence,
@@ -85,7 +88,8 @@ def _weight_rule(f: dict, family: str, ctx: dict) -> list[Activation]:
     return [
         Activation(
             rule_key=f"{family}.slice_collapse",
-            proposal={"action": "set_hp", "params": {"scale_pos_weight": 2.0}},
+            action="set_hp",
+            params={"scale_pos_weight": 2.0},
             salience=salience(_FAMILY_KINDS["slice_collapse"][1], f.get("severity", 0.0)),
             rationale=f"切片塌陷（slice={f.get('evidence', {}).get('slice')}，recall={f.get('evidence', {}).get('recall')}）"
             "——pin scale_pos_weight=2.0 提升少数类权重",
@@ -99,7 +103,8 @@ def _fe_switch_rule(f: dict, node: str, slot: str, ctx: dict) -> list[Activation
     return [
         Activation(
             rule_key=f"fe.{node}",
-            proposal={"action": "select_FE", "params": {"node": node}},
+            action="select_FE",
+            params={"node": node},
             salience=salience(_FE_WEIGHT, f.get("severity", 0.0)),
             rationale=f"误差集中于列 `{f.get('evidence', {}).get('column')}`——换 FE 档（{node}）重跑验证",
             evidence={"finding": dict(f), "slot": slot},

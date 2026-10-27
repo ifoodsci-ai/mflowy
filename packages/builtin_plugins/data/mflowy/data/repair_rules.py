@@ -92,7 +92,8 @@ class RepairRule:
         return [
             Activation(
                 rule_key=self.key,
-                proposal={"action": self.node, "params": params},
+                action=self.node,
+                params=params,
                 salience=score,
                 rationale=rationale,
                 evidence={**base_evidence, **(extra or {})},

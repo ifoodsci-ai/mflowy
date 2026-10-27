@@ -428,22 +428,39 @@ def test_budget_stops_apply(sessions_root, dirty_csv):
 
 
 def test_real_responses_satisfy_mdp_contract(sessions_root, dirty_csv):
-    """#30 合规：#29 契约校验器跑真实响应——契约的牙齿在域侧咬合
-    （clean 会话 = 会话 SDK 的活参考实现）。"""
-    from mflowy.driver.pomdp import verify_candidate, verify_observation, verify_verdict
+    """#30 合规：#29 契约地板跑真实响应——契约的牙齿在域侧咬合（clean 会话 =
+    会话 SDK 的活参考实现）。#89 过渡钉：域迁移上壳后改 Observation.model_validate
+    ——封闭模型拒域尾巴，尾巴届时归位 prior/state_digest。"""
 
-    verify_observation(cs.start_session(dirty_csv, card=CARD))  # reward=None 白名单
+    def _floor_obs(resp):
+        assert isinstance(resp["session_id"], str) and resp["state_digest"] is not None
+        assert resp["reward"] is None or (isinstance(resp["reward"], (int, float)) and type(resp["reward"]) is not bool)
+        assert type(resp["should_stop"]) is bool
+        assert type(resp["steps"]) is int and type(resp["max_steps"]) is int
+
+    def _floor_verdict(v):
+        assert type(v["accepted"]) is bool
+        assert isinstance(v["deliverables"], dict) and isinstance(v["decision_log"], list)
+        if not v["accepted"]:
+            assert v.get("reason")  # 拒收必附 reason
+
+    def _floor_candidate(c):
+        assert isinstance(c["action"], str) and isinstance(c["params"], dict)
+        assert isinstance(c["rationale"], str)
+        assert c["evidence"] is None or isinstance(c["evidence"], dict)
+
+    _floor_obs(cs.start_session(dirty_csv, card=CARD))  # reward=None 白名单
     s = cs.start_session(dirty_csv, card=CARD)
 
     props = cs.propose_actions(s["session_id"])
     assert props
     for p in props:
-        verify_candidate(p)
+        _floor_candidate(p)
 
-    verify_observation(cs.apply_action(s["session_id"], "fill_median", {"cols": ["hole"]}))
-    verify_observation(cs.rollback(s["session_id"], to_version=0))
-    verify_verdict(cs.finish_session(s["session_id"], min_quality=0.999))  # 拒收路
-    verify_verdict(cs.finish_session(s["session_id"]))  # accepted 路
+    _floor_obs(cs.apply_action(s["session_id"], "fill_median", {"cols": ["hole"]}))
+    _floor_obs(cs.rollback(s["session_id"], to_version=0))
+    _floor_verdict(cs.finish_session(s["session_id"], min_quality=0.999))  # 拒收路
+    _floor_verdict(cs.finish_session(s["session_id"]))  # accepted 路
 
 
 def test_abandon_terminalizes_session(sessions_root, dirty_csv):
