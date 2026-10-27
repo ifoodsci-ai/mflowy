@@ -13,7 +13,7 @@ from mflowy.data.detect.rules import iqr_fences, zscore_bounds
 from mflowy.data.middlewares import df_diff
 from mflowy.driver.handler import handler
 
-from ._atom import require_cols, require_family, tier_repair
+from ._atom import require_cols, require_family
 
 logger = logging.getLogger(__name__)
 
@@ -83,23 +83,3 @@ def range_clip(
             logger.debug(f"列 {col} 有 {n_out} 个越界值裁剪到 [{lo}, {hi}]")
         clipped[col] = clipped[col].clip(lo, hi)
     return clipped
-
-
-# ── 候选声明（.repair v2）────────────────────────────────────────────────
-
-# outlier 温和双档（与 drop 家族激进档合计按记分牌排序陈列）
-cap_iqr.repair = {"outlier": tier_repair("numeric", "IQR 栅栏截断(稳健档)", {"k": 1.5})}
-cap_z.repair = {"outlier": tier_repair("numeric", "3σ 截断(正态档)", {"k": 3.0})}
-
-
-def _range_clip_repair(errors, card, df):
-    """range_violation 温和档：越界值截断到界（判据/边界来自 detect 证据——同尺）。"""
-    ranges = {
-        e.column: [e.evidence["lo"], e.evidence["hi"]]
-        for e in errors
-        if e.column and e.column in df.columns and {"lo", "hi"} <= set(e.evidence)
-    }
-    return [({"ranges": ranges}, f"物理范围裁剪到界(温和档): {sorted(ranges)}")] if ranges else []
-
-
-range_clip.repair = {"range_violation": _range_clip_repair}

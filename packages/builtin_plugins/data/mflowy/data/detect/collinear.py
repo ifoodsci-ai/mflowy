@@ -1,7 +1,7 @@
 """共线检测算子:数值列高相关对 → ErrorReport。
 
 correlation_filter 退役后的判断面——删谁的选择策略(优先特征/方差启发)在
-.repair 生成器,执行在 drop_cols;配对计算与生成器同源(detect/rules.high_corr_pairs)。
+问题规则,执行在 drop_cols;配对计算与规则同源(detect/rules.high_corr_pairs)。
 """
 
 from typing import Annotated, Literal

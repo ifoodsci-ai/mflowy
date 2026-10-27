@@ -6,7 +6,6 @@ FinishVerdict 模型；盘上 = observation.json + decision.log（单记录版�
 """
 
 import json
-from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -303,31 +302,22 @@ def test_propose_excludes_card_claimed_columns(sessions_root, claimed_csv):
         assert "sid" not in json.dumps(p["params"], ensure_ascii=False) + p["rationale"]
 
 
-def test_propose_reads_multikind_v2_declaration(sessions_root, claimed_csv, dirty_csv, monkeypatch):
-    """.repair v2:dict 多 kind 声明逐 kind 出候选(有错误的 kind 才产),生成器收 df 注入。
-
-    duplicate 与 id_like 状态互斥(全列判重),故分夹具各证一路。
-    """
-    seen = {}
-
-    def _make(errors, card, df):
-        seen["df"] = df
-        return [({"cols": [e.column for e in errors]}, "multi")]
-
-    fake = SimpleNamespace(load=lambda: SimpleNamespace(repair={"id_like": _make, "duplicate": _make}))
-
+def test_propose_vocab_drift_fail_loud(sessions_root, dirty_csv, monkeypatch):
+    """#89 ③片：问题规则现查词表——解题动作被卸载（插件漂移）时 propose fail-loud
+    带可用清单，不静默缩菜单（.repair 聚合退役后的词表纪律居所）。"""
     import mflowy.driver.discover as disc
 
-    monkeypatch.setattr(disc, "discover", lambda: {"clean__fake_multi": fake})
+    real = disc.discover
 
-    s1 = cs.start_session(dirty_csv, card=CARD)
-    kinds1 = {p["evidence"]["kind"] for p in _menu(s1.session_id) if p["action"] == "fake_multi"}
-    s2 = cs.start_session(claimed_csv, card={"domain": "t", "id_columns": ["sid"]})
-    kinds2 = {p["evidence"]["kind"] for p in _menu(s2.session_id) if p["action"] == "fake_multi"}
+    def _minus_fill(key):
+        return {k: v for k, v in real().items() if k != f"clean__{key}"}
 
-    assert kinds1 == {"duplicate"}  # 重复行态:只有 duplicate 有错误
-    assert kinds2 == {"id_like"}  # 全唯一态:id_like 有错误、duplicate 无
-    assert isinstance(seen["df"], pd.DataFrame)  # v2 签名注入当前数据
+    s = cs.start_session(dirty_csv, card=CARD)
+    monkeypatch.setattr(disc, "discover", lambda: _minus_fill("fill_median"))
+    with pytest.raises(ValueError, match=r"fill_median.*不在 clean 词表.*可用"):
+        cs.propose_actions(s.session_id)
+    monkeypatch.setattr(disc, "discover", real)
+    assert any(p["action"] == "fill_median" for p in _menu(s.session_id))  # 词表复原即恢复
 
 
 def test_propose_menu_partitions_by_dtype(sessions_root, tmp_path):
@@ -411,7 +401,8 @@ def test_whitebox_loop_covers_load_hygiene(sessions_root, tmp_path):
     props = _menu(s.session_id)
 
     empty = next(p for p in props if p["evidence"]["kind"] == "empty_row")
-    assert empty["action"] == "drop_missing_rows" and empty["params"] == {"how": "all"}
+    assert empty["action"] == "drop_missing_rows" and empty["params"]["how"] == "all"
+    assert empty["params"]["load"].endswith("v0.parquet")  # params 自含数据引用（#89）
     missing_cols = next(p for p in props if p["action"] == "drop_cols" and p["evidence"]["kind"] == "missing")
     assert "dead" in missing_cols["params"]["cols"]
     assert "sid" not in missing_cols["params"]["cols"]
@@ -426,7 +417,7 @@ def test_whitebox_loop_covers_load_hygiene(sessions_root, tmp_path):
 
 def test_propose_menu_covers_all_kind_repairs(sessions_root, tmp_path):
     """全员候选原则:有 kind 对应的原子都进菜单(fill_mean/interpolate、drop_outlier_z 不缺席)——
-    不挂 .repair 只允许无 kind 对应的条件型动作(python/range_clip)。"""
+    无问题对应的条件型动作(python)不进菜单——range_clip 随 range_violation 问题出题。"""
     n = 60
     rng = np.random.default_rng(3)
     x = rng.normal(size=n)
@@ -731,7 +722,9 @@ def test_expected_ranges_observable_repairable_rewarded(sessions_root, ranged_cs
     by_action = {c["action"]: c for c in menu}
     assert set(by_action) >= {"range_clip", "drop_outside"}
     assert by_action["range_clip"]["params"]["ranges"] == {"temp": [0.0, 100.0]}
-    assert by_action["drop_outside"]["params"] == {"cols": ["temp"], "lo": 0.0, "hi": 100.0}
+    dp = by_action["drop_outside"]["params"]
+    assert {k: dp[k] for k in ("cols", "lo", "hi")} == {"cols": ["temp"], "lo": 0.0, "hi": 100.0}
+    assert dp["load"].endswith(".parquet")  # 自含引用
 
     # ③ 转移：修越界得正奖励（求和口径——消除缺陷不减分）
     r = cs.apply_action(sid, "range_clip", {"ranges": {"temp": [0.0, 100.0]}})

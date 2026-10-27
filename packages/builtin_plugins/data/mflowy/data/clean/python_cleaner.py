@@ -24,7 +24,7 @@ def python(
 ) -> pd.DataFrame:
     """执行指定 Python 脚本中的 <func_name>(df) -> df 自定义清洗逻辑。
 
-    条件型逃生舱：无对应缺陷 kind，不挂 .repair、不进候选菜单——由 agent 依上下文手调。
+    条件型逃生舱：无对应缺陷 kind，无问题规则出题、不进候选菜单——由 agent 依上下文手调。
     """
     df = clean if clean is not None else load
     if not source:
