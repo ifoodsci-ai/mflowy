@@ -12,9 +12,9 @@ plot EDA 图族（族内扁平，直住 `plot/`）。数据栈为硬依赖，装
 | 元素          | 本域定义                                                                                   | 居所                                   |
 | ------------- | ------------------------------------------------------------------------------------------ | -------------------------------------- |
 | O 观测        | 检测算子族即观测函数（确定、多对一）——簿记态全可见，真态可见性以算子覆盖面为界；s′ 随 apply 免费自带（错误清单 + Φ + diff）；同（指纹 × 卡先验）memo 防重算 | `_detect_all` / `_state_response`      |
-| S 状态        | 真态 = 数据本体（当前版本 parquet 内容）+ 冻结卡 + 预算 + 决策日志；`state_digest`（kind×counts）是其检测面投影，非状态本体 | `_digest` / manifest `versions`        |
+| S 状态        | 真态 = 数据本体（当前版本 parquet 内容）+ 冻结卡 + 预算 + 决策日志；`state_digest`（defects/quality/当前版本指针）是其检测面投影，非状态本体 | `_digest` / `decision.log` 单记录版本树        |
 | A 动作        | 运行期 clean 词表（词表 = 已安装能力，见上文动作族）；终态动作面为空                       | `_allowed_actions` / `apply_action`    |
-| P·T 转移      | 守卫（never_drop 存活 / 目标列值禁改 / 保留率下限）→ 原子执行 → 新 parquet 版本 + manifest commit；rollback 截断版本树（决策日志保留，审计不可篡改） | `_guard` / `apply_action` / `rollback` |
+| P·T 转移      | 守卫（never_drop 存活 / 目标列值禁改 / 保留率下限）→ 单步流编译执行（Conf→Builder→DAG，#89 ②片——apply 与导出计划同构）→ 新 parquet 版本 + 日志追加（commit 点）；rollback = 记录 + 指针回拨（append-only，弃分支盘上可回，#89 ④片） | `_guard` / `apply_action` / `rollback` |
 | R 奖励        | 过程奖励 = ΔΦ（前后同尺、卡权重双侧生效）；rollback 奖励 = 恢复的 ΔΦ；终局 U = train-fold 快速学习器 skill（只在 finish 出现，θ 验收门可拒收） | `apply_action` / `_terminal_utility` / `finish_session` |
 
 - 动作族：`load/`（6 节点）、`statistic/`（profile=info 薄封装 / univariate 单变量 typed 统计+规则化 findings / bivariate 双变量三路无 target 全对——效应量定档 p 把门）、`detect/`（8 缺陷算子 +

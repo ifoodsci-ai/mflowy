@@ -99,6 +99,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   StrictUndefined 下 env 缺键即 fail-loud。`test_ns_return_contract.py` 编译测试
   env 补两键，并断言渲染值真进了节点 params（取非默认值 200/7 钉住渲染行为，
   恰等于默认值的断言钉不住）。
+### BREAKING（#89 会话基座深化：POMDPSession 统一机制 + 契约 pydantic 化 + 规则引擎归位）
+
+四片落地（M3+M4+M5 迁移行随本条勾销；规格见 issue #89）：
+
+- **壳与契约（①片）**：新增 `driver/session.py` `POMDPSession` 会话壳——六个操作上下文
+  （`start_ctx`/`propose_ctx`/`apply_ctx(action)`/`rollback_ctx`/`finish_ctx` + `abandon`）
+  承载全部业务流程骨架：终态/预算门（步数口径 `counts_step` 域声明）、prior 冻结牙齿、
+  append-only 决策日志（`decision.log` JSONL，追加即 commit 点——接口无删除面）、统一
+  盘上写序（工件→日志→观测投影）、`open` 撕裂检测（recent_decisions 尾 ≡ 日志尾）。
+  `pomdp.py` 契约层全 pydantic 化：`Observation` 七键封闭模型（`extra="forbid"`——
+  **BREAKING**：响应键大改，`should_stop`/`budget`/`allowed`/`card`/`report` 等旧键退役，
+  域尾巴归位 `prior`/`state_digest`）、`FinishVerdict`（拒收必附 reason 模型级硬规则）、
+  `Activation` 拆 action/params 两成员（**BREAKING**：旧 `proposal` 嵌套键拒收）、
+  `POMDPSessionHandle` 改名（旧 `MDPSessionHandle` 退役）。`Candidate` 与 `verify_*`
+  手写校验器退役（契约即校验）。**BREAKING**：会话盘上 manifest.json 溶解为
+  observation.json + decision.log + rules.pkl（+域状态文件，model 的 board.json）——
+  存量会话不迁移，读侧 fail-loud。
+- **两域上壳（①片续）**：clean/model 会话模块退成 Handle 薄门面（只填转移语义）；
+  版本树 append-only（**BREAKING**：clean rollback 从截断弃分支改为记录+指针回拨——
+  版本号日志派生永不复用，弃分支盘上可回）；计划导出从两份手拼 emitter 收敛为
+  `Conf → flow_to_yaml` 单源序列化（**BREAKING**：plan YAML 文本形态变为真 YAML，
+  Builder 兼容）；finish 幂等重入由壳构造保证（只读重入、双 commit 不可能）。
+- **执行面（②片）**：clean apply 从 raw 直调切**单步流编译执行**（Conf→Builder→
+  DAG.run——编译期校验/mlflow 观测/捕获/血缘 tag 免费，执行合同 yaml 落会话目录，
+  决策记录带 run_id；apply 与导出计划同构）。model `run_hpo` 保持域内 `_pipeline`
+  （委派 JobProvider 会 fork 增量 study 真源——约束见 issue #89 评论；终训自 #66 已走
+  provider）。
+- **规则引擎归位（③片）**：`fire(*keys, o)` 触发上下文 = 观测（model 域已切——findings/
+  menu_ctx 写进 state_digest，规则纯消费 o；data 域 .repair 规则过渡期仍消费域 R dict，
+  问题导向重设计为③余量）；`compose_should_stop(when)` 停止规则合成器落地两域
+  （data = 缺陷清零、model = 预算耗尽 → action="finish" 提议，salience=0 垫底）；
+  `rule_engine_rwa` 门面随壳迁移退役（语义住 `POMDPSession.propose_ctx`）。
+- **M5 版本树语义（④片）**：clean 单记录版本树（apply 记录含 v/file/sha/run_id）；
+  model `save_loader` 原子写（freeze-once ⇒ 文件名即版本，指针永不悬空）；
+  rollback-after-rerun 一致性用例两域钉测。
+- 工具层与 MCP schema **零改动**（六操作门面签名不变——包装层 model_dump 适配）；
+  同频：CONTEXT 词条（会话基座/观测摘要/决策日志/Observation·Activation/规则通俗
+  定义）、AGENTS（分层表/迁移表）、driver·data README、clean skill、防回潮豁免注记。
+
+
 ### Changed（剧本层调用治理）：六域 skill 置 `disable-model-invocation`
 
 - clean / model / model-brief / research-review / survey / kaggle-competition 六份
