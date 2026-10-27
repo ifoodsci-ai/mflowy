@@ -30,28 +30,12 @@ _HINT = 'MCP server 需要 SDK 与遥测依赖：pip install "mflowy[mcp]"（uvx
 
 
 def register(mcp: MCPServer):
-    """平台工具 host 自带注册；域工具经 entry points 组 ``mflowy.tools`` 发现——
-    装哪个域包多哪批工具（安装形态即通道），host 对域零 import。"""
-    from importlib.metadata import entry_points
+    """工具注册：``mflowy.tools`` entry points 组——平台工具（mflowy-mcp pyproject
+    静态声明）与域包声明同构发现（装哪个域包多哪批工具，安装形态即通道），
+    host 对域零 import；声明面 ↔ 函数面镜像契约钉在 tests/mcp/。"""
+    from .tools import _tool_entry_points
 
-    from . import tools
-
-    # ── 平台工具（词表查询 / mlflow 观测 / 工件读取 / 身份指纹） ──────────────
-    for fn in (
-        tools.file_hash,
-        tools.list_nodes,
-        tools.get_node_info,
-        tools.list_runs,
-        tools.get_run,
-        tools.list_run_artifacts,
-        tools.read_artifact,
-        tools.sessions_gc,
-        tools.login,
-    ):
-        mcp.tool()(fn)
-
-    # ── 域工具（数据/建模域包自持，pyproject 注册表声明） ─────────────────────
-    for ep in entry_points(group="mflowy.tools"):
+    for ep in _tool_entry_points():
         mcp.tool()(ep.load())
 
 

@@ -3,6 +3,9 @@
 域工具（数据/建模）不住此层：域包自持 ``tools.py`` 并经 entry points 组
 ``mflowy.tools`` 注册，server/runner 发现即用（安装形态即通道——裸 host 只有
 平台工具，装哪个域包多哪批工具）。本模块保持零域包导入。
+
+模块公有面即平台工具函数面（镜像契约钉在 tests/mcp/）；非工具 helper 必须
+``_`` 前缀——server/runner 共用的注册辅助件 ``_tool_entry_points`` 即此形态。
 """
 
 from __future__ import annotations
@@ -14,6 +17,22 @@ from typing import Annotated
 from mflowy.utils import auth
 from mflowy.utils.file import sha256_of
 from pydantic import Field
+
+
+def _tool_entry_points():
+    """``mflowy.tools`` 组唯一消费口（server.register 与 runner 分发表共享）。
+
+    撞名 fail-loud（红线 1）：SDK 撞名只警告且静默保第一个、dict 后写覆盖即
+    静默遮蔽——两静默面在入口处统一拒绝，候选清单随报。
+    """
+    from importlib.metadata import entry_points
+
+    eps = list(entry_points(group="mflowy.tools"))
+    names = [ep.name for ep in eps]
+    dupes = sorted({n for n in names if names.count(n) > 1})
+    if dupes:
+        raise RuntimeError(f"mflowy.tools 组撞名（entry point 名须全仓唯一）: {dupes}")
+    return eps
 
 
 def file_hash(

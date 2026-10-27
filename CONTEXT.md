@@ -25,9 +25,9 @@ _Avoid_: 注入器、injector、getter（第一代退役词）
 分发单元：声明 mflowy entry points 的包，安装即注册、卸载即退出。内置能力包与第三方插件同构。
 
 **工具（tool）**:
-域包自持的编排入口（pyproject 注册表声明进 entry points 组 ``mflowy.tools``），host
-（server/runner）发现并包装。工具组合节点，工具不是节点；平台工具（词表/mlflow 观测/
-工件读取/登录）住 host 自带注册。
+pyfunc 编排入口，统一经 entry points 组 ``mflowy.tools`` 静态声明（域包与 host 同构），
+server/runner 同一真源发现并包装。工具组合节点，工具不是节点；平台工具（词表/mlflow 观测/
+工件读取/登录）由 mflowy-mcp pyproject 自带声明（声明面 ↔ 函数面镜像测试钉住）。
 
 **目录（词表）**:
 运行期全部节点与边函数的枚举，机器可查、构建期校验。两词同义："目录"强调查询面，"词表"强调语言约束面。

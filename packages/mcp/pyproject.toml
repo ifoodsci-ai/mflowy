@@ -39,6 +39,18 @@ include = ["mflowy", "pyproject.toml"]
 mflowy-driver = { workspace = true }
 mflowy-utils = { workspace = true }
 
+[project.entry-points."mflowy.tools"]
+# 平台工具静态声明（与域包 pyproject 同构；镜像契约钉在 tests/mcp/test_platform_tools_registry.py）
+file_hash = "mflowy.mcp.tools:file_hash"
+list_nodes = "mflowy.mcp.tools:list_nodes"
+get_node_info = "mflowy.mcp.tools:get_node_info"
+list_runs = "mflowy.mcp.tools:list_runs"
+get_run = "mflowy.mcp.tools:get_run"
+list_run_artifacts = "mflowy.mcp.tools:list_run_artifacts"
+read_artifact = "mflowy.mcp.tools:read_artifact"
+sessions_gc = "mflowy.mcp.tools:sessions_gc"
+login = "mflowy.mcp.tools:login"
+
 [project.scripts]
 # 双入口重命名：mflowy = CLI（JSON runner，原 cmd）；mflowy-mcp = MCP server（原 mcpSrv）
 mflowy = "mflowy.mcp.runner:main"

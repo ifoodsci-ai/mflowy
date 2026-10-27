@@ -6,8 +6,19 @@ runner 是 K8s Job 容器 / subprocess 的唯一入口：
 - 参数绑定错误（TypeError）与运行期错误分开报
 """
 
+from types import SimpleNamespace
+
 import pytest
-from mflowy.mcp import runner, tools
+from mflowy.mcp import runner
+
+
+def _patch_eps(monkeypatch, **tools_map):
+    """在 entry points 缝注入替身——分发表塌缩后 runner 不再反射 tools 模块属性，
+    测试替身钉真实消费面（ep.name / ep.load() 两消费点）。"""
+    import importlib.metadata
+
+    eps = [SimpleNamespace(name=n, load=lambda fn=fn: fn) for n, fn in tools_map.items()]
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda group: eps)
 
 
 def test_unknown_tool_exits(monkeypatch, capsys):
@@ -28,7 +39,7 @@ def test_hyphen_normalized_to_underscore(monkeypatch):
     """连字符工具名应归一化后命中 pyfunc（如 some-tool → some_tool）"""
     sentinel = object()
     monkeypatch.setattr("sys.argv", ["cmd", "some-tool"])
-    monkeypatch.setattr(tools, "some_tool", lambda: sentinel, raising=False)
+    _patch_eps(monkeypatch, some_tool=lambda: sentinel)
     runner.main()  # 不抛 SystemExit 即命中
 
 
@@ -47,7 +58,7 @@ def test_runtime_error_not_masqueraded_as_invalid_args(monkeypatch, capsys):
         raise TypeError("runtime type blowup")
 
     monkeypatch.setattr("sys.argv", ["cmd", "boom_tool"])
-    monkeypatch.setattr(tools, "boom_tool", boom, raising=False)
+    _patch_eps(monkeypatch, boom_tool=boom)
     with pytest.raises(SystemExit):
         runner.main()
     err = capsys.readouterr().err
@@ -69,7 +80,7 @@ def test_non_json_args_friendly_error(monkeypatch, capsys):
 def test_info_tool_result_echoed(monkeypatch, capsys):
     """info/查询类工具的返回值即输出，回显 JSON（cmd 作为三入口之一可独立使用）"""
     monkeypatch.setattr("sys.argv", ["cmd", "query_tool"])
-    monkeypatch.setattr(tools, "query_tool", lambda: [{"step": "load", "modules": ["csv"]}], raising=False)
+    _patch_eps(monkeypatch, query_tool=lambda: [{"step": "load", "modules": ["csv"]}])
     runner.main()
     out = capsys.readouterr().out
     assert '"step": "load"' in out
@@ -80,14 +91,24 @@ def test_workflow_result_not_echoed(monkeypatch, capsys):
     from mflowy.driver.dag import DAGResult
 
     monkeypatch.setattr("sys.argv", ["cmd", "modeling_tool"])
-    monkeypatch.setattr(
-        tools,
-        "modeling_tool",
-        lambda: DAGResult("e", "1", "d", "finished", "", [], "graph"),
-        raising=False,
-    )
+    _patch_eps(monkeypatch, modeling_tool=lambda: DAGResult("e", "1", "d", "finished", "", [], "graph"))
     runner.main()
     assert capsys.readouterr().out == ""
+
+
+def test_duplicate_entry_point_names_fail_loud(monkeypatch, capsys):
+    """mflowy.tools 组撞名（跨发行重名）→ 拒绝分发而非静默遮蔽（红线 1）。"""
+    import importlib.metadata
+
+    dup = SimpleNamespace(name="dup_tool", load=lambda: lambda: None)
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda group: [dup, dup])
+    monkeypatch.setattr("sys.argv", ["cmd", "dup_tool"])
+    with pytest.raises(SystemExit) as ei:
+        runner.main()
+    assert ei.value.code == 1
+    err = capsys.readouterr().err
+    assert "撞名" in err
+    assert "dup_tool" in err
 
 
 def test_json_error_hint_uses_node_vocabulary(monkeypatch, capsys):

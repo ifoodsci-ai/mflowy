@@ -26,6 +26,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 工作流变化：新增/删除/改名节点或边 = 代码 + pyproject 声明同 PR + `uv sync`
   （原为仅 `uv sync`）；运行时行为、词表、YAML 兼容性零变化。
 
+### 工具清单单源——平台工具并入 `mflowy.tools` 组静态声明（注册机制统一，词表零破坏）
+
+- 架构复审候选 2 落地：平台 9 工具从四处分叉推导（server 手写元组 / runner
+  `vars(platform)` 反射 / `test_workspace` 反射并集 / `test_tools_schema._TOOL_FNS`
+  手列清单）收敛为 mflowy-mcp pyproject 静态声明（与域包、插件注册同构）——
+  server 注册塌缩为单一 entry points 循环，runner 分发表同源消费；「忘改 server
+  元组 → 工具对 runner/词表可见、对 server 静默缺失」的非对称病灶结构上消除。
+- 镜像契约 `packages/mcp/tests/mcp/test_platform_tools_registry.py`（与域侧
+  `test_{model,data}_tools_registry.py` 同构）：声明面（安装态 entry points，按
+  dist=mflowy-mcp 过滤）↔ 函数面（tools.py 反射）双向差集——写函数忘声明 /
+  删改不同步 / 声明后未 `uv sync` 三态皆红。
+- 撞名 fail-loud（红线 1 + 单源）：`mflowy.tools` 组重名在唯一消费口
+  `_tool_entry_points`（tools.py 私有共享件，server/runner 两入口同源）显式拒绝
+  带候选清单——SDK 撞名仅警告且静默保第一个、runner 旧 dict 后写覆盖即静默遮蔽，
+  两处旧静默面随触碰收敛。
+- runner 分发表顺带清净：旧 `vars()` 反射把 tools.py 顶层导入名（`Annotated`/
+  `Field`/`Path`/`asdict`/`sha256_of`）混进分发表（命中在 bind 阶段炸，属泄漏面），
+  塌缩后消失。
+- 工作流变化：新增平台工具 = mcp/tools.py 公有函数 + mcp pyproject 声明 + `uv sync`
+  （并入上一条 BREAKING 的贡献者工作流叙事）；AGENTS 小项「runner 分发表与 server
+  注册清单同源」划掉。迁移验收：`tools/list` 名集迁移前后等价（33 工具零丢失——
+  旧 server 手写元组本不含导入泄漏名，泄漏面仅存于 runner 反射分发表，随塌缩消失）。
+
 ### Added（#88）：login 平台工具——OAuth 2.1 身份地基（PKCE S256 + loopback + token 库）
 
 - **`mflowy.utils.auth`（纯 stdlib）**：平台 OAuth 2.1 客户端——授权码流

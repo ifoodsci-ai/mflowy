@@ -10,7 +10,9 @@ MFlowy 以 MCP 为架构主体：本包的 `tools.py` 定义全部工具（pyfun
 
 > **0.2.0 tools 解耦**：域工具（数据/建模）已下沉域包自持（`mflowy.{data,model}.tools`），
 > 经 entry points 组 `mflowy.tools` 注册；本包为**零域依赖 host**——平台工具（词表/mlflow
-> 观测/工件/指纹）自带注册，域工具发现即用。装哪个域包多哪批工具（`tools/list` = 已安装能力）。
+> 观测/工件/指纹/登录）由 mflowy-mcp pyproject **同组静态声明**（与域包同构，server/runner
+> 同一真源消费，镜像契约钉在 `tests/mcp/test_platform_tools_registry.py`），域工具发现即用。
+> 装哪个域包多哪批工具（`tools/list` = 已安装能力）。
 
 ## 工具三分
 
@@ -28,7 +30,7 @@ MFlowy 以 MCP 为架构主体：本包的 `tools.py` 定义全部工具（pyfun
 
 ## JobProvider：接入自定义执行环境
 
-MFlowy 不内置绑定任何远程执行平台。实现 `JobProvider` 协议（`packages/builtin_plugins/model/mflowy/model/job_provider/protocol.py`）的 **4 个类型化方法**（modeling / explanation / predict / inverse_optimization，每个方法带 `headers: Mapping[str, str] | None` 透传请求元数据，MCP 客户端经 `call_tool(meta={...})` 携带），即可把建模工具委派到任意执行环境——K8s Job、远程集群、Serverless 均可。方法签名以 protocol.py 为准（本文不复述，防漂移）；契约行为由 `packages/builtin_plugins/model/tests/test_job_provider.py` / `test_tools_headers.py` 锁定。
+MFlowy 不内置绑定任何远程执行平台。实现 `JobProvider` 协议（`packages/builtin_plugins/model/mflowy/model/job_provider/protocol.py`）的 **5 个类型化方法**（hyperparameters_search / modeling / explanation / predict / inverse_optimization，每个方法带 `headers: Mapping[str, str] | None` 透传请求元数据，MCP 客户端经 `call_tool(meta={...})` 携带），即可把建模工具委派到任意执行环境——K8s Job、远程集群、Serverless 均可。方法签名以 protocol.py 为准（本文不复述，防漂移）；契约行为由 `packages/builtin_plugins/model/tests/test_job_provider.py` / `test_tools_headers.py` 锁定。
 
 启用方式：
 

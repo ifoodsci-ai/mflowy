@@ -73,13 +73,13 @@ uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 | M11 | 剧本层完整入库：skills 全 git 追踪、引用文档入仓、工具名 ⊆ `tools/list` 有测试锁定 | research-review 未追踪；引用被 ignore 的文档断链  | `test_workspace.py` 增 SKILL 工具名断言               |
 | M12 | breaking 小步走 0.x minor，0.2.0 尽快切 released                       | unreleased 堆 81 commit 三批 BREAKING             | CHANGELOG 0.2.0 带 release 日期                        |
 
-小项随触碰收敛（不单列）：finish 与过程奖励同尺（卡权重）、propose 只出签名可受理的候选、`utils` mlflow 转 extra、域专用查询迁出 utils、runner 分发表与 server 注册清单同源。
+小项随触碰收敛（不单列）：finish 与过程奖励同尺（卡权重）、propose 只出签名可受理的候选、`utils` mlflow 转 extra、域专用查询迁出 utils。
 
 ## 添加能力
 
 **新插件节点**（三站，缺一即断）：① 按域建模块（`packages/<data|model>/mflowy/<pkg>/<能力族>/`），入口加 `@handler(namespace=...)`（归组）或 `@handler()`（非归组）、纯变换边加 `@edge`（edges ns）；② 同 PR 在域包 pyproject `[project.entry-points."mflowy.builtin_plugins"]` 手写声明——节点 `namespace.node_name`（非归组裸名）、边 `edges.node_name`，值 `模块路径:函数名`；③ `uv sync` 后 `list-nodes` 可见。判据：镜像路径有测试 + `list-nodes` 可见。
 
-注册漂移不设镜像测试（2026-10 决策）——CR 必查三项：**新 `@handler`/`@edge` 必有声明、声明必有函数、entry point 名 namespace 段与装饰器 `namespace=` 逐字一致**；机器兜底仅加载期单向（声明指向未装饰函数即 fail-loud），忘声明与错 namespace 是静默面，靠 CR + `list-nodes` 交叉检查。
+注册漂移不设镜像测试（2026-10 决策，限 `mflowy.builtin_plugins` 节点/边声明面——`mflowy.tools` 工具面两侧均沿用镜像测试）——CR 必查三项：**新 `@handler`/`@edge` 必有声明、声明必有函数、entry point 名 namespace 段与装饰器 `namespace=` 逐字一致**；机器兜底仅加载期单向（声明指向未装饰函数即 fail-loud），忘声明与错 namespace 是静默面，靠 CR + `list-nodes` 交叉检查。
 
 **新 compute 工具**（JobProvider 委派，7 站点缺一即断）：
 
@@ -92,6 +92,8 @@ uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 7. `packages/builtin_plugins/model/tests/` — headers 契约 + provider 用例；工具清单从 `JobProvider` 协议自省生成（单源）
 
 判据：`tools/list` 出现新工具且镜像/契约测试通过。本地分析类工具走 4/5 两站（server 经 entry points 自动注册）。
+
+**新平台工具**（两站，缺一即断）：① `packages/mcp/mflowy/mcp/tools.py` 公有函数（Annotated 签名 + docstring 即 schema；非工具 helper 必须 `_` 前缀——模块公有面即函数面）；② 同 PR 在 `packages/mcp/pyproject.toml [project.entry-points."mflowy.tools"]` 静态声明 + `uv sync`。判据：镜像契约 `packages/mcp/tests/mcp/test_platform_tools_registry.py` 绿（声明面 ↔ 函数面双向差集）。
 
 **第三方插件包**（活参考 = `packages/builtin_plugins/data/` + `packages/builtin_plugins/model/`）：以 mflowy 为 base 依赖，声明 `[project.entry-points."mflowy.plugins"]`（`namespace.node` / 裸 `node`），随 `uv --with` / 镜像 `MFLOWY_EXTRA_MODULES` 安装即生效。
 
