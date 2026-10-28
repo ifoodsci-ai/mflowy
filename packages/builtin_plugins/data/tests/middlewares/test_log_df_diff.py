@@ -4,8 +4,9 @@
 绑定序修复前曾按签名序取首个命中（load 恒先）导致对比基线翻转。
 """
 
-import pandas as pd
 from unittest.mock import patch
+
+import pandas as pd
 from mflowy.data.middlewares.log_df_diff import df_diff
 from mflowy.driver.builder import Builder
 from mflowy.driver.handler import handler

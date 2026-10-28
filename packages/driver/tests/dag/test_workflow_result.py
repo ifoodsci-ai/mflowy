@@ -116,6 +116,7 @@ class TestDAGResult:
 
     def test_description_equals_output(self, fake_plugins, fake_tracking):
         """run 描述 ≡ NodeResult.output（单源合成,account 期经 seam 写 mlflow.note.content）。"""
+
         @handler()
         def talky(**kwargs):
             print("排名表: XGB=0.91")
@@ -130,6 +131,7 @@ class TestDAGResult:
 
     def test_failure_output_is_partial_plus_exception(self, fake_plugins, fake_tracking):
         """失败 output = 崩溃前 partial stdout + repr(e)（追加非替换）——崩溃前证据不丢,描述同构。"""
+
         @handler()
         def prints_then_booms(**kwargs):
             print("已加载 60 行")

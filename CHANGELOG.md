@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - Unreleased
 
+### BREAKING：执行结果目录收敛——DAGResult/NodeResult 最小元信息面 + 工件落盘壳 + mlflow 观测双工具
+
+- `DAGResult.graph` 保持 mermaid 展示形态（机器投影 = `to_graph()` 公共方法，
+  `walk()` 单源）；结构图持久化为实验级 tag `mflowy.graph`（rerun 覆写 = 本实验
+  最新结构，超长截断——实验 tag 上限 5000 与 run tag 8000 双上限由
+  `clip_tag_value` 参数化吸收）。字段 `experiment_name`/`description` 删除——
+  入参回显零熵，实验本体经 `get_experiment` 查询。
+- `NodeResult` 新增 `artifacts: list[str]`：account 时刻 run 工件树**顶层清单**
+  快照（`Tracking` seam 增 `run_artifacts`，FakeTracking 同步记录面）——工件索引
+  真源从 output 的 Saved print 行转为结构化字段；run 描述（`mlflow.note.content`）
+  ≡ `NodeResult.output`（account 期经 seam `describe_run` 回写，单源合成）。
+- 失败 output 语义 **替换→追加**：崩溃前 partial stdout 暂存于 `Context.partial_output`，
+  失败记账 = partial + `repr(e)`（崩溃前证据不丢，描述同构）；`mlflow_log`
+  中间件的失败 note.content 写入删除（单写者收敛至 account）。
+- `utils/mlflow.py` 工件落盘族收编 `_artifact_shell` 模板方法：active run 守卫
+  前置 fail-loud（mlflow fluent 无窗口会静默自建孤儿 run 污染默认实验）、目的地
+  解析（file://→本地路径；直写形态远程根 fail-loud）、Saved 通知 print→logger
+  （stdout 纯业务数据通道）。`log_table/log_dict/log_pickle/log_figure` 改写为
+  壳上薄封装（`graceful` 旗标 = 直调形态跳过 + warning），新增 `log_model`
+  （恒 graceful，返回 model_uri）；`_artifact_local_path` 删除（无 run 静默回退
+  分支消灭）。`_pipeline`/`log_task_evidence` 散守的 `if mlflow.active_run()`
+  全部归一为 graceful 调用；终评图/损失曲线另设窗外整跳过（判 fluent 窗口而非
+  seam——副产物族计算+落盘整体随 run，直调形态不白算）。
+- **mlflow 观测工具 4→2**：`list_runs` 并入 `get_experiment`（实验仪表盘 = 本体 +
+  run 状态目录 `node/name/run_id/status/start_time` 五元组投影，对标 NodeResult、
+  过滤/翻页随迁；params/metrics 全量返回收窄为 `get_run` 下钻）；`list_run_artifacts`
+  并入 `get_run`（详情 = params/metrics/tags/artifacts 产物目录）；`read_artifact`
+  退役（工件后端为本地文件树，内容直接访问）。工具总数 33→31（平台 9→7）。
+
 ### BREAKING：插件注册静态化——构建期 hatch AST 扫描钩子退役，entry points 手写声明（贡献者工作流 breaking，词表零破坏）
 
 - 两份 `hatch_metadata.py`（105 行 × 2，构建期扫描 `@handler`/`@edge` 生成注册）删除：

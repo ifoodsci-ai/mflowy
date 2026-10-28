@@ -115,15 +115,18 @@ class TestArtifactShellContract:
         if mlflow.active_run() is not None:  # 红阶段的 fluent 自动建 run 兜底清理
             mlflow.end_run()
 
-    @pytest.mark.parametrize("call", [
-        lambda m: m.log_table(None, "x.json"),
-        lambda m: m.log_dict({}, "x.json"),
-        lambda m: m.log_figure(
-            type("F", (), {"subplots_adjust": lambda self, **k: None, "set_dpi": lambda self, d: None})(),
-            "x.png",
-        ),
-        lambda m: m.log_pickle(object(), "x.pkl"),
-    ])
+    @pytest.mark.parametrize(
+        "call",
+        [
+            lambda m: m.log_table(None, "x.json"),
+            lambda m: m.log_dict({}, "x.json"),
+            lambda m: m.log_figure(
+                type("F", (), {"subplots_adjust": lambda self, **k: None, "set_dpi": lambda self, d: None})(),
+                "x.png",
+            ),
+            lambda m: m.log_pickle(object(), "x.pkl"),
+        ],
+    )
     def test_no_active_run_fail_loud(self, call):
         import mlflow
 
@@ -337,7 +340,6 @@ class TestTrackingSeam:
     def test_mlflow_tracking_set_experiment_tag_clips(self, tmp_mlflow_db):
         """生产 adapter：超长图 tag 截断（实验 tag 上限 5000——run tag 8000 为另一类约束）。"""
         import mlflow
-
         from mflowy.utils.mlflow import MlflowTracking
 
         MlflowTracking().set_experiment_tag(tmp_mlflow_db, "mflowy.graph", "x" * 9000)
@@ -346,9 +348,8 @@ class TestTrackingSeam:
 
     def test_mlflow_tracking_run_artifacts_lists_paths(self, tmp_mlflow_db):
         """生产 adapter：工件树路径清单（account 快照的数据源）。"""
-        from mlflow.tracking import MlflowClient
-
         from mflowy.utils.mlflow import MlflowTracking
+        from mlflow.tracking import MlflowClient
 
         rid = _create_terminated_run(tmp_mlflow_db, "r", None)
         MlflowClient().log_dict(rid, {"a": 1}, "report.json")

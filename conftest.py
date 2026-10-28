@@ -145,8 +145,9 @@ def fake_artifact_window(tmp_path, monkeypatch):
     fail-loud，mlflow fluent 缺窗口会静默自建孤儿 run），fake-tracking 驱动的
     中间件用例需窗口假身才能走到 fluent mock。
     """
-    import mlflow
     from types import SimpleNamespace
+
+    import mlflow
 
     fake_run = SimpleNamespace(info=SimpleNamespace(artifact_uri=(tmp_path / "arts").as_uri(), run_id="fake_window"))
     monkeypatch.setattr(mlflow, "active_run", lambda: fake_run)

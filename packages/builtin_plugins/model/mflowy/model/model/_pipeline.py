@@ -488,7 +488,6 @@ def training(
         fit_params: 透传给 estimator.fit 的参数（如 LGBM 的 early_stopping_rounds）
         scoring: 报告面指标（日志/图表用）；None 时按任务自动推断
     """
-    import mlflow.sklearn  # 绑定 mlflow 顶层 + 拉起子模块（save 段 log_model 与 active_run 共用）
 
     task = split.task
     fit_params = fit_params or {}
@@ -538,9 +537,7 @@ def training(
     pipe.set_names(split.y_train.columns.tolist())
     from mflowy.utils.mlflow import log_model
 
-    model_uri = log_model(
-        pipe, name="final", input_example=split.X_test.head(1), serialization_format="pickle"
-    )
+    model_uri = log_model(pipe, name="final", input_example=split.X_test.head(1), serialization_format="pickle")
 
     return ModelLoader(name=name, _pipe=pipe, _model_uri=model_uri, holdout={"u": round(u, 4), "metrics": metrics})
 

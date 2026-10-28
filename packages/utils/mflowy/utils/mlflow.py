@@ -300,8 +300,9 @@ def _artifact_shell(
       fail-loud——mlflow fluent 无窗口时静默自建孤儿 run 污染默认实验，守卫必须前置
     - 返回 writer 的返回值（如 ``log_model`` 的 model_uri）
     """
-    import mlflow
     from urllib.parse import unquote, urlparse
+
+    import mlflow
 
     run = mlflow.active_run()
     if run is None:
@@ -328,18 +329,14 @@ def log_table(df, artifact_file: str, *, graceful: bool = False):
     """mlflow.log_table（经落盘壳：守卫/通知单点）。"""
     import mlflow
 
-    return _artifact_shell(
-        artifact_file, lambda _: mlflow.log_table(df, artifact_file), graceful=graceful
-    )
+    return _artifact_shell(artifact_file, lambda _: mlflow.log_table(df, artifact_file), graceful=graceful)
 
 
 def log_dict(dictionary, artifact_file: str, *, graceful: bool = False):
     """mlflow.log_dict（经落盘壳：守卫/通知单点）。"""
     import mlflow
 
-    return _artifact_shell(
-        artifact_file, lambda _: mlflow.log_dict(dictionary, artifact_file), graceful=graceful
-    )
+    return _artifact_shell(artifact_file, lambda _: mlflow.log_dict(dictionary, artifact_file), graceful=graceful)
 
 
 def log_pickle(obj, artifact_file: str, *, graceful: bool = False):
@@ -365,7 +362,7 @@ def log_model(pipe, name: str = "final", **kwargs) -> str | None:
     终训模型本体的唯一持久化面（产物名恒 ``final``）；恒 graceful——直调形态
     （DAG 窗口外）合法降级为内存态 loader（model_uri=None）。
     """
-    import mlflow.sklearn  # noqa: F401 — 绑定 mlflow.sklearn 属性面供闭包调用
+    import mlflow.sklearn
 
     def _write(_: str) -> str:
         return mlflow.sklearn.log_model(pipe, name=name, **kwargs).model_uri
