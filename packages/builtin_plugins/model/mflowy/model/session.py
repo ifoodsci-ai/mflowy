@@ -676,7 +676,7 @@ def _tag_run(run, m: dict, *, action: str, key: str, family: str) -> None:
 def _run_hpo(ss, o, m, board, log, params: dict) -> None:
     """run_hpo：增量搜索（inner CV）→ θ* 上 OOF 观察面 → 账本更新（reward = Δu_inner）。"""
     import mlflow
-    from mflowy.model.model._pipeline import hyperparameters_search
+    from mflowy.model.model._pipeline import hyperparameters_search, theta_probe
 
     n_trials = params.get("n_trials", DEFAULT_N_TRIALS)
     unknown = set(params) - {"n_trials"}
@@ -731,6 +731,11 @@ def _run_hpo(ss, o, m, board, log, params: dict) -> None:
             from mflowy.model.report import oof_plot_album
 
             plots = oof_plot_album(m["task"], ts.y_train, y_oof, y_proba, runs_dir / "plots")
+            probe_scores, curve_df = (
+                theta_probe(  # 段1 体征证据：θ* 单次代表拟合——得分对（同尺同拟合）+ 曲线（OOB 族 → None 降级）
+                    ts, make_pipe, theta, scoring
+                )
+            )
         captured = buf.getvalue().strip()
         if captured:
             logger.info("run_hpo[%s] 捕获输出：\n%s", key, captured)
@@ -753,7 +758,13 @@ def _run_hpo(ss, o, m, board, log, params: dict) -> None:
             y_oof[y_oof.columns[0]].to_numpy() if isinstance(y_oof, pd.DataFrame) else y_oof,
             best_params=dict(best.params),
             space=space,
-            fold_scores=scores,
+            fold_scores=scores
+            if scores
+            else [float(best.value)],  # fold_std 证据（holdout 模式无折分——best value 即读数）
+            train_scores=[probe_scores["train"]],  # 体征①④：θ* 探针得分对（同一拟合的苹果对苹果）
+            val_scores=[probe_scores["val"]],
+            curve_df=curve_df,
+            scoring=scoring,
         )
     ]
     entry.update(

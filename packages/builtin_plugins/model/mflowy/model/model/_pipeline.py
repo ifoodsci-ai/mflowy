@@ -591,6 +591,36 @@ def oof_predictions(
     return y_pred, y_proba
 
 
+def theta_probe(
+    split: TrainSplit, make_pipe: Callable[..., ModelPipeline], params: dict, scoring
+) -> tuple[dict, pd.DataFrame | None]:
+    """θ* 代表拟合探针（设计稿 2026-10-28 §3 段1；objective 纯度裁定：诊断只对
+    θ* 做，搜索热路径 = 纯训练+指标——trial 不携带任何额外操作）。train 内切
+    val 的**单次**代表拟合，双产物：
+
+    - ``scores``：train-fit/val 两段同尺得分（同一次拟合的苹果对苹果——欠拟合/
+      过拟合 gap 两体征的证据；evaluate 单源）
+    - 曲线 df：train/val 逐迭代损失（``get_loss_curve`` 统一提取面；早停剥离——
+      截断会吃掉「先降后升」的上翘段，全迭代观察）。OOB 族（RF）无曲线 → None
+      （族异构降级：曲线体征不产，得分对照常）；一次额外拟合的代价，只对 θ* 做。
+    """
+    X_fit, y_fit, X_val, y_val = split_val(split.X_train, split.y_train, split.task, groups=split.groups)
+    pipe = fit_with_eval(
+        make_pipe, X_fit, y_fit, eval_X=X_val, eval_y=y_val, fit_params={}, **_strip_early_stopping(params)
+    )
+
+    def _raw(X: pd.DataFrame, y: pd.DataFrame) -> float:
+        proba = pipe.predict_proba(X) if split.task == TASKTYPE.CLASSIFICATION else None
+        m = evaluate(split.task, y, pipe.predict(X), proba, scoring=scoring)
+        return float(next(iter(m.values()))[scoring])
+
+    scores = {"train": _raw(X_fit, y_fit), "val": _raw(X_val, y_val)}
+    try:
+        return scores, pipe.estimator.get_loss_curve()
+    except NotImplementedError:
+        return scores, None
+
+
 _OVERFIT_GAP = 0.3  # |U_inner − U_full| / |U_inner| 超此值记过拟合信号
 
 
