@@ -28,3 +28,11 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      # 类型门（#91）：pyright basic 全量（~15s）——纯文档/非 Python 提交零开销
+      # （files 过滤命中才跑）；配置单源在根 pyproject [tool.pyright]
+      - id: pyright
+        name: pyright
+        entry: uv run pyright
+        language: system
+        pass_filenames: false
+        files: (\.py$|^pyproject\.toml$)

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - Unreleased
 
+### 类型门落地：pyright basic 全仓清零 + CI/本地/pre-commit 三工位门（#42 决议→#91）
+
+- pyright（dev group 锚版本）+ 根 pyproject `[tool.pyright]` 单源配置：
+  `typeCheckingMode="basic"` 钉死（pyright 1.1.373 起裸跑默认已漂移 standard）、
+  `venvPath`+`venv` 键锚解释器（`pythonPath` 键静默失效——实测产 975 幻影
+  missing-import）；门范围 = packages + tests（scripts/examples 不进门）。
+- 存量 604 errors（basic+venv 锚定，dev @ 1306d919）一次性全清：真修为主
+  （签名对齐/ParamSpec 装饰器/mlflow 子模块导入/matplotlib 源头导入/Optional 断言/
+  Literal 单源化），第三方 stub 缺口与负例测试逐处 `# type: ignore[规则]` + 中文理由；
+  config 关规则与目录降档为零。`reportFunctionMemberAccess`（挂属性惯用法，
+  standard 档）不进门不修。
+- 三工位：CI 独立 `typecheck` job（与 lint/test 平级，error 阻断、warning 不挡，
+  release/publish 需求链同步扩）；`make typecheck`；pre-commit 全量 pyright
+  （~15s，`files: (\.py$|^pyproject\.toml$)` 过滤——纯文档提交零开销）。
+
 ### BREAKING：插件注册静态化——构建期 hatch AST 扫描钩子退役，entry points 手写声明（贡献者工作流 breaking，词表零破坏）
 
 - 两份 `hatch_metadata.py`（105 行 × 2，构建期扫描 `@handler`/`@edge` 生成注册）删除：
