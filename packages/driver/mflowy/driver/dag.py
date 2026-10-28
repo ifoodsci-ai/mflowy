@@ -64,9 +64,11 @@ def lineage_closure(seeds: Iterable[Context], *, required_only: bool) -> set[Con
 
 @dataclass
 class DAGResult:
-    experiment_name: str
+    """执行结果目录（元信息最小面）：``experiment_id`` 为跨 run 检索主键，节点目录
+    见 ``runs``；实验本体（name/description tag）经 ``get_experiment`` 查询——
+    入参回显不进目录。"""
+
     experiment_id: str
-    description: str
     status: str
     error: str
     runs: list[NodeResult]
@@ -111,9 +113,7 @@ class DAG:
         except Exception:
             logger.warning("实验结构 tag 写入失败（观测面降级）", exc_info=True)
         flow = DAGResult(
-            experiment_name=exp.name,
             experiment_id=exp.experiment_id,
-            description=self.conf.description,
             status="finished",
             error="",
             runs=[],
