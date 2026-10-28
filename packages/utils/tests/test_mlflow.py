@@ -311,6 +311,29 @@ class TestTrackingSeam:
         with pytest.raises(KeyError):
             fake.set_experiment_tag("nope", "k", "v")
 
+    def test_describe_run_face(self):
+        """run 描述写入面（mlflow.note.content tag 的 account 期通道）：Protocol 声明 + Fake 记录。"""
+        from mflowy.utils.mlflow import FakeTracking, Tracking
+
+        assert "describe_run" in Tracking.__protocol_attrs__
+        fake = FakeTracking()
+        with fake.node_run("n", "e1") as run:
+            fake.describe_run(run.info.run_id, "业务输出\nValueError('boom')")
+        assert fake.descriptions[run.info.run_id] == "业务输出\nValueError('boom')"
+        with pytest.raises(KeyError):
+            fake.describe_run("nope", "x")
+
+    def test_mlflow_tracking_describe_run_writes_note_tag(self, tmp_mlflow_db):
+        """生产 adapter：描述落 mlflow.note.content tag（超长截断同 clip）。"""
+        from mflowy.utils.mlflow import MlflowTracking
+
+        rid = _create_terminated_run(tmp_mlflow_db, "r", None)
+        MlflowTracking().describe_run(rid, "x" * 9000)
+        import mlflow
+
+        v = mlflow.get_run(rid).data.tags["mlflow.note.content"]
+        assert len(v) == 8000 and v.endswith("…")
+
     def test_mlflow_tracking_set_experiment_tag_clips(self, tmp_mlflow_db):
         """生产 adapter：超长图 tag 截断（实验 tag 上限 5000——run tag 8000 为另一类约束）。"""
         import mlflow

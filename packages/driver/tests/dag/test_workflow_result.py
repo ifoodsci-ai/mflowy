@@ -114,6 +114,41 @@ class TestDAGResult:
         assert tags[DAG.GRAPH_TAG_KEY].startswith("```mermaid")
         assert "load__solo" in tags[DAG.GRAPH_TAG_KEY]
 
+    def test_description_equals_output(self, fake_plugins, fake_tracking):
+        """run 描述 ≡ NodeResult.output（单源合成,account 期经 seam 写 mlflow.note.content）。"""
+        @handler()
+        def talky(**kwargs):
+            print("排名表: XGB=0.91")
+            return "x"
+
+        fake_plugins.setdefault("load", {})["talky"] = talky
+        a = Context(_conf("话痨", "talky"), [])
+        flow = self._workflow(a).run()
+        rid = flow.runs[0].run_id
+        assert flow.runs[0].output == "排名表: XGB=0.91"
+        assert fake_tracking.descriptions[rid] == "排名表: XGB=0.91"
+
+    def test_failure_output_is_partial_plus_exception(self, fake_plugins, fake_tracking):
+        """失败 output = 崩溃前 partial stdout + repr(e)（追加非替换）——崩溃前证据不丢,描述同构。"""
+        @handler()
+        def prints_then_booms(**kwargs):
+            print("已加载 60 行")
+            raise ValueError("boom")
+
+        @handler()
+        def after(**kwargs):
+            return "ok"
+
+        fake_plugins.setdefault("load", {}).update({"prints_then_booms": prints_then_booms, "after": after})
+        a = Context(_conf("边打边炸", "prints_then_booms"), [])
+        Context(_conf("下游", "after"), [a])
+        flow = self._workflow(a).run()
+
+        assert flow.runs[0].output == "已加载 60 行\nValueError('boom')"  # 追加非替换
+        assert fake_tracking.descriptions[flow.runs[0].run_id] == flow.runs[0].output  # 描述 ≡ output
+        assert flow.runs[1].status == "skipped"
+        assert flow.runs[1].run_id not in fake_tracking.descriptions  # skipped 无 run 不写描述
+
     def test_mermaid_is_view_not_idl(self, fake_plugins, fake_tracking):
         """mermaid 降为视图函数：DAG.mermaid()（__repr__ 委托）——展示形态按需派生。"""
 
