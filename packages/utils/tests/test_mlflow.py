@@ -278,6 +278,28 @@ class TestTrackingSeam:
 
         assert "active_run_id" in Tracking.__protocol_attrs__
 
+    def test_run_artifacts_query_face(self):
+        """run_artifacts 查询面在 Protocol 声明内；FakeTracking 播种清单可断言，未知 run 不吞。"""
+        from mflowy.utils.mlflow import FakeTracking, Tracking
+
+        assert "run_artifacts" in Tracking.__protocol_attrs__
+        fake = FakeTracking()
+        with fake.node_run("n", "e1") as run:
+            fake.artifacts[run.info.run_id] = ["t.json", "t.png"]
+            assert fake.run_artifacts(run.info.run_id) == ["t.json", "t.png"]
+        with pytest.raises(KeyError):
+            fake.run_artifacts("nope")
+
+    def test_mlflow_tracking_run_artifacts_lists_paths(self, tmp_mlflow_db):
+        """生产 adapter：工件树路径清单（account 快照的数据源）。"""
+        from mlflow.tracking import MlflowClient
+
+        from mflowy.utils.mlflow import MlflowTracking
+
+        rid = _create_terminated_run(tmp_mlflow_db, "r", None)
+        MlflowClient().log_dict(rid, {"a": 1}, "report.json")
+        assert MlflowTracking().run_artifacts(rid) == ["report.json"]
+
     def test_clip_tag_value_mlflow_limit(self):
         """mlflow tag 值上限截断（backend 约束由 adapter 吸收）——宽 fan-in 血缘不炸 run。"""
         from mflowy.utils.mlflow import clip_tag_value
