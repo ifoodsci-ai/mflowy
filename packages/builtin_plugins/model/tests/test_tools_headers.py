@@ -153,3 +153,18 @@ def test_tool_wrapper_covers_protocol_params(method):
 
 def _ctx_with_meta(meta):
     return SimpleNamespace(request_context=SimpleNamespace(meta=meta))
+
+
+def test_hyperparameters_search_storage_param_passthrough():
+    """#89 ①修正：study_storage_path 可选参贯通 Protocol/Local/MCP 三面（缺省 None
+    不改变现行为）；缺省路径（不传）仍为内存态一次性 study。"""
+    import inspect
+
+    from mflowy.model.job_provider.local import LocalJobProvider
+    from mflowy.model.job_provider.protocol import JobProvider
+    from mflowy.model.tools import hyperparameters_search as tool
+
+    for fn in (JobProvider.hyperparameters_search, LocalJobProvider.hyperparameters_search, tool):
+        params = inspect.signature(fn).parameters
+        assert "study_storage_path" in params, fn
+        assert params["study_storage_path"].default is None

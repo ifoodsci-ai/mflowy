@@ -24,6 +24,7 @@ class JobProvider(Protocol):
         modeling_steps: str,
         name: str,
         desc: str,
+        study_storage_path: str | None = None,
         headers: Headers = None,
     ) -> DAGResult: ...
 
