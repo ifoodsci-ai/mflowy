@@ -52,6 +52,7 @@ async def _call(server: MCPServer, elicitation_callback, *, calls=1, tool="ping"
             lowlevel.run(server_reader, server_writer, lowlevel.create_initialization_options())
         )
         try:
+
             async def _notify(message: object) -> None:  # 形参名对齐 SDK（关键字可调用性）
                 if notifications is not None and hasattr(message, "method"):
                     notifications.append(message)

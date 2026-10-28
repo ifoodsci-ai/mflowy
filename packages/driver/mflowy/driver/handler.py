@@ -44,7 +44,9 @@ def handler[R](*middlewares: Middleware, namespace: str = ""):
     """
 
     def decorator(fn: Callable[..., R]):
-        valid_fn = validate_call(config=ConfigDict(arbitrary_types_allowed=True))(fn)  # 工厂形态（位置参形态与泛型签名不匹配）
+        valid_fn = validate_call(config=ConfigDict(arbitrary_types_allowed=True))(
+            fn
+        )  # 工厂形态（位置参形态与泛型签名不匹配）
         edge_names = param_edge_names(fn)  # M1 撞名判定装饰期一次（运行期零反射开销）
 
         def handler_wrapper(ctx: Context, **kwargs) -> R:

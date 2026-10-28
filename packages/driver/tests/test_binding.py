@@ -145,17 +145,23 @@ class TestUpstreamNode:
     def test_lazy_pull_runs_each_once_and_shapes(self):
         """惰性拉起恰一次；collect 出迭代器、single 出末位值。"""
         a, b = _cell(1), _cell(2)
-        collect = Upstream.node(UpstreamMeta("feat", True), int, cast("list[Context]", [a, b]), check_expect=int, collect=True)
+        collect = Upstream.node(
+            UpstreamMeta("feat", True), int, cast("list[Context]", [a, b]), check_expect=int, collect=True
+        )
         assert list(collect.call()) == [1, 2]
         collect.call()  # 再次取值不重跑（哨兵去重）
         assert (a.runs, b.runs) == (1, 1)
-        single = Upstream.node(UpstreamMeta("feat", True), int, cast("list[Context]", [a]), check_expect=int, collect=False)
+        single = Upstream.node(
+            UpstreamMeta("feat", True), int, cast("list[Context]", [a]), check_expect=int, collect=False
+        )
         assert single.call() == 1
 
     def test_in_place_filter_seen_by_call(self):
         """同源焊点：rewire 就地过滤 nodes，闭包即时看见（剪枝语义的机制面）。"""
         a, b = _cell(1), _cell(2)
-        u = Upstream.node(UpstreamMeta("feat", False), int, cast("list[Context]", [a, b]), check_expect=int, collect=True)
+        u = Upstream.node(
+            UpstreamMeta("feat", False), int, cast("list[Context]", [a, b]), check_expect=int, collect=True
+        )
         u.nodes[:] = [n for n in u.nodes if n is a]  # 模拟 rewire 剥除 b
         assert list(u.call()) == [1]
         assert b.runs == 0
