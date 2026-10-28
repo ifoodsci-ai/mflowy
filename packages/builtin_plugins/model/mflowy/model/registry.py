@@ -1,7 +1,7 @@
 """建模域族目录：discover() 的 model 词表过滤带 ``.mdp_family`` 声明者（会话 SDK 面）。
 
-知识归属：结构相容性与会话语义元数据随各族模块居住（``.structure`` /
-``.mdp_family`` 自声明），本模块只做聚合与组装——不持族硬清单。第三方模型
+知识归属：结构相容性/正则面/会话语义元数据随各族模块居住（``.mdp_family`` 单尾巴
+自声明），本模块只做聚合与组装——不持族硬清单。第三方模型
 作者在节点上声明 ``.mdp_family`` 即入族目录；**未声明 = 对会话不可见**
 （DAG 词表不受影响）。声明义务文档化见 model README。
 """
@@ -34,11 +34,12 @@ def fe_vocab() -> dict[str, str]:
 
 
 # .mdp_family 准入形状（声明义务单源；文档面 = model README「族目录声明义务」节）
-_MDP_FAMILY_KEYS = frozenset({"structure", "machinery", "fit_params"})
+_MDP_FAMILY_KEYS = frozenset({"structure", "regularizers", "machinery", "fit_params"})
 _STRUCTURE_KEYS = frozenset({"cat_support", "scaling_need", "min_samples"})
 _ADMISSION_DUTY = (
     "声明义务（model README「族目录声明义务」节）：.mdp_family = "
     '{"structure": {"cat_support": "native"|"encode", "scaling_need": bool, "min_samples": int}, '
+    '"regularizers"?: (参数名, ...)（正则面——出题规则的目标参数，无正则旋钮的族可缺省）, '
     '"machinery": make_machinery(...)（会话直调的 estimator 机器）, '
     '"fit_params"?: callable（fit kwargs 工厂——如 LGBM 的 early_stopping 覆盖面）}'
 )
@@ -53,7 +54,7 @@ def _admit_family(node: str, meta: object) -> dict:
     unknown = set(meta) - _MDP_FAMILY_KEYS
     if unknown:
         raise ValueError(f"{where} 含未知键 {sorted(unknown)}（可用：{sorted(_MDP_FAMILY_KEYS)}）——{_ADMISSION_DUTY}")
-    missing = _MDP_FAMILY_KEYS - {"fit_params"} - set(meta)
+    missing = _MDP_FAMILY_KEYS - {"fit_params", "regularizers"} - set(meta)  # 两者可缺省：fit 工厂 / 无正则旋钮的族
     if missing:
         raise ValueError(f"{where} 缺键 {sorted(missing)}——{_ADMISSION_DUTY}")
     st = meta["structure"]
@@ -74,9 +75,21 @@ def _admit_family(node: str, meta: object) -> dict:
         raise TypeError(f"{where}['structure']['min_samples'] 须为 int，得到 {st['min_samples']!r}")
     if not callable(meta["machinery"]):
         raise TypeError(f"{where}['machinery'] 须为 callable（make_machinery 工厂产物）——{_ADMISSION_DUTY}")
+    if "regularizers" in meta:  # 正则面（可选）：参数名元组——出题规则的收窄/pin 目标
+        regs = meta["regularizers"]
+        if not isinstance(regs, (tuple, list)) or not all(isinstance(r, str) and r for r in regs):
+            raise TypeError(f"{where}['regularizers'] 须为参数名元组 (str, ...)——{_ADMISSION_DUTY}")
     if "fit_params" in meta and not callable(meta["fit_params"]):
         raise TypeError(f"{where}['fit_params'] 须为 callable（fit kwargs 工厂，可选）")
     return dict(meta)
+
+
+def family_face(family: str) -> dict:
+    """族签名用户超参面（plumbing 除外；random_state 走 set_seed 专用动作）——
+    词表派生面单源：session 校验面与出题规则现查共用（防第二份拷贝漂移）。"""
+    from mflowy.model.model.utils import signature_params
+
+    return signature_params(families()[family]["pyfunc"])
 
 
 def families() -> dict[str, dict]:

@@ -1,6 +1,8 @@
 # model 域出题面收敛设计：问题体征分类学 + 规则表定义权归 propose
 
-> 设计日期：2026-10-28。状态：**设计稿，未实现**。承接 #89 会话基座（姊妹篇：
+> 设计日期：2026-10-28。状态：**已实现**（2026-10-28 落地——段1 证据先行 / 段2
+> 分类学扩容 / 段3 规则翻转三段全落地；学习曲线居住面（§3.1 ③⑥）裁定为**暂缓**；
+> 落地细节与 BREAKING 面见 CHANGELOG「model 域出题面收敛」条）。承接 #89 会话基座（姊妹篇：
 > [2026-10-09-modeling-mdp-design.md](2026-10-09-modeling-mdp-design.md) /
 > [2026-10-09-cleaning-mdp-design.md](2026-10-09-cleaning-mdp-design.md)）。
 > 讨论裁定：data 域 #89 ③ 后出题纪律为「问题分类学 → 问题规则 → 处方菜单」；
@@ -95,6 +97,11 @@ cleaning_session.py:543-560）；model 域是两层拼接——findings 驱动�
   候选动作×参数×档位理由。FE 换档成为处方的选项之一——欠拟合（信号不足）→
   {换 FE 加信号、加容量、减正则}；过拟合 → {加正则、减容量、换 FE 简化}。
   槽位资格门随处方走进各规则；`FERule` 作为独立题型消失；
+  （**落地注记**：① FERule 已并入 `_KINDS["error_concentrated"]`——族级处方体，
+  fe.* 注册键清零；② 加容量/减容量处方**暂缓**——容量参数族间非均匀可声明
+  （max_depth↑ ≠ min_samples↓），待族级容量声明面（正则面的对偶）后补，
+  与学习曲线同一裁定档次；③ `has_model`/`budget_left` 不进投影——光标/步数
+  等价态已在 o 上（停止谓词直读 `o.steps`）；
 - **调参题**：正则面（`regularizers`）与签名（Annotated Space 值域）规则内
   自取（import registry 现查），不再经 ctx 中转；
 - **基座余项**（`base.run_hpo` 首搜 / `base.final_train_test` / 配置编辑面）

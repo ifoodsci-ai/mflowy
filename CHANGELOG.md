@@ -99,6 +99,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   StrictUndefined 下 env 缺键即 fail-loud。`test_ns_return_contract.py` 编译测试
   env 补两键，并断言渲染值真进了节点 params（取非默认值 200/7 钉住渲染行为，
   恰等于默认值的断言钉不住）。
+### BREAKING（model 域出题面收敛——设计稿 [2026-10-28](docs/research/2026-10-28-model-proposing-convergence-design.md)：问题体征分类学 + 规则表定义权归 propose）
+
+三段落地（model 域出题面对齐 data 域「问题分类学 → 问题规则 → 处方菜单」纪律）：
+
+- **证据先行（段1）**：新增 `theta_probe`——θ* 单次代表拟合（train 内切 val +
+  eval，早停剥离防截断上翘段）双产物：train-fit/val **同尺得分对**（同一次拟合的
+  苹果对苹果，欠拟合/过拟合 gap 两体征的证据）+ 逐迭代损失曲线；**objective 纯度
+  裁定**：诊断只对 θ* 做，trial = 纯训练+指标（user_attrs 只携带搜索证据 scores，
+  钉测约束）；diagnose
+  四体征算子——`underfit_high_close`（train/验证双高且接近，skill vs 平凡基线
+  = 中位数/多数类经 `evaluate` 单源）、`overfit_train_val_gap`（验证显著劣于训练）、
+  `underfit_loss_plateau`（曲线缓降/高位——改进亏缺代理）、`overfit_val_loss_rise`
+  （先降后升）。族异构降级：OOB 族（RF）无曲线不产曲线体征。**顺手修两处存量缺陷**：
+  diagnose 任务分发按裸串 `"regression"` 比较而会话传值形式 `"regressor"`——回归
+  会话从未真正走 error_concentrated 分支（现 `parse_enum` 双形式归一）；LGBM 分类面
+  `evals_result_` 键序与回归面不一致（`training` 键缺席）——loss curve 提取从未成功。
+- **分类学扩容（段2）**：kind 表单源 `propose_rules._KINDS`（kind → 规则体 × 记分牌
+  权重）——九问题 kind（八体征/代理 + `error_concentrated`）；`overfit_gap` **改名 `drift`**（BREAKING：
+  inner−holdout 差距语义收窄为 CV 乐观偏差/漂移——train/val 直接过拟合证据由
+  `overfit_train_val_gap` 承担）；`complexity_edge` 降权 1.0→0.8（参数位置代理，
+  物理体征到位）；severity 全域 [0,1]（跨体征记分牌可比）。
+- **规则翻转（段3）**：**BREAKING**——基座谓词机层（手拼 `base.*` 伪键）清零，
+  候选/首搜/终训/配置编辑/FE 换档全部规则化（`CandidateRule`/`FirstSearchRule`/
+  `FinalTrainRule`/`ConfigEditRule`/`FEBaseRule`，salience=-1 垫底——poll 单源记分牌
+  排序，两层拼接退役）；问题规则出**处方菜单**（欠拟合 → 换 FE 加信号 + 正则放宽
+  下半区；过拟合族 → 正则收窄上半区/pin——`_regularize_rule` 镜像）；**BREAKING**——
+  `menu_ctx` 退役：session 只投影状态（findings/光标/combo_key/models 摘要/has_cat）
+  进 state_digest，词表（families/fe_vocab/签名/正则面）由规则在 propose 内以环境
+  常量现查——`observation.json` 不再持久化词表快照；**BREAKING**——族声明尾巴三并一：
+  `.mdp_family` 成为节点函数唯一尾巴（structure 直书内嵌、`regularizers` 并入——
+  可选键，无正则旋钮的族可缺省；裸 `.structure`/`.regularizers` 属性退役，#58
+  准入键集相应扩展）；`propose_actions` 退成「状态投影 + fire + poll + 合并」。
+  MCP 工具面零改动（菜单仍是 Activation 列表）；存量会话 rules.pkl 持旧 kind 集
+  （`overfit_gap`）——跨版本升级旧会话 propose 会撞未知 kind fail-loud（unreleased
+  内变更，读侧不迁移）。
+- 学习曲线居住面（体征 ③⑥）：**暂缓**（净新增计算——train-size sweep 多次拟合；
+  待 HPO 预算结构定型后随 diagnose 工具面裁定，设计稿 §3.1）。
+
 ### BREAKING（#89 会话基座深化：POMDPSession 统一机制 + 契约 pydantic 化 + 规则引擎归位）
 
 四片落地（M3+M4+M5 迁移行随本条勾销；规格见 issue #89）：

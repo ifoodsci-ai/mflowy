@@ -5,7 +5,7 @@
 零步数（run 后自动接线：findings 落 models[key]、run 响应浮出）。
 
 kind 词表（#38 规则引擎订阅面）：error_concentrated / slice_collapse / fold_std /
-complexity_edge（+ final_train_test 的 overfit_gap——同 schema 另居住）。
+complexity_edge（+ final_train_test 的 drift——同 schema 另居住）。
 """
 
 import numpy as np

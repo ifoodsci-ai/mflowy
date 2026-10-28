@@ -49,12 +49,15 @@ findings 是真态的多对一投影——同聚合不同病灶不可分；u_inn
 
 ```python
 MY_MODEL.mdp_family = {
-    "structure": MY_MODEL.structure,  # 相容性自声明（cat_support/scaling_need/min_samples）
+    "structure": {"cat_support": "encode", "scaling_need": True, "min_samples": 30},  # 相容性自声明
+    "regularizers": ("my_l2",),  # 正则面（可选——出题规则的正则收窄/pin 目标；无正则旋钮可缺省）
     "machinery": make_machinery(MY_MODEL, _model_cls),  # 会话直调的 estimator 机器
     # （task, x_preprocessors, seed=None, **overrides) -> (make_pipe, base_params, param_space)
 }
-MY_MODEL.regularizers = ("my_l2",)  # 正则面自声明（#38 出题规则的正则收窄目标）
 ```
+
+`.mdp_family` 是节点函数上的**唯一尾巴**（structure 直书内嵌、正则面并入——不再
+散挂 `.structure`/`.regularizers` 裸属性）。
 
 签名即搜索空间的单一真源（默认 `ContinuousSpace`/`DiscreteSpace` = 动态维、常量默认 =
 静态固定）——`.mdp_family` 不复制空间（防第二真源漂移）；`machinery` 经工厂从签名
@@ -64,8 +67,10 @@ MY_MODEL.regularizers = ("my_l2",)  # 正则面自声明（#38 出题规则的�
 
 ## 会话观察面（#35/#64）
 
-- `diagnose.py`：OOF 观察面上的四算子（error_concentrated / slice_collapse / fold_std /
-  complexity_edge）——run_hpo 后自动接线（findings 落账本 + 响应浮出），零步数
+- `diagnose.py`：OOF 观察面诊断算子（error_concentrated / slice_collapse / fold_std /
+  complexity_edge + 体征面 underfit_high_close / underfit_loss_plateau /
+  overfit_train_val_gap / overfit_val_loss_rise——train 折分与 θ* 曲线探针证据，
+  设计稿 2026-10-28）——run_hpo 后自动接线（findings 落账本 + 响应浮出），零步数
 - `report.py`：OOF 图集（挂 run 下，run_id 寻址）/ 泰勒聚合（终训节点副产物
   fan-in——`taylor_byproducts` 边函数断言各模型 y_test 逐位同一）/ 报告素材
   （`modeling_report_skeleton`：表格从账本渲染 + 图片清单 + 叙事槽）；终局报告不在
