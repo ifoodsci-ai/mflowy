@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
+from matplotlib.figure import Figure  # 类型断言源（pyplot 再导出为私有面）
 from mflowy.data.middlewares import MissingNumericalColumns, NotAnyNumericalColumns
 from mflowy.data.plot.violin import (
     _quantile_stats,
@@ -76,7 +77,7 @@ class TestViolinHandler:
     def test_returns_dataframe_and_figure(self, sample_df):
         stats_df, fig = violin(load=sample_df)
         assert isinstance(stats_df, pd.DataFrame)
-        assert isinstance(fig, plt.Figure)
+        assert isinstance(fig, Figure)
 
     def test_auto_selects_numeric(self, sample_df):
         stats_df, _ = violin(load=sample_df)
@@ -90,7 +91,7 @@ class TestViolinHandler:
         stats_df, fig = violin(load=sample_df, numerical_cols=["normal"])
         assert len(stats_df) == 1
         assert stats_df.iloc[0]["name"] == "normal"
-        assert isinstance(fig, plt.Figure)
+        assert isinstance(fig, Figure)
 
     def test_outlier_count_in_tick_label(self, sample_df):
         _, fig = violin(load=sample_df, numerical_cols="skewed")

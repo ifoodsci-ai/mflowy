@@ -111,7 +111,9 @@ def filter_numerical_cols(
             raise MissingNumericalColumns(missing, _numerical_df.columns)
     if not cols:
         raise NotAnyNumericalColumns
-    return _numerical_df[cols]
+    out = _numerical_df[cols]
+    assert isinstance(out, pd.DataFrame)  # 列清单索引恒 DataFrame（联合噪声）
+    return out
 
 
 def filter_categorical_cols(
@@ -137,4 +139,6 @@ def filter_categorical_cols(
         cols = [c for c in cols if c not in set(_normalize_cols(targets or []))]
     if not cols:
         raise NotAnyCategoricalColumns
-    return df[cols]
+    out = df[cols]
+    assert isinstance(out, pd.DataFrame)  # 列清单索引恒 DataFrame（联合噪声）
+    return out

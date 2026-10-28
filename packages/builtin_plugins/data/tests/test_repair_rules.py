@@ -5,6 +5,8 @@
 菜单响应形状不变（action/params/source_kinds/rationale/evidence）。
 """
 
+from typing import cast
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -75,7 +77,7 @@ def test_repair_rule_proposes_only_for_its_kind():
     report = ErrorReport(shape=df.shape, errors=[DataError(kind="missing", column="x", severity=0.6)])
     acts = engine.fire(R={"defects": report, "card": {}, "df": df})
     assert acts, "missing 有修复者，应产出候选"
-    assert all(a.evidence["kind"] == "missing" for a in acts)
+    assert all(a.evidence is not None and a.evidence["kind"] == "missing" for a in acts)
     assert {a.proposal["action"] for a in acts}  # action = clean 词表节点名
 
 
@@ -122,7 +124,9 @@ def test_repair_rule_fail_loud_on_vocabulary_drift():
             }
         )
 
-    real = next(iter(repair_rules.default_engine().rules.values()))
+    real = cast(
+        "repair_rules.RepairRule", next(iter(repair_rules.default_engine().rules.values()))
+    )  # 注册面恒 RepairRule
     drifted = repair_rules.RepairRule(node=real.node, kind="__gone__")
     with pytest.raises(ValueError, match=r"不再声明.*可用"):
         drifted.propose(

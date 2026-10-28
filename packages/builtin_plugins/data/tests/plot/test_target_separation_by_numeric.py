@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
+from matplotlib.figure import Figure  # 类型断言源（pyplot 再导出为私有面）
 from mflowy.data.middlewares import SkipPlotError
 from mflowy.data.plot.target_separation_by_numeric import (
     target_separation_by_numeric,
@@ -35,13 +36,13 @@ def cleanup_figures():
 class TestTargetSeparationByNumeric:
     def test_single_target_auto_features(self, clf_df):
         dfs, fig = target_separation_by_numeric(load=clf_df, targets="label")
-        assert isinstance(fig, plt.Figure)
+        assert isinstance(fig, Figure)
         assert len(dfs) == 1
         # 自动选取全部数值特征列（排除 targets）
         assert list(dfs[0].columns) == ["label", "feat_strong", "feat_weak", "feat_noise"]
         assert dfs[0].attrs["suffix"] == "_label"
         # 目标身份在图例标题，x 轴为特征名
-        legends = [ax.get_legend() for ax in fig.axes if ax.get_legend()]
+        legends = [lg for ax in fig.axes if (lg := ax.get_legend()) is not None]
         assert all(lg.get_title().get_text() == "label" for lg in legends)
 
     def test_multi_targets_band_per_target(self, clf_df):

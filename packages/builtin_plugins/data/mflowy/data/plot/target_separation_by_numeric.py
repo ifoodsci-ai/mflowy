@@ -56,7 +56,9 @@ def target_separation_by_numeric(
     dfs = []
     for target, band in zip(targets, bands, strict=True):
         for i, (feature, ax) in enumerate(zip(num_cols, band, strict=True)):
-            show_density_label = i == 0 or ax.get_subplotspec().colspan.start == 0
+            spec = ax.get_subplotspec()
+            assert spec is not None  # 网格内子图恒有 subplotspec
+            show_density_label = i == 0 or spec.colspan.start == 0
             kde_groups_cell(ax, df, value_col=feature, group_col=target, show_density_label=show_density_label)
         band_df = df[[target, *num_cols]]
         band_df.attrs["suffix"] = f"_{target}"

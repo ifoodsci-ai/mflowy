@@ -242,6 +242,7 @@ def correlation_heatmap(
         edgecolor="none",
     )
     cax.add_patch(clip_rect)
+    assert cb.solids is not None  # colorbar solids 恒在（QuadMesh）
     cb.solids.set_clip_path(clip_rect)
     method_label = {
         "pearson": "Pearson",
@@ -271,7 +272,7 @@ def correlation_heatmap(
         )
     ax.tick_params(axis="x", rotation=45)
     for label in ax.get_xticklabels():
-        label.set_ha("right")
+        label.set_horizontalalignment("right")  # set_ha 别名在 stub 面缺失
     ax.tick_params(axis="y", rotation=0)
 
     return (corr_df, pval_df), ax.figure

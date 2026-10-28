@@ -34,9 +34,9 @@ def histogram(
     """
     df = clean if clean is not None else load
     numerical_df = filter_numerical_cols(df, numerical_cols)
-    numerical_cols = numerical_df.columns.tolist()
+    cols = numerical_df.columns.tolist()  # 形参联合（schema 面）不重用——局部干净名
 
-    n_total = len(numerical_cols)
+    n_total = len(cols)
     n_cols = min(col_wrap, n_total)
     n_rows = ceil(n_total / n_cols)
 
@@ -48,7 +48,7 @@ def histogram(
     )
     bar_color = OKABE_ITO_PALETTE[1]
 
-    for i, col_name in enumerate(numerical_cols):
+    for i, col_name in enumerate(cols):
         row, col = divmod(i, n_cols)
         ax = axes[row, col]
 

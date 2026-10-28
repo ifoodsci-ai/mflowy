@@ -11,6 +11,7 @@ from typing import Annotated
 import pandas as pd
 from mflowy.data.detect.rules import iqr_fences, zscore_bounds
 from mflowy.data.middlewares import df_diff
+from mflowy.data.types import as_series
 from mflowy.driver.handler import handler
 
 from ._atom import require_cols, require_family, tier_repair
@@ -32,7 +33,7 @@ def cap_iqr(
     require_family(df, cols, "numeric")
     out = df.copy()
     for c in cols:
-        lo, hi = iqr_fences(out[c].dropna(), k)
+        lo, hi = iqr_fences(as_series(out[c]).dropna(), k)
         if pd.api.types.is_integer_dtype(out[c]):
             out[c] = out[c].astype(float)
         out[c] = out[c].clip(lo, hi)
@@ -53,7 +54,7 @@ def cap_z(
     require_family(df, cols, "numeric")
     out = df.copy()
     for c in cols:
-        lo, hi = zscore_bounds(out[c].dropna(), k)
+        lo, hi = zscore_bounds(as_series(out[c]).dropna(), k)
         out[c] = out[c].clip(lo, hi)
     return out
 

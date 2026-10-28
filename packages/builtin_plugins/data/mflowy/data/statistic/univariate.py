@@ -10,6 +10,7 @@ from typing import Annotated
 import pandas as pd
 from mflowy.data.detect.rules import iqr_fences, is_id_like
 from mflowy.data.middlewares import log_statistic, type_family
+from mflowy.data.types import as_series
 from mflowy.driver.handler import handler
 
 # findings 规则档位（schema 即文档）
@@ -25,7 +26,7 @@ def univariate_facts(df: pd.DataFrame, category_top_k: int = 10) -> tuple[list[d
     hits: dict[str, list[str]] = {k: [] for k in _SECTION_ORDER}
 
     for col in df.columns:
-        s = df[col]
+        s = as_series(df[col])
         fam = type_family(s)
         n, count = len(s), int(s.count())
         rate = 1 - count / n if n else 0.0

@@ -19,6 +19,7 @@ from mflowy.data.middlewares import (
     log_plot,
     validate_targets,
 )
+from mflowy.data.types import as_series
 from mflowy.driver.handler import handler
 
 from ._grid import band_grid
@@ -70,7 +71,9 @@ def _build_scatter_dfs(
     X_notna = X.notna()
     col_nonnull_counts = X_notna.sum(axis=0)
     cols_to_keep = col_nonnull_counts[col_nonnull_counts >= min_sample_size].index
-    X: pd.DataFrame = X[cols_to_keep]
+    kept = X[cols_to_keep]
+    assert isinstance(kept, pd.DataFrame)  # 列清单索引恒 DataFrame（联合噪声）
+    X = kept
 
     explicit_cols = (
         set() if not numerical_cols else ({numerical_cols} if isinstance(numerical_cols, str) else set(numerical_cols))
@@ -81,10 +84,11 @@ def _build_scatter_dfs(
     X_long = X.melt(var_name="feature", value_name="x", ignore_index=False)
 
     for target in targets:
-        y = df[target]
+        y = as_series(df[target])
         y_notna = y.notna()
 
-        rp: pd.DataFrame = X.apply(_corr(X_notna, y, y_notna, corr))
+        rp = X.apply(_corr(X_notna, y, y_notna, corr))
+        assert isinstance(rp, pd.DataFrame)  # apply 逐列返 (r,p) 元组 → DataFrame（联合噪声）
         r_series = rp.iloc[0]
         p_series = rp.iloc[1]
 
@@ -149,7 +153,7 @@ def target_trend_by_numeric(
         raise ValueError(f"No features with at least {min_sample_size} valid samples to plot")
 
     fig, bands = band_grid(
-        [sdf["feature"].nunique() for sdf in scatter_dfs],
+        [int(as_series(sdf["feature"]).nunique()) for sdf in scatter_dfs],
         col_wrap,
         cell_size=(4.5, 3.5),
     )
@@ -164,13 +168,15 @@ def target_trend_by_numeric(
             ax.scatter(x_vals, y_vals, alpha=0.5, s=20, c="#2c7bb6", edgecolors="black", linewidths=0.3)
 
             if add_regression_line:
-                frac = lowess_frac.get(feat, DEFAULT_LOWESS_FRAC) if isinstance(lowess_frac, dict) else lowess_frac
+                frac = (
+                    lowess_frac.get(str(feat), DEFAULT_LOWESS_FRAC) if isinstance(lowess_frac, dict) else lowess_frac
+                )  # groupby 键 Hashable → str
                 res = _lowess_trend(x_vals, y_vals, frac=frac)
                 if res is not None:
                     ax.plot(res[0], res[1], color="#D55E00", linewidth=2)
 
             ax.legend([], [], title=f"r={feat_r:.4f}", frameon=False, loc="upper left")
-            ax.set_xlabel(feat)
+            ax.set_xlabel(str(feat))
             # y 轴标签是目标名，每带只在首格渲染
             ax.set_ylabel(target if i == 0 else "")
 

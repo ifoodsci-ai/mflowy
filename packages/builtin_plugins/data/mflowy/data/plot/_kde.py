@@ -7,6 +7,7 @@ target_effect_by_category（分类特征 × 数值目标）与 target_separation
 
 import pandas as pd
 import seaborn as sns
+from mflowy.data.types import as_series
 from mflowy.utils.plot import OKABE_ITO_PALETTE
 
 
@@ -14,7 +15,7 @@ def kde_groups_cell(ax, df: pd.DataFrame, value_col: str, group_col: str, show_d
     """一格：按 group_col 分组对 value_col 画 KDE 多组叠加（fill+alpha 分层）。"""
     groups = df[group_col].unique()
     for j, group in enumerate(groups):
-        values = df[df[group_col] == group][value_col].dropna()
+        values = as_series(df.loc[df[group_col] == group, value_col]).dropna()
         if len(values) > 1:
             sns.kdeplot(
                 x=values,

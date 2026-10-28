@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from mflowy.data.types import as_series
 
 # rule 与默认档位的配对（detect.outliers / 修复原子的默认参数共用）
 RULE_DEFAULT_K = {"zscore": 3.0, "iqr": 1.5}
@@ -91,7 +92,7 @@ def high_corr_pairs(
     num = df.select_dtypes(include="number")
     pairs: list[tuple[str, str, float, float]] = []
     for a, b in combinations(num.columns, 2):
-        rp = corr_pair(num[a], num[b], method)
+        rp = corr_pair(as_series(num[a]), as_series(num[b]), method)
         if rp is None:
             continue
         r, p = rp
