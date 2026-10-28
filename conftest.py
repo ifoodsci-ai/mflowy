@@ -4,6 +4,8 @@
 - fake_tracking：FakeTracking 内存 tracking adapter（use_tracking 绑定）——
   run 生命周期与 tag/param 写入经 fake.tag_log / fake.tags 断言，
   内核 tracking 面不再 patch("mlflow.*")——插件侧 artifact 打点（log_table 等）不在 seam 内、照常可 patch
+- _reset_mlflow_global_state：mlflow 全局态的用例间隔离（autouse）
+- _reset_logging_setup_state：logging setup() 残留的用例间隔离（autouse）
 """
 
 import pytest
@@ -86,6 +88,44 @@ def _reset_mlflow_global_state(tmp_path, monkeypatch):
     yield
     fluent._active_run_stack.set([])
     mlflow_util._experiment_id_var.reset(token)
+
+
+def _isolate_logging_setup():
+    """logging setup() 残留的用例间隔离（prior learning: 顺序依赖红）。
+
+    server/runner 入口（main()）与 utils 包测试的局部 teardown 都会触发
+    utils.logging.setup()：console handler 绑定**调用时刻**的 sys.stderr 对象
+    （绑原始流是 capture 代理的设计要求——emit 期解析会撞 _RoutedStream 把日志
+    灌进节点 output）并挂 root logger。pytest 捕获（capsys/全局捕获）下该流随
+    用例结束关闭，handler 进程级残留 → 后续任何日志触发 "--- Logging error ---"
+    写向当时的 sys.stderr，在 capture_prints 窗口内污染 NodeResult.output。
+
+    teardown 末段执行（autouse 根级晚于模块级 fixture 拆卸，能兜住局部 teardown
+    重装的 handler）：摘除本用例装上的 console handler、恢复 root 级别、_reset()
+    重建一次性门。setup() 的第三方库降噪副作用保留——与生产入口进程语义一致。
+
+    纯生成器（非 fixture）：autouse 包装与回归钉（tests/test_logging_setup_isolation.py）
+    驱动同一实现。
+    """
+    import logging
+
+    import mflowy.utils.logging as mlog
+
+    root = logging.getLogger()
+    console_before = mlog._console_handler
+    level_before = root.level
+    yield
+    console = mlog._console_handler
+    if console is not None and console is not console_before:
+        if console in root.handlers:
+            root.removeHandler(console)
+        root.setLevel(level_before)
+        mlog._reset()
+
+
+@pytest.fixture(autouse=True)
+def _reset_logging_setup_state():
+    yield from _isolate_logging_setup()
 
 
 @pytest.fixture
