@@ -142,6 +142,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   原子写；`SessionStore` 裁到 GC 面（manifest 读写面随溶解退役）；决策记录形状单源
   `_record`；两域函数组 ≡ Handle 协议的结构等价钉测入 `test_workspace`；命名消歧
   （model `_state_projection`/`to_activation` vs data `_refresh_state_digest`/`menu_of`）。
+- **JobProvider 协议扩展（#89 ①修正裁定落地）**：`hyperparameters_search` 新增
+  `study_storage_path` 可选参——非空时经 ContextVar 锚定，`study.search()` 建 study
+  走该 sqlite + `load_if_exists`（一库一 study，名 = 路径词干）：**同一路径重复
+  搜索增量续跑，复用前史**（对同一模型多次 HPO 不从头采样）；贯通
+  Protocol/LocalJobProvider/MCP 工具面（缺省 None 行为不变——内存态一次性）。
+  会话 `run_hpo` 维持域内直连（其增量语义已由 `_open_study` 承载）；本扩展为
+  provider/tool 路径补齐同等能力，远程实现者应将参数转发到 runner 侧等价锚点。
 - **M5 版本树语义（④片）**：clean 单记录版本树（apply 记录含 v/file/sha/run_id）；
   model `save_loader`/`plans/final_*` 原子写 + **带冻结世代文件名**（
   `loader_{key}_v{n}.pkl` / `final_{key}_v{n}.yaml`——freeze-once ⇒ 恒 v1，世代位
