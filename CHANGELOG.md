@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - Unreleased
 
+### BREAKING：插件注册静态化——构建期 hatch AST 扫描钩子退役，entry points 手写声明（贡献者工作流 breaking，词表零破坏）
+
+- 两份 `hatch_metadata.py`（105 行 × 2，构建期扫描 `@handler`/`@edge` 生成注册）删除：
+  83 条 `mflowy.builtin_plugins`（节点 78 + 边 5）+ 24 条 `mflowy.tools` 全部手写为
+  两域 `[project.entry-points.*]` 静态声明；`[tool.mflowy.tools]` 过渡表、
+  `dynamic=["entry-points"]`、`[tool.hatch.metadata.hooks.custom]` 接线一并退役。
+  内置包与第三方插件的注册方式就此同构（CONTEXT 插件词条宣称成真）。
+- 动机（架构复审候选 4）：插件身份协议原存两套实现 × 两份已互相漂移的拷贝
+  （model 侧 `_EXCLUDED` 多 `"base"`）、纪律同步——删除构建期实现即删除第二份协议定义。
+- 约束机制（决策：不设镜像测试）：注册漂移由 CR + `list-nodes` 交叉检查兜底——
+  AGENTS「添加能力」CR 必查三项：新 `@handler`/`@edge` 必有声明、声明必有函数、
+  namespace 段与装饰器逐字一致。机器兜底仅加载期单向（声明指向未装饰函数即
+  fail-loud，`_load_ep` 属性校验）；忘声明/错 namespace 为静默面，靠 CR。
+- StepType 构建期防线随钩子退役（类全仓已不存在，残留旧签名 import 期 NameError）；
+  `tests/test_hatch_metadata.py`（钩子契约）随之删除；根 pyproject 两处 E402 豁免清除。
+- 迁移验收：`list-nodes` 输出与 107 条 entry points 名单迁移前后逐字节一致（diff=0）。
+- 工作流变化：新增/删除/改名节点或边 = 代码 + pyproject 声明同 PR + `uv sync`
+  （原为仅 `uv sync`）；运行时行为、词表、YAML 兼容性零变化。
+
+### 工具清单单源——平台工具并入 `mflowy.tools` 组静态声明（注册机制统一，词表零破坏）
+
+- 架构复审候选 2 落地：平台 9 工具从四处分叉推导（server 手写元组 / runner
+  `vars(platform)` 反射 / `test_workspace` 反射并集 / `test_tools_schema._TOOL_FNS`
+  手列清单）收敛为 mflowy-mcp pyproject 静态声明（与域包、插件注册同构）——
+  server 注册塌缩为单一 entry points 循环，runner 分发表同源消费；「忘改 server
+  元组 → 工具对 runner/词表可见、对 server 静默缺失」的非对称病灶结构上消除。
+- 镜像契约 `packages/mcp/tests/mcp/test_platform_tools_registry.py`（与域侧
+  `test_{model,data}_tools_registry.py` 同构）：声明面（安装态 entry points，按
+  dist=mflowy-mcp 过滤）↔ 函数面（tools.py 反射）双向差集——写函数忘声明 /
+  删改不同步 / 声明后未 `uv sync` 三态皆红。
+- 撞名 fail-loud（红线 1 + 单源）：`mflowy.tools` 组重名在唯一消费口
+  `_tool_entry_points`（tools.py 私有共享件，server/runner 两入口同源）显式拒绝
+  带候选清单——SDK 撞名仅警告且静默保第一个、runner 旧 dict 后写覆盖即静默遮蔽，
+  两处旧静默面随触碰收敛。
+- runner 分发表顺带清净：旧 `vars()` 反射把 tools.py 顶层导入名（`Annotated`/
+  `Field`/`Path`/`asdict`/`sha256_of`）混进分发表（命中在 bind 阶段炸，属泄漏面），
+  塌缩后消失。
+- 工作流变化：新增平台工具 = mcp/tools.py 公有函数 + mcp pyproject 声明 + `uv sync`
+  （并入上一条 BREAKING 的贡献者工作流叙事）；AGENTS 小项「runner 分发表与 server
+  注册清单同源」划掉。迁移验收：`tools/list` 名集迁移前后等价（33 工具零丢失——
+  旧 server 手写元组本不含导入泄漏名，泄漏面仅存于 runner 反射分发表，随塌缩消失）。
+
+### 取值闭包工厂居 binding——`Upstream.node`/`Upstream.edge` 构造单点，builder 编译面零运行期代码
+
+- 架构复审候选 3 落地：取值闭包（惰性拉起/哨兵去重/值级复核/collect-single 整形）
+  原定义于 `builder._fetch`、在 `context._bind` 调用帧执行——内核最差 locality；
+  且「`Upstream.nodes` 与闭包捕获同一列表」这条剪枝语义不变式只活在三处注释里，
+  全仓零测试保护（test_prune 手搭图的 call 恒为 `lambda: None`，不触该机制）。
+- 工厂 `Upstream.node`/`Upstream.edge`（classmethod，与 `meta.type` 的
+  "node"/"edge" 值域镜像命名）住 binding——域词汇背书：CONTEXT「拉起」词条
+  自定义拉起为**绑定期**行为；binding 模块头本就认领「签名 → 边声明 → 注入值」，
+  工厂补全该终点。宪章「零图知识」精确化为「零拓扑知识」——闭包按鸭子协议消费
+  上游执行面 `result`/`run`，零 Context import、零目录查询。
+- 列表同源从注释约定变为工厂的结构保证：`nodes = chosen` 全仓唯一焊点，剪枝
+  就地过滤（`Context.rewire` 的 `nodes[:] = ...`）两边天然同步——同源焊点唯一，
+  直构数据类不产生取值闭包。`Upstream` 保持普通 dataclass——测试手搭缝位
+  不变（红线 7），工厂为生产代码唯一构造点。
+- `_NOT_RUN` 执行哨兵随迁 binding 与 `MISSING` 并肩（两大协议哨兵同居单源）；
+  builder 两处构造点各缩一行、删 `_fetch`/`edge_call` 定义，从此不含运行期执行的
+  代码。行为零变化（纯搬移 + 封装）。
+- 测试：行为级钉测入 test_prune（真实 Builder 图 + disabled 剪枝 + run：收集边
+  只剩幸存成员、可选成员全灭落签名默认值、被剪节点零拉起）；工厂直测入
+  test_binding（拉起恰一次/同源过滤即视/MISSING/collect-single/撒谎复核点名）；
+  test_compile 八处私有 `_prevs`/`_nexts` 断言公共化（`prevs`/`nexts` 只读视图）。
+
 ### Added（#88）：login 平台工具——OAuth 2.1 身份地基（PKCE S256 + loopback + token 库）
 
 - **`mflowy.utils.auth`（纯 stdlib）**：平台 OAuth 2.1 客户端——授权码流

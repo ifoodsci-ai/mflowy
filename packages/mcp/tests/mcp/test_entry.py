@@ -71,6 +71,24 @@ class TestServerEntryGuard:
         server.main()
         assert made == {"name": "mflowy", "ran": True}
 
+    def test_register_rejects_duplicate_tool_names(self, monkeypatch):
+        """mflowy.tools 组撞名 fail-loud（红线 1）：SDK 撞名只警告且静默保第一个。"""
+        import importlib.metadata
+        from types import SimpleNamespace
+
+        from mflowy.mcp import server
+
+        class _NoopServer:
+            def tool(self):
+                return lambda fn: fn
+
+        dup = SimpleNamespace(name="dup_tool", load=lambda: lambda: None)
+        monkeypatch.setattr(importlib.metadata, "entry_points", lambda group: [dup, dup])
+        with pytest.raises(RuntimeError) as ei:
+            server.register(_NoopServer())
+        assert "撞名" in str(ei.value)
+        assert "dup_tool" in str(ei.value)
+
 
 class TestBareImportPurity:
     def test_modules_importable_without_sdk(self):

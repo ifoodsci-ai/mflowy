@@ -5,8 +5,6 @@ description = "MFlowy model domain — x_y / cross_validation / x_transformer / 
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
-# entry-points 由 hatch_metadata.py 构建期生成
-dynamic = ["entry-points"]
 # CPU 建模栈为硬依赖；torch 栈隔离进 [deep]（uvx 需 CPU 索引，仅装 MLP 时需要）
 dependencies = [
     "mflowy-data",
@@ -30,28 +28,54 @@ deep = [
     "pytorch-lightning>=2.6.5",
 ]
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+# 内置插件注册（静态声明；0.2.0 起原构建期 hatch_metadata.py AST 扫描退役）。
+# 声明即词表——CR 必查：新 @handler/@edge 必有声明、声明必有函数、
+# namespace 段与装饰器 namespace= 逐字一致（见 AGENTS.md「添加能力」）。
+[project.entry-points."mflowy.builtin_plugins"]
+"cv.load" = "mflowy.model.cv.load:load"
+"cv.split" = "mflowy.model.cv.split:split"
+"edges.model_test_predictions" = "mflowy.model.plot.model_evaluation.eval_data:model_test_predictions"
+"edges.model_test_probabilities" = "mflowy.model.plot.model_evaluation.eval_data:model_test_probabilities"
+"edges.taylor_byproducts" = "mflowy.model.report:taylor_byproducts"
+"edges.train_split" = "mflowy.model.model.edges:train_split"
+"edges.x_preprocessors" = "mflowy.model.model.edges:x_preprocessors"
+"model.CAT" = "mflowy.model.model.catboost:CAT"
+"model.LGBM" = "mflowy.model.model.lightgbm:LGBM"
+"model.MLP" = "mflowy.model.model.mlp:MLP"
+"model.RF" = "mflowy.model.model.random_forest:RF"
+"model.XGB" = "mflowy.model.model.xgboost:XGB"
+"model.loader" = "mflowy.model.model.loader:loader"
+"plot.bland_altman" = "mflowy.model.plot.model_evaluation.regression.bland_altman:bland_altman"
+"plot.calibration_curve" = "mflowy.model.plot.model_evaluation.classification.calibration_curve:calibration_curve"
+"plot.confusion_matrix" = "mflowy.model.plot.model_evaluation.classification.confusion_matrix:confusion_matrix"
+"plot.pr_curve" = "mflowy.model.plot.model_evaluation.classification.pr_curve:pr_curve"
+"plot.prediction_scatter" = "mflowy.model.plot.model_evaluation.regression.prediction_scatter:prediction_scatter"
+"plot.roc_curve" = "mflowy.model.plot.model_evaluation.classification.roc_curve:roc_curve"
+"plot.sample_waterfall" = "mflowy.model.plot.model_interpretability.shap.sample_waterfall:sample_waterfall"
+"plot.shap_dependence" = "mflowy.model.plot.model_interpretability.shap.dependence:shap_dependence"
+"plot.shap_summary" = "mflowy.model.plot.model_interpretability.shap.summary:shap_summary"
+"plot.taylor_diagram" = "mflowy.model.plot.model_evaluation.regression.taylor_diagram:taylor_diagram"
+predict = "mflowy.model.model.predict:predict"
+search_input = "mflowy.model.model.search_input:search_input"
+"shap.explanation" = "mflowy.model.plot.model_interpretability.shap.explanation_node:explanation"
+"shap.load" = "mflowy.model.plot.model_interpretability.shap.load:load"
+"x_transformer.hash_encoder" = "mflowy.model.x_transformer.categorical.hash_encoder:hash_encoder"
+"x_transformer.interaction_creator" = "mflowy.model.x_transformer.numeric.interaction_creator:interaction_creator"
+"x_transformer.label_encoder" = "mflowy.model.x_transformer.categorical.label_encoder:label_encoder"
+"x_transformer.log_transformer" = "mflowy.model.x_transformer.numeric.log_transformer:log_transformer"
+"x_transformer.minmax_scaler" = "mflowy.model.x_transformer.numeric.minmax_scaler:minmax_scaler"
+"x_transformer.numerical_binner" = "mflowy.model.x_transformer.numeric.numerical_binner:numerical_binner"
+"x_transformer.onehot_encoder" = "mflowy.model.x_transformer.categorical.onehot_encoder:onehot_encoder"
+"x_transformer.ordinal_encoder" = "mflowy.model.x_transformer.categorical.ordinal_encoder:ordinal_encoder"
+"x_transformer.pca_reducer" = "mflowy.model.x_transformer.numeric.pca_reducer:pca_reducer"
+"x_transformer.power_transformer" = "mflowy.model.x_transformer.numeric.power_transformer:power_transformer"
+"x_transformer.robust_scaler" = "mflowy.model.x_transformer.numeric.robust_scaler:robust_scaler"
+"x_transformer.standard_scaler" = "mflowy.model.x_transformer.numeric.standard_scaler:standard_scaler"
+"x_transformer.target_encoder" = "mflowy.model.x_transformer.categorical.target_encoder:target_encoder"
+x_y = "mflowy.model.x_y:x_y"
 
-[tool.hatch.build.targets.wheel]
-packages = ["mflowy"]
-dev-mode-dirs = ["."]
-
-[tool.hatch.build.targets.sdist]
-include = ["mflowy", "pyproject.toml", "hatch_metadata.py"]
-
-[tool.hatch.metadata.hooks.custom]
-# 构建期扫描 mflowy/model/** 的 @handler 生成内置插件 entry points（组：mflowy.builtin_plugins）
-path = "hatch_metadata.py"
-
-[tool.uv.sources]
-mflowy-data = { workspace = true }
-mflowy-utils = { workspace = true }
-
-[tool.mflowy.tools]
-# 域工具注册表（手工声明，无装饰器）；hatch 钩子并入 entry points 组 mflowy.tools，
-# 镜像测试断言本表 ≡ mflowy/model/tools.py 公有函数
+# 域工具注册（静态声明）；镜像测试断言本组 ≡ mflowy/model/tools.py 公有函数
+[project.entry-points."mflowy.tools"]
 validate_modeling_steps = "mflowy.model.tools:validate_modeling_steps"
 modeling_session_start = "mflowy.model.tools:modeling_session_start"
 modeling_propose = "mflowy.model.tools:modeling_propose"
@@ -67,3 +91,18 @@ modeling = "mflowy.model.tools:modeling"
 explanation = "mflowy.model.tools:explanation"
 predict = "mflowy.model.tools:predict"
 inverse_optimization = "mflowy.model.tools:inverse_optimization"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["mflowy"]
+dev-mode-dirs = ["."]
+
+[tool.hatch.build.targets.sdist]
+include = ["mflowy", "pyproject.toml"]
+
+[tool.uv.sources]
+mflowy-data = { workspace = true }
+mflowy-utils = { workspace = true }

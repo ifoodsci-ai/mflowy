@@ -51,8 +51,8 @@ class TestFlatCompile:
         fake_plugins.setdefault("load", {})["beta"] = beta
         dag = Builder(_yaml(tmp_path, "平铺无依赖", _node("a", "load", "alpha"), _node("b", "load", "beta"))).build()
         ctxs = {c.conf.name: c for c in dag.nodes}
-        assert ctxs["a"]._prevs == []
-        assert ctxs["b"]._prevs == []
+        assert ctxs["a"].prevs == ()
+        assert ctxs["b"].prevs == ()
 
     def test_param_match_wires_lineage(self, fake_plugins, tmp_path):
         """参数名命中组名 → 血缘边（prevs/nexts 双向）。"""
@@ -69,8 +69,8 @@ class TestFlatCompile:
         fake_plugins.setdefault("statistic", {})["beta"] = beta
         dag = Builder(_yaml(tmp_path, "血缘", _node("a", "load", "alpha"), _node("b", "statistic", "beta"))).build()
         ctxs = {c.conf.name: c for c in dag.nodes}
-        assert ctxs["b"]._prevs == [ctxs["a"]]
-        assert ctxs["a"]._nexts == [ctxs["b"]]
+        assert ctxs["b"].prevs == (ctxs["a"],)
+        assert ctxs["a"].nexts == (ctxs["b"],)
 
     def test_node_key_addressing(self, fake_plugins, tmp_path):
         """node_key 精确整相寻址：多实例组内点名。"""
@@ -100,7 +100,7 @@ class TestFlatCompile:
             )
         ).build()
         ctxs = {c.conf.name: c for c in dag.nodes}
-        assert ctxs["b"]._prevs == [ctxs["o"]]
+        assert ctxs["b"].prevs == (ctxs["o"],)
 
     def test_forward_reference_fails_loud(self, fake_plugins, tmp_path):
         """拓扑序强制：参数引用尚未编译的后续节点 → 编译期 fail-loud。"""
@@ -211,7 +211,7 @@ class TestArity:
             )
         ).build()
         ctxs = {c.conf.name: c for c in dag.nodes}
-        assert ctxs["c"]._prevs == [ctxs["b"]]
+        assert ctxs["c"].prevs == (ctxs["b"],)
 
     def test_collect_takes_all_in_order(self, fake_plugins, tmp_path):
         """收集形态：同名多实例全收，YAML 声明序。"""
@@ -241,7 +241,7 @@ class TestArity:
             )
         ).build()
         ctxs = {c.conf.name: c for c in dag.nodes}
-        assert ctxs["c"]._prevs == [ctxs["a"], ctxs["b"]]
+        assert ctxs["c"].prevs == (ctxs["a"], ctxs["b"])
 
     def test_optional_unmatched_omitted(self, fake_plugins, tmp_path):
         """可选边零命中 → 省略注入，签名默认值原生生效（运行期验证）。"""
@@ -331,7 +331,7 @@ class TestPruneAtCompile:
         names = {c.conf.name for c in dag.nodes}
         assert names == {"a", "d"}  # d 不随可选上游出局
         ctxs = {c.conf.name: c for c in dag.nodes}
-        assert ctxs["d"]._prevs == [ctxs["a"]]  # b 从血缘接线剥除
+        assert ctxs["d"].prevs == (ctxs["a"],)  # b 从血缘接线剥除
         flow = dag.run()
         assert flow.status == "finished"
         assert flow.runs[-1].value == 5  # MISSING 省略注入 → 签名默认值

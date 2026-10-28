@@ -204,7 +204,7 @@ class TestEdgesNamespace:
 
 class TestHandlerNamespaceDecl:
     def test_decorator_namespace_kwarg_stored_on_fn(self):
-        """@handler(namespace='load') 声明归组：挂函数属性供 hatch 构建期 AST 消费。"""
+        """@handler(namespace='load') 声明归组：挂函数属性供 `_load_ep` 加载期属性校验消费。"""
         import mflowy.driver.handler as h_mod
 
         @h_mod.handler(namespace="load")

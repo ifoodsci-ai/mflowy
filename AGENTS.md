@@ -13,7 +13,7 @@ MFlowy：YAML 配置驱动的模块化 ML 工作流引擎，全部能力以 **MC
 ## 开发命令
 
 ```bash
-uv sync --all-packages --all-extras --all-groups   # 首次/依赖变更后；新增插件模块后必跑（entry points 安装期生成）
+uv sync --all-packages --all-extras --all-groups   # 首次/依赖变更后；新增插件模块/注册条目后必跑（entry points 随安装元数据生效）
 make test                           # 全量测试
 make lint && make fmt               # ruff
 uv run mflowy list-nodes            # 能力词表
@@ -44,7 +44,7 @@ uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 
 工具六组共 33 个（真源 = `tools/list`）：平台 9（info 3 + mlflow 观测 4 + 会话回收 1 + 登录 1，本地）；本地分析 5（`data_profile`/`eda`/`propose_questions`/`draw_taylor_diagram`/`modeling_report_skeleton`）；YAML 预检 1（`validate_modeling_steps`）；compute 5（`hyperparameters_search`/`modeling`/`explanation`/`predict`/`inverse_optimization`，经 JobProvider 委派，协议在 model 包）；MDP 会话 13（`clean_*`×6 + `modeling_*`×7——含 `modeling_report_findings`，引擎在两域 session 模块，动作面 = modeling 八动作面）。
 
-插件身份零手工注册：`@handler(namespace=...)` 标记（裸命名参数=参数边，Annotated=用户可配），构建期 `hatch_metadata.py` AST 扫描生成 entry point，运行期 `driver/discover.py` 按元数据解析（`_` 前缀与 `_EXCLUDED` 词干除外）。
+插件身份静态声明：`@handler(namespace=...)` 标记（裸命名参数=参数边，Annotated=用户可配）+ 域包 pyproject `[project.entry-points."mflowy.builtin_plugins"]` 手写条目（0.2.0 起构建期 AST 扫描钩子退役，与第三方包声明方式同构），运行期 `driver/discover.py` 按元数据解析——声明与装饰器的一致性由 CR 交叉检查兜底（见「添加能力」）。
 
 ## 质量红线（每个变更遵守）
 
@@ -73,11 +73,13 @@ uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 | M11 | 剧本层完整入库：skills 全 git 追踪、引用文档入仓、工具名 ⊆ `tools/list` 有测试锁定 | research-review 未追踪；引用被 ignore 的文档断链  | `test_workspace.py` 增 SKILL 工具名断言               |
 | M12 | breaking 小步走 0.x minor，0.2.0 尽快切 released                       | unreleased 堆 81 commit 三批 BREAKING             | CHANGELOG 0.2.0 带 release 日期                        |
 
-小项随触碰收敛（不单列）：finish 与过程奖励同尺（卡权重）、propose 只出签名可受理的候选、`utils` mlflow 转 extra、域专用查询迁出 utils、runner 分发表与 server 注册清单同源。
+小项随触碰收敛（不单列）：finish 与过程奖励同尺（卡权重）、propose 只出签名可受理的候选、`utils` mlflow 转 extra、域专用查询迁出 utils。
 
 ## 添加能力
 
-**新插件节点**：按域建模块（`packages/<data|model>/mflowy/<pkg>/<能力族>/`），入口加 `@handler(namespace=...)`（归组）或 `@handler()`（非归组）；纯变换边加 `@edge`（edges ns）。判据：镜像路径有测试 + `uv sync` 后 `list-nodes` 可见。
+**新插件节点**（三站，缺一即断）：① 按域建模块（`packages/<data|model>/mflowy/<pkg>/<能力族>/`），入口加 `@handler(namespace=...)`（归组）或 `@handler()`（非归组）、纯变换边加 `@edge`（edges ns）；② 同 PR 在域包 pyproject `[project.entry-points."mflowy.builtin_plugins"]` 手写声明——节点 `namespace.node_name`（非归组裸名）、边 `edges.node_name`，值 `模块路径:函数名`；③ `uv sync` 后 `list-nodes` 可见。判据：镜像路径有测试 + `list-nodes` 可见。
+
+注册漂移不设镜像测试（2026-10 决策，限 `mflowy.builtin_plugins` 节点/边声明面——`mflowy.tools` 工具面两侧均沿用镜像测试）——CR 必查三项：**新 `@handler`/`@edge` 必有声明、声明必有函数、entry point 名 namespace 段与装饰器 `namespace=` 逐字一致**；机器兜底仅加载期单向（声明指向未装饰函数即 fail-loud），忘声明与错 namespace 是静默面，靠 CR + `list-nodes` 交叉检查。
 
 **新 compute 工具**（JobProvider 委派，7 站点缺一即断）：
 
@@ -85,11 +87,13 @@ uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 2. `packages/builtin_plugins/model/mflowy/model/job_provider/local.py` — 本地编排实现
 3. 远程 provider 实现（module:Class 自定义包）— build command + `_dispatch`
 4. `packages/builtin_plugins/model/mflowy/model/tools.py` — 工具包装 + docstring（schema 由此编译）
-5. `packages/builtin_plugins/model/pyproject.toml` `[tool.mflowy.tools]` — 注册条目
+5. `packages/builtin_plugins/model/pyproject.toml` `[project.entry-points."mflowy.tools"]` — 静态注册条目
 6. `packages/builtin_plugins/model/mflowy/model/templates.py` + `templates/*.yaml.j2` — 模板
 7. `packages/builtin_plugins/model/tests/` — headers 契约 + provider 用例；工具清单从 `JobProvider` 协议自省生成（单源）
 
 判据：`tools/list` 出现新工具且镜像/契约测试通过。本地分析类工具走 4/5 两站（server 经 entry points 自动注册）。
+
+**新平台工具**（两站，缺一即断）：① `packages/mcp/mflowy/mcp/tools.py` 公有函数（Annotated 签名 + docstring 即 schema；非工具 helper 必须 `_` 前缀——模块公有面即函数面）；② 同 PR 在 `packages/mcp/pyproject.toml [project.entry-points."mflowy.tools"]` 静态声明 + `uv sync`。判据：镜像契约 `packages/mcp/tests/mcp/test_platform_tools_registry.py` 绿（声明面 ↔ 函数面双向差集）。
 
 **第三方插件包**（活参考 = `packages/builtin_plugins/data/` + `packages/builtin_plugins/model/`）：以 mflowy 为 base 依赖，声明 `[project.entry-points."mflowy.plugins"]`（`namespace.node` / 裸 `node`），随 `uv --with` / 镜像 `MFLOWY_EXTRA_MODULES` 安装即生效。
 

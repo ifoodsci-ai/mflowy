@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from mflowy.driver.binding import _NOT_RUN
 from mflowy.driver.builder import Builder
-from mflowy.driver.context import _NOT_RUN
 from mflowy.driver.handler import handler
 
 

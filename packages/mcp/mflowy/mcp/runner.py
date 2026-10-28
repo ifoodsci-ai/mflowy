@@ -39,13 +39,15 @@ def main() -> None:
         print(f"Invalid arguments for {tool_name}: 非 JSON 对象（{type(kwargs).__name__}）\n  {hint}", file=sys.stderr)
         sys.exit(2)
 
-    from importlib.metadata import entry_points
+    # 分发表 = mflowy.tools 组（平台 + 域包静态声明，与 server.register 同一真源）
+    from .tools import _tool_entry_points
 
-    from . import tools as platform
-
-    # 分发表 = 平台模块公有函数 + mflowy.tools 域注册表（与 server 同源）
-    table = {name: fn for name, fn in vars(platform).items() if not name.startswith("_") and callable(fn)}
-    table.update({ep.name: ep.load() for ep in entry_points(group="mflowy.tools")})
+    try:
+        eps = _tool_entry_points()
+    except RuntimeError as e:  # 撞名 fail-loud（守卫单源住 tools.py）
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    table = {ep.name: ep.load() for ep in eps}
     func = table.get(tool_name)
     if func is None:
         print(f"Unknown tool: {tool_name}", file=sys.stderr)

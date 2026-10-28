@@ -4,21 +4,9 @@ import asyncio
 from importlib.metadata import entry_points
 
 from mcp.server.mcpserver import MCPServer
-from mflowy.mcp import tools
 
-# 平台工具 + mflowy.tools 域注册表（与 server.register 同源）
-_TOOL_FNS = [
-    tools.file_hash,
-    tools.list_nodes,
-    tools.get_node_info,
-    tools.list_runs,
-    tools.get_run,
-    tools.list_run_artifacts,
-    tools.read_artifact,
-    tools.sessions_gc,
-    tools.login,
-    *[ep.load() for ep in entry_points(group="mflowy.tools")],
-]
+# 全部注册工具（mflowy.tools 组：平台 + 域静态声明；与 server.register 同一真源）
+_TOOL_FNS = [ep.load() for ep in entry_points(group="mflowy.tools")]
 
 
 def test_every_tool_param_has_schema_description():

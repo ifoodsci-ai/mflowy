@@ -5,8 +5,6 @@ description = "MFlowy data domain — load / statistic / detect / clean + plot�
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
-# entry-points 由 hatch_metadata.py 构建期生成
-dynamic = ["entry-points"]
 # 2.0.0 起数据栈为硬依赖：装包即得完整数据域（词表=已安装能力）
 dependencies = [
     "mflowy-driver",
@@ -28,6 +26,65 @@ dependencies = [
     "statsmodels>=0.14.0",
 ]
 
+# 内置插件注册（静态声明；0.2.0 起原构建期 hatch_metadata.py AST 扫描退役）。
+# 声明即词表——CR 必查：新 @handler/@edge 必有声明、声明必有函数、
+# namespace 段与装饰器 namespace= 逐字一致（见 AGENTS.md「添加能力」）。
+[project.entry-points."mflowy.builtin_plugins"]
+"clean.add_missing_flag" = "mflowy.data.clean.signal:add_missing_flag"
+"clean.cap_iqr" = "mflowy.data.clean.cap:cap_iqr"
+"clean.cap_z" = "mflowy.data.clean.cap:cap_z"
+"clean.drop_cols" = "mflowy.data.clean.drop:drop_cols"
+"clean.drop_duplicate" = "mflowy.data.clean.drop:drop_duplicate"
+"clean.drop_missing_rows" = "mflowy.data.clean.drop:drop_missing_rows"
+"clean.drop_outlier_iqr" = "mflowy.data.clean.drop:drop_outlier_iqr"
+"clean.drop_outlier_z" = "mflowy.data.clean.drop:drop_outlier_z"
+"clean.drop_outside" = "mflowy.data.clean.drop:drop_outside"
+"clean.fill_bfill" = "mflowy.data.clean.fill:fill_bfill"
+"clean.fill_const" = "mflowy.data.clean.fill:fill_const"
+"clean.fill_ffill" = "mflowy.data.clean.fill:fill_ffill"
+"clean.fill_interpolate" = "mflowy.data.clean.fill:fill_interpolate"
+"clean.fill_mean" = "mflowy.data.clean.fill:fill_mean"
+"clean.fill_median" = "mflowy.data.clean.fill:fill_median"
+"clean.fill_mode" = "mflowy.data.clean.fill:fill_mode"
+"clean.python" = "mflowy.data.clean.python_cleaner:python"
+"clean.range_clip" = "mflowy.data.clean.cap:range_clip"
+"clean.strip_units" = "mflowy.data.clean.strip_units:strip_units"
+"detect.collinear" = "mflowy.data.detect.collinear:collinear"
+"detect.constant" = "mflowy.data.detect.constant:constant"
+"detect.duplicates" = "mflowy.data.detect.duplicates:duplicates"
+"detect.id_like" = "mflowy.data.detect.id_like:id_like"
+"detect.missing" = "mflowy.data.detect.missing:missing"
+"detect.outliers" = "mflowy.data.detect.outliers:outliers"
+"detect.stringly" = "mflowy.data.detect.stringly:stringly"
+"load.csv" = "mflowy.data.load.csv_loader:csv"
+"load.excel" = "mflowy.data.load.excel_loader:excel"
+"load.file" = "mflowy.data.load.file_loader:file"
+"load.http" = "mflowy.data.load.http_loader:http"
+"load.parquet" = "mflowy.data.load.parquet_loader:parquet"
+"load.python" = "mflowy.data.load.python_loader:python"
+"plot.correlation_heatmap" = "mflowy.data.plot.correlation_heatmap:correlation_heatmap"
+"plot.histogram" = "mflowy.data.plot.histogram:histogram"
+"plot.target_association_by_category" = "mflowy.data.plot.target_association_by_category:target_association_by_category"
+"plot.target_effect_by_category" = "mflowy.data.plot.target_effect_by_category:target_effect_by_category"
+"plot.target_separation_by_numeric" = "mflowy.data.plot.target_separation_by_numeric:target_separation_by_numeric"
+"plot.target_trend_by_numeric" = "mflowy.data.plot.target_trend_by_numeric:target_trend_by_numeric"
+"plot.violin" = "mflowy.data.plot.violin:violin"
+"statistic.bivariate" = "mflowy.data.statistic.bivariate:bivariate"
+"statistic.profile" = "mflowy.data.statistic.profile:profile"
+"statistic.univariate" = "mflowy.data.statistic.univariate:univariate"
+
+# 域工具注册（静态声明）；镜像测试断言本组 ≡ mflowy/data/tools.py 公有函数
+[project.entry-points."mflowy.tools"]
+data_profile = "mflowy.data.tools:data_profile"
+eda = "mflowy.data.tools:eda"
+propose_questions = "mflowy.data.tools:propose_questions"
+clean_session_start = "mflowy.data.tools:clean_session_start"
+clean_propose = "mflowy.data.tools:clean_propose"
+clean_apply = "mflowy.data.tools:clean_apply"
+clean_rollback = "mflowy.data.tools:clean_rollback"
+clean_finish = "mflowy.data.tools:clean_finish"
+clean_abandon = "mflowy.data.tools:clean_abandon"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -39,25 +96,8 @@ packages = ["mflowy"]
 dev-mode-dirs = ["."]
 
 [tool.hatch.build.targets.sdist]
-include = ["mflowy", "pyproject.toml", "hatch_metadata.py"]
-
-[tool.hatch.metadata.hooks.custom]
-# 构建期扫描 mflowy/data/** 的 @handler 生成内置插件 entry points（组：mflowy.builtin_plugins）
-path = "hatch_metadata.py"
+include = ["mflowy", "pyproject.toml"]
 
 [tool.uv.sources]
 mflowy-driver = { workspace = true }
 mflowy-utils = { workspace = true }
-
-[tool.mflowy.tools]
-# 域工具注册表（手工声明，无装饰器）；hatch 钩子并入 entry points 组 mflowy.tools，
-# 镜像测试断言本表 ≡ mflowy/data/tools.py 公有函数
-data_profile = "mflowy.data.tools:data_profile"
-eda = "mflowy.data.tools:eda"
-propose_questions = "mflowy.data.tools:propose_questions"
-clean_session_start = "mflowy.data.tools:clean_session_start"
-clean_propose = "mflowy.data.tools:clean_propose"
-clean_apply = "mflowy.data.tools:clean_apply"
-clean_rollback = "mflowy.data.tools:clean_rollback"
-clean_finish = "mflowy.data.tools:clean_finish"
-clean_abandon = "mflowy.data.tools:clean_abandon"
