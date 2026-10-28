@@ -64,7 +64,6 @@ uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 | #   | 目标态                                                                 | 存量违规点                                        | 验收                                                   |
 | --- | ---------------------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------ |
 | M6  | `registry.families()` 对缺 extra 条目降级跳过                          | 已收敛（#49：ImportError 跳过+warning+钉测）——CI no-torch job 见 #43 | 无 torch 环境 CI job 跑通 RF 会话                     |
-| M7  | 会话引擎路径全捕获（`_detect_all` 包 capture）                         | detect 算子裸 print 污染 stdio                    | MCP stdio e2e 断言纯 JSON-RPC 输出                    |
 | M9  | 遥测端点 env 可覆盖 + agentcat monkeypatch 带 feature-detect           | 端点硬编码；私有内部 monkeypatch 静默失效          | `MFLOWY_TELEMETRY_ENDPOINT` 指向 `docker/telemetry` 可用 |
 | M10 | 重栈产物锚定 task_dir/`~/.mflowy`；仓库根与包根零运行产物              | lightning_logs/mlruns/catboost_info 落包根        | `make test` 后 `git status` 干净                       |
 | M11 | 剧本层完整入库：skills 全 git 追踪、引用文档入仓、工具名 ⊆ `tools/list` 有测试锁定 | research-review 未追踪；引用被 ignore 的文档断链  | `test_workspace.py` 增 SKILL 工具名断言               |
