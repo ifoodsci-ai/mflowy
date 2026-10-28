@@ -642,10 +642,12 @@ def holdout_findings(split: TrainSplit, y_pred: pd.DataFrame, u_inner: float | N
         if gap > _OVERFIT_GAP:
             findings.append(
                 {
-                    "kind": "overfit_gap",
+                    # drift（设计稿 §3.2，改名自 overfit_gap——语义收窄：inner CV 乐观
+                    # 偏差/分布漂移；train/val 直接过拟合证据由 overfit_train_val_gap 承担）
+                    "kind": "drift",
                     "severity": round(min(1.0, gap), 4),
                     "evidence": {"u_inner": u_inner, "u": u, "gap_ratio": round(gap, 4)},
-                    "message": f"inner−holdout 差距 {gap:.0%}（>{_OVERFIT_GAP:.0%}）——结构对 train 过拟合或分布漂移",
+                    "message": f"inner−holdout 差距 {gap:.0%}（>{_OVERFIT_GAP:.0%}）——CV 乐观偏差或分布漂移",
                 }
             )
     if split.task == TASKTYPE.CLASSIFICATION:

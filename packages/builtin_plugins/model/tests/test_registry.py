@@ -22,7 +22,7 @@ def test_valid_structure_matrix():
 
 
 def test_family_mdp_family_declarations_complete():
-    """builtin 五族 .mdp_family 声明齐备（#33 后瘦身：目录标记 + structure 三字段）。
+    """builtin 五族 .mdp_family 声明齐备（尾巴三并一：structure 直书 + regularizers 并入）。
 
     M6（#49）：缺 [deep] extra 时 MLP 优雅跳过——期望集随 torch 可用性二分。"""
     fams = registry.families()
@@ -36,8 +36,11 @@ def test_family_mdp_family_declarations_complete():
     assert set(fams) == expected
     for fam, entry in fams.items():
         meta = entry["mdp_family"]
-        # #62 后：structure（相容声明）+ machinery（会话直调的 estimator 机器）；LGBM 另有 fit_params
-        assert {"structure", "machinery"} <= set(meta) and set(meta) <= {"structure", "machinery", "fit_params"}, fam
+        # 尾巴三并一后：structure（相容声明）+ regularizers（正则面）+ machinery
+        # （会话直调的 estimator 机器）；LGBM 另有 fit_params
+        assert {"structure", "machinery", "regularizers"} <= set(meta), fam
+        assert set(meta) <= {"structure", "machinery", "fit_params", "regularizers"}, fam
+        assert isinstance(meta["regularizers"], tuple) and all(isinstance(r, str) for r in meta["regularizers"]), fam
         st = meta["structure"]
         assert st["cat_support"] in {"native", "encode"}, fam
         assert isinstance(st["scaling_need"], bool), fam
@@ -127,9 +130,20 @@ _GOOD_STRUCTURE = {"cat_support": "native", "scaling_need": False, "min_samples"
             {"structure": _GOOD_STRUCTURE, "machinery": lambda *a: None, "resource_axis": {}},
             "未知键",
         ),  # 退役键回潮
+        (
+            {"structure": _GOOD_STRUCTURE, "machinery": lambda *a: None, "regularizers": "my_l2"},
+            "正则面",
+        ),  # regularizers 异型（串非元组）
         ("not-a-mapping", "Mapping"),  # 异型声明
     ],
-    ids=["missing-machinery", "structure-missing-key", "bad-cat-support", "unknown-key", "not-mapping"],
+    ids=[
+        "missing-machinery",
+        "structure-missing-key",
+        "bad-cat-support",
+        "unknown-key",
+        "bad-regularizers",
+        "not-mapping",
+    ],
 )
 def test_families_admission_rejects_bad_declaration(monkeypatch, bad_declaration, expect_hint):
     """坏 .mdp_family 在 families() 聚合期 raise（带声明义务指引）——不留到会话中途裸 KeyError。"""
@@ -140,8 +154,9 @@ def test_families_admission_rejects_bad_declaration(monkeypatch, bad_declaration
 
 
 def test_families_admission_accepts_good_declaration(monkeypatch):
-    """合格声明照常入目录（structure/machinery/fit_params 全形态——fit_params 与 LGBM
-    同形：``(**overrides) -> dict`` 的 fit kwargs 工厂）。"""
+    """合格声明照常入目录（structure/regularizers/machinery/fit_params 全形态——
+    fit_params 与 LGBM 同形：``(**overrides) -> dict`` 的 fit kwargs 工厂；
+    regularizers 可缺省 = 无正则旋钮的族）。"""
     _fit_params = lambda **overrides: {"early_stopping_rounds": 50, **overrides}  # noqa: E731
     _patch_family(
         monkeypatch,

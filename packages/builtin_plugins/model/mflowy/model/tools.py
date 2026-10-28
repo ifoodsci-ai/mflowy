@@ -18,6 +18,7 @@ from mflowy.driver.dag import DAGResult
 from pydantic import Field
 
 from .job_provider import get_job_provider as _get_job_provider
+from .propose_rules import KNOWN_FINDING_KINDS
 from .templates import MODELING_TEMPLATE, count_model_steps, parse_steps_fragment
 
 try:  # SDK 仅 server 形态需要（[mcp] extra）——runner 路径零 SDK 可导入；
@@ -403,7 +404,7 @@ def modeling_report_findings(
         list[dict],
         Field(
             description="LLM findings 清单（ErrorReport schema）：{kind, severity ∈ [0,1], evidence?, message?}"
-            "——kind ⊆ 词表（error_concentrated/slice_collapse/fold_std/complexity_edge/overfit_gap）"
+            f"——kind ⊆ 词表（{'/'.join(sorted(KNOWN_FINDING_KINDS))}）"
         ),
     ],
 ) -> dict:

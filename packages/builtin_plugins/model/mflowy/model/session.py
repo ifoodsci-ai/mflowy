@@ -62,7 +62,6 @@ logger = logging.getLogger(__name__)
 ACTIONS = ("select_model", "set_hp", "set_hp_space", "set_seed", "select_FE", "run_hpo", "final_train_test")
 COMPUTE_ACTIONS = frozenset({"run_hpo", "final_train_test"})
 BOARD_FILE = "board.json"
-DEFAULT_N_TRIALS = 10
 
 
 def _root() -> Path:
@@ -170,18 +169,9 @@ def _key_file(key: str) -> str:
     return key.replace("|", "__")
 
 
-def _signature_of(family: str):
-    """族节点签名（约束单一真源——set_hp/set_hp_space 校验面）。"""
-    import inspect
-
-    return inspect.signature(registry.families()[family]["pyfunc"])
-
-
 def _family_params(family: str) -> dict:
-    """族签名用户超参面（plumbing 除外；random_state 走 set_seed 专用动作）。"""
-    from mflowy.model.model.utils import signature_params
-
-    return signature_params(registry.families()[family]["pyfunc"])
+    """族签名用户超参面——单源委托 registry.family_face（出题规则侧同源现查）。"""
+    return registry.family_face(family)
 
 
 # 空间声明/持久化的单源件住 model/utils：normalize_space / space_to_json /
@@ -677,6 +667,7 @@ def _run_hpo(ss, o, m, board, log, params: dict) -> None:
     """run_hpo：增量搜索（inner CV）→ θ* 上 OOF 观察面 → 账本更新（reward = Δu_inner）。"""
     import mlflow
     from mflowy.model.model._pipeline import hyperparameters_search, theta_probe
+    from mflowy.model.propose_rules import DEFAULT_N_TRIALS
 
     n_trials = params.get("n_trials", DEFAULT_N_TRIALS)
     unknown = set(params) - {"n_trials"}
@@ -1206,7 +1197,7 @@ def report_skeleton(session_id: str) -> dict:
             {"slot": "为什么是这个模型", "hint": "对比 board 的 u_inner/u/rank 与泰勒图的误差结构，说明交付选择"},
             {
                 "slot": "局限与风险",
-                "hint": "消费 findings（overfit_gap/slice_collapse/error_concentrated）与 rank_consistency",
+                "hint": "消费 findings（drift/slice_collapse/error_concentrated）与 rank_consistency",
             },
             {"slot": "下一步建议", "hint": "回流清洗域候选 / 换 FE 组合 / 加深搜索的证据化建议"},
         ],
@@ -1298,63 +1289,53 @@ def _plan_yaml(m: dict, key: str, final_params: dict | None = None) -> str:
 
 
 def propose_actions(session_id: str) -> list[Activation]:
-    """菜单（pull-only，规则引擎实例统一入口）：findings 驱动层（salience 记分牌序
-    浮于顶部）+ 基座谓词机层（类型可用(s) ∧ 参数合法(s,a)——策展序）。
+    """菜单（pull-only，规则引擎实例统一入口）：状态投影 + fire + poll + 合并。
 
-    - findings 驱动：modelRuleEngine 默认实例注册族级/FE 规则（propose_rules）；
-      会话实例经壳 propose_ctx（rules.pkl 持载自定义规则）；fold_std → 加深
-      （n_trials 门控回归防线）；complexity_edge / overfit_gap → 正则收窄/pin；
-      slice_collapse → 类别权重提示；error_concentrated → FE 换档；无 leader
-      （S 无模型信息）时 FE 候选零出现（规则资格内联，非权重压序）
-    - 基座层：select_model 候选（baseline 第一、未跑在前、已训未全冻结降级末位）、
-      run_hpo 首搜、final_train_test 交付、配置编辑动作面
+    - 状态投影（观测函数本分——设计稿 §2）：findings（本 combo 键）、光标
+      （m/F/seed/H）、combo_key、models 账本摘要（family/frozen/u_inner/
+      best_params/n_trials）、has_cat——词表零预消化（menu_ctx 退役，规则在
+      propose 内以 registry 为环境常量现查）
+    - findings 驱动层（问题规则处方菜单：物理体征/代理切片/停止建议）浮于
+      基座状态谓词题（候选/首搜/终训/配置编辑/FE 换档，salience=-1）之上
+      ——poll 单源记分牌排序
     - LLM findings（#36）与规则 findings 均匀聚合（同一 fire 入口，无来源区分）
-    - 终态（收局/弃局）返回 []
-    - 菜单合并（同 (action, params) 多命中浮出一项）留域——引擎不去重
+    - 终态（收局/弃局）返回 []；菜单合并（同 (action, params) 多命中浮出一项）
+      留域——引擎不去重
     """
     ss = _open(session_id)
     if ss.is_terminal:
         return []
     with ss.propose_ctx() as (o, engine):
-        board = _board_load(ss)
-        m = _mview(o, board)
-
-        fams = registry.families()
+        m = _mview(o, _board_load(ss))
         cursor = m["cursor"]
         key = _structure_key(cursor["m"], cursor["F"]) if cursor["m"] else None
-        entry = m["models"].get(key) if key else None
 
-        # ── findings 驱动层 ──
         # #66 作用域 = 本 combo 键：findings（规则与 LLM 同粒度）只对本键出题——菜单
         # rationale 引用的证据不来自另一个 FE 组合（findings 随 combo 居住）
         findings = [{"key": k, **f} for k, e in m["models"].items() if k == key for f in (e.get("findings") or [])]
-        fe_slots_ok = {"cat": False, "num": False}
-        if cursor["m"]:
-            st = fams[cursor["m"]]["mdp_family"]["structure"]
-            fe_slots_ok = {"cat": st["cat_support"] != "native" and _has_cat(m), "num": bool(st["scaling_need"])}
-        import inspect as _inspect
-
-        ctx = {
-            "family": cursor["m"],
-            "has_model": bool(cursor["m"]),
-            "entry": entry,
-            "combo_key": key,
+        o.state_digest = {
+            **o.state_digest,
+            "findings": findings,
             "cursor": {k: (dict(v) if isinstance(v, dict) else v) for k, v in cursor.items()},
-            "budget_left": m["max_steps"] - m["steps"],
-            "signatures": {fam: _family_params(fam) for fam in fams},
-            # 加深题回归防线的探测源：完整签名（plumbing skip 的 _family_params 不含 n_trials）
-            "has_n_trials": {fam: "n_trials" in _inspect.signature(fams[fam]["pyfunc"]).parameters for fam in fams},
-            "regularizers_of": {fam: tuple(getattr(fams[fam]["pyfunc"], "regularizers", ()) or ()) for fam in fams},
-            "fe_slots_ok": fe_slots_ok,
+            "combo_key": key,
+            "models": {
+                k: {
+                    "family": e["family"],
+                    "frozen": e["frozen"],
+                    "u_inner": e.get("u_inner"),
+                    "best_params": e.get("best_params") or {},
+                    "n_trials_at_last_eval": e.get("n_trials_at_last_eval"),
+                }
+                for k, e in m["models"].items()
+            },
+            "has_cat": _has_cat(m),
         }
-        # 触发证据写进观测（#89 ③片：规则纯消费 o——findings/菜单上下文 = 检测富化面）
-        o.state_digest = {**o.state_digest, "findings": findings, "menu_ctx": ctx}
         engine.fire(o=o)
         activations = engine.poll_proposals()
         subscribed = {getattr(r, "kind", None) for r in engine.rules.values()}
         if unconsumed := sorted({f["kind"] for f in findings} - subscribed):
             logger.warning("findings 无规则订阅（无静默丢弃——补订阅或修 kind）：%s", unconsumed)
-        driven = [
+        items = [
             {
                 "rule_key": a.rule_key,
                 "salience": a.salience,
@@ -1368,129 +1349,15 @@ def propose_actions(session_id: str) -> list[Activation]:
             }
             for a in activations
         ]
-
-        # ── 基座谓词机层（策展序） ──
-        proposals: list[dict] = []
-
-        # select_model：未跑候选族在前（baseline 第一——research-review 锚点）
-        by_baseline = {c["family"]: c for c in m.get("candidates") or []}
-        ordered = sorted(_candidates(m), key=lambda f: (not by_baseline.get(f, {}).get("baseline", False), f))
-        for fam in ordered:
-            entries = [v for v in m["models"].values() if v["family"] == fam]
-            if not entries:
-                cand = by_baseline.get(fam, {})
-                proposals.append(
-                    {
-                        "rule_key": "base.select_model",
-                        "salience": -1,  # 基座层垫底（记分牌约定：规则驱动在前）
-                        "action": "select_model",
-                        "params": {"family": fam},
-                        "rationale": (
-                            "baseline 锚点候选——先跑它定参照系"
-                            if cand.get("baseline")
-                            else "未跑候选——先 select_model 定光标，再 run_hpo 出首条账本"
-                        ),
-                        "evidence": {
-                            "space": _space_summary(fams[fam]["pyfunc"]),
-                            "tried": False,
-                            "baseline": bool(cand.get("baseline", False)),
-                            "space_hints": cand.get("space_hints") or {},
-                        },
-                    }
-                )
-        # 已训未全冻结：降级末位（θ*/u_inner/u 并排）
-        for fam in ordered:
-            entries = [v for v in m["models"].values() if v["family"] == fam]
-            if entries and not all(v["frozen"] for v in entries):
-                best = max(entries, key=lambda v: v["u_inner"] if v["u_inner"] is not None else float("-inf"))
-                proposals.append(
-                    {
-                        "rule_key": "base.select_model",
-                        "salience": -1,
-                        "action": "select_model",
-                        "params": {"family": fam},
-                        "rationale": f"已训族（u_inner={best['u_inner']}）——重选可加深搜索/换 FE 组合",
-                        "evidence": {
-                            "tried": True,
-                            "u_inner": best["u_inner"],
-                            "best_params": best["best_params"],
-                            "u": best["u"],
-                            "frozen_combos": sum(1 for v in entries if v["frozen"]),
-                        },
-                    }
-                )
-
-        if cursor["m"]:
-            # run_hpo 首搜（已搜键的加深题走 findings 驱动层——fold_std 门控）
-            if entry is None:
-                proposals.append(
-                    {
-                        "rule_key": "base.run_hpo",
-                        "salience": -1,
-                        "action": "run_hpo",
-                        "params": {"n_trials": DEFAULT_N_TRIALS},
-                        "rationale": "首搜（trial 落盘 sqlite study 增量续跑）",
-                        "evidence": {"key": key, "space": _effective_space_summary(m), "n_trials": DEFAULT_N_TRIALS},
-                    }
-                )
-            elif entry.get("u_inner") is not None and not entry["frozen"]:
-                proposals.append(
-                    {
-                        "rule_key": "base.final_train_test",
-                        "salience": -1,
-                        "action": "final_train_test",
-                        "params": {},
-                        "rationale": f"终训交付（θ* 已在账本：{entry['best_params']}）——holdout 终评恰一次后 combo 冻结",
-                        "evidence": {
-                            "key": key,
-                            "u_inner": entry["u_inner"],
-                            "n_trials": entry["n_trials_at_last_eval"],
-                        },
-                    }
-                )
-            proposals.append(
-                {
-                    "rule_key": "base.set_hp",
-                    "salience": -1,
-                    "action": "set_hp",
-                    "params": {},
-                    "rationale": "pin 常量（生效于下一次 run_hpo；静态常量可 pin、动态维可收窄）",
-                    "evidence": {"face": _pin_face(m)},
-                }
-            )
-            proposals.append(
-                {
-                    "rule_key": "base.set_hp_space",
-                    "salience": -1,
-                    "action": "set_hp_space",
-                    "params": {},
-                    "rationale": "收窄动态维（空间变增量继续；seed/scoring 变 study 重开）",
-                    "evidence": {"face": _space_face(m)},
-                }
-            )
-            proposals.append(
-                {
-                    "rule_key": "base.set_seed",
-                    "salience": -1,
-                    "action": "set_seed",
-                    "params": {},
-                    "rationale": "设随机种子（搜索的环境参数——换 seed = 换目标 = study 重开）",
-                    "evidence": {"current": cursor["seed"]},
-                }
-            )
-            # select_FE 基座档：有模型账本信息（leader）才出现——S 无模型信息时 FE
-            # 候选零出现（规则资格内联早退，非记分压序；动作边界只看 cursor.m——菜单是建议不是边界）
-            if m["models"]:
-                _fe_base_entries(m, cursor, fams, proposals)
-        merged = [to_activation(c) for c in _merge_menu(driven + proposals)]
-        stop = [a for a in merged if a.action == "finish"]
-        return [a for a in merged if a.action != "finish"] + stop  # 停止建议恒居末
+    merged = [to_activation(c) for c in _merge_menu(items)]
+    stop = [a for a in merged if a.action == "finish"]
+    return [a for a in merged if a.action != "finish"] + stop  # 停止建议恒居末
 
 
 def to_activation(c: dict) -> Activation:
-    """菜单项 → Activation（Handle 契约面）：基座层 rule_key=base.*、salience=-1 垫底。"""
+    """菜单项 → Activation（Handle 契约面）：全引擎产出（rule_key 必在——base.* 伪键已清零）。"""
     return Activation(
-        rule_key=c.get("rule_key") or f"base.{c['action']}",
+        rule_key=c["rule_key"],
         action=c["action"],
         params=dict(c.get("params") or {}),
         salience=c.get("salience", -1),
@@ -1535,93 +1402,6 @@ def _merge_menu(items: list[dict]) -> list[dict]:
             entry.setdefault("evidence", {})["co_hits"] = entry["_hits"]
         del entry["_rats"], entry["_hits"]
     return out
-
-
-def _fe_base_entries(m: dict, cursor: dict, fams: dict, proposals: list) -> None:
-    st = fams[cursor["m"]]["mdp_family"]["structure"]
-    for slot, nodes_map in (("cat", registry.FE_CAT_NODES), ("num", registry.FE_NUM_NODES)):
-        if slot == "cat" and (st["cat_support"] == "native" or not _has_cat(m)):
-            continue
-        if slot == "num" and not st["scaling_need"]:
-            continue
-        for option, node in sorted(nodes_map.items()):
-            if option == cursor["F"][slot]:
-                continue
-            proposals.append(
-                {
-                    "rule_key": "base.select_FE",
-                    "salience": -1,
-                    "action": "select_FE",
-                    "params": {"node": node},
-                    "rationale": f"{cursor['m']} 的 {slot} 槽 {cursor['F'][slot]} → {option}（换 FE 后 run_hpo 出新账本条目）",
-                    "evidence": {"slot": slot, "current": cursor["F"][slot], "structure": st},
-                }
-            )
-
-
-def _pin_face(m: dict) -> dict:
-    """set_hp 参数面：签名超参（当前槽位状态 + 静态/动态分型——单表 H 直读）。"""
-    face = _family_params(m["cursor"]["m"])
-    return {
-        "params": {
-            k: {"current_pin": v if not isinstance(v, dict) else None, "default": _json_default(d)}
-            for k, d in sorted(face.items())
-            if not _is_space(d)
-            for v in [m["cursor"]["H"].get(k)]
-        }
-    }
-
-
-def _space_face(m: dict) -> dict:
-    face = _family_params(m["cursor"]["m"])
-    return {
-        "params": {
-            k: space_to_json(d) | {"current_narrow": v if isinstance(v, dict) else None}
-            for k, d in sorted(face.items())
-            if _is_space(d)
-            for v in [m["cursor"]["H"].get(k)]
-        }
-    }
-
-
-def _effective_space_summary(m: dict) -> dict:
-    """有效空间摘要：签名空间经光标收窄后的实况。"""
-    face = _family_params(m["cursor"]["m"])
-    out = {}
-    for k, v in face.items():
-        if _is_space(v):
-            cur = m["cursor"]["H"].get(k)
-            out[k] = cur if isinstance(cur, dict) else space_to_json(v)
-    return out
-
-
-def _is_space(v) -> bool:
-    from mflowy.model.model.study import ContinuousSpace, DiscreteSpace
-
-    return isinstance(v, (ContinuousSpace, DiscreteSpace))
-
-
-def _json_default(v):
-    if _is_space(v):
-        return space_to_json(v)
-    return v
-
-
-def _space_summary(fn) -> dict:
-    """签名空间摘要：动态维（Space 声明，含边界）vs 静态常量——超参面对 agent
-    浮出（黑盒开箱）；plumbing 参数不入摘要。"""
-    from mflowy.model.model.utils import signature_params
-
-    dynamic, static = {}, {}
-    for name, default in signature_params(fn).items():
-        if _is_space(default):
-            dynamic[name] = space_to_json(default)
-        else:
-            static[name] = default
-    return {"dynamic": dynamic, "static": static}
-
-
-# ── 观测投影（域逻辑的 m 视图 → state_digest 形状） ─────────────────────────
 
 
 def _board(m: dict) -> dict:
