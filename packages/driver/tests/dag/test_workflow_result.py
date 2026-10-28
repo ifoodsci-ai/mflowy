@@ -50,8 +50,11 @@ class TestDAGResult:
         assert isinstance(flow, DAGResult)
         assert flow.status == "finished"
         assert flow.error == ""
-        assert flow.experiment_name == "wr_test"
-        assert flow.description == "契约测试"
+        # 字段面契约：目录只留检索主键——name/description 属入参回显（熵≈0），
+        # 实验本体（含描述 tag）经 get_experiment(experiment_id) 查询
+        from dataclasses import fields
+
+        assert {f.name for f in fields(DAGResult)} == {"experiment_id", "status", "error", "runs", "graph"}
         assert flow.experiment_id == fake_tracking.experiments["wr_test"]
         assert flow.graph.startswith("```mermaid")  # 展示形态（机器投影=to_graph()，最新结构=mflowy.graph 实验 tag）
         assert executed == ["A", "B"]

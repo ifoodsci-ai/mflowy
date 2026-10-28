@@ -91,7 +91,7 @@ def test_workflow_result_not_echoed(monkeypatch, capsys):
     from mflowy.driver.dag import DAGResult
 
     monkeypatch.setattr("sys.argv", ["cmd", "modeling_tool"])
-    _patch_eps(monkeypatch, modeling_tool=lambda: DAGResult("e", "1", "d", "finished", "", [], "graph"))
+    _patch_eps(monkeypatch, modeling_tool=lambda: DAGResult("1", "finished", "", [], "graph"))
     runner.main()
     assert capsys.readouterr().out == ""
 
@@ -145,7 +145,7 @@ def test_failed_dag_result_exits_nonzero(monkeypatch, capsys):
     monkeypatch.setattr(
         model_tools,
         "modeling",
-        lambda **kw: DAGResult("e", "1", "d", "failed", "DAG aborted: [plot.x]failed: boom", [], "g"),
+        lambda **kw: DAGResult("1", "failed", "DAG aborted: [plot.x]failed: boom", [], "graph"),
     )
     with pytest.raises(SystemExit) as ei:
         runner.main()
