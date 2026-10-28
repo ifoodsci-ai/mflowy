@@ -258,6 +258,19 @@ def test_run_hpo_returns_delta_reward_and_writes_study(sessions_root, reg_csv):
     assert "holdout_y_pred" not in json.dumps(entry)
 
 
+def test_run_hpo_trials_stay_pure_search_evidence(sessions_root, reg_csv):
+    """objective 纯度（θ* 探针裁定的对偶面）：trial user_attrs 只携带搜索证据
+    （scores）——诊断类读写（train 折分等）不进搜索热路径，体征证据住 θ* 探针。"""
+    s, _ = _hpo(sessions_root, reg_csv, n_trials=2)
+    m = _state(sessions_root, s.session_id)
+    import optuna
+
+    study_file = m["models"][_K_RF]["study"]
+    study = optuna.load_study(study_name=_K_RF, storage=f"sqlite:///{sessions_root / s.session_id / study_file}")
+    best = study.best_trial
+    assert set(best.user_attrs) == {"scores"}  # 纯搜索证据——诊断零残留
+
+
 def test_final_train_test_freezes_and_reads_holdout_once(sessions_root, reg_csv, monkeypatch):
     """final_train_test：先搜后店 + holdout 恰一次 + combo 冻结（同键不可再搜索）。
 

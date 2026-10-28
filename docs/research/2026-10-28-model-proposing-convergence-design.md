@@ -62,14 +62,14 @@ cleaning_session.py:543-560）；model 域是两层拼接——findings 驱动�
 
 | # | 体征 | 证据现状 | 缺口与成本 |
 | --- | --- | --- | --- |
-| ① | 欠拟合·训练/验证误差双高且接近 | 只有 u_inner 与 holdout u | **train-fold error**：CV 内对训练折 predict 即得，几乎免费 |
+| ① | 欠拟合·训练/验证误差双高且接近 | 只有 u_inner 与 holdout u | θ* 探针得分对（train-fit/val 同尺同拟合——objective 纯度裁定：诊断不进搜索热路径） |
 | ② | 欠拟合·损失曲线缓降/高位 | 曲线数据已在（`_build_loss_curve_df(train_metrics, …)`，_loss_curve.py:13）但只喂 plot | 投影进 findings + 形状判别（收敛值/斜率） |
 | ③ | 欠拟合·学习曲线右侧相近且高位 | 无 | **净新增**（train-size sweep 多次拟合），居住面单独裁定 |
-| ④ | 过拟合·验证误差显著高于训练 | 同① | 同一 train-fold error 缺口，补上即免费 |
+| ④ | 过拟合·验证误差显著高于训练 | 同① | 同一探针得分对（与①同一证据源） |
 | ⑤ | 过拟合·验证损失先降后升 | val 曲线数据在（同②） | 投影 + 形状判别（min 后上翘段） |
 | ⑥ | 过拟合·学习曲线训练/验证明显间隙 | 无 | 同③ |
 
-性价比断层：train-fold error + 曲线投影覆盖①②④⑤（改动小）；学习曲线（③⑥）
+性价比断层：θ* 探针得分对 + 曲线投影覆盖①②④⑤（一次代表拟合双产物，改动小）；学习曲线（③⑥）
 是真金白银新计算，居住面三选一裁定：run_hpo 附带一次性 / diagnose 工具面 /
 暂缓。**族异构降级是设计内属性**：RF 无 epoch 曲线 → ②⑤对它不产 findings
 （非缺陷，data 域 detect kind 按 dtype 族降级同款）；CAT/LGBM/XGB/MLP 可观测。
