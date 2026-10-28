@@ -4,7 +4,7 @@
 """
 
 from math import ceil
-from typing import Annotated
+from typing import Annotated, Any, cast
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -44,7 +44,8 @@ def pr_curve(
     curve_rows: list[dict] = []
     for i, (key, g) in enumerate(groups):
         ax = axes[i // n_cols][i % n_cols]
-        meta = dict(zip(group_cols, key, strict=True))
+        key_t = cast("tuple[Any, ...]", key)  # groupby 复合键：Hashable 静态面 → tuple 运行期形态
+        meta = dict(zip(group_cols, key_t, strict=True))
         classes = sorted(g["class"].unique(), key=str)
         plot_classes = classes[-1:] if len(classes) == 2 else classes
 
@@ -63,7 +64,7 @@ def pr_curve(
                 for r, p in zip(recall, precision, strict=True)
             )
 
-        label = " / ".join(str(k) for k in key)
+        label = " / ".join(str(k) for k in key_t)
         ax.set_title(label, fontsize=11, loc="left")
         ax.set_xlabel("Recall")
         ax.set_ylabel("Precision")

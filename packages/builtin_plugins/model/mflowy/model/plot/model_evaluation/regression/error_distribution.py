@@ -6,7 +6,7 @@
 """
 
 from collections.abc import Iterator
-from typing import Annotated
+from typing import Annotated, cast
 
 import matplotlib.lines as mlines
 import matplotlib.pyplot as plt
@@ -78,7 +78,9 @@ def error_distribution(
         # ---- Q-Q 图 ----
         ax_qq = fig.add_subplot(gs[0, 1])
         z = (err - mean_val) / std_val if std_val > 0 else err
-        osm, osr = sp_stats.probplot(z, dist="norm", fit=False)
+        osm, osr = cast(
+            "tuple[np.ndarray, np.ndarray]", sp_stats.probplot(z, dist="norm", fit=False)
+        )  # scipy stub：fit=False 返 (分位数, 有序值) 数组对
         x, y = osr.astype(float), osm.astype(float)
         ax_qq.scatter(x, y, alpha=0.6, s=30, edgecolors="none", c=OKABE_ITO_PALETTE[5], zorder=3)
         lim = max(abs(x).max(), abs(y).max()) * 1.1

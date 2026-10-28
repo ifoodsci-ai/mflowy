@@ -47,7 +47,7 @@ def _roundtrip(exp: shap.Explanation) -> None:
     from mflowy.utils.mlflow import download_run_artifact, run_artifacts
 
     with mlflow.start_run() as run:
-        out = log_shap_explanation(None, lambda _ctx: exp)
+        out = log_shap_explanation(None, lambda _ctx: exp)  # type: ignore[reportArgumentType]  # 直调中间件缝：ctx 不被消费（透传 next）
     assert out is exp  # 中间件透传产物
     assert "shap_values.parquet" in run_artifacts(run.info.run_id)
     df = pd.read_parquet(download_run_artifact(run.info.run_id, "shap_values.parquet"))

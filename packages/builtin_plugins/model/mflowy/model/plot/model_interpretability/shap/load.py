@@ -56,7 +56,9 @@ def load(
 
     blocks: list[tuple[str, np.ndarray, np.ndarray]] = []
     for label in pd.unique(vdf[LEDGER_CLASS]):
-        part = vdf[vdf[LEDGER_CLASS] == label].sort_values(LEDGER_SAMPLE_IDX)
+        masked = vdf[vdf[LEDGER_CLASS] == label]
+        assert isinstance(masked, pd.DataFrame)  # 布尔掩码索引恒返回 DataFrame（推断联合噪声）
+        part = masked.sort_values(LEDGER_SAMPLE_IDX)
         vals = part[[f"{SHAP_PREFIX}{f}" for f in feats]].to_numpy(dtype=float)
         data = part[[f"{VALUE_PREFIX}{f}" for f in feats]].to_numpy()
         if data_override is not None:

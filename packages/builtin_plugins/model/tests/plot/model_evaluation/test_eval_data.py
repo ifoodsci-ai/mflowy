@@ -4,9 +4,12 @@ model_test_predictions / model_test_probabilities 是 model 族输出的显式�
 绑定 model（collect 全部）+ cv namespace（SplitSpec/TrainSplit）/x_y，物化经 train_split 边函数直调。
 """
 
+from typing import cast
+
 import numpy as np
 import pandas as pd
 from mflowy.model.cv.types import SplitSpec
+from mflowy.model.model.types import TASKTYPE
 from mflowy.model.plot.model_evaluation.eval_data import (
     model_test_predictions,
     model_test_probabilities,
@@ -49,7 +52,7 @@ def _upstream(loaders, y, task="classification"):
     return {
         "model": iter(loaders),
         "cv": _spec(X, y, task),
-        "x_y": XySpec(X, y, task),
+        "x_y": XySpec(X, y, cast(TASKTYPE, task)),  # 双形式枚举收 str
     }
 
 

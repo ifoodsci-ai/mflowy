@@ -8,6 +8,7 @@ import shap
 from mflowy.driver.config import NodeConf
 from mflowy.driver.context import Context
 from mflowy.model.middlewares import log_shap_explanation
+from mflowy.model.plot.model_interpretability.shap.contract import attach_annotations
 
 
 def _explanation(values: np.ndarray) -> shap.Explanation:
@@ -16,10 +17,7 @@ def _explanation(values: np.ndarray) -> shap.Explanation:
         data=np.array([[1.0, "m"], [2.0, "f"]], dtype=object)[: len(values)],
         feature_names=["age", "sex"],
     )
-    exp.y_name = "target"
-    exp.categorical_features = ["sex"]
-    exp.classes = ["target"] if values.ndim == 2 else ["a", "b"]
-    return exp
+    return attach_annotations(exp, "target", ["sex"], ["target"] if values.ndim == 2 else ["a", "b"])
 
 
 def _ctx():

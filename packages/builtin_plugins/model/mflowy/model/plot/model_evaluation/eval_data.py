@@ -70,7 +70,7 @@ def model_test_probabilities(
                             "y_name": y_name,
                             "y_true": train.y_test[y_name].values,
                             "class": cls,
-                            "proba": probas[:, i],
+                            "proba": np.asarray(probas)[:, i],  # predict_proba 返回联合面——asarray 收敛
                         }
                     )
                 )

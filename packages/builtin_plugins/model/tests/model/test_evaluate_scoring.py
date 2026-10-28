@@ -54,7 +54,7 @@ class TestRegression:
     def test_unknown_metric_fail_loud(self, reg_y):
         y, y_pred = reg_y
         with pytest.raises(ValueError, match="未知指标"):
-            evaluate(TASKTYPE.REGRESSION, y, y_pred, scoring="no_such_metric")
+            evaluate(TASKTYPE.REGRESSION, y, y_pred, scoring="no_such_metric")  # type: ignore[reportArgumentType]  # 负例：断言未知指标报错
 
 
 class TestClassification:

@@ -27,7 +27,7 @@ def onehot_encoder(
     categorical_cols = resolve_cols(categorical_cols, X, "category")
     categories = [X[col].dropna().unique().tolist() for col in categorical_cols]
     encoder = OneHotEncoder(
-        categories=categories,
+        categories=categories,  # type: ignore[reportArgumentType]  # sklearn-stubs categories 形参误型（实受逐列清单）
         drop="first" if drop_first else None,
         sparse_output=False,
         handle_unknown=handle_unknown,

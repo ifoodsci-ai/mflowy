@@ -4,7 +4,7 @@
 """
 
 from math import ceil
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -91,8 +91,14 @@ def confusion_matrix(
 
         # pandas crosstab 的 normalize 词表是 index/columns/all（sklearn 词表的 true/pred 需映射）
         _CT_NORMALIZE = {"true": "index", "pred": "columns", "all": "all"}
-        crosstab_normalize = _CT_NORMALIZE.get(normalize, normalize) if isinstance(normalize, str) else normalize
-        cm = pd.crosstab(group["y"], group["y_pred"], normalize=crosstab_normalize)
+        # _CT_NORMALIZE 已收敛到字面量集合；静态面 cast 对齐 crosstab normalize 联合
+        crosstab_normalize = cast(
+            'Literal["all", "index", "columns"] | bool | None',
+            (_CT_NORMALIZE.get(normalize, normalize) if isinstance(normalize, str) else normalize),
+        )
+        cm = pd.crosstab(
+            group["y"], group["y_pred"], normalize=crosstab_normalize or False
+        )  # None≡False（falsy 同效，stub 面不收 None）
         labels = [str(lbl) for lbl in cm.columns]
         fmt = ".2f" if normalize else "d"
 
@@ -117,6 +123,7 @@ def confusion_matrix(
         report = per_class_report(group)
         report.insert(0, "y_name", y_name)
         if has_model:
+            assert model_val is not None  # has_model 即 gkey 携带模型名
             report.insert(1, "model", model_val)
         report_frames.append(report)
 

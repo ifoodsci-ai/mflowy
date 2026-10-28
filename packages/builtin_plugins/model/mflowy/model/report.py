@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -171,7 +172,8 @@ def taylor_for_runs(runs: list[tuple[str, str]], task, out_dir: Path) -> dict:
 
     from mflowy.model.plot.model_evaluation.regression.taylor_diagram import _compute_taylor_stats
 
-    for (label, _), group in plot_df.groupby(["model", "y_name"]):
+    for key, group in plot_df.groupby(["model", "y_name"]):
+        label = cast("tuple[Any, ...]", key)[0]  # 复合键 Hashable → tuple 运行期形态
         sr, corr, _rmse_norm, bias, rmse_total = _compute_taylor_stats(group)
         rows[label] = {
             "correlation": round(corr, 4),

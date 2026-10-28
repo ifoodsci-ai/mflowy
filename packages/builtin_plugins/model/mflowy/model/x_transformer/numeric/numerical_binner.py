@@ -38,12 +38,14 @@ class _BinnerWrapper(BaseEstimator, TransformerMixin):
     def transform(self, X, **kw):
         result = X.copy()
         for col in self.cols:
-            result[col] = pd.cut(
+            binned = pd.cut(
                 result[col],
                 bins=self._bins,
                 labels=range(len(self._fitted_labels)),
                 include_lowest=True,
-            ).astype(int)
+            )
+            assert isinstance(binned, pd.Series)  # 逐列 cut 恒 Series（推断联合噪声）
+            result[col] = binned.astype(int)
         return result
 
     def get_feature_names_out(self, input_features=None):

@@ -38,7 +38,6 @@ from mflowy.model.x_y import XySpec
 from mflowy.utils.constants import RANDOM_STATE
 from pydantic import Field
 from sklearn.model_selection import (
-    BaseCrossValidator,
     GroupKFold,
     GroupShuffleSplit,
     KFold,
@@ -51,7 +50,7 @@ from sklearn.model_selection import (
 )
 from sklearn.utils.multiclass import type_of_target
 
-from .types import SplitSpec, _materialize_groups, describe_xy
+from .types import SplitSpec, Splitter, _materialize_groups, describe_xy
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +68,7 @@ def _inner_cv_splitter(
     shuffle: bool,
     random_state: int,
     y: pd.DataFrame,
-) -> BaseCrossValidator | None:
+) -> Splitter:
     """inner splitter 决策表；多标签 y 无法分层时回落 KFold 并附警告。"""
     stratified = _is_stratifiable(y)
     if not stratified and y.shape[1] > 1:
@@ -87,7 +86,7 @@ def _inner_cv_splitter(
     return cls(n_splits=cv, shuffle=shuffle, random_state=random_state)
 
 
-def _outer_holdout_splitter(*, test_size: float, random_state: int, group_by, stratified: bool) -> BaseCrossValidator:
+def _outer_holdout_splitter(*, test_size: float, random_state: int, group_by, stratified: bool) -> Splitter:
     """outer holdout 划分器：组完整性优先，其次分层，默认 ShuffleSplit。"""
     if group_by is not None:
         return GroupShuffleSplit(test_size=test_size, random_state=random_state)

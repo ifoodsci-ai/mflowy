@@ -26,6 +26,7 @@ def reg_split():
     x = rng.normal(size=n)
     df = pd.DataFrame({"x": x, "target": 2.0 * x + 0.1 * rng.normal(size=n)})
     X, y = df[["x"]], df[["target"]]
+    assert isinstance(X, pd.DataFrame) and isinstance(y, pd.DataFrame)  # 列清单索引恒 DataFrame（联合噪声）
     from mflowy.model.x_y import XySpec
 
     xy = XySpec(X, y, TASKTYPE.REGRESSION)
@@ -101,7 +102,7 @@ class TestTrainingBehavior:
         """#62：param_space/n_trials/evaluate_holdout 形参从 training 退役——传入即 TypeError。"""
         for kw in ({"param_space": {"d": ContinuousSpace(1, 2)}, "n_trials": 2}, {"evaluate_holdout": False}):
             with pytest.raises(TypeError):
-                training(reg_split, "RF", _make_rf_pipe(), {"n_estimators": 10}, **kw)
+                training(reg_split, "RF", _make_rf_pipe(), {"n_estimators": 10}, **kw)  # type: ignore[reportArgumentType]  # 负例：退役形参传入即 TypeError
 
 
 class TestHoldoutReport:

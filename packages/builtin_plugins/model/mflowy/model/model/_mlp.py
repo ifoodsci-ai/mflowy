@@ -150,6 +150,7 @@ class MLPEstimator(BaseEstimator):
         callbacks: list[pl.Callback] = [net.loss_result]
         val_loader = None
         if eval_X is not None:
+            assert eval_y is not None  # 调用方契约：eval_X/eval_y 成对传入（#61 双参 seam）
             X_val, y_val = eval_X, eval_y
             val_loader = build_loader(X_val, net.transform_y(y_val), dtypes, self.batch_size, shuffle=False)
             if self.early_stopping_rounds:

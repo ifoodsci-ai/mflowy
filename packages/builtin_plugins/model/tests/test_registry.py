@@ -66,7 +66,7 @@ def test_families_degrades_on_missing_extra(monkeypatch, caplog):
 
     def fake(ns):
         table = dict(real(ns))
-        table["MLP"] = _BrokenEp()  # 模拟无 [deep] extra 的 MLP 条目
+        table["MLP"] = _BrokenEp()  # type: ignore[reportArgumentType]  # 负例：损坏 entry point 注入（ImportError 降级路径）
         return table
 
     monkeypatch.setattr(discover, "namespace_nodes", fake)

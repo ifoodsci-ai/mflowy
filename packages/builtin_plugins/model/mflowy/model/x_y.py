@@ -85,6 +85,9 @@ def x_y(
         + (f", id_columns 剔除: {id_cols}" if id_cols else "")
     )
     X = _ensure_X_dtypes(X)
+    # 推断面收敛：df[[target]] 列表索引恒 DataFrame；from_y 真源恒枚举（显式参数面亦枚举）
+    assert isinstance(y, pd.DataFrame)
+    assert isinstance(task, TASKTYPE)
     return XySpec(X, y, task, evidence_df)
 
 
@@ -95,7 +98,9 @@ def _ensure_X_dtypes(X: pd.DataFrame) -> pd.DataFrame:
 
     diff = set(object_cols).union(numeric_cols).difference(X.columns)
     if diff:
-        raise ValueError(f"存在尚未支持的输入类型的特征: \n{X[diff].dtypes.to_latex()}")
+        bad = X[list(diff)]
+        assert isinstance(bad, pd.DataFrame)  # 列名清单索引恒返回 DataFrame（推断联合噪声）
+        raise ValueError(f"存在尚未支持的输入类型的特征: \n{bad.dtypes.to_latex()}")
 
     if not object_cols.empty:
         X[object_cols] = X[object_cols].astype("category")

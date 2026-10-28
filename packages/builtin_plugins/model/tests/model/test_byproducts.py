@@ -93,6 +93,8 @@ def test_training_behavior_writes_holdout_byproducts(xy):
     arts = _artifacts(rid)
     assert {"X_test.parquet", "y_test.parquet", "y_pred.parquet"} <= set(arts)  # 副产物可按 run 寻址
 
+    import mlflow.artifacts
+
     def _read(name: str):
         return pd.read_parquet(mlflow.artifacts.download_artifacts(run_id=rid, artifact_path=name))
 
@@ -130,6 +132,7 @@ def test_split_chain_logs_split_pickle(xy):
     from mflowy.model.cv.split import split
 
     run_id, spec = _run_split_chain()
+    assert run_id is not None  # split 链落 run
     assert _K_RUNS_WITH_SPLIT in _artifacts(run_id)
     assert spec.inner_cv and spec.n_rows  # spec 契约面不变（划分器 + 血缘摘要）
 
@@ -163,5 +166,6 @@ def test_load_split_missing_fail_loud(xy):
         pass
     with pytest.raises(ValueError, match=r"split\.pkl"):
         load_split(from_run_id=empty.info.run_id)
+    assert origin_run is not None  # 同上：split 链 run
     with pytest.raises(ValueError, match=origin_run[:8]):
         load_split(from_run_id="no_such_run")  # 可用清单带真正持有划分的 run

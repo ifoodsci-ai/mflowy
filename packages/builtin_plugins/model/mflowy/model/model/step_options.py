@@ -9,7 +9,7 @@ StructuralRule）在 driver；装配（何时 prune/resume）在 mcp。
 import logging
 from typing import TYPE_CHECKING
 
-from mflowy.driver.builder import BuilderOption, StructuralRule
+from mflowy.driver.builder import BuilderOption
 from mflowy.driver.config import NodeConf, node_key
 from mflowy.utils.mlflow import search_experiment_model_run_ids, setup
 
@@ -54,6 +54,7 @@ def _resolve_run_id_map(experiment_id: str | None, module: str, run_id: str) -> 
     """
     if module and run_id:
         return {module: run_id}
+    assert experiment_id is not None  # 自动模式必带 experiment_id（modeling 工具契约：None 仅单 run_id 模式出现）
     return search_experiment_model_run_ids(experiment_id)
 
 
@@ -126,11 +127,11 @@ def resume_model_step(experiment_id: str) -> BuilderOption:
     return option
 
 
-def prune_x_transformer_step(ctx: "Context") -> StructuralRule:
+def prune_x_transformer_step(ctx: "Context") -> "Context | None":
     """x_transformer 无血缘消费者即剪（#59 编译后钩子：ctx.nexts = 幸存者视图）。
 
-    消费者 = 消费 transformer 产出的 model 步（非 loader/predict）——血缘 nexts
-    即真实消费关系。返回同一 ctx = 保留、None = 剪枝（沿必选边连带传播）。
+    本函数即 StructuralRule 本体（``Context → Context | None``）：返回同一 ctx =
+    保留、None = 剪枝（沿必选边连带传播）。
     """
     if ctx.conf.namespace != "x_transformer":
         return ctx

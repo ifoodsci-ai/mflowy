@@ -7,7 +7,7 @@ from mflowy.model.x_transformer.categorical.label_encoder import label_encoder
 from sklearn.compose import ColumnTransformer
 
 
-def _fit_transform(df, categorical_cols, **kwargs):
+def _fit_transform(df, categorical_cols, **kwargs) -> pd.DataFrame:
     df = df.copy()
     for c in categorical_cols:
         df[c] = df[c].astype("category")
@@ -16,10 +16,12 @@ def _fit_transform(df, categorical_cols, **kwargs):
     )
     ct = ColumnTransformer([(name, encoder, cols)], remainder="passthrough", verbose_feature_names_out=False)
     ct.set_output(transform="pandas")
-    return ct.fit_transform(df)
+    result = ct.fit_transform(df)
+    assert isinstance(result, pd.DataFrame)  # set_output(pandas) 后输出必为 DataFrame
+    return result
 
 
-def _fit_then_transform(df_train, df_test, categorical_cols, **kwargs):
+def _fit_then_transform(df_train, df_test, categorical_cols, **kwargs) -> pd.DataFrame:
     df_train = df_train.copy()
     for c in categorical_cols:
         df_train[c] = df_train[c].astype("category")
@@ -31,7 +33,9 @@ def _fit_then_transform(df_train, df_test, categorical_cols, **kwargs):
     ct = ColumnTransformer([(name, encoder, cols)], remainder="passthrough", verbose_feature_names_out=False)
     ct.set_output(transform="pandas")
     ct.fit(df_train)
-    return ct.transform(df_test)
+    result = ct.transform(df_test)
+    assert isinstance(result, pd.DataFrame)  # set_output(pandas) 后输出必为 DataFrame
+    return result
 
 
 class TestLabelEncoder:

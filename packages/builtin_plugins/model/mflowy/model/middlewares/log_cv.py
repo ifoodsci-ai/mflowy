@@ -44,7 +44,7 @@ def log_cv(ctx: Context, next: Handler) -> SplitSpec:
         "data_summary": result.data_summary,
         "source_artifacts": source_artifacts,
     }
-    metrics = {"n_rows": result.n_rows}
+    metrics: dict[str, float] = {"n_rows": result.n_rows}
     if test_size is not None:
         metrics["test_size"] = float(test_size)
     mlflow.log_metrics(metrics)

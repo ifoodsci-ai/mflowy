@@ -273,7 +273,7 @@ def test_id_columns_same_data_face(sessions_root, reg_csv, tmp_path):
     """id_columns 同数据面（CR 修订）：x_y 物化期剔除（划分/搜索/终训同一 X），
     终训 plan 显式携带 id_columns——DAG 重放面与会话面逐位同一，ID 泄漏结构性消失。"""
     df = pd.read_csv(reg_csv)
-    df.insert(0, "row_id", range(len(df)))  # 泄漏代理列（行号）
+    df.insert(0, "row_id", np.arange(len(df)))  # 泄漏代理列（行号）；insert 值面收 ndarray
     p = tmp_path / "reg_id.csv"
     df.to_csv(p, index=False)
 
@@ -576,7 +576,9 @@ def cls_csv(tmp_path) -> str:
         for _ in range(n_per):
             rows.append(c + rng.normal(size=4))
             labels.append(k)
-    df = pd.DataFrame(rows, columns=[f"f{i}" for i in range(4)])
+    df = pd.DataFrame(
+        rows, columns=pd.Index([f"f{i}" for i in range(4)])
+    )  # 显式 Index：list[str] 在 stub 重载怪癖下不过
     df["target"] = labels
     p = tmp_path / "cls.csv"
     df.to_csv(p, index=False)

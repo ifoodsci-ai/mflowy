@@ -20,7 +20,7 @@ class JobProvider(Protocol):
         modeling_steps: str,
         name: str,
         desc: str,
-        headers: Mapping[str, str] | None = None,
+        headers: Mapping[str, object] | None = None,
     ) -> DAGResult: ...
 
     async def modeling(
@@ -31,7 +31,7 @@ class JobProvider(Protocol):
         desc: str,
         experiment_id: str | None = None,
         prune_missing: bool = False,
-        headers: Mapping[str, str] | None = None,
+        headers: Mapping[str, object] | None = None,
     ) -> DAGResult: ...
 
     async def explanation(
@@ -42,7 +42,7 @@ class JobProvider(Protocol):
         name: str,
         desc: str,
         lowess_frac: float = 0.3,
-        headers: Mapping[str, str] | None = None,
+        headers: Mapping[str, object] | None = None,
     ) -> DAGResult: ...
 
     async def predict(
@@ -50,7 +50,7 @@ class JobProvider(Protocol):
         *,
         data: str,
         model: str,
-        headers: Mapping[str, str] | None = None,
+        headers: Mapping[str, object] | None = None,
     ) -> DAGResult: ...
 
     async def inverse_optimization(
@@ -63,5 +63,5 @@ class JobProvider(Protocol):
         cross_rules: str | None = None,
         n_trials: int = 10000,
         seed: int = 42,
-        headers: Mapping[str, str] | None = None,
+        headers: Mapping[str, object] | None = None,
     ) -> DAGResult: ...

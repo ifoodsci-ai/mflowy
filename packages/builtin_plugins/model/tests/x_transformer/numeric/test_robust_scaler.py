@@ -4,14 +4,16 @@ from mflowy.model.x_transformer.numeric.robust_scaler import robust_scaler
 from sklearn.compose import ColumnTransformer
 
 
-def _fit_transform(df, numerical_cols, **kwargs):
+def _fit_transform(df, numerical_cols, **kwargs) -> pd.DataFrame:
     """通过 ColumnTransformer 执行 fit/transform"""
     name, scaler, cols = robust_scaler(
         x_y=(df, pd.DataFrame(index=df.index), "regression"), numerical_cols=numerical_cols, **kwargs
     )
     ct = ColumnTransformer([(name, scaler, cols)], remainder="passthrough", verbose_feature_names_out=False)
     ct.set_output(transform="pandas")
-    return ct.fit_transform(df)
+    result = ct.fit_transform(df)
+    assert isinstance(result, pd.DataFrame)  # set_output(pandas) 后输出必为 DataFrame
+    return result
 
 
 def test_robust_scaler_with_outliers():

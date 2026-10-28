@@ -5,7 +5,7 @@
 
 from itertools import pairwise
 from math import ceil
-from typing import Annotated
+from typing import Annotated, Any, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -96,7 +96,8 @@ def calibration_curve(
     bin_rows: list[dict] = []
     for i, (key, g) in enumerate(groups):
         ax = axes[i // n_cols][i % n_cols]
-        meta = dict(zip(group_cols, key, strict=True))
+        key_t = cast("tuple[Any, ...]", key)  # groupby 复合键：Hashable 静态面 → tuple 运行期形态
+        meta = dict(zip(group_cols, key_t, strict=True))
         y_true, proba_matrix, classes = _group_proba_matrix(g)
         rows, ece, brier = _calibration_points(y_true, proba_matrix, classes, n_bins)
 
@@ -106,7 +107,7 @@ def calibration_curve(
             ax.plot(confs, accs, "o-", lw=1.5, ms=5, label=f"ECE={ece:.3f}, Brier={brier:.3f}")
             bin_rows.extend({**meta, "confidence": c, "accuracy": a, "count": n} for c, a, n in rows)
 
-        label = " / ".join(str(k) for k in key)
+        label = " / ".join(str(k) for k in key_t)
         ax.set_title(label, fontsize=11, loc="left")
         ax.set_xlabel("Mean predicted confidence")
         ax.set_ylabel("Fraction of positives (accuracy)")
