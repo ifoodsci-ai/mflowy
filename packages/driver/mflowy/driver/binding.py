@@ -21,7 +21,7 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Container, Iterator
 from dataclasses import dataclass, field
 from types import UnionType
 from typing import TYPE_CHECKING, Annotated, Any, Literal, TypeAliasType, Union, get_args, get_origin, get_type_hints
@@ -65,7 +65,7 @@ def raise_if_params_collide(edge_names: frozenset[str], params: dict[str, object
         )
 
 
-def address_kind(name: str, namespaces: set[str]) -> str:
+def address_kind(name: str, namespaces: Container[str]) -> Literal["namespace", "node"]:
     """寻址命中层判定（UpstreamMeta.type 的语义单源）：``name`` 命中组名 →
     ``"namespace"``（组寻址），否则 ``"node"``（node_key 整相）。词表投影
     （module）与编译期索引（builder NodeTable）共用同一语义。"""

@@ -113,6 +113,6 @@ class TestLineageViews:
         _chain(fake_plugins)
         dag = Builder(_yaml(tmp_path, "只读", _node("a", "load", "a"), _node("b", "statistic", "b"))).build()
         with pytest.raises(AttributeError):
-            dag.nodes[0].nexts = ()
+            dag.nodes[0].nexts = ()  # type: ignore[reportAttributeAccessIssue]  # 只读负例：断言 AttributeError
         with pytest.raises(AttributeError):
-            dag.nodes[1].prevs = ()
+            dag.nodes[1].prevs = ()  # type: ignore[reportAttributeAccessIssue]  # 只读负例：断言 AttributeError

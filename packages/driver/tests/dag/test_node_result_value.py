@@ -17,7 +17,7 @@ def _structured(**kwargs):
     return {"errors": [1, 2, 3], "shape": [10, 2]}
 
 
-def _run_probe() -> object:
+def _run_probe() -> DAG:
     ctx = Context(NodeConf(name="探针", node_key="load__structured"), [])
     return DAG(conf=Conf(name="value_test", description=""), nodes=[ctx])
 

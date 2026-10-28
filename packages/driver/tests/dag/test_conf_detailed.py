@@ -1,7 +1,15 @@
 """config 模块测试（平铺键控：NodeConf 无 namespace/node_name 存储字段，派生自 node_key）。"""
 
+from typing import Any
+
 import pytest
 from mflowy.driver.config import Conf, NodeConf, node_key, split_node_key
+
+
+def _flow(*steps: dict[str, dict[str, Any]]) -> Any:
+    """YAML 原始形态缝：Conf.__post_init__ 仅对 list 触发收敛（dict → NodeConf）——
+    静态注解面是收敛后形态，入口原始 list-of-dict 不同，出口 Any 表达该缝。"""
+    return list(steps)
 
 
 class TestNodeConf:
@@ -39,7 +47,7 @@ class TestConf:
         assert conf.description == "Test Description"
 
     def test_init_with_steps(self):
-        conf = Conf(flow=[{"load__csv": {"name": "s1"}}, {"clean__drop": {"name": "s2"}}])
+        conf = Conf(flow=_flow({"load__csv": {"name": "s1"}}, {"clean__drop": {"name": "s2"}}))
         assert len(conf.flow) == 2
         ((k1, c1),) = conf.flow[0].items()
         assert k1 == "load__csv" and c1.name == "s1" and c1.node_key == "load__csv"
@@ -50,13 +58,13 @@ class TestConf:
             conf.validate()
 
     def test_validate_with_steps(self):
-        conf = Conf(flow=[{"x_y": {"name": "s1"}}])
+        conf = Conf(flow=_flow({"x_y": {"name": "s1"}}))
         conf.validate()
 
     def test_multi_key_item_fails_loud(self):
         with pytest.raises(ValueError, match="单键映射"):
-            Conf(flow=[{"load__csv": {"name": "a"}, "clean__x": {"name": "b"}}])
+            Conf(flow=_flow({"load__csv": {"name": "a"}, "clean__x": {"name": "b"}}))
 
     def test_retired_keys_fail_loud(self):
         with pytest.raises(ValueError, match="退役键"):
-            Conf(flow=[{"load__csv": {"name": "a", "enabled": False}}])
+            Conf(flow=_flow({"load__csv": {"name": "a", "enabled": False}}))

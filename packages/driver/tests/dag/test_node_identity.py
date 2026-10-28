@@ -99,11 +99,11 @@ class TestNodeIdentity:
     def test_bare_stub_run_without_mlflow_chain(self, fake_plugins):
         """裸桩（无中间件链）执行：handler 成功即成功——NodeResult.status 容忍无 run_id（""）。"""
 
-        def _plain(ctx=None, **kw):  # 裸桩即调度链：链签名首参为 ctx
+        def _plain(ctx=None, **kw):  # 链签名首参为 ctx
             return "bare"
 
-        fake_plugins.setdefault("load", {})["plain"] = _plain
         ctx = Context(NodeConf(name="裸桩", node_key="load__plain"), [])
+        ctx._handler = _plain  # 直注桩链（不经目录）——handler 成功而窗前无 run 的最小形态
         result = ctx.run()  # 此前：handler 已成功却在 status 上 RuntimeError
         assert result.status == ""
         assert result.run_id == ""  # 无 run 留空——不拿 node_id 冒充 run_id
