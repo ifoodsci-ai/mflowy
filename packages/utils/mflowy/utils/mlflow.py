@@ -35,7 +35,7 @@ def workflow_tags() -> dict[str, str]:
     return _workflow_tags_var.get() or {}
 
 
-def set_active_experiment(experiment_id: str) -> None:
+def set_active_experiment(experiment_id: str | None) -> None:
     """记录当前 workflow 的 experiment_id（供 start_run 显式指定）。"""
     _experiment_id_var.set(experiment_id)
 

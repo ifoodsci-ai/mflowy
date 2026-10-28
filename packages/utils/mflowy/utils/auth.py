@@ -318,7 +318,9 @@ def _callback_handler(state: str, result: dict, done: threading.Event) -> type[B
             )
             done.set()
 
-        def log_message(self, format: str, *args: object) -> None:  # 回调页非诊断面，静默（签名对齐 BaseHTTPRequestHandler）
+        def log_message(
+            self, format: str, *args: object
+        ) -> None:  # 回调页非诊断面，静默（签名对齐 BaseHTTPRequestHandler）
             pass
 
     return CallbackHandler

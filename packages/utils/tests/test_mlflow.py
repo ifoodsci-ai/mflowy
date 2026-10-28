@@ -174,7 +174,7 @@ class TestTrackingSeam:
         """interface 完整性：active_run_id 观察面在 Protocol 声明内（adapter 不得缺）。"""
         from mflowy.utils.mlflow import Tracking
 
-        assert "active_run_id" in getattr(Tracking, "__protocol_attrs__")  # 协议运行期内部属性，经 getattr 访问
+        assert "active_run_id" in getattr(Tracking, "__protocol_attrs__")  # noqa: B009 — 协议运行期内部属性  # 协议运行期内部属性，经 getattr 访问
 
     def test_clip_tag_value_mlflow_limit(self):
         """mlflow tag 值上限截断（backend 约束由 adapter 吸收）——宽 fan-in 血缘不炸 run。"""
