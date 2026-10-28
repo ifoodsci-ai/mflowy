@@ -41,9 +41,9 @@ def ensure_relative_path_under_task_dir(path: str | Path) -> Path:
     return path
 
 
-def ensure_absolute_path[F: Callable[..., tuple[Path, str | None]]](func: F) -> F:
+def ensure_absolute_path[**P](func: Callable[P, tuple[Path, str | None]]) -> Callable[P, tuple[Path, str | None]]:
     @wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> tuple[Path, str | None]:
         path, target = func(*args, **kwargs)
         path = ensure_relative_path_under_task_dir(path)
         return path, target

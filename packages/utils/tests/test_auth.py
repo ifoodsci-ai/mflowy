@@ -57,8 +57,8 @@ def _fake_browser(monkeypatch, *, code: str = "c0de-1", state: str | None = None
     return captured
 
 
-def _fake_transport(monkeypatch, *, scopes_supported: list | None = None, token: dict | None = None):
-    """transport 缝：记录全部出站请求；元数据/token 端点按 URL 分发。"""
+def _fake_transport(monkeypatch, *, scopes_supported: list | None = None, token: dict | Exception | None = None):
+    """transport 缝：记录全部出站请求；元数据/token 端点按 URL 分发（token 可注入异常模拟失败响应）。"""
     calls: list[dict] = []
     token = token or {}
 
@@ -408,7 +408,7 @@ class _OAuthStubHandler(BaseHTTPRequestHandler):
 
     do_GET = do_POST = _handle
 
-    def log_message(self, *_args):
+    def log_message(self, format: str, *args: object) -> None:  # 签名对齐 BaseHTTPRequestHandler
         pass
 
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import ClassVar
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from jinja2.sandbox import SandboxedEnvironment
@@ -20,7 +19,7 @@ class JinjaEnvRegistry:
 
     _instance: JinjaEnvRegistry | None = None
     _initialized: bool = False
-    _yaml_envs: ClassVar[dict[Path, Environment]] = {}
+    _yaml_envs: dict[Path, Environment] = {}
 
     def __new__(cls):
         if cls._instance is None:

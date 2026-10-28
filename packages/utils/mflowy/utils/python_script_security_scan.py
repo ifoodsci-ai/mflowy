@@ -131,7 +131,13 @@ def _check_signature(
     if returns and node.returns is None:
         raise TypeError(f"函数 `{signature}` 缺少返回值签名")
     if returns is not None and node.returns is not None:
-        return_anno = node.returns.attr if isinstance(node.returns, ast.Attribute) else node.returns.id
+        # 注解面只受理限定名（np.DataFrame）与裸名（DataFrame）两形态，其余形式显式拒绝
+        if isinstance(node.returns, ast.Attribute):
+            return_anno = node.returns.attr
+        elif isinstance(node.returns, ast.Name):
+            return_anno = node.returns.id
+        else:
+            raise TypeError(f"函数 `{signature}` 返回值签名形式不支持（{type(node.returns).__name__}）")
         if return_anno != returns.__name__:
             raise TypeError(f"函数 `{signature}` 返回值签名不匹配")
     if not args and (node.args.args or node.args.kwarg):

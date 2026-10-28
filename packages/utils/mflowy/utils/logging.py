@@ -109,4 +109,4 @@ def _reset() -> None:
     """
     global setup, _console_handler
     _console_handler = None
-    setup = synchronized_once()(setup.__wrapped__)
+    setup = synchronized_once()(getattr(setup, "__wrapped__"))  # 动态属性（functools.wraps 注入）经 getattr 取

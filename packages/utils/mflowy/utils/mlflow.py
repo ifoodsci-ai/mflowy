@@ -305,7 +305,7 @@ def run_artifacts(run_id: str) -> list[str]:
 
 def download_run_artifact(run_id: str, artifact_file: str) -> str:
     """按 run_id 取回工件本地路径（副产物的读回入口）。"""
-    import mlflow
+    import mlflow.artifacts  # 子模块导入（mlflow 惰性再导出，from mlflow 取 artifacts 静态不可见）
 
     setup()
     return mlflow.artifacts.download_artifacts(run_id=run_id, artifact_path=artifact_file)

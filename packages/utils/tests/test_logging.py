@@ -35,6 +35,7 @@ class TestSetup:
         _logging_mod.setup(level=logging.INFO)
         _logging_mod.setup(level=logging.DEBUG)  # 二次调用被忽略
 
+        assert _logging_mod._console_handler is not None  # setup 已绑定（上方用例同断言）
         assert _logging_mod._console_handler.level == logging.INFO
 
     def test_third_party_loggers_silenced(self):
