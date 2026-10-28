@@ -75,8 +75,12 @@ class TestServerEntryGuard:
         """mflowy.tools 组撞名 fail-loud（红线 1）：SDK 撞名只警告且静默保第一个。"""
         import importlib.metadata
         from types import SimpleNamespace
+        from typing import TYPE_CHECKING, cast
 
         from mflowy.mcp import server
+
+        if TYPE_CHECKING:
+            from mcp.server.mcpserver import MCPServer  # cast 目标（替身不起真 server）
 
         class _NoopServer:
             def tool(self):
@@ -85,7 +89,7 @@ class TestServerEntryGuard:
         dup = SimpleNamespace(name="dup_tool", load=lambda: lambda: None)
         monkeypatch.setattr(importlib.metadata, "entry_points", lambda group: [dup, dup])
         with pytest.raises(RuntimeError) as ei:
-            server.register(_NoopServer())
+            server.register(cast("MCPServer", _NoopServer()))  # 注册面替身：仅 .tool() 被消费
         assert "撞名" in str(ei.value)
         assert "dup_tool" in str(ei.value)
 

@@ -26,7 +26,9 @@ def _log_artifacts(tmp_path) -> str:
     with mlflow.start_run(experiment_id=exp_id):
         mlflow.log_artifact(str(parquet_file))
         mlflow.log_dict({"k": [1, 2], "note": "x"}, "report.json")
-        return mlflow.active_run().info.run_id
+        run = mlflow.active_run()
+        assert run is not None  # with start_run 窗口内必在
+        return run.info.run_id
 
 
 def test_read_artifact_parquet_projects_and_limits(monkeypatch, tmp_path):
@@ -52,7 +54,9 @@ def test_read_artifact_cell_cap_truncates(monkeypatch, tmp_path):
     pd.DataFrame({f"c{i}": range(100) for i in range(60)}).to_parquet(wide)
     with mlflow.start_run(experiment_id=exp_id):
         mlflow.log_artifact(str(wide))
-        run_id = mlflow.active_run().info.run_id
+        run = mlflow.active_run()
+        assert run is not None  # with start_run 窗口内必在
+        run_id = run.info.run_id
 
     r = tools.read_artifact(run_id, "wide.parquet", rows="head:100")
 
