@@ -64,9 +64,6 @@ def mlflow_log(ctx: Context, next: Handler):
         t.log_params(_flatten_params(ctx.conf.params))
         try:
             result = next(ctx)
-        except Exception as e:
-            t.set_tag("mlflow.note.content", repr(e))
-            raise
         finally:
             # 声明消费集血缘：成败皆落盘——失败 run 的输入证据
             if lineage := ctx.lineage:

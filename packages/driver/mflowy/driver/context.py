@@ -79,6 +79,7 @@ class Context:
             _counter.set(counter)
         self.node_id = f"node_{next(counter)}"  # 稳定调度键（DAG 图键/调度字典），全生命周期不变
         self.run_id: str | None = None  # 执行记账：mlflow run id，执行期经 adopt_run 上报
+        self.partial_output: str | None = None  # 崩溃前 partial stdout（run() 异常路径暂存）
         self.conf = conf
         self._prevs = prevs  # 血缘上游（编译期由 builder 解析参数边接线）
         self._nexts = []  # 血缘下游（DAG 调度/剪枝闭包）
@@ -203,28 +204,39 @@ class Context:
         不记忆落记账——入口清 run_id：重跑的窗前失败不背上一轮的 run_id/status。
         """
         self.run_id = None  # 执行不记忆：新执行在 adopt_run 前无 run
+        self.partial_output = None  # 执行不记忆：新一轮执行无崩溃前输出
         bound = self._bind()
         with capture_prints() as buf:
-            self.result = self.handler(self, **bound)
+            try:
+                self.result = self.handler(self, **bound)
+            except BaseException:
+                self.partial_output = buf.getvalue().strip()  # 崩溃前证据不丢（P2c 追加语义）
+                raise
         return self.account(buf.getvalue().strip())
 
     def account(self, output: str) -> NodeResult:
-        """执行记账单点：run_id/status/artifacts 哨兵规则一处定义。
+        """执行记账单点：run_id/status/artifacts/描述 哨兵规则一处定义。
 
         无 run（裸桩链/窗前失败）→ run_id/status 留空、artifacts 空表，不拿
-        node_id 冒充；窗内 → 查真实状态与工件清单（FAILED 如实记账）；查询失败
-        降级（status="" / artifacts=[]）——不得掩盖业务结果或原始失败。
+        node_id 冒充；窗内 → 查真实状态与工件清单（FAILED 如实记账）并回写
+        run 描述（≡ output，含失败追加的异常——单源合成）；查询/写入失败
+        降级（status="" / artifacts=[] / 描述不写）——不得掩盖业务结果或原始失败。
         """
         status, artifacts = "", []
         if self.run_id is not None:
             try:
                 status = self.status
             except Exception:
-                status = ""
+                logger.warning("%s 状态查询失败，记账降级空串", self.node_id, exc_info=True)
             try:
                 artifacts = active_tracking().run_artifacts(self.run_id)
             except Exception:
+                logger.warning("%s 工件清单查询失败，记账降级空表", self.node_id, exc_info=True)
                 artifacts = []
+            try:
+                active_tracking().describe_run(self.run_id, output)
+            except Exception:
+                logger.warning("%s run 描述写入失败（观测面降级）", self.node_id, exc_info=True)
         result = NodeResult(
             node=self.conf.node_key,
             name=self.conf.name,

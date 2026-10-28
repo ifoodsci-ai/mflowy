@@ -74,6 +74,10 @@ class Tracking(Protocol):
         """实验级 tag 写入（如 mflowy.graph 结构图——本实验最新结构覆写）。"""
         ...
 
+    def describe_run(self, run_id: str, text: str) -> None:
+        """run 描述写入（mlflow.note.content tag）——account 期 ≡ NodeResult.output。"""
+        ...
+
     @property
     def active_run_id(self) -> str | None:
         """当前窗口内 run id（窗外 None）——窗口观察面（内核测试消费）。"""
@@ -140,6 +144,11 @@ class MlflowTracking:
             experiment_id, key, clip_tag_value(value, limit=MAX_EXPERIMENT_TAG_VAL_LENGTH)
         )
 
+    def describe_run(self, run_id: str, text: str) -> None:
+        import mlflow
+
+        mlflow.MlflowClient().set_tag(run_id, "mlflow.note.content", clip_tag_value(text))
+
     @property
     def active_run_id(self) -> str | None:
         import mlflow
@@ -163,6 +172,7 @@ class FakeTracking:
         self.experiment_tags: dict[str, dict[str, str]] = {}  # exp_id → tags（ensure 播种）
         self.runs: dict[str, str] = {}
         self.artifacts: dict[str, list[str]] = {}  # run_id → 工件清单（测试播种断言面）
+        self.descriptions: dict[str, str] = {}  # run_id → 描述（describe_run 断言面）
         self.active_run_id: str | None = None  # 当前窗口内 run（窗外 None）——窗口断言面
         self._active_stack: list[str] = []  # 嵌套窗口栈（对齐 mlflow fluent 栈语义）
         self._seq = count(1)
@@ -209,6 +219,11 @@ class FakeTracking:
 
     def run_artifacts(self, run_id: str) -> list[str]:
         return list(self.artifacts[run_id])  # 未知 run 同 run_status：KeyError 不吞
+
+    def describe_run(self, run_id: str, text: str) -> None:
+        if run_id not in self.runs:  # 未知 run 同 run_status：KeyError 不吞
+            raise KeyError(run_id)
+        self.descriptions[run_id] = text
 
 
 # mlflow tag 值长度上限（backend 约束，取 mlflow 活常量防版本漂移）——

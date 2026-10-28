@@ -132,7 +132,8 @@ class DAG:
             except Exception as e:
                 # 记账单点（Context.account）：不 raise、不冒充——原始失败永不被掩盖；
                 # 剪枝血缘后代闭包，其余路径继续（#59：一切失败一视同仁）
-                node_result = node.account(repr(e))
+                partial = node.partial_output
+                node_result = node.account(f"{partial}\n{e!r}" if partial else repr(e))
                 failures.append(f"[{_node_key(node)}]{node_result.name} failed: {e}")
                 skip |= lineage_closure({node}, required_only=False)  # 含种子（已调度过，无副作用）
             else:
