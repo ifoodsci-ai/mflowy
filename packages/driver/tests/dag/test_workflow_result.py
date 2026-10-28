@@ -53,7 +53,7 @@ class TestDAGResult:
         assert flow.experiment_name == "wr_test"
         assert flow.description == "契约测试"
         assert flow.experiment_id == fake_tracking.experiments["wr_test"]
-        assert flow.graph.startswith("```mermaid")
+        assert flow.graph.startswith("```mermaid")  # 展示形态（机器投影=to_graph()，最新结构=mflowy.graph 实验 tag）
         assert executed == ["A", "B"]
         assert [r.node for r in flow.runs] == ["load__ok_a", "load__ok_b"]
         assert [r.name for r in flow.runs] == ["任务A", "任务B"]
@@ -95,6 +95,34 @@ class TestDAGResult:
         flow = self._workflow(a).run()
         assert flow.runs[0].artifacts == []
         assert flow.runs[0].status == "FINISHED"  # status 查询面不受工件查询失败牵连
+
+    def test_graph_written_to_experiment_tag(self, fake_plugins, fake_tracking):
+        """图持久化：mflowy.graph 实验 tag（本实验最新结构）——经 get_experiment 随 tags 外流。"""
+        from mflowy.driver.dag import DAG
+
+        @handler()
+        def solo(**kwargs):
+            return "x"
+
+        fake_plugins.setdefault("load", {})["solo"] = solo
+        a = Context(_conf("单点", "solo"), [])
+        flow = self._workflow(a).run()
+        tags = fake_tracking.experiment_tags[flow.experiment_id]
+        assert tags[DAG.GRAPH_TAG_KEY].startswith("```mermaid")
+        assert "load__solo" in tags[DAG.GRAPH_TAG_KEY]
+
+    def test_mermaid_is_view_not_idl(self, fake_plugins, fake_tracking):
+        """mermaid 降为视图函数：DAG.mermaid()（__repr__ 委托）——展示形态按需派生。"""
+
+        @handler()
+        def solo(**kwargs):
+            return "x"
+
+        fake_plugins.setdefault("load", {})["solo"] = solo
+        a = Context(_conf("单点", "solo"), [])
+        dag = self._workflow(a)
+        assert dag.mermaid().startswith("```mermaid")
+        assert str(dag) == dag.mermaid()
 
     def test_failure_skips_lineage_descendants(self, fake_plugins, fake_tracking):
         """失败 = 剪枝血缘后代（#59）：下游 skipped 计入 runs，无完成节点 → failed。"""

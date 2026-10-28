@@ -70,6 +70,10 @@ class Tracking(Protocol):
         NodeResult.artifacts 快照的数据源）。"""
         ...
 
+    def set_experiment_tag(self, experiment_id: str, key: str, value: str) -> None:
+        """实验级 tag 写入（如 mflowy.graph 结构图——本实验最新结构覆写）。"""
+        ...
+
     @property
     def active_run_id(self) -> str | None:
         """当前窗口内 run id（窗外 None）——窗口观察面（内核测试消费）。"""
@@ -128,6 +132,14 @@ class MlflowTracking:
 
         return [a.path for a in mlflow.MlflowClient().list_artifacts(run_id)]
 
+    def set_experiment_tag(self, experiment_id: str, key: str, value: str) -> None:
+        import mlflow
+        from mlflow.utils.validation import MAX_EXPERIMENT_TAG_VAL_LENGTH
+
+        mlflow.MlflowClient().set_experiment_tag(
+            experiment_id, key, clip_tag_value(value, limit=MAX_EXPERIMENT_TAG_VAL_LENGTH)
+        )
+
     @property
     def active_run_id(self) -> str | None:
         import mlflow
@@ -148,6 +160,7 @@ class FakeTracking:
         self.tag_log: list[tuple[str, str]] = []
         self.params: dict[str, Any] = {}
         self.experiments: dict[str, str] = {}
+        self.experiment_tags: dict[str, dict[str, str]] = {}  # exp_id → tags（ensure 播种）
         self.runs: dict[str, str] = {}
         self.artifacts: dict[str, list[str]] = {}  # run_id → 工件清单（测试播种断言面）
         self.active_run_id: str | None = None  # 当前窗口内 run（窗外 None）——窗口断言面
@@ -157,7 +170,12 @@ class FakeTracking:
     def ensure_experiment(self, name: str, description: str) -> Any:
         if name not in self.experiments:  # 幂等不烧计数器——run/experiment 序号各自单调
             self.experiments[name] = f"fake_exp_{next(self._seq)}"
-        return SimpleNamespace(name=name, experiment_id=self.experiments[name], artifact_location="memory://")
+        eid = self.experiments[name]
+        self.experiment_tags.setdefault(eid, {})
+        return SimpleNamespace(name=name, experiment_id=eid, artifact_location="memory://")
+
+    def set_experiment_tag(self, experiment_id: str, key: str, value: str) -> None:
+        self.experiment_tags[experiment_id][key] = value  # 未 ensure 的实验 KeyError 不吞
 
     @contextmanager
     def node_run(self, run_name: str, experiment_id: str | None):
@@ -194,12 +212,17 @@ class FakeTracking:
 
 
 # mlflow tag 值长度上限（backend 约束，取 mlflow 活常量防版本漂移）——
-# 超长值（宽 fan-in 的点分血缘）截断，写 tag 不炸 run
-def clip_tag_value(value: str) -> str:
-    """tag 值截断至上限（backend 约束由 adapter 吸收），尾接省略号示截断。"""
-    from mlflow.utils.validation import MAX_TAG_VAL_LENGTH as limit
+# 超长值（宽 fan-in 的点分血缘 / 大图 mermaid）截断，写 tag 不炸 run。
+# 两类上限不同：run tag 8000、实验 tag 5000
+def clip_tag_value(value: str, limit: int | None = None) -> str:
+    """tag 值截断至上限（backend 约束由 adapter 吸收），尾接省略号示截断。
 
-    return value if len(value) <= limit else value[: limit - 1] + "…"
+    缺省 run tag 上限；实验 tag 调用方显式传 ``MAX_EXPERIMENT_TAG_VAL_LENGTH``。
+    """
+    from mlflow.utils.validation import MAX_TAG_VAL_LENGTH
+
+    cap = limit if limit is not None else MAX_TAG_VAL_LENGTH
+    return value if len(value) <= cap else value[: cap - 1] + "…"
 
 
 _DEFAULT_TRACKING = MlflowTracking()

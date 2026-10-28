@@ -70,11 +70,13 @@ class DAGResult:
     status: str
     error: str
     runs: list[NodeResult]
-    graph: str
+    graph: str  # mermaid 展示形态（字段持全量）；机器投影=to_graph()，实验 tag mflowy.graph 持久化（超长截断）
 
 
 class DAG:
     """DAG 执行器 - LIFO 拓扑序调度（深度优先，前驱完成即就绪）"""
+
+    GRAPH_TAG_KEY = "mflowy.graph"  # 实验级结构图 tag（rerun 覆写=本实验最新结构）
 
     def __init__(self, conf: Conf, nodes: list[Context]):
         self.conf = conf
@@ -103,6 +105,11 @@ class DAG:
         # 都经同一通道取到，实验交接不出 seam（adapter 各自内部状态不可行：默认实例无并发隔离）
         set_active_experiment(exp.experiment_id)
         logger.info(f'<ExperimentInfo: experiment-name="{exp.name}", experiment-id="{exp.experiment_id}">')
+        graph_text = self.mermaid()
+        try:  # 附属观测面：tag 写失败降级不挡跑（ensure_experiment 失败才 fail-loud——无实验即无 run 居所）
+            active_tracking().set_experiment_tag(exp.experiment_id, self.GRAPH_TAG_KEY, graph_text)
+        except Exception:
+            logger.warning("实验结构 tag 写入失败（观测面降级）", exc_info=True)
         flow = DAGResult(
             experiment_name=exp.name,
             experiment_id=exp.experiment_id,
@@ -110,7 +117,7 @@ class DAG:
             status="finished",
             error="",
             runs=[],
-            graph=str(self),
+            graph=graph_text,
         )
 
         skip: set[Context] = set()
@@ -184,8 +191,8 @@ class DAG:
         edge_list = [{"from": src, "to": dst, "label": via} for src, dst, via in dict.fromkeys(edges)]
         return {"nodes": nodes, "edges": edge_list}
 
-    def __repr__(self) -> str:
-        """Mermaid DAG 视图：节点按调度序 + 编译期血缘边（边变换带标签）。"""
+    def mermaid(self) -> str:
+        """Mermaid DAG 视图（展示形态）：节点按调度序 + 编译期血缘边（边变换带标签）。"""
         lines = ["```mermaid", "flowchart TD"]
         for node, key, ups in self.walk():
             label = node.conf.name.replace('"', "#quot;")
@@ -194,3 +201,6 @@ class DAG:
                 lines.append(f"    {ukey} -->|{via}| {key}" if via else f"    {ukey} --> {key}")
         lines.append("```")
         return "\n".join(lines)
+
+    def __repr__(self) -> str:
+        return self.mermaid()

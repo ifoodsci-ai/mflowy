@@ -290,6 +290,28 @@ class TestTrackingSeam:
         with pytest.raises(KeyError):
             fake.run_artifacts("nope")
 
+    def test_set_experiment_tag_face(self):
+        """实验 tag 写入面：Protocol 声明 + FakeTracking 记录（未知实验不吞）。"""
+        from mflowy.utils.mlflow import FakeTracking, Tracking
+
+        assert "set_experiment_tag" in Tracking.__protocol_attrs__
+        fake = FakeTracking()
+        eid = fake.ensure_experiment("e", "d").experiment_id
+        fake.set_experiment_tag(eid, "mflowy.graph", "```mermaid\n```")
+        assert fake.experiment_tags[eid]["mflowy.graph"].startswith("```mermaid")
+        with pytest.raises(KeyError):
+            fake.set_experiment_tag("nope", "k", "v")
+
+    def test_mlflow_tracking_set_experiment_tag_clips(self, tmp_mlflow_db):
+        """生产 adapter：超长图 tag 截断（实验 tag 上限 5000——run tag 8000 为另一类约束）。"""
+        import mlflow
+
+        from mflowy.utils.mlflow import MlflowTracking
+
+        MlflowTracking().set_experiment_tag(tmp_mlflow_db, "mflowy.graph", "x" * 9000)
+        v = mlflow.get_experiment(tmp_mlflow_db).tags["mflowy.graph"]
+        assert len(v) == 5000 and v.endswith("…")  # 实验 tag 上限 5000（run tag 8000——两类约束）
+
     def test_mlflow_tracking_run_artifacts_lists_paths(self, tmp_mlflow_db):
         """生产 adapter：工件树路径清单（account 快照的数据源）。"""
         from mlflow.tracking import MlflowClient
