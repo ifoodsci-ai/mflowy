@@ -17,7 +17,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -170,10 +169,13 @@ def taylor_for_runs(runs: list[tuple[str, str]], task, out_dir: Path) -> dict:
     if TASKTYPE(task) != TASKTYPE.REGRESSION:
         return {"stats": rows, "figure": None, "note": "泰勒图限回归任务——分类交付不出统计面"}
 
+    from typing import Any, cast  # 局部导入：复合键 tuple 收窄用（模块行数锚点——TAYLOR_FIGURE 单源测试钉行号）
+
     from mflowy.model.plot.model_evaluation.regression.taylor_diagram import _compute_taylor_stats
 
-    for key, group in plot_df.groupby(["model", "y_name"]):
-        label = cast("tuple[Any, ...]", key)[0]  # 复合键 Hashable → tuple 运行期形态
+    for label, group in (
+        (cast("tuple[Any, ...]", k)[0], g) for k, g in plot_df.groupby(["model", "y_name"])
+    ):  # 复合键 Hashable→tuple
         sr, corr, _rmse_norm, bias, rmse_total = _compute_taylor_stats(group)
         rows[label] = {
             "correlation": round(corr, 4),
