@@ -135,3 +135,20 @@ def fake_tracking():
 
     with use_tracking(FakeTracking()) as fake:
         yield fake
+
+
+@pytest.fixture
+def fake_artifact_window(tmp_path, monkeypatch):
+    """工件落盘壳的窗口假身：mlflow.active_run 返回本地 artifact_uri 假 run。
+
+    与 patch("mlflow.log_table") 等 fluent mock 配套——落盘壳守卫前置（窗外
+    fail-loud，mlflow fluent 缺窗口会静默自建孤儿 run），fake-tracking 驱动的
+    中间件用例需窗口假身才能走到 fluent mock。
+    """
+    from types import SimpleNamespace
+
+    import mlflow
+
+    fake_run = SimpleNamespace(info=SimpleNamespace(artifact_uri=(tmp_path / "arts").as_uri(), run_id="fake_window"))
+    monkeypatch.setattr(mlflow, "active_run", lambda: fake_run)
+    return fake_run
