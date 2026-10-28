@@ -65,6 +65,10 @@ class Tracking(Protocol):
     def set_tags(self, tags: dict[str, str]) -> None: ...
     def log_params(self, params: dict[str, Any]) -> None: ...
     def run_status(self, run_id: str) -> str: ...
+    def run_artifacts(self, run_id: str) -> list[str]:
+        """run 顶层工件路径清单（目录条目在内，嵌套文件经 path 下钻——account 期
+        NodeResult.artifacts 快照的数据源）。"""
+        ...
 
     @property
     def active_run_id(self) -> str | None:
@@ -119,6 +123,11 @@ class MlflowTracking:
 
         return mlflow.get_run(run_id).info.status
 
+    def run_artifacts(self, run_id: str) -> list[str]:
+        import mlflow
+
+        return [a.path for a in mlflow.MlflowClient().list_artifacts(run_id)]
+
     @property
     def active_run_id(self) -> str | None:
         import mlflow
@@ -140,6 +149,7 @@ class FakeTracking:
         self.params: dict[str, Any] = {}
         self.experiments: dict[str, str] = {}
         self.runs: dict[str, str] = {}
+        self.artifacts: dict[str, list[str]] = {}  # run_id → 工件清单（测试播种断言面）
         self.active_run_id: str | None = None  # 当前窗口内 run（窗外 None）——窗口断言面
         self._active_stack: list[str] = []  # 嵌套窗口栈（对齐 mlflow fluent 栈语义）
         self._seq = count(1)
@@ -178,6 +188,9 @@ class FakeTracking:
 
     def run_status(self, run_id: str) -> str:
         return self.runs[run_id]  # 未知 run KeyError 透传——不吞
+
+    def run_artifacts(self, run_id: str) -> list[str]:
+        return list(self.artifacts[run_id])  # 未知 run 同 run_status：KeyError 不吞
 
 
 # mlflow tag 值长度上限（backend 约束，取 mlflow 活常量防版本漂移）——

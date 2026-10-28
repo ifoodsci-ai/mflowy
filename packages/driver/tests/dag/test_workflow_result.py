@@ -62,6 +62,40 @@ class TestDAGResult:
         assert "hello from A" in flow.runs[0].output
         assert "hello from B" in flow.runs[1].output
 
+    def test_artifacts_snapshot_per_node(self, fake_plugins, fake_tracking):
+        """NodeResult.artifacts = account 时刻 run 工件树清单快照（主键化工件索引）。"""
+        from mflowy.utils.mlflow import active_tracking
+
+        @handler()
+        def makes_artifact(**kwargs):
+            t = active_tracking()
+            t.artifacts[t.active_run_id] = ["t.json"]  # 模拟域侧落盘（fake 无自动记录面）
+            return "x"
+
+        fake_plugins.setdefault("load", {})["makes_artifact"] = makes_artifact
+        a = Context(_conf("带工件", "makes_artifact"), [])
+        flow = self._workflow(a).run()
+        assert flow.runs[0].artifacts == ["t.json"]
+
+    def test_artifacts_query_failure_degrades_empty(self, fake_plugins, fake_tracking, monkeypatch):
+        """工件清单查询失败降级空表（与 status 降级同尺）——不得掩盖业务结果。"""
+        from mflowy.utils.mlflow import FakeTracking
+
+        @handler()
+        def ok(**kwargs):
+            return "x"
+
+        fake_plugins.setdefault("load", {})["ok"] = ok
+
+        def _boom(self, run_id):
+            raise RuntimeError("db gone")
+
+        monkeypatch.setattr(FakeTracking, "run_artifacts", _boom)
+        a = Context(_conf("查炸", "ok"), [])
+        flow = self._workflow(a).run()
+        assert flow.runs[0].artifacts == []
+        assert flow.runs[0].status == "FINISHED"  # status 查询面不受工件查询失败牵连
+
     def test_failure_skips_lineage_descendants(self, fake_plugins, fake_tracking):
         """失败 = 剪枝血缘后代（#59）：下游 skipped 计入 runs，无完成节点 → failed。"""
         executed: list[str] = []

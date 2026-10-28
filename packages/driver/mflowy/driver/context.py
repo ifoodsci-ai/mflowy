@@ -41,6 +41,7 @@ class NodeResult:
     name: str
     run_id: str
     status: str
+    artifacts: list[str]
     output: str
 
     # 结构化返回值通道：value 不进 dataclass 字段——asdict/pydantic 序列化天然
@@ -208,24 +209,28 @@ class Context:
         return self.account(buf.getvalue().strip())
 
     def account(self, output: str) -> NodeResult:
-        """执行记账单点：run_id/status 哨兵规则一处定义。
+        """执行记账单点：run_id/status/artifacts 哨兵规则一处定义。
 
-        无 run（裸桩链/窗前失败）→ run_id/status 留空，不拿 node_id 冒充；
-        窗内 → 查真实状态（FAILED 如实记账）；记账查询失败降级空串——
-        不得掩盖业务结果或原始失败。
+        无 run（裸桩链/窗前失败）→ run_id/status 留空、artifacts 空表，不拿
+        node_id 冒充；窗内 → 查真实状态与工件清单（FAILED 如实记账）；查询失败
+        降级（status="" / artifacts=[]）——不得掩盖业务结果或原始失败。
         """
-        if self.run_id is None:
-            status = ""
-        else:
+        status, artifacts = "", []
+        if self.run_id is not None:
             try:
                 status = self.status
             except Exception:
                 status = ""
+            try:
+                artifacts = active_tracking().run_artifacts(self.run_id)
+            except Exception:
+                artifacts = []
         result = NodeResult(
             node=self.conf.node_key,
             name=self.conf.name,
             run_id=self.run_id or "",
             status=status,
+            artifacts=artifacts,
             output=output,
         )
         # 失败路径 result 仍是 _NOT_RUN 哨兵 → value=None，不携带半成品
@@ -251,6 +256,7 @@ def skipped_result(node: Context) -> NodeResult:
         name=node.conf.name,
         run_id="",
         status="skipped",
+        artifacts=[],
         output="",
     )
     result.value = None
