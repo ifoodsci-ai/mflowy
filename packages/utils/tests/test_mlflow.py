@@ -207,6 +207,15 @@ class TestArtifactShellContract:
         with pytest.raises(ValueError, match="非本地"):
             mlflow_util.log_pickle(object(), "x.pkl")
 
+    def test_log_model_graceful_without_run(self, caplog):
+        """log_model 直调形态：窗外降级 None + warning（守卫前置，不触 sklearn）。"""
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            uri = mlflow_util.log_model(object(), name="final")
+        assert uri is None
+        assert any("跳过工件落盘" in r.message for r in caplog.records)
+
 
 class TestTrackingSeam:
     """Tracking seam 契约：ContextVar 绑定 + FakeTracking 内存 adapter（内核测试的观察面）。"""

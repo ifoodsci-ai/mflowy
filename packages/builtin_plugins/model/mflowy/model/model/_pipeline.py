@@ -518,29 +518,29 @@ def training(
 
     # #66 节点副产物：X_test/y_test/y_pred parquet 随 run（run_id 寻址、行位对齐——
     # log_table 不保索引，y_pred 行序 ≡ X_test ≡ y_test 行序）；loader.holdout =
-    # 终评快照（final_train_test 经 DAGResult 回读的数值面）
-    if mlflow.active_run():
-        from mflowy.utils.mlflow import log_table as _log_table
+    # 终评快照（final_train_test 经 DAGResult 回读的数值面）。直调形态（窗外）
+    # 经落盘壳 graceful 跳过——不再散守 `if mlflow.active_run()`
+    from mflowy.utils.mlflow import log_table as _log_table
 
-        y_pred_df = pd.DataFrame(y_pred, columns=split.y_test.columns)
-        _log_table(split.X_test, HOLDOUT_BYPRODUCTS["X_test"])
-        _log_table(split.y_test, HOLDOUT_BYPRODUCTS["y_test"])
-        _log_table(y_pred_df, HOLDOUT_BYPRODUCTS["y_pred"])
-        parts = [(X_fit, y_fit, "Train")]
-        if X_val is not None:
-            parts.append((X_val, y_val, "Val"))
-        parts.append((split.X_test, split.y_test, "Test"))
-        plot_loss_curve(pipe)
-        plot_evaluation(pipe, parts, task)
+    y_pred_df = pd.DataFrame(y_pred, columns=split.y_test.columns)
+    _log_table(split.X_test, HOLDOUT_BYPRODUCTS["X_test"], graceful=True)
+    _log_table(split.y_test, HOLDOUT_BYPRODUCTS["y_test"], graceful=True)
+    _log_table(y_pred_df, HOLDOUT_BYPRODUCTS["y_pred"], graceful=True)
+    parts = [(X_fit, y_fit, "Train")]
+    if X_val is not None:
+        parts.append((X_val, y_val, "Val"))
+    parts.append((split.X_test, split.y_test, "Test"))
+    plot_loss_curve(pipe)
+    plot_evaluation(pipe, parts, task)
 
-    # save：恒 ModelPipeline、恒 mlflow.sklearn、名字恒 final——产物格式单一
+    # save：恒 ModelPipeline、恒 mlflow.sklearn、名字恒 final——产物格式单一；
+    # pickle 格式：skops 默认拒绝自定义类型（ModelPipeline/estimator 子类）
     pipe.set_names(split.y_train.columns.tolist())
-    model_uri = None
-    if mlflow.active_run():
-        # pickle 格式：skops 默认拒绝自定义类型（ModelPipeline/estimator 子类）
-        example = split.X_test.head(1)
-        model_info = mlflow.sklearn.log_model(pipe, name="final", input_example=example, serialization_format="pickle")
-        model_uri = model_info.model_uri
+    from mflowy.utils.mlflow import log_model
+
+    model_uri = log_model(
+        pipe, name="final", input_example=split.X_test.head(1), serialization_format="pickle"
+    )
 
     return ModelLoader(name=name, _pipe=pipe, _model_uri=model_uri, holdout={"u": round(u, 4), "metrics": metrics})
 

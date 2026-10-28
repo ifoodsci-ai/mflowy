@@ -344,6 +344,20 @@ def log_pickle(obj, artifact_file: str, *, graceful: bool = False):
     return _artifact_shell(artifact_file, _write, direct_write=True, graceful=graceful)
 
 
+def log_model(pipe, name: str = "final", **kwargs) -> str | None:
+    """mlflow.sklearn.log_model（经落盘壳）：窗口内落模型返回 model_uri。
+
+    终训模型本体的唯一持久化面（产物名恒 ``final``）；恒 graceful——直调形态
+    （DAG 窗口外）合法降级为内存态 loader（model_uri=None）。
+    """
+    import mlflow.sklearn  # noqa: F401 — 绑定 mlflow.sklearn 属性面供闭包调用
+
+    def _write(_: str) -> str:
+        return mlflow.sklearn.log_model(pipe, name=name, **kwargs).model_uri
+
+    return _artifact_shell(name, _write, graceful=True)
+
+
 def run_artifacts(run_id: str) -> list[str]:
     """按 run_id 列工件路径（薄封装——域侧 fail-loud 清单的检索面）。"""
     import mlflow
