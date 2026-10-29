@@ -185,7 +185,7 @@ class TestDAGResult:
         flow = self._workflow(a).run()
 
         assert flow.status == "failed"  # 无完成节点（下游被剪）
-        assert f"[load__boom.{a.node_id}]" in flow.error  # 失败地址 = 图键规则（node_id）——可与 mermaid 图对上
+        assert f"[{a.id}]" in flow.error  # 失败地址 = Context.id——与 mermaid 图键对上
         assert "]坏任务" in flow.error  # name 上下文
         assert "boom" in flow.error
         assert [r.output for r in flow.runs] == ["ValueError('boom')", ""]  # 失败 repr 记账 + 下游 skipped
