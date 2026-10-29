@@ -30,6 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   分支消灭）。`_pipeline`/`log_task_evidence` 散守的 `if mlflow.active_run()`
   全部归一为 graceful 调用；终评图/损失曲线另设窗外整跳过（判 fluent 窗口而非
   seam——副产物族计算+落盘整体随 run，直调形态不白算）。
+- **Context 身份重设计（BREAKING）**：`Context.id` = `node_key#分组序号`
+  （ContextVar 分组计数 map，从 0、构造期定终身——跨配置编辑不漂移；身份与执行地址
+  `run_id` 彻底分离）；`node_id` 属性与双语义 `id` property（执行后=run_id）删除，
+  图键/失败地址/mermaid id 统一为 `Context.id`，mermaid label 改用
+  `Context.label`（`conf.name` 优先、降级 id）；`_node_key()` 辅助函数消亡。
 - **mlflow 观测工具 4→2**：`list_runs` 并入 `get_experiment`（实验仪表盘 = 本体 +
   run 状态目录 `node/name/run_id/status/start_time` 五元组投影，对标 NodeResult、
   过滤/翻页随迁；params/metrics 全量返回收窄为 `get_run` 下钻）；`list_run_artifacts`

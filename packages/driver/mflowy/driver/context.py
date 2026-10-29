@@ -21,6 +21,7 @@ import logging
 from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass
+from functools import cached_property
 from typing import TYPE_CHECKING, Any, get_type_hints
 
 from mflowy.utils.capture import capture_prints
@@ -32,7 +33,9 @@ from .discover import get_node
 
 logger = logging.getLogger(__name__)
 
-_counter: ContextVar[itertools.count | None] = ContextVar("node_counter_id", default=None)
+# 分组计数 map：{node_key: count(0)}——同 key 多实例序号独立于其他类型（跨配置
+# 编辑的图 diff 稳定：插入他类型节点不动本组序号）
+_counter_map: ContextVar[dict[str, itertools.count] | None] = ContextVar("node_counter_map", default=None)
 
 
 @dataclass
@@ -56,8 +59,8 @@ class Context:
 
     @classmethod
     def reset_counter(cls):
-        """重置任务计数器（每次 Builder.build 调用，编号独立于并发 build）"""
-        _counter.set(itertools.count(1))
+        """重置分组计数 map（每次 Builder.build 调用，序号独立于并发 build）"""
+        _counter_map.set({})
 
     def __init__(
         self,
@@ -72,12 +75,14 @@ class Context:
     ):
         if prevs is None:
             prevs = []
-        counter = _counter.get()
-        if counter is None:
-            # build()之外直接构造（测试等）：惰性兜底计数器，行为对齐旧的类级计数
-            counter = itertools.count(1)
-            _counter.set(counter)
-        self.node_id = f"node_{next(counter)}"  # 稳定调度键（DAG 图键/调度字典），全生命周期不变
+        counters = _counter_map.get()
+        if counters is None:
+            # build()之外直接构造（测试等）：惰性兜底 map，行为对齐旧计数器的兜底语义
+            counters = {}
+            _counter_map.set(counters)
+        # 身份静态定终身：node_key#分组序号（构造序=分配序——序号在构造期取定，
+        # 不延迟到首访问，否则分配序退化为访问序）；执行地址 run_id 与身份分离
+        self.id = f"{conf.node_key}#{next(counters.setdefault(conf.node_key, itertools.count(0)))}"
         self.run_id: str | None = None  # 执行记账：mlflow run id，执行期经 adopt_run 上报
         self.partial_output: str | None = None  # 崩溃前 partial stdout（run() 异常路径暂存）
         self.conf = conf
@@ -98,10 +103,10 @@ class Context:
         self._upstream_pairs: list[tuple[Context, str | None]] = upstream_pairs if upstream_pairs is not None else []
         self._upstream_by_param: dict[str, list[Context]] = upstream_by_param if upstream_by_param is not None else {}
 
-    @property
-    def id(self) -> str:
-        """兼容派生：执行后 = run_id，执行前 = node_id（历史单一字段双语义的显式化）。"""
-        return self.run_id or self.node_id
+    @cached_property
+    def label(self) -> str:
+        """展示标签：conf.name 优先，降级 id——空 name 直构不产出空标签。"""
+        return self.conf.name or self.id
 
     def adopt_run(self, run_id: str) -> None:
         """执行记账上报面：中间件（mlflow_log）在 run 窗口开启时调用——不再改写身份字段。"""
@@ -111,7 +116,7 @@ class Context:
     def status(self) -> str:
         """节点 MLflow run 状态——显式契约：未上报 run_id（未执行）查询即 RuntimeError。"""
         if self.run_id is None:
-            raise RuntimeError(f"{self.node_id} 尚未执行（无 run_id），status 仅在 run 之后合法")
+            raise RuntimeError(f"{self.id} 尚未执行（无 run_id），status 仅在 run 之后合法")
         return active_tracking().run_status(self.run_id)
 
     @property
@@ -123,7 +128,7 @@ class Context:
         """
         if not self._prevs:
             return None
-        return ".".join(dict.fromkeys(pre.run_id or pre.node_id for pre in self._prevs))
+        return ".".join(dict.fromkeys(pre.run_id or pre.id for pre in self._prevs))
 
     @property
     def prevs(self) -> tuple[Context, ...]:
@@ -218,7 +223,7 @@ class Context:
         """执行记账单点：run_id/status/artifacts/描述 哨兵规则一处定义。
 
         无 run（裸桩链/窗前失败）→ run_id/status 留空、artifacts 空表，不拿
-        node_id 冒充；窗内 → 查真实状态与工件清单（FAILED 如实记账）并回写
+        id 冒充；窗内 → 查真实状态与工件清单（FAILED 如实记账）并回写
         run 描述（≡ output，含失败追加的异常——单源合成）；查询/写入失败
         降级（status="" / artifacts=[] / 描述不写）——不得掩盖业务结果或原始失败。
         """
@@ -227,16 +232,16 @@ class Context:
             try:
                 status = self.status
             except Exception:
-                logger.warning("%s 状态查询失败，记账降级空串", self.node_id, exc_info=True)
+                logger.warning("%s 状态查询失败，记账降级空串", self.id, exc_info=True)
             try:
                 artifacts = active_tracking().run_artifacts(self.run_id)
             except Exception:
-                logger.warning("%s 工件清单查询失败，记账降级空表", self.node_id, exc_info=True)
+                logger.warning("%s 工件清单查询失败，记账降级空表", self.id, exc_info=True)
                 artifacts = []
             try:
                 active_tracking().describe_run(self.run_id, output)
             except Exception:
-                logger.warning("%s run 描述写入失败（观测面降级）", self.node_id, exc_info=True)
+                logger.warning("%s run 描述写入失败（观测面降级）", self.id, exc_info=True)
         result = NodeResult(
             node=self.conf.node_key,
             name=self.conf.name,

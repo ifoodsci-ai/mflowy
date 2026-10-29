@@ -1,8 +1,5 @@
-"""Context 执行记账契约：node_id 稳定（调度键）/ run_id 执行期经 adopt_run 上报 / id 兼容派生。
-
-此前身份是一个字段两种语义：``ctx._id`` 先是 node_N，mlflow_log 从中间件外部改写成
-run_id——调度以可变字段为键、status 依赖时序、血缘常量被跨模块取私有。本文件锁定
-收归所有权后的显式契约。
+"""Context 身份契约：id 构造期定终身（``node_key#分组序号``）/ run_id 执行期经 adopt_run
+上报 / label 展示降级链。身份与执行地址分离——此前 id 双语义（执行后改写 run_id）已退役。
 """
 
 import pytest
@@ -23,18 +20,37 @@ def _ctx() -> Context:
 
 
 class TestNodeIdentity:
-    def test_node_id_stable_run_id_adopted(self, fake_plugins):
-        """node_id 全程稳定（调度键）；run_id 执行期上报；id 兼容派生两段语义。"""
+    def test_id_static_identity_run_id_separate(self, fake_plugins):
+        """id 构造期定终身（node_key#分组序号）；run_id 执行期上报——身份与执行地址分离。"""
+        Context.reset_counter()
         fake_plugins.setdefault("load", {})["node"] = _node
         ctx = _ctx()
-        before = ctx.node_id
-        assert ctx.run_id is None  # 未执行显式为 None，而非拿 node_N 冒充
-        assert ctx.id == ctx.node_id  # 兼容：执行前 = node_id
+        assert ctx.id == "load__node#0"
+        assert ctx.run_id is None  # 未执行显式为 None
         with use_tracking(FakeTracking()):
             ctx.run()
-        assert ctx.node_id == before  # 稳定
-        assert ctx.run_id and ctx.run_id != ctx.node_id
-        assert ctx.id == ctx.run_id  # 兼容：执行后 = run_id
+        assert ctx.id == "load__node#0"  # 全生命周期稳定
+        assert ctx.run_id and ctx.run_id != ctx.id  # id 不再双语义化为 run_id
+
+    def test_id_grouped_ordinal_from_zero(self):
+        """分组计数从 0：同 key 递增、异 key 各自独立——跨类型插入不漂移既有序号。"""
+        Context.reset_counter()
+        a, b = _ctx(), _ctx()
+        assert (a.id, b.id) == ("load__node#0", "load__node#1")
+        assert Context(NodeConf(name="X", node_key="model__xgb"), []).id == "model__xgb#0"  # 异组独立
+        assert _ctx().id == "load__node#2"  # 中间插入他类型不动本组序号
+
+    def test_reset_counter_restarts_groups(self):
+        """reset_counter（每次 Builder.build）：分组序号归零。"""
+        Context.reset_counter()
+        assert _ctx().id == "load__node#0"
+        Context.reset_counter()
+        assert _ctx().id == "load__node#0"  # 新 build 重新从 0
+
+    def test_label_name_first_fallback_id(self):
+        """label 展示链：conf.name 优先，空 name 降级 id（直构不产出空标签）。"""
+        assert _ctx().label == "节点"
+        assert Context(NodeConf(name="", node_key="load__node"), []).label.startswith("load__node#")
 
     def test_run_resets_run_id_before_bind(self, fake_plugins, fake_tracking):
         """执行不记忆落到记账：run 入口先清 run_id——重跑的窗前失败不背上一次的 run_id。"""
@@ -106,7 +122,7 @@ class TestNodeIdentity:
         ctx = Context(NodeConf(name="裸桩", node_key="load__plain"), [])
         result = ctx.run()  # 此前：handler 已成功却在 status 上 RuntimeError
         assert result.status == ""
-        assert result.run_id == ""  # 无 run 留空——不拿 node_id 冒充 run_id
+        assert result.run_id == ""  # 无 run 留空——不拿 id 冒充 run_id
         assert ctx.result == "bare"
 
     def test_lineage_tag_key_public(self):
@@ -120,7 +136,7 @@ class TestNodeIdentity:
             ctx.status  # noqa: B018 — 有意触发 property 的 RuntimeError，断言显式契约
 
     def test_graph_keys_stable_across_run(self, fake_plugins, fake_tracking, tmp_path):
-        """to_graph / __repr__ 键全生命周期稳定（node_id）——运行后重画不再变键。"""
+        """to_graph / __repr__ 键全生命周期稳定（id）——运行后重画不再变键。"""
         from mflowy.driver.builder import Builder
 
         fake_plugins.setdefault("load", {})["node"] = _node
@@ -141,4 +157,25 @@ class TestNodeIdentity:
         assert flow.status == "finished"
         after = {n["id"] for n in dag.to_graph()["nodes"]}
         assert before == after  # 运行后键不变
-        assert len(after) == 2
+        assert before == {"load__node#0", "model__down#0"}
+
+    def test_mermaid_id_and_label_projection(self, fake_plugins, fake_tracking, tmp_path):
+        """mermaid 双源：id=Context.id（机器键），label=Context.label（人读标签）。"""
+        from mflowy.driver.builder import Builder
+
+        fake_plugins.setdefault("load", {})["node"] = _node
+
+        @handler()
+        def _down(load, **_):
+            return load
+
+        fake_plugins.setdefault("model", {})["down"] = _down
+        yaml_file = tmp_path / "m.yaml"
+        yaml_file.write_text(
+            "name: m_test\ndescription: ''\nflow:\n- load__node:\n    name: A\n- model__down:\n    name: B\n",
+            encoding="utf-8",
+        )
+        text = Builder(yaml_file).build().mermaid()
+        assert 'load__node#0["A"]' in text
+        assert 'model__down#0["B"]' in text
+        assert "load__node#0 --> model__down#0" in text

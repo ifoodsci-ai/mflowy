@@ -21,11 +21,6 @@ from .context import Context, NodeResult, skipped_result
 logger = logging.getLogger(__name__)
 
 
-def _node_key(node: Context) -> str:
-    """图键规则单一来源：walk 投影（to_graph/__repr__）与失败定位地址共用。"""
-    return f"{node.conf.node_key}.{node.node_id}"
-
-
 def lineage_closure(seeds: Iterable[Context], *, required_only: bool) -> set[Context]:
     """血缘后代闭包（**单源**，两策略）——出局集含种子。
 
@@ -134,7 +129,7 @@ class DAG:
                 # 剪枝血缘后代闭包，其余路径继续（#59：一切失败一视同仁）
                 partial = node.partial_output
                 node_result = node.account(f"{partial}\n{e!r}" if partial else repr(e))
-                failures.append(f"[{_node_key(node)}]{node_result.name} failed: {e}")
+                failures.append(f"[{node.id}]{node_result.name} failed: {e}")
                 skip |= lineage_closure({node}, required_only=False)  # 含种子（已调度过，无副作用）
             else:
                 completed += 1
@@ -153,15 +148,15 @@ class DAG:
         return flow
 
     def _next(self) -> Iterator[Context]:
-        in_degree = {t.node_id: len(t._prevs) for t in self.nodes}  # 稳定键（执行不改写）；in-degree = 血缘边数
-        ready: deque[Context] = deque(t for t in self.nodes if in_degree[t.node_id] == 0)
+        in_degree = {t.id: len(t._prevs) for t in self.nodes}  # 稳定键（执行不改写）；in-degree = 血缘边数
+        ready: deque[Context] = deque(t for t in self.nodes if in_degree[t.id] == 0)
 
         while ready:
             task = ready.pop()  # LIFO：深度优先，刚解锁的下游优先
             yield task
             for nxt in task._nexts:
-                in_degree[nxt.node_id] -= 1
-                if in_degree[nxt.node_id] == 0:
+                in_degree[nxt.id] -= 1
+                if in_degree[nxt.id] == 0:
                     ready.append(nxt)
 
     def walk(self) -> Iterator[tuple[Context, str, list[tuple[str, str | None]]]]:
@@ -171,8 +166,8 @@ class DAG:
         直连边 label=None）；to_graph / __repr__ 退化为纯格式化。
         """
         for node in self._next():
-            key = _node_key(node)
-            ups = [(_node_key(up), label) for up, label in node._upstream_pairs]
+            key = node.id
+            ups = [(up.id, label) for up, label in node._upstream_pairs]
             yield node, key, ups
 
     def to_graph(self) -> dict:
@@ -196,7 +191,7 @@ class DAG:
         """Mermaid DAG 视图（展示形态）：节点按调度序 + 编译期血缘边（边变换带标签）。"""
         lines = ["```mermaid", "flowchart TD"]
         for node, key, ups in self.walk():
-            label = node.conf.name.replace('"', "#quot;")
+            label = node.label.replace('"', "#quot;")
             lines.append(f'    {key}["{label}"]')
             for ukey, via in dict.fromkeys(ups):
                 lines.append(f"    {ukey} -->|{via}| {key}" if via else f"    {ukey} --> {key}")
