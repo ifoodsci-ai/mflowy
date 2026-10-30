@@ -73,7 +73,7 @@ uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 | M11 | 剧本层完整入库：skills 全 git 追踪、引用文档入仓、工具名 ⊆ `tools/list` 有测试锁定 | research-review 未追踪；引用被 ignore 的文档断链  | `test_workspace.py` 增 SKILL 工具名断言               |
 | M12 | breaking 小步走 0.x minor，0.2.0 尽快切 released                       | unreleased 堆 81 commit 三批 BREAKING             | CHANGELOG 0.2.0 带 release 日期                        |
 
-小项随触碰收敛（不单列）：finish 与过程奖励同尺（卡权重）、propose 只出签名可受理的候选、`utils` mlflow 转 extra、域专用查询迁出 utils。
+小项随触碰收敛（不单列）：finish 与过程奖励同尺（卡权重）、propose 只出签名可受理的候选、域专用查询迁出 utils。（原「utils mlflow 转 extra」已撤销——tracking 是节点 run 刚需，hard dep 合理。）
 
 ## 添加能力
 
