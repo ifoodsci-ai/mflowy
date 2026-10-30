@@ -9,9 +9,12 @@
   图片清单（OOF 图集/副产物指针/泰勒图路径）、叙事槽样板
 - finish(pdf) 单动作（BREAKING）：pdf 必填、收编进 deliverables（tmp/rename 原子
   落盘）+ verdict；重入幂等（交付报告不可变更）；preview 分支退役
+- #92 重栈纪律：终态会话 fixture 模块级共享（只读族一次构建）；终训副产物按
+  run_id 跨用例读回——tracking 库随之模块级共享
 """
 
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -25,32 +28,60 @@ _K = "RF|passthrough|passthrough"
 _K2 = "XGB|passthrough|passthrough"
 
 
-@pytest.fixture(autouse=True)
-def isolate_tracking(tmp_path, monkeypatch):
-    import mlflow
-
-    uri = f"sqlite:///{tmp_path}/tracking.db"
-    monkeypatch.setenv("MLFLOW_TRACKING_URI", uri)
-    mlflow.set_tracking_uri(uri)
-    monkeypatch.chdir(tmp_path)
-
-
-@pytest.fixture
-def sessions_root(tmp_path, monkeypatch):
-    root = tmp_path / "modeling_sessions"
-    monkeypatch.setenv("MFLOWY_MODELING_SESSIONS", str(root))
-    return root
+@pytest.fixture(scope="module")
+def sessions_root(tmp_path_factory):
+    """模块级会话根（#92）：重栈会话只建一遍——function 作用域曾致 9 用例 × 4 管线
+    线性重建、单文件峰值 10GB（全量 ~20GB）。"""
+    root = tmp_path_factory.mktemp("modeling_sessions")
+    mp = pytest.MonkeyPatch()
+    mp.setenv("MFLOWY_MODELING_SESSIONS", str(root))
+    yield root
+    mp.undo()
 
 
-@pytest.fixture
-def reg_csv(tmp_path) -> str:
+@pytest.fixture(scope="module")
+def reg_csv(tmp_path_factory) -> str:
     n = 120
     rng = np.random.default_rng(4)
     x = rng.normal(size=n)
     df = pd.DataFrame({"x": x, "target": 2.0 * x + 0.1 * rng.normal(size=n)})
-    p = tmp_path / "reg.csv"
+    p = tmp_path_factory.mktemp("reg") / "reg.csv"
     df.to_csv(p, index=False)
     return str(p)
+
+
+@pytest.fixture(scope="module")
+def shared_tracking(tmp_path_factory):
+    """模块级共享 tracking 库（#92）：终训副产物按 run_id 跨用例读回
+    （taylor_for_runs → MlflowClient），寻址须同库——per-test 换库切断 fan-in。
+
+    fluent 全局随建随还：``set_tracking_uri`` 遮蔽 env（进程级残留会泄进后续
+    文件的 env-only 隔离）；store 须在 cwd=tmp 时急切建——sqlite 库的工件根
+    ``./mlruns`` 按 store 初始化时刻的 cwd 绝对化（仓库根零运行产物）。"""
+    import mlflow
+
+    d = tmp_path_factory.mktemp("tracking")
+    uri = f"sqlite:///{d}/tracking.db"
+    prev_cwd = os.getcwd()
+    os.chdir(d)
+    try:
+        mlflow.set_tracking_uri(uri)
+        mlflow.MlflowClient().search_experiments()  # 急切建库 + Default 实验（工件根锚 tmp）
+        yield uri
+    finally:
+        os.chdir(prev_cwd)
+        mlflow.set_tracking_uri(None)  # 复位 env 驱动解析（受支持的复位面）
+
+
+@pytest.fixture(autouse=True)
+def _pin_shared_tracking(monkeypatch, shared_tracking):
+    """共享库复指（晚于根 conftest 的 per-test 隔离生效）：读回缝
+    ``run_artifacts → setup()`` 从 env 解析 tracking 再重设 fluent——env 不钉
+    共享库，终训副产物的跨用例 fan-in 寻址即断。"""
+    import mlflow
+
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", shared_tracking)
+    mlflow.set_tracking_uri(shared_tracking)
 
 
 CARD = {"domain": "测试", "target": "target"}
@@ -81,10 +112,9 @@ def _pdf(tmp_path, name="final_report.pdf") -> Path:
     return p
 
 
-@pytest.fixture
-def delivered(sessions_root, reg_csv):
-    """双模型终态会话：RF + XGB 各搜一次并 final_train_test。"""
-    s = _start(sessions_root, reg_csv, fams=("RF", "XGB"))
+def _build_delivered(root, csv):
+    """双模型终态会话：RF + XGB 各搜一次并 final_train_test（4 条管线）。"""
+    s = _start(root, csv, fams=("RF", "XGB"))
     sid = s["session_id"]
     for fam, params in (("RF", {"n_estimators": 15}), ("XGB", {"n_estimators": 15})):
         ms.apply_action(sid, "select_model", {"family": fam})
@@ -94,10 +124,36 @@ def delivered(sessions_root, reg_csv):
     return s
 
 
+@pytest.fixture(scope="module")
+def delivered(sessions_root, reg_csv, shared_tracking):
+    """模块级共享双模型终态会话（#92）——共享前提 = 消费用例只读：不改光标、
+    不 apply、不 finish（finish 终态化 manifest）。写面用例走 delivered_fresh /
+    delivered_rf（独立会话）。"""
+    return _build_delivered(sessions_root, reg_csv)
+
+
+@pytest.fixture
+def delivered_fresh(sessions_root, reg_csv, shared_tracking):
+    """独立全量会话（function 级）：finish 收局终态化 manifest——不可与只读族共享。"""
+    return _build_delivered(sessions_root, reg_csv)
+
+
+@pytest.fixture
+def delivered_rf(sessions_root, reg_csv, shared_tracking):
+    """独立单模型终态会话：工具面接缝用例（双模型非必要——降重建成本）。"""
+    s = _start(sessions_root, reg_csv)
+    sid = s["session_id"]
+    ms.apply_action(sid, "select_model", {"family": "RF"})
+    ms.apply_action(sid, "set_hp", {"n_estimators": 15})
+    ms.apply_action(sid, "run_hpo", {"n_trials": 2})
+    ms.apply_action(sid, "final_train_test")
+    return s
+
+
 # ── OOF 图集挂 run ─────────────────────────────────────────────────────────
 
 
-def test_run_hpo_writes_oof_plot_album(sessions_root, reg_csv):
+def test_run_hpo_writes_oof_plot_album(sessions_root, reg_csv, shared_tracking):
     """OOF 图集：run_hpo 产物挂 run 下（run_id 寻址）——图集可按 run 列出。"""
     s = _start(sessions_root, reg_csv)
     sid = s["session_id"]
@@ -215,9 +271,9 @@ def test_finish_pdf_required(delivered):
         ms.finish_session(delivered["session_id"])
 
 
-def test_finish_pdf_adoption_and_verdict(delivered, sessions_root, tmp_path):
+def test_finish_pdf_adoption_and_verdict(delivered_fresh, sessions_root, tmp_path):
     """真收局：收编 π 产报告（tmp/rename 落 deliverables、内容不验）+ verdict 落账。"""
-    sid = delivered["session_id"]
+    sid = delivered_fresh["session_id"]
     pdf = _pdf(tmp_path)
     v = ms.finish_session(sid, pdf=str(pdf))
     verify_verdict(v)
@@ -240,9 +296,9 @@ def test_finish_pdf_adoption_and_verdict(delivered, sessions_root, tmp_path):
         ms.finish_session(sid, pdf=str(rewrite))  # 交付报告不可变更（审计面）
 
 
-def test_modeling_finish_tool_face(delivered, tmp_path):
+def test_modeling_finish_tool_face(delivered_rf, tmp_path):
     """接缝（session→tools）：modeling_finish 的 pdf 透传可达（工具面=会话面）。"""
-    sid = delivered["session_id"]
+    sid = delivered_rf["session_id"]
     pdf = _pdf(tmp_path)
     v = modeling_finish(session_id=sid, pdf=str(pdf))
     verify_verdict(v)
@@ -263,3 +319,9 @@ def test_taylor_figure_name_single_source():
         if "taylor_diagram.png" in line
     ]
     assert occurrences == ["packages/builtin_plugins/model/mflowy/model/report.py:27"], occurrences
+
+
+def test_delivered_fixture_is_module_scoped():
+    """#92 回归钉：delivered 模块级共享——scope 降级即 9 用例 × 4 管线线性重建，
+    单文件峰值 10GB（全量 ~20GB，取证见 #92）。锁 scope 不锁行为。"""
+    assert delivered._fixture_function_marker.scope == "module"
