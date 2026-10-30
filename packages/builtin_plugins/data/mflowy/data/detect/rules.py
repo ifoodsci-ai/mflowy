@@ -82,7 +82,7 @@ def high_corr_pairs(
     """数值列两两 |r| ≥ threshold 的对，按 |r| 降序——detect.collinear 与 statistic.bivariate 共用。
 
     返回 (a, b, |r|, p)：列对取 df 列序在前者为 a；NaN 相关（常量列等）跳过。
-    纯计算零判断：报不报是 detect.collinear 的事，删谁是 .repair 生成器的事，
+    纯计算零判断：报不报是 detect.collinear 的事，删谁是问题规则的事，
     分档是 bivariate 的事——三方同源同值（|r| 与 p 出自同一次 scipy 调用）。
     """
     from itertools import combinations

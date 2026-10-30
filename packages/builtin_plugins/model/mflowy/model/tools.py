@@ -18,6 +18,7 @@ from mflowy.driver.dag import DAGResult
 from pydantic import Field
 
 from .job_provider import get_job_provider as _get_job_provider
+from .propose_rules import KNOWN_FINDING_KINDS
 from .templates import MODELING_TEMPLATE, count_model_steps, parse_steps_fragment
 
 try:  # SDK 仅 server 形态需要（[mcp] extra）——runner 路径零 SDK 可导入；
@@ -84,6 +85,12 @@ async def hyperparameters_search(
     ],
     name: Annotated[str, Field(description="任务名称")],
     desc: Annotated[str, Field(description="任务描述")],
+    study_storage_path: Annotated[
+        str | None,
+        Field(
+            description="optuna study 落库 sqlite 路径（可选）——非空时同一路径重复搜索增量续跑（复用前史）；对同一模型多次 HPO 时传入同一持久路径"
+        ),
+    ] = None,
     ctx: Context | None = None,
 ) -> DAGResult:
     """提交超参搜索任务并等待完成（search-only：model 步只碰 inner CV，不终训不碰 holdout）。
@@ -91,11 +98,14 @@ async def hyperparameters_search(
     何时使用 hyperparameters_search：
     - 候选扫描期：多族/多空间并排出 θ* 与 u_inner 证据（交付集外不白付终训）
     - 扫描后用 modeling 工具传全 pin 参数（θ* 落地）做终训交付
+    - 对同一模型迭代多轮 HPO：传同一 study_storage_path——后轮复用前轮搜索历史
+      （增量续跑，不从头采样）
     """
     return await _get_job_provider().hyperparameters_search(
         modeling_steps=modeling_steps,
         name=name,
         desc=desc,
+        study_storage_path=study_storage_path,
         headers=ctx.request_context.meta if ctx else None,
     )
 
@@ -265,7 +275,7 @@ def modeling_session_start(
         goal=goal,
         external_baseline=external_baseline,
         card=card,
-    )
+    ).model_dump()
 
 
 def modeling_propose(session_id: Annotated[str, Field(description="会话 ID")]) -> list[dict]:
@@ -278,7 +288,7 @@ def modeling_propose(session_id: Annotated[str, Field(description="会话 ID")])
     """
     from . import session
 
-    return session.propose_actions(session_id)
+    return [a.model_dump() for a in session.propose_actions(session_id)]
 
 
 def modeling_apply(
@@ -311,7 +321,7 @@ def modeling_apply(
     """
     from . import session
 
-    return session.apply_action(session_id, node, params)
+    return session.apply_action(session_id, node, params).model_dump()
 
 
 def modeling_rollback(session_id: Annotated[str, Field(description="会话 ID")]) -> dict:
@@ -322,7 +332,7 @@ def modeling_rollback(session_id: Annotated[str, Field(description="会话 ID")]
     """
     from . import session
 
-    return session.rollback(session_id)
+    return session.rollback(session_id).model_dump()
 
 
 def modeling_finish(
@@ -348,7 +358,7 @@ def modeling_finish(
 
     from . import session
 
-    return session.finish_session(session_id, pdf=pdf)
+    return session.finish_session(session_id, pdf=pdf).model_dump()
 
 
 def draw_taylor_diagram(
@@ -394,7 +404,7 @@ def modeling_report_findings(
         list[dict],
         Field(
             description="LLM findings 清单（ErrorReport schema）：{kind, severity ∈ [0,1], evidence?, message?}"
-            "——kind ⊆ 词表（error_concentrated/slice_collapse/fold_std/complexity_edge/overfit_gap）"
+            f"——kind ⊆ 词表（{'/'.join(sorted(KNOWN_FINDING_KINDS))}）"
         ),
     ],
 ) -> dict:
@@ -406,7 +416,7 @@ def modeling_report_findings(
     """
     from . import session
 
-    return session.report_findings(session_id, key, findings)
+    return session.report_findings(session_id, key, findings).model_dump()
 
 
 def modeling_abandon(

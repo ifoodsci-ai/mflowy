@@ -66,13 +66,11 @@ def MLP(
     return training(split, "MLP", make_pipe, initial_params)
 
 
-# 结构相容性自声明（知识随词汇主人居住；registry 相容性矩阵的真源）：
+# 族自声明（.mdp_family 唯一尾巴，知识随词汇主人居住）：
 # cat_support = "native" 吃 passthrough 类别列（原生类别支持）/ "encode" 存在类别列时必须编码；
 # scaling_need/min_samples 为建模会话守卫预留的声明位，registry 现消费 cat_support。
-MLP.regularizers = ("weight_decay", "dropout")  # 正则面自声明（#38 规则的目标参数）
-MLP.structure = {"cat_support": "encode", "scaling_need": True, "min_samples": 100}
 
-# 会话语义元数据（.mdp_family）：目录标记 + structure 相容声明 + machinery
+# structure 相容 + regularizers 正则面（出题规则的目标参数）+ machinery
 # （会话直调的 estimator 机器——run_hpo/final_train_test 两动作的消费面）。
 # 两行为共享的 estimator 机器：缺省 = 签名 ∪ task（estimator fit 期自算结构参数）；
 # 全标量签名 → 恒空空间 → 派生判据恒 training 行为
@@ -84,4 +82,8 @@ def _machinery(task, x_preprocessors: ColumnTransformer | None = None, seed: int
     return make_pipe, {"task": task, **base}, space
 
 
-MLP.mdp_family = {"structure": MLP.structure, "machinery": _machinery}
+MLP.mdp_family = {
+    "structure": {"cat_support": "encode", "scaling_need": True, "min_samples": 100},
+    "regularizers": ("weight_decay", "dropout"),
+    "machinery": _machinery,
+}

@@ -1,7 +1,7 @@
 """模板定稿与 findings 编译层退役（#28）：
 
 data_profile = load + statistic.profile；eda = load + univariate + bivariate + plot 族——
-detect 步撤出（检测是内层 MDP 的观测基质，永不为外层动作），findings 编译层随退役。
+detect 步撤出（检测是内层 POMDP 的观测基质，永不为外层动作），findings 编译层随退役。
 """
 
 import asyncio

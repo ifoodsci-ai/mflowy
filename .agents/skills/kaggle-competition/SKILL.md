@@ -1,6 +1,7 @@
 ---
 name: kaggle-competition
 description: Kaggle 竞赛外环控制回路(看题→数据→做题→打包→preflight→提交→反馈→修订)。用户要求参加/完成/打某个 Kaggle 竞赛,或单独要求下载竞赛数据、提交竞赛包、查询提交反馈与错误时使用。适用于任意题型;求解方式用户指定则从其指定,否则由 agent 按题自行判断。仅适用于已配置 kaggle MCP 的会话。
+disable-model-invocation: true
 ---
 
 # Kaggle Competition：外环控制回路（骨架）

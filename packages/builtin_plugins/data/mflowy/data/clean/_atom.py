@@ -1,7 +1,8 @@
-"""clean 原子共享守卫与候选工厂——参数具体性校验（fail-loud）+ 菜单档位生成。
+"""clean 原子共享守卫——参数具体性校验（fail-loud）与类型族守卫。
 
-非词表模块（``_`` 前缀词干不入 hatch 扫描）。原子判据第 2/4 条的机械面：
-不适配即报错、参数是可核的具体清单；生成器第一步按类型族自筛（.repair v2 契约）。
+非词表模块（``_`` 前缀词干不入 hatch 扫描）。原子判据的机械面：不适配即报错、
+参数是可核的具体清单。#89 ③片起候选生成（菜单档位）随问题规则居住
+（repair_rules），本模块只留节点执行面的守卫件。
 """
 
 from __future__ import annotations
@@ -46,25 +47,3 @@ def claimed_columns(card: dict | None) -> set[str]:
         card.get("time_column"),
     ]
     return {c for c in cols if c}
-
-
-def family_cols(df: pd.DataFrame, errors, family: str) -> list[str]:
-    """生成器适用性自筛：errors 中列存在且属目标类型族的去重清单（.repair v2 契约第一步）。"""
-    return dedup(
-        e.column for e in errors if e.column and e.column in df.columns and type_family(df[e.column]) == family
-    )
-
-
-def tier_repair(family: str | None, label: str, extra: dict | None = None):
-    """菜单档位工厂：按类型族自筛 errors，产出单候选——fill/cap/outlier 各档共用此形。
-
-    family=None 不做类型过滤（跨 dtype 兜底档）；extra 并入参数（如 {"k": 1.5}）。
-    """
-
-    def _make(errors, card, df):
-        cols = family_cols(df, errors, family) if family else dedup(e.column for e in errors if e.column)
-        if not cols:
-            return []
-        return [({"cols": cols, **(extra or {})}, f"{label}: {cols}")]
-
-    return _make

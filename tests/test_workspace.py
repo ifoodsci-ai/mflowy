@@ -38,7 +38,7 @@ def test_namespace_no_init(pkg):
 def test_member_import_boundaries():
     """包依赖方向铁律（utils ← driver ← data ← model ← mcp 单向）：
     driver/utils 不得 import 任何域包（内核对插件零感知）；data 不得 import model
-    （两 MDP 域隔离，共享件住上游 data）。mcp 是编排层、pyproject 硬依赖双域包，
+    （两 POMDP 域隔离，共享件住上游 data）。mcp 是编排层、pyproject 硬依赖双域包，
     合法消费其公开清单如 extras.py；entry point group 名字符串不算 import。"""
     import re
 
@@ -126,3 +126,100 @@ def test_skill_tool_names_in_tools_list():
             used.setdefault(tok, str(skill.relative_to(ROOT)))
     unknown = {t: p for t, p in used.items() if t not in allowed}
     assert not unknown, f"SKILL 引用不在运行期词表（工具名 ⊆ tools/list 断链）: {unknown}"
+
+
+def test_skill_doc_references_stay_in_repo():
+    """#65/M11：剧本参考节引用的仓内路径必须真实入仓（引用被 ignore 的文档 = 断链——
+    干净检出里不存在即测试红）。实现路径引用已被剧本层谓词禁止（AGENTS.md 防漂移），
+    本测兜「入仓文档」那半边。"""
+    import re
+
+    skills_dir = ROOT / ".agents" / "skills"
+    assert skills_dir.is_dir()
+    broken: dict[str, str] = {}
+    for md in skills_dir.rglob("*.md"):
+        for ref in re.findall(r"docs/[A-Za-z0-9_./-]+?\.md", md.read_text(encoding="utf-8")):
+            if not (ROOT / ref).is_file():
+                broken.setdefault(ref, str(md.relative_to(ROOT)))
+    assert not broken, f"SKILL 引用了未入仓的文档（M11 引用文档入仓断链）: {broken}"
+
+
+def test_active_docs_use_pomdp_not_mdp():
+    """术语统一（0.2.0 MDP→POMDP）防回潮：活性治理文档零裸 "MDP" 残留。
+
+    排除面各有其据：CHANGELOG（已发布历史条目——追加式纪律）、docs/research（历史
+    设计快照，文件名即 mdp）、benchmark_readiness_report（自declared 一次性评估
+    快照）、.agents/skills/kaggle-competition（「外环 MDP」为该 skill 自身的形式化
+    设计词）、代码文件（.mdp_family 为代码锚点，标识符不随术语改名——
+    Handle 已随 #89 改名 POMDPSessionHandle）；CONTEXT.md 的 _Avoid_ 行例外——禁用别名表本就该点名旧称。"""
+    import re
+
+    files = [
+        ROOT / "AGENTS.md",
+        ROOT / "CONTEXT.md",
+        ROOT / "README.md",
+        *sorted((ROOT / "packages").rglob("README.md")),  # 含 builtin_plugins/{data,model} 两级深
+        *sorted((ROOT / "docs").glob("*.md")),
+    ]
+    files += sorted(p for p in (ROOT / ".agents" / "skills").rglob("*.md") if "kaggle-competition" not in p.parts)
+
+    for f in files:
+        text = f.read_text(encoding="utf-8")
+        if f.name == "CONTEXT.md":
+            text = "\n".join(line for line in text.splitlines() if "_Avoid_" not in line)
+        leftover = [line.strip() for line in text.splitlines() if re.search(r"\bMDP\b", line)]
+        assert not leftover, f"{f.relative_to(ROOT)} 仍有裸 MDP（术语统一回潮）: {leftover[:3]}"
+
+
+def test_domain_sessions_implement_handle_protocol():
+    """#89 结构等价钉测：两域会话函数组满足 POMDPSessionHandle 协议形状——
+    具名核心（start/propose/apply/rollback/finish/abandon）齐备、apply 的
+    sid/action 具名、响应类型 = 契约模型（活参考从 docstring 升级为被测事实）。"""
+    import inspect
+
+    from mflowy.data import cleaning_session as cs
+    from mflowy.driver.pomdp import Observation, POMDPSessionHandle
+    from mflowy.model import session as ms
+
+    def _shape(mod, prefix_map):
+        for op, fn_name in prefix_map.items():
+            fn = getattr(mod, fn_name, None)
+            assert fn is not None, f"{mod.__name__} 缺 {fn_name}"
+            params = list(inspect.signature(fn).parameters)
+            if op in ("apply",):
+                assert params[:2] == ["session_id", "node"], (mod.__name__, fn_name, params)
+            elif op in ("propose", "rollback", "finish", "abandon"):
+                assert params[0] == "session_id", (mod.__name__, fn_name, params)
+
+    _shape(
+        cs,
+        {
+            "start": "start_session",
+            "propose": "propose_actions",
+            "apply": "apply_action",
+            "rollback": "rollback",
+            "finish": "finish_session",
+            "abandon": "abandon_session",
+        },
+    )
+    _shape(
+        ms,
+        {
+            "start": "start_session",
+            "propose": "propose_actions",
+            "apply": "apply_action",
+            "rollback": "rollback",
+            "finish": "finish_session",
+            "abandon": "abandon_session",
+        },
+    )
+
+    # 响应注解 = 契约模型（六操作面向 π 的三类返回面）
+    assert inspect.signature(cs.start_session).return_annotation.split("[")[0].endswith("Observation")
+    assert inspect.signature(ms.apply_action).return_annotation.split("[")[0].endswith("Observation")
+    assert "FinishVerdict" in inspect.signature(cs.finish_session).return_annotation  # 域尾巴 dict = preview 探针
+    assert inspect.signature(ms.finish_session).return_annotation.split("[")[0].endswith("FinishVerdict")
+    # 协议面自检：六操作齐备（防 Handle 面漂移）
+    for op in ("start", "propose", "apply", "rollback", "finish", "abandon"):
+        assert hasattr(POMDPSessionHandle, op), op
+    assert Observation.model_config.get("extra") == "forbid"  # 封闭契约

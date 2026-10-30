@@ -82,14 +82,16 @@ def RF(
     return training(split, "RF", make_pipe, initial_params, scoring=scoring)  # training 行为
 
 
-# 结构相容性自声明（知识随词汇主人居住；registry 相容性矩阵的真源）：
+# 族自声明（.mdp_family 唯一尾巴，知识随词汇主人居住）：
 # cat_support = "native" 吃 passthrough 类别列（原生类别支持）/ "encode" 存在类别列时必须编码；
 # scaling_need/min_samples 为建模会话守卫预留的声明位，registry 现消费 cat_support。
-RF.regularizers = ("ccp_alpha",)  # 正则面自声明（#38 规则的目标参数——知识随词汇主人居住）
-RF.structure = {"cat_support": "encode", "scaling_need": False, "min_samples": 30}
 
-# 会话语义元数据（.mdp_family）：目录标记 + structure 相容声明 + machinery
+# structure 相容 + regularizers 正则面（出题规则的目标参数）+ machinery
 # （会话直调的 estimator 机器——run_hpo/final_train_test 两动作的消费面）。
 # 两行为共享的 estimator 机器：缺省 = 签名（单一真源）∪ 机器参数；seed 归一 random_state
 _machinery = make_machinery(RF, _model_cls, fixed={"oob_score": True, "verbose": int(is_verbose())})
-RF.mdp_family = {"structure": RF.structure, "machinery": _machinery}
+RF.mdp_family = {
+    "structure": {"cat_support": "encode", "scaling_need": False, "min_samples": 30},
+    "regularizers": ("ccp_alpha",),
+    "machinery": _machinery,
+}

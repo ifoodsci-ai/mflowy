@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, get_args
 
 from pydantic_core import core_schema
@@ -39,6 +41,22 @@ class DiscreteSpace[T: int | float | str | bool](list[T]):
 
 
 type ParameterSearchSpace = ContinuousSpace | DiscreteSpace
+
+# ── study 落库锚（#89 ①修正：JobProvider.hyperparameters_search 的 study_storage_path 通道） ──
+# 非空时 search() 建 study 走该 sqlite + load_if_exists——同一路径重复搜索即增量
+# 续跑（复用前史）；一库一 study（名 = 路径词干）。会话域内直连路径
+# （_open_study，study_name = 结构键）不经此锚——两路径命名约定各自自洽。
+_study_storage: ContextVar[str | None] = ContextVar("mflowy_study_storage", default=None)
+
+
+def set_study_storage(path: str | None) -> Token[str | None]:
+    """锚定 search() 的 study 落库位置（job_provider 线程内 set，用毕 reset——
+    token 语义同 set_task_dir）。"""
+    return _study_storage.set(path)
+
+
+def reset_study_storage(token: Token[str | None]) -> None:
+    _study_storage.reset(token)
 
 
 def suggest_params(trial: Trial, param_space: dict[str, ParameterSearchSpace]) -> dict[str, Any]:
@@ -95,12 +113,25 @@ def search[T: float | tuple[float, ...]](
 
     import optuna
 
-    study = optuna.create_study(
-        sampler=sampler,
-        pruner=pruner,
-        direction=direction,
-        directions=directions,
-    )
+    if path := _study_storage.get():
+        # 落库锚生效（#89 ①修正）：sqlite + load_if_exists——同路径重复搜索复用
+        # 前史（对同一模型多次 HPO 的增量续跑）；一库一 study，名 = 路径词干。
+        study = optuna.create_study(
+            study_name=Path(path).stem,
+            storage=f"sqlite:///{path}",
+            load_if_exists=True,
+            sampler=sampler,
+            pruner=pruner,
+            direction=direction,
+            directions=directions,
+        )
+    else:
+        study = optuna.create_study(
+            sampler=sampler,
+            pruner=pruner,
+            direction=direction,
+            directions=directions,
+        )
     study.optimize(_objective, n_trials, timeout)
     return study
 

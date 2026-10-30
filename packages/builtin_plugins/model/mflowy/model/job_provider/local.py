@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
 
 from mflowy.driver.builder import Builder
 from mflowy.driver.dag import DAGResult
@@ -29,6 +28,7 @@ from ..templates import (
     count_model_steps,
     parse_steps_fragment,
 )
+from .protocol import Headers
 
 
 def _validate_model_arg(v: str) -> str:
@@ -125,19 +125,33 @@ class LocalJobProvider:
         modeling_steps: str,
         name: str,
         desc: str,
-        headers: Mapping[str, str] | None = None,
+        study_storage_path: str | None = None,
+        headers: Headers = None,
     ) -> DAGResult:
-        """搜索-only DAG：model 步带搜索空间 → search 行为（inner CV 选参，不终训不碰 holdout）。"""
+        """搜索-only DAG：model 步带搜索空间 → search 行为（inner CV 选参，不终训不碰 holdout）。
+
+        study_storage_path 非空时，search 行为的 optuna study 落该 sqlite 且
+        load_if_exists（#89 ①修正）——同一路径重复搜索增量续跑，复用前史
+        （对同一模型多次 HPO 的场景）；缺省内存态一次性（现状不变）。远程
+        provider 实现者应将此参数转发到 runner 侧等价锚点。
+        """
 
         def _run():
+            from mflowy.model.model.study import reset_study_storage, set_study_storage
+
             steps_text = _require_steps(modeling_steps)
             _anchor_task_dir(steps_text)
-            builder = Builder(
-                HYPERPARAMETERS_SEARCH_TEMPLATE,
-                env={"name": name, "description": desc, "modeling_steps": steps_text},
-                structural_rules=(prune_x_transformer_step,),
-            )
-            return builder.build().run(tags=_steps_fingerprint_tags(steps_text))
+            token = set_study_storage(study_storage_path) if study_storage_path else None
+            try:
+                builder = Builder(
+                    HYPERPARAMETERS_SEARCH_TEMPLATE,
+                    env={"name": name, "description": desc, "modeling_steps": steps_text},
+                    structural_rules=(prune_x_transformer_step,),
+                )
+                return builder.build().run(tags=_steps_fingerprint_tags(steps_text))
+            finally:
+                if token is not None:
+                    reset_study_storage(token)
 
         return await asyncio.to_thread(_run)
 
@@ -151,7 +165,7 @@ class LocalJobProvider:
         desc: str,
         experiment_id: str | None = None,
         prune_missing: bool = False,
-        headers: Mapping[str, str] | None = None,
+        headers: Headers = None,
     ) -> DAGResult:
         def _run():
             from mflowy.model.model.step_options import resume_model_step
@@ -192,7 +206,7 @@ class LocalJobProvider:
         name: str,
         desc: str,
         lowess_frac: float = 0.3,
-        headers: Mapping[str, str] | None = None,
+        headers: Headers = None,
     ) -> DAGResult:
         def _run():
             _validate_model_arg(model)
@@ -232,7 +246,7 @@ class LocalJobProvider:
         *,
         data: str,
         model: str,
-        headers: Mapping[str, str] | None = None,
+        headers: Headers = None,
     ) -> DAGResult:
         def _run():
             _validate_model_arg(model)
@@ -262,7 +276,7 @@ class LocalJobProvider:
         cross_rules: str | None = None,
         n_trials: int = 10000,
         seed: int = 42,
-        headers: Mapping[str, str] | None = None,
+        headers: Headers = None,
     ) -> DAGResult:
         def _run():
             _validate_model_arg(model)

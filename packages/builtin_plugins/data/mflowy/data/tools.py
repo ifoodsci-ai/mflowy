@@ -1,4 +1,4 @@
-"""mflowy 数据域 MCP 工具 — 分析类（data_profile/eda）+ 清洗 MDP 会话（本地执行）。
+"""mflowy 数据域 MCP 工具 — 分析类（data_profile/eda）+ 清洗 POMDP 会话（本地执行）。
 
 注册：pyproject 手工声明 entry points 组 ``mflowy.tools``（host 经该组发现包装，
 镜像测试断言 entry points ≡ 本模块公有函数）；模板随域居住（``templates/``）。
@@ -24,7 +24,7 @@ EDA_TEMPLATE = TEMPLATES_DIR / "eda.yaml.j2"
 def _run_analysis(template: Path, env_extra: dict, file_path: str) -> DAGResult:
     """分析类工具共享编排（本地直调）：引用解析 → Builder 渲染执行，附 data 指纹 tags。
 
-    模板只组装 statistic/plot（检测是内层 MDP 的观测基质，不进外层编排）；
+    模板只组装 statistic/plot（检测是内层 POMDP 的观测基质，不进外层编排）；
     findings 编译层已随 detect 步撤出退役。表与图经 print/parquet 落盘归档。
     """
     from mflowy.driver.builder import Builder
@@ -110,7 +110,7 @@ def propose_questions(
     return questionnaire.propose_questions(file_path, card_partial, eda_findings)
 
 
-# ── 清洗 MDP 会话工具（本地执行；π 在 agent，环境面在 cleaning_session）──────
+# ── 清洗 POMDP 会话工具（本地执行；π 在 agent，环境面在 cleaning_session）────
 # 问卷在剧本层（propose_questions 出题）；start(card) 唯一主通道直进动作面。
 
 
@@ -124,14 +124,14 @@ def clean_session_start(
     ] = None,
     max_steps: Annotated[int, Field(description="清洗预算（最大动作步数）")] = 15,
 ) -> dict:
-    """开局清洗 MDP 会话：v0 快照 + 初始错误清单 + 内生质量分。
+    """开局清洗 POMDP 会话：v0 快照 + 初始错误清单 + 内生质量分。
 
     何时使用 clean_session_start：
     - 建档问卷完成后，开始自主清洗的回合循环
     """
     from . import cleaning_session
 
-    return cleaning_session.start_session(file_path, card=card, max_steps=max_steps)
+    return cleaning_session.start_session(file_path, card=card, max_steps=max_steps).model_dump()
 
 
 def clean_propose(session_id: Annotated[str, Field(description="会话 ID")]) -> list[dict]:
@@ -142,28 +142,28 @@ def clean_propose(session_id: Annotated[str, Field(description="会话 ID")]) ->
     """
     from . import cleaning_session
 
-    return cleaning_session.propose_actions(session_id)
+    return [cleaning_session.menu_of(a) for a in cleaning_session.propose_actions(session_id)]
 
 
 def clean_apply(
     session_id: Annotated[str, Field(description="会话 ID")],
     node: Annotated[str, Field(description="clean 词表动作名（clean_propose 的 action 字段）")],
     params: Annotated[dict, Field(description="动作参数（clean_propose 的 params 字段）")] = None,
-    dry_run: Annotated[
-        bool, Field(description="样本上预览 diff（行列增删与变格数）——不提交版本、不带检测指标")
-    ] = False,
 ) -> dict:
     """执行一个清洗动作：守卫 → 转移 → 快照 → diff/错误清单/质量分（s′ 观测）→ 决策日志。
 
     响应自带 reward（本步 ΔΦ 质量差，舍入 4 位，正值 = 改善）与 state_digest
     （缺陷摘要指纹）——直接读数决策，无需从决策日志做减法。
 
+    失败即免费异常（不耗预算、不落版本）——不确定动作的试探面 = 提交后读 s′，
+    负 reward 即 clean_rollback。
+
     何时使用 clean_apply：
-    - 从候选中选定动作后提交执行；不确定时先 dry_run 预览
+    - 从候选中选定动作后提交执行（响应自带 reward 与 state_digest——直接读数决策）
     """
     from . import cleaning_session
 
-    return cleaning_session.apply_action(session_id, node, params or {}, dry_run=dry_run)
+    return cleaning_session.apply_action(session_id, node, params or {}).model_dump()
 
 
 def clean_rollback(
@@ -183,7 +183,7 @@ def clean_rollback(
     """
     from . import cleaning_session
 
-    return cleaning_session.rollback(session_id, to_version)
+    return cleaning_session.rollback(session_id, to_version).model_dump()
 
 
 def clean_finish(
@@ -213,7 +213,8 @@ def clean_finish(
     """
     from . import cleaning_session
 
-    return cleaning_session.finish_session(session_id, min_quality=min_quality, preview=preview)
+    out = cleaning_session.finish_session(session_id, min_quality=min_quality, preview=preview)
+    return out.model_dump() if hasattr(out, "model_dump") else out
 
 
 def clean_abandon(

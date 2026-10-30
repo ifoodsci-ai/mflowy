@@ -1,7 +1,7 @@
 """建模域族目录：discover() 的 model 词表过滤带 ``.mdp_family`` 声明者（会话 SDK 面）。
 
-知识归属：结构相容性与资源轴元数据随各族模块居住（``.structure`` /
-``.mdp_family`` 自声明），本模块只做聚合与组装——不持族硬清单。第三方模型
+知识归属：结构相容性/正则面/会话语义元数据随各族模块居住（``.mdp_family`` 单尾巴
+自声明），本模块只做聚合与组装——不持族硬清单。第三方模型
 作者在节点上声明 ``.mdp_family`` 即入族目录；**未声明 = 对会话不可见**
 （DAG 词表不受影响）。声明义务文档化见 model README。
 """
@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 
 import pandas as pd
 from mflowy.model.model._split import build_preprocessors
@@ -32,13 +33,73 @@ def fe_vocab() -> dict[str, str]:
     return {node: "cat" for node in FE_CAT_NODES.values()} | {node: "num" for node in FE_NUM_NODES.values()}
 
 
+# .mdp_family 准入形状（声明义务单源；文档面 = model README「族目录声明义务」节）
+_MDP_FAMILY_KEYS = frozenset({"structure", "regularizers", "machinery", "fit_params"})
+_STRUCTURE_KEYS = frozenset({"cat_support", "scaling_need", "min_samples"})
+_ADMISSION_DUTY = (
+    "声明义务（model README「族目录声明义务」节）：.mdp_family = "
+    '{"structure": {"cat_support": "native"|"encode", "scaling_need": bool, "min_samples": int}, '
+    '"regularizers"?: (参数名, ...)（正则面——出题规则的目标参数，无正则旋钮的族可缺省）, '
+    '"machinery": make_machinery(...)（会话直调的 estimator 机器）, '
+    '"fit_params"?: callable（fit kwargs 工厂——如 LGBM 的 early_stopping 覆盖面）}'
+)
+
+
+def _admit_family(node: str, meta: object) -> dict:
+    """族目录准入校验（K8s CRD 风格，#58）：坏声明在聚合期 fail-loud 并附声明
+    义务指引——不留到会话中途裸 KeyError；未知键拒绝（fail-loud 红线）。"""
+    where = f"族 {node!r} 的 .mdp_family"
+    if not isinstance(meta, Mapping):
+        raise TypeError(f"{where} 须为 Mapping——{_ADMISSION_DUTY}")
+    unknown = set(meta) - _MDP_FAMILY_KEYS
+    if unknown:
+        raise ValueError(f"{where} 含未知键 {sorted(unknown)}（可用：{sorted(_MDP_FAMILY_KEYS)}）——{_ADMISSION_DUTY}")
+    missing = _MDP_FAMILY_KEYS - {"fit_params", "regularizers"} - set(meta)  # 两者可缺省：fit 工厂 / 无正则旋钮的族
+    if missing:
+        raise ValueError(f"{where} 缺键 {sorted(missing)}——{_ADMISSION_DUTY}")
+    st = meta["structure"]
+    if not isinstance(st, Mapping):
+        raise TypeError(f"{where}['structure'] 须为 Mapping——{_ADMISSION_DUTY}")
+    st_missing = _STRUCTURE_KEYS - set(st)
+    if st_missing:
+        raise ValueError(f"{where}['structure'] 缺键 {sorted(st_missing)}——{_ADMISSION_DUTY}")
+    if not set(st) <= _STRUCTURE_KEYS:
+        raise ValueError(
+            f"{where}['structure'] 含未知键 {sorted(set(st) - _STRUCTURE_KEYS)}（可用：{sorted(_STRUCTURE_KEYS)}）"
+        )
+    if st["cat_support"] not in ("native", "encode"):
+        raise ValueError(f"{where}['structure']['cat_support'] 须为 'native'|'encode'，得到 {st['cat_support']!r}")
+    if not isinstance(st["scaling_need"], bool):
+        raise TypeError(f"{where}['structure']['scaling_need'] 须为 bool，得到 {st['scaling_need']!r}")
+    if isinstance(st["min_samples"], bool) or not isinstance(st["min_samples"], int):
+        raise TypeError(f"{where}['structure']['min_samples'] 须为 int，得到 {st['min_samples']!r}")
+    if not callable(meta["machinery"]):
+        raise TypeError(f"{where}['machinery'] 须为 callable（make_machinery 工厂产物）——{_ADMISSION_DUTY}")
+    if "regularizers" in meta:  # 正则面（可选）：参数名元组——出题规则的收窄/pin 目标
+        regs = meta["regularizers"]
+        if not isinstance(regs, (tuple, list)) or not all(isinstance(r, str) and r for r in regs):
+            raise TypeError(f"{where}['regularizers'] 须为参数名元组 (str, ...)——{_ADMISSION_DUTY}")
+    if "fit_params" in meta and not callable(meta["fit_params"]):
+        raise TypeError(f"{where}['fit_params'] 须为 callable（fit kwargs 工厂，可选）")
+    return dict(meta)
+
+
+def family_face(family: str) -> dict:
+    """族签名用户超参面（plumbing 除外；random_state 走 set_seed 专用动作）——
+    词表派生面单源：session 校验面与出题规则现查共用（防第二份拷贝漂移）。"""
+    from mflowy.model.model.utils import signature_params
+
+    return signature_params(families()[family]["pyfunc"])
+
+
 def families() -> dict[str, dict]:
-    """族目录（运行期真源）：model 词表 ∩ ``.mdp_family`` 声明者。
+    """族目录（运行期真源）：model 词表 ∩ ``.mdp_family`` 声明者（聚合期准入校验）。
 
     条目 = ``{"pyfunc": 节点本体, "mdp_family": 会话语义元数据}``——
-    ``mdp_family`` 只装资源轴（axis/bounds/partial_default/full_default）、
-    增量评估能力位与结构相容声明，**不复制签名搜索空间**（防第二真源漂移；
-    空间单一真源 = 节点签名）。旧的 fast/cls 快筛硬配置随伪 MDP 退役。
+    ``mdp_family`` 装 structure 相容声明、machinery（会话直调的 estimator 机器）
+    与可选 fit_params，**不复制签名搜索空间**（防第二真源漂移；空间单一真源 =
+    节点签名）。坏声明在聚合期 raise（``_admit_family``——带声明义务指引）；
+    缺 extra 的族装载降级跳过（M6/#49）。
     """
     from mflowy.driver.discover import namespace_nodes
 
@@ -52,30 +113,30 @@ def families() -> dict[str, dict]:
         meta = getattr(fn, "mdp_family", None)
         if meta is None:
             continue
-        fams[node] = {"pyfunc": fn, "mdp_family": meta}
+        fams[node] = {"pyfunc": fn, "mdp_family": _admit_family(node, meta)}
     return fams
 
 
 def build_ct(cat_encoder: str, num_scaler: str, spec: tuple[pd.DataFrame, pd.DataFrame, object]):
-    """结构 → ColumnTransformer：x_transformer 节点 pyfunc 直调产出三元组后组装。
+    """结构 → ColumnTransformer：FE 槽位节点经运行期词表现查装配（#58 机械单源——
+    槽位→节点名映射 ``FE_CAT/NUM_NODES`` 是唯一真源，词表/DAG/装配同一解析面）。
 
     空槽（该 dtype 无列）自动坍缩为 passthrough；全 passthrough 返回 None
     （可选边语义，与手工流 x_preprocessors 为 None 一致）。
     """
-    from .x_transformer.categorical.onehot_encoder import onehot_encoder
-    from .x_transformer.categorical.ordinal_encoder import ordinal_encoder
-    from .x_transformer.categorical.target_encoder import target_encoder
-    from .x_transformer.numeric.robust_scaler import robust_scaler
-    from .x_transformer.numeric.standard_scaler import standard_scaler
+    from mflowy.driver.config import node_key
+    from mflowy.driver.discover import get_node
 
-    cat_fn = {"ordinal": ordinal_encoder, "onehot": onehot_encoder, "target": target_encoder}
-    num_fn = {"standard": standard_scaler, "robust": robust_scaler}  # 键位与 FE_CAT/NUM_NODES 一致（映射单源在模块头）
-
+    # target= 统一携带（会话恒单目标）：target_encoder 的必需参数从 spec 的 y 面取；
+    # 其余 FE 节点 ``**_`` 兜底静默——词表内节点签名演进不破装配面
+    kw = {"target": spec[1].columns[0]}
     triples = []
-    if cat_encoder in cat_fn:
-        triples.append(cat_fn[cat_encoder](x_y=spec))
-    if num_scaler in num_fn:
-        triples.append(num_fn[num_scaler](x_y=spec))
+    if cat_encoder in FE_CAT_NODES:
+        fn = get_node(node_key("x_transformer", FE_CAT_NODES[cat_encoder]), raw=True)
+        triples.append(fn(x_y=spec, **kw))
+    if num_scaler in FE_NUM_NODES:
+        fn = get_node(node_key("x_transformer", FE_NUM_NODES[num_scaler]), raw=True)
+        triples.append(fn(x_y=spec, **kw))
     triples = [t for t in triples if len(t) == 3 and len(t[2]) > 0]
     return build_preprocessors(triples)
 

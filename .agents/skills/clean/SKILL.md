@@ -1,11 +1,12 @@
 ---
 name: clean
-description: 数据清洗 MDP 回合操作手册(mflowy)。用户要求"开始清洗/自主清洗/修数据"，或清洗会话进行中(收到 session_id)时使用。配合 mflowy MCP 工具 clean_session_start / clean_propose / clean_apply / clean_rollback / clean_finish / clean_abandon 驱动回合循环——环境面在引擎，π(策略)是你。前置:survey skill 已产出 DomainCard。
+description: 数据清洗 POMDP 回合操作手册(mflowy)。用户要求"开始清洗/自主清洗/修数据"，或清洗会话进行中(收到 session_id)时使用。配合 mflowy MCP 工具 clean_session_start / clean_propose / clean_apply / clean_rollback / clean_finish / clean_abandon 驱动回合循环——环境面在引擎，π(策略)是你。前置:survey skill 已产出 DomainCard。
+disable-model-invocation: true
 ---
 
-# Clean Skill：清洗 MDP 回合循环
+# Clean Skill：清洗 POMDP 回合循环
 
-三段式研究流第二段：`建档与 EDA →(冻结)→ 清洗 MDP →(冻结)→ 建模 MDP`。
+三段式研究流第二段：`建档与 EDA →(冻结)→ 清洗 POMDP →(冻结)→ 建模 POMDP`。
 你的职责是**策略（π）**：读观测、选动作、必要时回滚、决定收局。环境面（转移/
 观测/奖励/预算/守卫）在会话引擎——你不重算状态，引擎每步免费给你 s′ 观测。
 
@@ -25,11 +26,12 @@ clean_session_start(file_path, card=<DomainCard>, max_steps=15)   # 唯一主通
 1. `clean_propose(session_id)` —— 合法走法生成器：错误类型 → 参数化候选 + rationale。
    **菜单是建议不是边界**：词表外（clean 目录之外）的动作会被拒，**词表内的参数
    可自由调**——候选只是参数化建议（带证据的默认档），按领域判断改参不必照抄。
-2. 拿不准先 `clean_apply(..., dry_run=true)` 预览 diff（200 行样本，不占步数）。
-3. `clean_apply(session_id, node, params)` 提交：守卫 → 转移 → 免费观测
+2. `clean_apply(session_id, node, params)` 提交：守卫 → 转移 → 免费观测（失败即
+   免费异常——不耗预算、不落版本、不进决策日志；试探不确定动作就直接提交，
+   负 reward 即回滚，全量真值决策）
    （diff + 缺陷清单）+ 决策日志 (s,a,r,s′)。响应自带 **`reward`**（本步 ΔΦ，
-   舍入 4 位）与 **`state_digest`**（缺陷摘要指纹）——直接读数，不从日志做减法。
-4. 读 s′ 决策：
+   舍入 4 位）与 **`state_digest`**（结构化状态摘要：defects/quality/当前版本——#89 观测七键之一）——直接读数，不从日志做减法；缺陷清零时菜单尾部出现 `finish` 提议（停止建议 = 普通规则）。
+3. 读 s′ 决策：
    - reward > 0、缺陷减 → 继续 ①；
    - reward < 0 / 引入新缺陷 / 误判 → `clean_rollback(session_id, to_version)`（版本树回退，
      决策日志保留；预算不回补；响应 reward = 恢复 ΔΦ）；
@@ -73,5 +75,4 @@ clean_abandon(session_id, reason=<可选，落盘供审计>)
 
 ## 参考
 
-- 引擎与守卫：`packages/data/mflowy/data/cleaning_session.py`
 - 设计快照（会话版五元组映射）：docs/research/2026-10-09-cleaning-mdp-design.md §7

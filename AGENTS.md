@@ -35,14 +35,14 @@ uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 | 层     | 位置                              | 职责                                                       |
 | ------ | --------------------------------- | ---------------------------------------------------------- |
 | MCP    | `packages/mcp/mflowy/mcp/`        | 工具注册面、stdio server、runner、遥测                     |
-| Data   | `packages/builtin_plugins/data/mflowy/data/`      | 清洗 MDP 动作域（load/statistic/detect/clean/plot + DomainCard） |
-| Model  | `packages/builtin_plugins/model/mflowy/model/`    | 建模 MDP 动作域（x_y/cv/x_transformer/model + plot——cv 族 = split 参数构建/load 引用加载）+ JobProvider + diagnose/report 观察面 |
-| Driver | `packages/driver/mflowy/driver/`  | YAML→DAG 编译调度、@handler/@edge 插件 SDK、MDP 会话基座、规则引擎 SDK |
+| Data   | `packages/builtin_plugins/data/mflowy/data/`      | 清洗 POMDP 动作域（load/statistic/detect/clean/plot + DomainCard） |
+| Model  | `packages/builtin_plugins/model/mflowy/model/`    | 建模 POMDP 动作域（x_y/cv/x_transformer/model + plot——cv 族 = split 参数构建/load 引用加载）+ JobProvider + diagnose/report 观察面 |
+| Driver | `packages/driver/mflowy/driver/`  | YAML→DAG 编译调度、@handler/@edge 插件 SDK、POMDP 会话基座（`pomdp` 契约 + `session` 壳）、规则引擎 SDK |
 | Utils  | `packages/utils/mflowy/utils/`    | mlflow seam、OAuth 2.1 客户端（login/token 库）、脚本安全扫描、capture/path/logging/jinja |
 
-依赖方向保持单向：utils ← driver ← data ← model ← mcp（内核零域感知、两 MDP 域隔离——`tests/test_workspace.py` 断言，改动 import 保持全绿）。模块内相对导入、跨模块绝对导入。
+依赖方向保持单向：utils ← driver ← data ← model ← mcp（内核零域感知、两 POMDP 域隔离——`tests/test_workspace.py` 断言，改动 import 保持全绿）。模块内相对导入、跨模块绝对导入。
 
-工具六组共 33 个（真源 = `tools/list`）：平台 9（info 3 + mlflow 观测 4 + 会话回收 1 + 登录 1，本地）；本地分析 5（`data_profile`/`eda`/`propose_questions`/`draw_taylor_diagram`/`modeling_report_skeleton`）；YAML 预检 1（`validate_modeling_steps`）；compute 5（`hyperparameters_search`/`modeling`/`explanation`/`predict`/`inverse_optimization`，经 JobProvider 委派，协议在 model 包）；MDP 会话 13（`clean_*`×6 + `modeling_*`×7——含 `modeling_report_findings`，引擎在两域 session 模块，动作面 = modeling 八动作面）。
+工具六组共 33 个（真源 = `tools/list`）：平台 9（info 3 + mlflow 观测 4 + 会话回收 1 + 登录 1，本地）；本地分析 5（`data_profile`/`eda`/`propose_questions`/`draw_taylor_diagram`/`modeling_report_skeleton`）；YAML 预检 1（`validate_modeling_steps`）；compute 5（`hyperparameters_search`/`modeling`/`explanation`/`predict`/`inverse_optimization`，经 JobProvider 委派，协议在 model 包）；POMDP 会话 13（`clean_*`×6 + `modeling_*`×7——含 `modeling_report_findings`，引擎在两域 session 模块，动作面 = modeling 八动作面）。
 
 插件身份静态声明：`@handler(namespace=...)` 标记（裸命名参数=参数边，Annotated=用户可配）+ 域包 pyproject `[project.entry-points."mflowy.builtin_plugins"]` 手写条目（0.2.0 起构建期 AST 扫描钩子退役，与第三方包声明方式同构），运行期 `driver/discover.py` 按元数据解析——声明与装饰器的一致性由 CR 交叉检查兜底（见「添加能力」）。
 
@@ -63,11 +63,7 @@ uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 
 | #   | 目标态                                                                 | 存量违规点                                        | 验收                                                   |
 | --- | ---------------------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------ |
-| M3  | `SessionStore.create` 只建目录；两域 `_is_terminal` 委托基座 `is_terminal_state` | driver 侧已落地（`write_manifest` tmp+rename / 共享单源 / gc root 守卫，见 CHANGELOG）；余：两域绕过 create、`_is_terminal` 逐字重复 | 两域 `_is_terminal` 逐字重复删除                      |
-| M4  | 会话壳收敛：store/终态/decision_log 形状/plan-YAML emitter 住 driver，域只填转移语义 | 两域 ~1/5 骨架逐字重复、plan YAML 手拼分叉        | 两域 session 各缩 ~150 行；`MDPSessionHandle` 结构等价有测试钉住 |
-| M5  | 版本树 append-only（`current_v` 指针）；loader 工件带版本号，rollback 同步盘上 | clean 截断覆写弃分支；model loader 覆写不同步      | rollback-after-rerun 一致性用例                       |
 | M6  | `registry.families()` 对缺 extra 条目降级跳过                          | 已收敛（#49：ImportError 跳过+warning+钉测）——CI no-torch job 见 #43 | 无 torch 环境 CI job 跑通 RF 会话                     |
-| M7  | 会话引擎路径全捕获（`_detect_all` 包 capture）                         | detect 算子裸 print 污染 stdio                    | MCP stdio e2e 断言纯 JSON-RPC 输出                    |
 | M9  | 遥测端点 env 可覆盖 + agentcat monkeypatch 带 feature-detect           | 端点硬编码；私有内部 monkeypatch 静默失效          | `MFLOWY_TELEMETRY_ENDPOINT` 指向 `docker/telemetry` 可用 |
 | M10 | 重栈产物锚定 task_dir/`~/.mflowy`；仓库根与包根零运行产物              | lightning_logs/mlruns/catboost_info 落包根        | `make test` 后 `git status` 干净                       |
 | M11 | 剧本层完整入库：skills 全 git 追踪、引用文档入仓、工具名 ⊆ `tools/list` 有测试锁定 | research-review 未追踪；引用被 ignore 的文档断链  | `test_workspace.py` 增 SKILL 工具名断言               |
@@ -110,7 +106,7 @@ uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 | 用户方法论 / 案例叙事      | [docs/research-flow.md](docs/research-flow.md)                                         |
 | 规划新功能 / 查路线图      | [docs/roadmap.md](docs/roadmap.md)（已实现清单以 `tools/list` 为真源，roadmap 只留规划） |
 
-**防漂移**：代码已表达的只链接不复述（文件树/签名/行号锚点留给代码）；只写追加式文档（新案例 → `examples/` 快照，新版本 → `CHANGELOG.md`）；"漂移可接受"仅限用户文档，release 边界回填——本文件与 skills 除外（见同步规则）。新建文档先过漂移测试："这文件里哪句话会因下次代码 PR 失效？"有答案就不建。
+**防漂移**：代码已表达的只链接不复述（文件树/签名/行号锚点留给代码）；只写追加式文档（新案例 → `examples/` 快照，新版本 → `CHANGELOG.md`）；"漂移可接受"仅限用户文档，release 边界回填——本文件与 skills 除外（见同步规则）。**剧本引用面谓词**（#65 裁定）：操作 skill（`.agents/skills/*`）参考节只允许引用工具名与入仓文档——引用实现路径（含包结构迁移前的旧路径）即 P0 漂移，删除而非修正。新建文档先过漂移测试："这文件里哪句话会因下次代码 PR 失效？"有答案就不建。
 
 ## Issue Tracker（gh CLI）
 

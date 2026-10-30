@@ -278,14 +278,14 @@ uvx --from "mflowy[mcp,modeling]" --with mflowy-extra mflowy-mcp
 - 参考实现：`packages/builtin_plugins/`（mflowy-data / mflowy-model 两包；`@handler`/`@edge` 装饰器 + pyproject `[project.entry-points]` 静态声明，抄走改 group 为 `mflowy.plugins` 即可）
 - SDK 面 = `driver/handler.py` + `driver/edge.py` 装饰器 + `driver/rule.py` 规则引擎实例（Rule/Activation/RuleEngine + load/save_rule_engine/rule_engine_rwa 落盘） + `driver/builtin_middleware.py` 尾链 + 两域 `middlewares/` 遥测面；破坏性变更受 CHANGELOG 语义化版本约束
 
-## 会话 SDK（MDP 契约与生命周期基座）
+## 会话 SDK（POMDP 契约与生命周期基座）
 
-`mdp_session.py`——两个 MDP 会话域（clean/modeling）共用的契约类型与生命周期机制，也是第三方域作者实现**整个 MDP 环境**（而非只加节点）的扩展形态：
+`pomdp.py`——两个 POMDP 会话域（clean/modeling）共用的契约类型与生命周期机制，也是第三方域作者实现**整个 POMDP 环境**（而非只加节点）的扩展形态：
 
-- **投影类型**：`Observation` / `Candidate` / `FinishVerdict` 三个 TypedDict——MDP 会话响应的 agent 可见契约，核心键为下限、域可加字段；`verify_*` 校验器是契约的牙齿（缺核心键/顶层类型不符 fail-loud；域测试以 `verify_*` 对账真实响应——生产路径零开销，牙齿长在域侧测试；浅层即止，嵌套结构域自验）
+- **投影类型（pydantic 封闭模型，#89）**：`Observation`（七键 + 终态双旗，`extra="forbid"`——域尾巴归位 `prior`/`state_digest`，拼错键 fail-loud）/ `FinishVerdict`（拒收必附 reason 的模型级硬规则）/ `Activation`（菜单候选：action/params 平铺两成员，frozen）——契约即校验（红线 2 同一台 pydantic 机器），`verify_*` 手写校验器与 `Candidate` 已退役
 - **决策权地图**：引擎=事实（合法走法/转移/守卫/预算/信号），π=选择（选动作/回滚时机/收局时机/弃局）；守卫拦"事实不成立"不拦"程序下一步"，菜单与信号（`should_stop`）都是建议不是边界；结算可拒收且拒收后可续局
-- **`MDPSessionHandle`**：会话服务面的类型锚点（无状态 sid 寻址，"具名核心 + `*args` 域尾巴"）；**`SessionStore`**：生命周期机制（目录/manifest IO、终态双键 `finished`/`abandoned`、`abandon`、`gc`），root 由域注入——driver=机制、域=策略（动作/检测/质量/守卫/版本树全部留域）
-- **活参考**：mflowy-data / mflowy-model 两域的会话模块（对称于两包之于插件 SDK 的地位；#30/#31 契约合规迁移后结构等价）；回收面 = mcp 平台工具 `sessions_gc`（约定扫描 `~/.mflowy/*_sessions` + mtime TTL + dry-run 安全缺省——平台约定住 mcp，driver 对用户 home 零知识）
+- **`POMDPSessionHandle`**：业务接口的类型锚点（无状态 sid 寻址，"具名核心 + `*args` 域尾巴"——各域实现自己的 Handle，用同一套机制）；**`POMDPSession`**（`session.py`，#89 会话壳）：统一机制——六个操作上下文（`start_ctx`/`propose_ctx`/`apply_ctx(action)`/`rollback_ctx`/`finish_ctx` + `abandon` 方法）承载全部业务流程骨架：终态/预算门（步数口径 `counts_step` 域声明）、prior 冻结牙齿、append-only 决策日志（追加即 commit 点）、统一盘上写序（工件→日志→观测投影）、open 撕裂检测。盘上三件：`observation.json`（观测摘要，整读改写）/ `decision.log`（JSONL，接口无删除面）/ `rules.pkl`（引擎整读整写）；域状态文件域自定（model 的 `board.json`）。`SessionStore` 降为存量 manifest 面向的内部件（`gc` 锚 observation.json 回退 manifest.json）
+- **活参考**：mflowy-data / mflowy-model 两域的会话模块（Handle 的两个真 adapter——结构等价由「真实响应即契约模型」钉测；对称于两包之于插件 SDK 的地位）；回收面 = mcp 平台工具 `sessions_gc`（约定扫描 `~/.mflowy/*_sessions` + mtime TTL + dry-run 安全缺省——平台约定住 mcp，driver 对用户 home 零知识）
 - SDK 面受 CHANGELOG 语义化版本约束（对齐 handler 装饰器措辞）
 
 ## 相关文档
