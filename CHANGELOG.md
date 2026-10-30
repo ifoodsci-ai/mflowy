@@ -29,6 +29,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **model 域 tests conftest**：用例间 `gc.collect() + malloc_trim(0)` teardown
   （非 glibc 优雅降级）；状态机型文件（test_modeling_session 34 用例等）结构性
   不可共享会话，靠闭图 + trim 兜底——model 包 449 用例峰值 2.05GB / 7:17。
+- **顺手修（conftest 裸名 import 影子）**：`tests/test_logging_setup_isolation.py`
+  裸名 `import conftest` 在多树收集下被任一子树同名 conftest 影子（sys.path 按
+  收集序插入各测试目录——本 PR 新增 `model/tests/conftest.py` 即触发两钉红），
+  改为显式按路径加载根 conftest。
+- **验收（#92）**：`make test` 单进程峰值 ~19.8GB → **2.1GB**、全量 ~15min →
+  ~9:40，连续全绿（1236 用例）；`test_finish_report.py` 12 → 13 用例（+scope 钉
+  +零开图断言）、原断言逐字保留。
 
 ### BREAKING：插件注册静态化——构建期 hatch AST 扫描钩子退役，entry points 手写声明（贡献者工作流 breaking，词表零破坏）
 
