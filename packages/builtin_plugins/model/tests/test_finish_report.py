@@ -168,6 +168,9 @@ def test_run_hpo_writes_oof_plot_album(sessions_root, reg_csv, shared_tracking):
     assert oof["plots"] and set(oof["plots"]) == set(files)  # manifest 面与盘一致
     oof_df = pd.read_parquet(sessions_root / sid / oof["y_pred"])
     assert len(oof_df) == 96  # 120 行 × 0.8 train（cv=3 → outer test_size 缺省 0.2）
+    import matplotlib.pyplot as plt
+
+    assert not plt.get_fignums()  # #92 图集落盘即闭图——600dpi 缓冲 ~80MB/张，泄漏即进程级累积
 
 
 # ── draw_taylor_diagram（副产物 fan-in + 同一性断言） ───────────────────────
@@ -184,6 +187,9 @@ def test_draw_taylor_diagram_multi_model(delivered, sessions_root):
         assert {"correlation", "sigma_ratio", "rmse_total_norm"} <= set(row)  # (corr, σ, rmse)
     assert out["figure"] and str(out["figure"]).endswith(".png")  # 图落盘
     assert Path(out["figure"]).exists()
+    import matplotlib.pyplot as plt
+
+    assert not plt.get_fignums()  # #92 泰勒图落盘即闭图（同 OOF 图集纪律）
 
 
 def test_draw_taylor_diagram_single_model_edge(delivered, sessions_root):
