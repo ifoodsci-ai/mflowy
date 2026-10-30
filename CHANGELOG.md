@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - Unreleased
 
+### 依赖钉版：mlflow 收窄至 3.15 系（`~=3.15.2`）
+
+- 默认库 `~/.mflowy/mlflow.db` 跨安装形态（dev 锁 / uvx 自由解析）共享单文件，
+  mlflow schema 随 minor 前移——开放上界（`>=3.14`）曾致 uvx 解析 3.17 前向迁移
+  共享库、dev 全部观测工具 schema 失配不可读（2026-10 事故，库已降级修复）。
+  mflowy 分发形态（uvx/Docker/专用 venv）为 app 语义，窄钉零依赖地狱代价。
+- 升级纪律：锁（uv.lock）与声明（utils pyproject）**必须同 PR 同步**，并在
+  CHANGELOG 记 BREAKING（共享库 schema 迁移影响全体用户）。
+- 迁移小项「utils mlflow 转 extra」撤销：tracking 是节点 run 刚需（每个 handler
+  开窗），hard dep 合理。
+
+
 ### BREAKING：执行结果目录收敛——DAGResult/NodeResult 最小元信息面 + 工件落盘壳 + mlflow 观测双工具
 
 - `DAGResult.graph` 保持 mermaid 展示形态（机器投影 = `to_graph()` 公共方法，
@@ -40,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   过滤/翻页随迁；params/metrics 全量返回收窄为 `get_run` 下钻）；`list_run_artifacts`
   并入 `get_run`（详情 = params/metrics/tags/artifacts 产物目录）；`read_artifact`
   退役（工件后端为本地文件树，内容直接访问）。工具总数 33→31（平台 9→7）。
+
 
 ### BREAKING：插件注册静态化——构建期 hatch AST 扫描钩子退役，entry points 手写声明（贡献者工作流 breaking，词表零破坏）
 
