@@ -195,11 +195,11 @@ def taylor_for_runs(runs: list[tuple[str, str]], task, out_dir: Path) -> dict:
         from mflowy.model.plot.model_evaluation.regression.taylor_diagram import taylor_diagram as taylor_plot
 
         _, fig = taylor_plot(model_test_predictions=(TASKTYPE(task), plot_df))
+        from matplotlib import pyplot as plt
+
         figure = out_dir / TAYLOR_FIGURE
         try:
             fig.savefig(figure, dpi=150, bbox_inches="tight")
         finally:
-            from matplotlib import pyplot as plt
-
             plt.close(fig)  # 落盘即闭图（#92，同 OOF 图集纪律）
     return {"stats": rows, "figure": figure, "note": note}
