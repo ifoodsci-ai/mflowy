@@ -203,7 +203,15 @@ def _mlflow_client():
     return _client
 
 
-def list_runs(
+def _local_path(uri: str) -> str:
+    """file:// URI 转本地绝对路径，远端 store 保持完整 URI（mlflow 查询工具共用约定）。"""
+    from urllib.parse import unquote, urlparse
+
+    parsed = urlparse(uri)
+    return str(Path(unquote(parsed.path))) if parsed.scheme == "file" else uri
+
+
+def get_experiment(
     experiment_id: Annotated[str, Field(description="实验 ID（从任务输出 ExperimentInfo 获取）")],
     filter_steps: Annotated[
         list[str] | None,
@@ -212,22 +220,28 @@ def list_runs(
     max_results: Annotated[int, Field(description="每页最大数量")] = 10,
     page_token: Annotated[str | None, Field(description="翻页令牌（仅未过滤时有效）")] = None,
 ) -> dict:
-    """批量查询实验下所有节点的 run 信息。
+    """实验仪表盘：实验本体（name/描述 tag/tags 含结构图/工件根/时间戳）+ run 状态目录。
 
-    何时使用 list_runs：
-    - 从 experiment_id 浏览历史运行(可按节点过滤)
+    何时使用 get_experiment：
+    - 从 experiment_id 浏览历史运行（可按节点过滤）——runs 目录：node/name/run_id/status/start_time
     - 获取 run_id 供 get_run/预测类工具引用
+    - 查实验级 tags（workflow 指纹、mflowy.graph 结构图）与工件根
+    详情（params/metrics/tags/artifacts）经 get_run 下钻。
     """
     client = _mlflow_client()
+    exp = client.get_experiment(experiment_id)
+    location = _local_path(exp.artifact_location)
+    # run 状态目录（list_runs 吸收）：NodeResult 目录五元组投影 + start_time；
+    # status 恒为 mlflow 原生（FINISHED/FAILED/RUNNING）——无引擎 skipped/"" 哨兵
     if filter_steps:
         # mlflow filter 不支持 tag IN / OR，按步骤等值查询后合并
         safe = [s.replace("'", "").strip() for s in filter_steps]
         merged = []
-        for s in safe:
+        for step in safe:
             merged.extend(
                 client.search_runs(
                     experiment_ids=[experiment_id],
-                    filter_string=f"tags.`mflowy.node` = '{s}'",
+                    filter_string=f"tags.`mflowy.node` = '{step}'",
                     max_results=max_results,
                     order_by=["start_time DESC"],
                 )
@@ -239,152 +253,51 @@ def list_runs(
             experiment_ids=[experiment_id],
             filter_string="",
             max_results=max_results,
-            order_by=["start_time DESC"],
             page_token=page_token,
+            order_by=["start_time DESC"],
         )
         runs, token = list(page), page.token
-    result = []
-    for r in runs:
-        d = r.to_dictionary()
-        d["info"]["artifact_uri"] = r.info.artifact_uri
-        result.append(d)
-    return {"runs": result, "next_page_token": token}
+    run_dir = [
+        {
+            "node": r.data.tags.get("mflowy.node", ""),
+            "name": r.info.run_name,
+            "run_id": r.info.run_id,
+            "status": r.info.status,
+            "start_time": r.info.start_time,
+        }
+        for r in runs
+    ]
+    return {
+        "experiment_id": exp.experiment_id,
+        "name": exp.name,
+        "description": exp.tags.get("mlflow.note.content", ""),
+        "artifact_location": location,
+        "lifecycle_stage": exp.lifecycle_stage,
+        "creation_time": exp.creation_time,
+        "last_update_time": exp.last_update_time,
+        "tags": dict(exp.tags),
+        "runs": run_dir,
+        "next_page_token": token,
+    }
 
 
-def get_run(run_id: Annotated[str, Field(description="Run ID（从任务输出 RunInfo 或 list_runs 获取）")]) -> dict:
-    """查询单个节点的详细信息(metrics/params/tags/artifact_uri)。
+def get_run(run_id: Annotated[str, Field(description="Run ID（从任务输出 RunInfo 或 get_experiment 获取）")]) -> dict:
+    """查询单个 run 的详情：params/metrics/tags/artifacts 产物目录。
 
     何时使用 get_run：
     - 已有 run_id 时读取指标与参数
+    - 查看 run 落盘的产物清单（图表/模型文件路径）；工件后端为本地文件树，文件本体可直接访问
     """
     client = _mlflow_client()
     run = client.get_run(run_id)
     d = run.to_dictionary()
     d["info"]["artifact_uri"] = run.info.artifact_uri
+    root = run.info.artifact_uri
+    d["artifacts"] = [
+        {"path": _local_path(f"{root}/{a.path}"), "is_dir": a.is_dir, "file_size": a.file_size}
+        for a in client.list_artifacts(run_id)
+    ]
     return d
-
-
-def list_run_artifacts(
-    run_id: Annotated[str, Field(description="Run ID")],
-    path: Annotated[str | None, Field(description="可选，artifact 子路径过滤")] = None,
-) -> list[dict]:
-    """查询执行步骤的文件产物列表。
-
-    何时使用 list_run_artifacts：
-    - 查看 run 落盘的图表/模型文件
-    - 定位产物路径供用户查看
-    """
-    from urllib.parse import unquote, urlparse
-
-    client = _mlflow_client()
-    artifacts = client.list_artifacts(run_id, path)
-    # FileInfo.path 相对 run 的 artifact_uri；拼全后 file:// root 转本地绝对路径，远端 store 保持完整 URI
-    root = client.get_run(run_id).info.artifact_uri
-    result = []
-    for a in artifacts:
-        uri = f"{root}/{a.path}"
-        parsed = urlparse(uri)
-        loc = str(Path(unquote(parsed.path))) if parsed.scheme == "file" else uri
-        result.append({"path": loc, "is_dir": a.is_dir, "file_size": a.file_size})
-    return result
-
-
-def read_artifact(
-    run_id: Annotated[str, Field(description="Run ID")],
-    artifact_path: Annotated[
-        str, Field(description="artifact 相对路径（如 statistics.parquet，list_run_artifacts 可查）")
-    ],
-    columns: Annotated[list[str] | None, Field(description="列投影（parquet/csv），None 全列")] = None,
-    rows: Annotated[
-        str, Field(description='行选择："head:N" 前 N 行 / "sample:N" 随机 N 行，默认 head:20')
-    ] = "head:20",
-) -> dict:
-    """读取 run 产物为 token 友好摘要（agent 的钻取/审计兜底通道）。
-
-    何时使用 read_artifact：
-    - 画像表/双变量长表摘要不够看，需要核对具体行/列证据
-    - 审计历史 run 的清洗报告/统计表
-
-    parquet/csv 按列投影 + 行限返回 markdown 渲染与总形状元数据（返回单元格
-    超上限自动截断并标记）；json/txt 文本透传（大小封顶）；png/模型等二进制只
-    返回元数据不渲染。主食应是会话观测（s′ 报告）与统计表摘要，本工具是兜底。
-    """
-    from urllib.parse import unquote, urlparse
-
-    client = _mlflow_client()
-    root = client.get_run(run_id).info.artifact_uri
-    uri = f"{root}/{artifact_path}"
-    parsed = urlparse(uri)
-    path = Path(unquote(parsed.path)) if parsed.scheme == "file" else Path(uri)
-    if not path.exists():
-        raise FileNotFoundError(f"产物不存在: {artifact_path}（run {run_id}，可用 list_run_artifacts 查清单）")
-
-    suffix = path.suffix.lower()
-    if suffix in {".parquet", ".csv"}:
-        import pandas as pd
-
-        df = pd.read_parquet(path) if suffix == ".parquet" else pd.read_csv(path)
-        shape = list(df.shape)
-        if columns:
-            missing = [c for c in columns if c not in df.columns]
-            if missing:
-                raise ValueError(f"列不存在: {missing}，可用列: {df.columns.tolist()}")
-            df = df[columns]
-        n = _parse_rows(rows, default=20)
-        df = df.head(n) if rows.startswith("head") else df.sample(min(n, len(df)), random_state=0)
-        cap = 2000  # 返回单元格上限（token 护栏）
-        truncated = False
-        if df.shape[0] * df.shape[1] > cap:
-            keep = max(1, cap // df.shape[1])
-            df = df.head(keep)
-            truncated = True
-        rendered = _md_table(df)
-        return {
-            "kind": suffix.lstrip("."),
-            "path": str(path),
-            "shape": shape,
-            "returned": list(df.shape),
-            "truncated": truncated,
-            "rendered": rendered,
-        }
-    if suffix in {".json", ".txt", ".md", ".yaml", ".yml"}:
-        text = path.read_text(encoding="utf-8", errors="replace")
-        cap = 8000
-        return {
-            "kind": suffix.lstrip("."),
-            "path": str(path),
-            "truncated": len(text) > cap,
-            "rendered": text[:cap],
-        }
-    return {
-        "kind": "binary",
-        "path": str(path),
-        "file_size": path.stat().st_size,
-        "note": "二进制产物不渲染；图表请引用路径，模型经 model.loader 消费",
-    }
-
-
-def _parse_rows(rows: str, default: int) -> int:
-    try:
-        return int(rows.split(":")[1])
-    except (IndexError, ValueError):
-        return default
-
-
-def _md_table(df, cell_cap: int = 40) -> str:
-    """极简 markdown 表渲染（不引 tabulate 依赖）；长单元格截断防单行爆 token。"""
-
-    def cell(v) -> str:
-        if v is None or (isinstance(v, float) and v != v):  # None/NaN
-            return ""
-        s = str(v)
-        return s if len(s) <= cell_cap else s[: cell_cap - 1] + "…"
-
-    cols = [str(c) for c in df.columns]
-    lines = ["| " + " | ".join(cols) + " |", "|" + "|".join([" --- "] * len(cols)) + "|"]
-    for _, row in df.iterrows():
-        lines.append("| " + " | ".join(cell(v) for v in row) + " |")
-    return "\n".join(lines)
 
 
 def login(

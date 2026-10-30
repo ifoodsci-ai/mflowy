@@ -1,6 +1,6 @@
 import logging
 import os
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from itertools import count
@@ -65,6 +65,18 @@ class Tracking(Protocol):
     def set_tags(self, tags: dict[str, str]) -> None: ...
     def log_params(self, params: dict[str, Any]) -> None: ...
     def run_status(self, run_id: str) -> str: ...
+    def run_artifacts(self, run_id: str) -> list[str]:
+        """run 顶层工件路径清单（目录条目在内，嵌套文件经 path 下钻——account 期
+        NodeResult.artifacts 快照的数据源）。"""
+        ...
+
+    def set_experiment_tag(self, experiment_id: str, key: str, value: str) -> None:
+        """实验级 tag 写入（如 mflowy.graph 结构图——本实验最新结构覆写）。"""
+        ...
+
+    def describe_run(self, run_id: str, text: str) -> None:
+        """run 描述写入（mlflow.note.content tag）——account 期 ≡ NodeResult.output。"""
+        ...
 
     @property
     def active_run_id(self) -> str | None:
@@ -119,6 +131,24 @@ class MlflowTracking:
 
         return mlflow.get_run(run_id).info.status
 
+    def run_artifacts(self, run_id: str) -> list[str]:
+        import mlflow
+
+        return [a.path for a in mlflow.MlflowClient().list_artifacts(run_id)]
+
+    def set_experiment_tag(self, experiment_id: str, key: str, value: str) -> None:
+        import mlflow
+        from mlflow.utils.validation import MAX_EXPERIMENT_TAG_VAL_LENGTH
+
+        mlflow.MlflowClient().set_experiment_tag(
+            experiment_id, key, clip_tag_value(value, limit=MAX_EXPERIMENT_TAG_VAL_LENGTH)
+        )
+
+    def describe_run(self, run_id: str, text: str) -> None:
+        import mlflow
+
+        mlflow.MlflowClient().set_tag(run_id, "mlflow.note.content", clip_tag_value(text))
+
     @property
     def active_run_id(self) -> str | None:
         import mlflow
@@ -139,7 +169,10 @@ class FakeTracking:
         self.tag_log: list[tuple[str, str]] = []
         self.params: dict[str, Any] = {}
         self.experiments: dict[str, str] = {}
+        self.experiment_tags: dict[str, dict[str, str]] = {}  # exp_id → tags（ensure 播种）
         self.runs: dict[str, str] = {}
+        self.artifacts: dict[str, list[str]] = {}  # run_id → 工件清单（测试播种断言面）
+        self.descriptions: dict[str, str] = {}  # run_id → 描述（describe_run 断言面）
         self.active_run_id: str | None = None  # 当前窗口内 run（窗外 None）——窗口断言面
         self._active_stack: list[str] = []  # 嵌套窗口栈（对齐 mlflow fluent 栈语义）
         self._seq = count(1)
@@ -147,7 +180,12 @@ class FakeTracking:
     def ensure_experiment(self, name: str, description: str) -> Any:
         if name not in self.experiments:  # 幂等不烧计数器——run/experiment 序号各自单调
             self.experiments[name] = f"fake_exp_{next(self._seq)}"
-        return SimpleNamespace(name=name, experiment_id=self.experiments[name], artifact_location="memory://")
+        eid = self.experiments[name]
+        self.experiment_tags.setdefault(eid, {})
+        return SimpleNamespace(name=name, experiment_id=eid, artifact_location="memory://")
+
+    def set_experiment_tag(self, experiment_id: str, key: str, value: str) -> None:
+        self.experiment_tags[experiment_id][key] = value  # 未 ensure 的实验 KeyError 不吞
 
     @contextmanager
     def node_run(self, run_name: str, experiment_id: str | None):
@@ -179,14 +217,27 @@ class FakeTracking:
     def run_status(self, run_id: str) -> str:
         return self.runs[run_id]  # 未知 run KeyError 透传——不吞
 
+    def run_artifacts(self, run_id: str) -> list[str]:
+        return list(self.artifacts[run_id])  # 未知 run 同 run_status：KeyError 不吞
+
+    def describe_run(self, run_id: str, text: str) -> None:
+        if run_id not in self.runs:  # 未知 run 同 run_status：KeyError 不吞
+            raise KeyError(run_id)
+        self.descriptions[run_id] = text
+
 
 # mlflow tag 值长度上限（backend 约束，取 mlflow 活常量防版本漂移）——
-# 超长值（宽 fan-in 的点分血缘）截断，写 tag 不炸 run
-def clip_tag_value(value: str) -> str:
-    """tag 值截断至上限（backend 约束由 adapter 吸收），尾接省略号示截断。"""
-    from mlflow.utils.validation import MAX_TAG_VAL_LENGTH as limit
+# 超长值（宽 fan-in 的点分血缘 / 大图 mermaid）截断，写 tag 不炸 run。
+# 两类上限不同：run tag 8000、实验 tag 5000
+def clip_tag_value(value: str, limit: int | None = None) -> str:
+    """tag 值截断至上限（backend 约束由 adapter 吸收），尾接省略号示截断。
 
-    return value if len(value) <= limit else value[: limit - 1] + "…"
+    缺省 run tag 上限；实验 tag 调用方显式传 ``MAX_EXPERIMENT_TAG_VAL_LENGTH``。
+    """
+    from mlflow.utils.validation import MAX_TAG_VAL_LENGTH
+
+    cap = limit if limit is not None else MAX_TAG_VAL_LENGTH
+    return value if len(value) <= cap else value[: cap - 1] + "…"
 
 
 _DEFAULT_TRACKING = MlflowTracking()
@@ -232,67 +283,91 @@ def setup():
     mlflow.set_tracking_uri(tracking_uri)
 
 
-def _artifact_local_path(artifact_file: str) -> str:
-    """active run 的 artifact_uri + artifact_file 拼绝对路径（file:// 转 local 路径）。"""
-    from pathlib import Path
+def _artifact_shell(
+    artifact_file: str,
+    writer: Callable[[str], Any],
+    *,
+    direct_write: bool = False,
+    graceful: bool = False,
+) -> Any:
+    """工件落盘壳（模板方法）：active run 守卫 → 目的地解析 → 落盘回调 → Saved 通知。
+
+    - writer 收到解析后的落盘目的地（flavor 自决用否）：fluent 系由 mlflow 走
+      artifact repo 可忽略之；直写系（pickle）以此为写目的地
+    - ``direct_write``：远程 scheme fail-loud（直写只对本地工件树成立）；fluent 系
+      远程 store 保完整 URI（仅作通知，mlflow 自行上传）
+    - ``graceful``：窗口外 skip + warning（直调形态的合法降级显式化）；默认
+      fail-loud——mlflow fluent 无窗口时静默自建孤儿 run 污染默认实验，守卫必须前置
+    - 返回 writer 的返回值（如 ``log_model`` 的 model_uri）
+    """
     from urllib.parse import unquote, urlparse
 
     import mlflow
 
     run = mlflow.active_run()
     if run is None:
-        return artifact_file
+        if graceful:
+            logger.warning("无 active run，跳过工件落盘: %s", artifact_file)
+            return None
+        raise RuntimeError("工件落盘须在 active run 窗口内（无窗口即无居所）")
     uri = f"{run.info.artifact_uri}/{artifact_file}"
     parsed = urlparse(uri)
     if parsed.scheme == "file":
-        return str(Path(unquote(parsed.path)))
-    return uri
+        destination = str(Path(unquote(parsed.path)))
+    elif parsed.scheme == "":
+        destination = uri  # sqlite tracking 缺省 artifact root 的裸路径形态
+    elif direct_write:
+        raise ValueError(f"artifact 根非本地（{uri}）——直写只支持本地工件树")
+    else:
+        destination = uri
+    result = writer(destination)
+    logger.info("Saved: %s", destination)
+    return result
 
 
-def log_table(df, artifact_file: str):
-    """mlflow.log_table + print 绝对路径（进 NodeResult.output）。"""
+def log_table(df, artifact_file: str, *, graceful: bool = False):
+    """mlflow.log_table（经落盘壳：守卫/通知单点）。"""
     import mlflow
 
-    mlflow.log_table(df, artifact_file)
-    print(f"Saved: {_artifact_local_path(artifact_file)}")
+    return _artifact_shell(artifact_file, lambda _: mlflow.log_table(df, artifact_file), graceful=graceful)
 
 
-def log_dict(dictionary, artifact_file: str):
-    """mlflow.log_dict + print 绝对路径（进 NodeResult.output）。"""
+def log_dict(dictionary, artifact_file: str, *, graceful: bool = False):
+    """mlflow.log_dict（经落盘壳：守卫/通知单点）。"""
     import mlflow
 
-    mlflow.log_dict(dictionary, artifact_file)
-    print(f"Saved: {_artifact_local_path(artifact_file)}")
+    return _artifact_shell(artifact_file, lambda _: mlflow.log_dict(dictionary, artifact_file), graceful=graceful)
 
 
-def log_pickle(obj, artifact_file: str):
+def log_pickle(obj, artifact_file: str, *, graceful: bool = False):
     """对象 pickle 直写 active run 工件树（如 split.pkl——#66 节点副产物）。
 
     ``pickle.dumps`` 内存序列化 + 直写 run ``artifact_uri`` 终路径——无 tmp 暂存、
-    无 log_artifact 二次拷贝（工件树即正典居所）。非 file:// artifact 根 fail-loud：
-    直写只对本地工件树成立，远程 store 出现时再议上传路径。
+    无 log_artifact 二次拷贝（工件树即正典居所）。直写形态远程 artifact 根
+    fail-loud（壳 ``direct_write``）。
     """
     import pickle
-    from urllib.parse import unquote, urlparse
 
-    import mlflow
+    def _write(destination: str) -> None:
+        local = Path(destination)
+        local.parent.mkdir(parents=True, exist_ok=True)
+        local.write_bytes(pickle.dumps(obj))
 
-    run = mlflow.active_run()
-    if run is None:
-        raise RuntimeError("log_pickle 须在 active run 窗口内调用（工件落 run——无窗口即无居所）")
-    uri = f"{run.info.artifact_uri}/{artifact_file}"
-    parsed = urlparse(uri)
-    # 本地工件树两种形态：file:// URI 或裸路径（sqlite tracking 缺省 artifact root）；
-    # 远程 scheme（s3/http…）fail-loud——出现时再议上传路径
-    if parsed.scheme == "file":
-        local = Path(unquote(parsed.path))
-    elif parsed.scheme == "":
-        local = Path(uri)
-    else:
-        raise ValueError(f"artifact 根非本地（{uri}）——log_pickle 直写只支持本地工件树")
-    local.parent.mkdir(parents=True, exist_ok=True)
-    local.write_bytes(pickle.dumps(obj))
-    print(f"Saved: {local}")
+    return _artifact_shell(artifact_file, _write, direct_write=True, graceful=graceful)
+
+
+def log_model(pipe, name: str = "final", **kwargs) -> str | None:
+    """mlflow.sklearn.log_model（经落盘壳）：窗口内落模型返回 model_uri。
+
+    终训模型本体的唯一持久化面（产物名恒 ``final``）；恒 graceful——直调形态
+    （DAG 窗口外）合法降级为内存态 loader（model_uri=None）。
+    """
+    import mlflow.sklearn
+
+    def _write(_: str) -> str:
+        return mlflow.sklearn.log_model(pipe, name=name, **kwargs).model_uri
+
+    return _artifact_shell(name, _write, graceful=True)
 
 
 def run_artifacts(run_id: str) -> list[str]:
@@ -311,18 +386,16 @@ def download_run_artifact(run_id: str, artifact_file: str) -> str:
     return mlflow.artifacts.download_artifacts(run_id=run_id, artifact_path=artifact_file)
 
 
-def log_figure(fig, filename: str, dpi: int = 300):
-    """mlflow.log_figure + print 绝对路径（进 NodeResult.output）。"""
+def log_figure(fig, filename: str, dpi: int = 300, *, graceful: bool = False):
+    """mlflow.log_figure（经落盘壳：守卫/通知单点）——图形微调随 writer 进壳，窗外跳过零副作用。"""
     import mlflow
 
-    fig.subplots_adjust(left=0, right=1)  # 保证标题水平居中对齐
-    fig.set_dpi(dpi)
-    mlflow.log_figure(
-        fig,
-        filename,
-        save_kwargs={"dpi": dpi, "bbox_inches": "tight"},
-    )
-    print(f"Saved: {_artifact_local_path(filename)}")
+    def _write(_: str):
+        fig.subplots_adjust(left=0, right=1)  # 保证标题水平居中对齐
+        fig.set_dpi(dpi)
+        mlflow.log_figure(fig, filename, save_kwargs={"dpi": dpi, "bbox_inches": "tight"})
+
+    return _artifact_shell(filename, _write, graceful=graceful)
 
 
 def get_artifact_uri() -> str:

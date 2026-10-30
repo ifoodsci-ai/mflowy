@@ -81,7 +81,7 @@ class TestWalkProjection:
         a, b = dag.nodes
 
         walked = list(dag.walk())
-        key_a, key_b = f"load__producer.{a.node_id}", f"model__consumer.{b.node_id}"  # 序号随计数器，不硬编码
+        key_a, key_b = a.id, b.id  # 图键 = Context.id（node_key#分组序号）
         assert [key for _n, key, _ups in walked] == [key_a, key_b]
         assert walked[0][2] == []  # 无上游
         assert walked[1][2] == [(key_a, None)]  # 数据边指上游 key，直连 label=None

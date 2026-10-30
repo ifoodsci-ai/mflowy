@@ -31,7 +31,7 @@ def _make_fig():
 
 
 class TestLogPlotScenario1:
-    def test_logs_table_and_figure_for_single_return(self):
+    def test_logs_table_and_figure_for_single_return(self, fake_artifact_window):
         from mflowy.data.middlewares import log_plot
 
         df = pd.DataFrame({"x": [1, 2], "y": [3, 4]})
@@ -56,7 +56,7 @@ class TestLogPlotScenario1:
 
 
 class TestLogPlotScenario2:
-    def test_logs_multiple_dataframes_in_tuple(self):
+    def test_logs_multiple_dataframes_in_tuple(self, fake_artifact_window):
         from mflowy.data.middlewares import log_plot
 
         df1 = pd.DataFrame({"a": [1]})
@@ -84,7 +84,7 @@ class TestLogPlotScenario2:
 
 
 class TestLogPlotScenario3:
-    def test_handles_multiple_yields_single_df(self):
+    def test_handles_multiple_yields_single_df(self, fake_artifact_window):
         from mflowy.data.middlewares import log_plot
 
         df1 = pd.DataFrame({"x": [1]})
@@ -115,7 +115,7 @@ class TestLogPlotScenario3:
 
 
 class TestLogPlotScenario4:
-    def test_handles_multiple_yields_multi_df(self):
+    def test_handles_multiple_yields_multi_df(self, fake_artifact_window):
         from mflowy.data.middlewares import log_plot
 
         df1a = pd.DataFrame({"a": [1]})
@@ -146,7 +146,7 @@ class TestLogPlotScenario4:
 
 
 class TestLogPlotErrorHandling:
-    def test_closes_figure_on_log_figure_error(self):
+    def test_closes_figure_on_log_figure_error(self, fake_artifact_window):
         from mflowy.data.middlewares import log_plot
 
         df = pd.DataFrame({"x": [1]})
@@ -190,7 +190,7 @@ class TestLogPlotErrorHandling:
 
 
 class TestLogPlotParams:
-    def test_uses_dpi_and_file_type_from_params(self):
+    def test_uses_dpi_and_file_type_from_params(self, fake_artifact_window):
         from mflowy.data.middlewares import log_plot
 
         df = pd.DataFrame({"x": [1]})
@@ -209,7 +209,7 @@ class TestLogPlotParams:
         assert mock_fig.call_args[1]["save_kwargs"]["dpi"] == 150
         plt.close(fig)
 
-    def test_default_dpi_and_file_type(self):
+    def test_default_dpi_and_file_type(self, fake_artifact_window):
         from mflowy.data.middlewares import log_plot
 
         df = pd.DataFrame({"x": [1]})

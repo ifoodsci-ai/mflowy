@@ -4,6 +4,8 @@
 绑定序修复前曾按签名序取首个命中（load 恒先）导致对比基线翻转。
 """
 
+from unittest.mock import patch
+
 import pandas as pd
 from mflowy.data.middlewares.log_df_diff import df_diff
 from mflowy.driver.builder import Builder
@@ -37,18 +39,20 @@ def _dag(fake_plugins, tmp_path):
     return Builder(p).build()
 
 
-def test_second_clean_step_diffs_against_previous_clean(fake_plugins, tmp_path, fake_tracking):
+def test_second_clean_step_diffs_against_previous_clean(fake_plugins, tmp_path, fake_tracking, fake_artifact_window):
     """第 2 步 clean 的 before = 第 1 步输出（(2,2)），非原始 load（(2,3)）。"""
-    flow = _dag(fake_plugins, tmp_path).run()
+    with patch("mlflow.log_dict"):  # 工件侧照常可 patch（fake-tracking 用例约定）
+        flow = _dag(fake_plugins, tmp_path).run()
     assert flow.status == "finished"
     by_name = {r.name: r for r in flow.runs}
     assert "(2, 3) → (2, 2)" in by_name["C1"].output  # 第 1 步：原始 → 删列
     assert "(2, 2) → (2, 2)" in by_name["C2"].output  # 第 2 步：上一步输出为基线
 
 
-def test_first_clean_step_falls_back_to_load(fake_plugins, tmp_path, fake_tracking):
+def test_first_clean_step_falls_back_to_load(fake_plugins, tmp_path, fake_tracking, fake_artifact_window):
     """第 1 步 clean 无前置 clean → 回退 load 参数边（原始数据面）。"""
-    flow = _dag(fake_plugins, tmp_path).run()
+    with patch("mlflow.log_dict"):
+        flow = _dag(fake_plugins, tmp_path).run()
     by_name = {r.name: r for r in flow.runs}
     assert "→" in by_name["C1"].output  # 有 diff 输出（回退 load 成功）
 

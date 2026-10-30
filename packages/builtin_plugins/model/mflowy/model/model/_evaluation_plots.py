@@ -61,8 +61,14 @@ def proba_long_df(pipe: ModelPipeline, X: pd.DataFrame, y: pd.DataFrame) -> pd.D
 
 def plot_evaluation(pipe: ModelPipeline, parts: list[_Part], task: TASKTYPE) -> None:
     """holdout 终评全套：actual_vs_predictions 长表 + 回归 4+1 图 / 分类 4 图。"""
+    import mlflow
+
+    if mlflow.active_run() is None:
+        logger.warning("无 active run，跳过终评图（副产物族计算+落盘整体随 run——直调形态不白算）")
+        return
+
     long_df = prediction_long_df(pipe, parts)
-    mlflow_util.log_table(long_df, "actual_vs_predictions.parquet")
+    mlflow_util.log_table(long_df, "actual_vs_predictions.parquet", graceful=True)
 
     test_df = long_df[long_df["type"] == "Test"]
 
@@ -82,18 +88,18 @@ def _plot_regression(long_df: pd.DataFrame, test_df: pd.DataFrame) -> None:
     from mflowy.model.plot.model_evaluation.regression.residual_scatter import residual_scatter
 
     _, fig = prediction_scatter(model_test_predictions=(TASKTYPE.REGRESSION, long_df))
-    log_figure(fig, "prediction_scatter.png", DPI)
+    log_figure(fig, "prediction_scatter.png", DPI, graceful=True)
 
     residual_df = long_df.assign(residual=long_df["y"] - long_df["y_pred"])
     fig = residual_scatter(residual_df)
-    log_figure(fig, "residual_scatter.png", DPI)
+    log_figure(fig, "residual_scatter.png", DPI, graceful=True)
 
     error_df = long_df.assign(error=long_df["y_pred"] - long_df["y"])
     for i, fig in enumerate(error_distribution(error_df)):
-        log_figure(fig, f"error_distribution_{i}.png", DPI)
+        log_figure(fig, f"error_distribution_{i}.png", DPI, graceful=True)
 
     _, fig = bland_altman(model_test_predictions=(TASKTYPE.REGRESSION, test_df))
-    log_figure(fig, "bland_altman.png", DPI)
+    log_figure(fig, "bland_altman.png", DPI, graceful=True)
 
 
 def _plot_classification(pipe: ModelPipeline, parts: list[_Part], test_df: pd.DataFrame) -> None:
@@ -107,7 +113,7 @@ def _plot_classification(pipe: ModelPipeline, parts: list[_Part], test_df: pd.Da
 
     X_test, y_test = parts[-1][0], parts[-1][1]
     proba_df = proba_long_df(pipe, X_test, y_test)
-    mlflow_util.log_table(proba_df, "test_probabilities.parquet")
+    mlflow_util.log_table(proba_df, "test_probabilities.parquet", graceful=True)
 
     report = pd.concat(
         [
@@ -117,16 +123,16 @@ def _plot_classification(pipe: ModelPipeline, parts: list[_Part], test_df: pd.Da
         ],
         ignore_index=True,
     )
-    mlflow_util.log_dict(report.to_dict(orient="records"), "classification_report.json")
+    mlflow_util.log_dict(report.to_dict(orient="records"), "classification_report.json", graceful=True)
 
     _, fig = confusion_matrix(model_test_predictions=(TASKTYPE.CLASSIFICATION, test_df))
-    log_figure(fig, "confusion_matrix.png", DPI)
+    log_figure(fig, "confusion_matrix.png", DPI, graceful=True)
 
     _, fig = roc_curve(model_test_probabilities=proba_df)
-    log_figure(fig, "roc_curve.png", DPI)
+    log_figure(fig, "roc_curve.png", DPI, graceful=True)
 
     _, fig = pr_curve(model_test_probabilities=proba_df)
-    log_figure(fig, "pr_curve.png", DPI)
+    log_figure(fig, "pr_curve.png", DPI, graceful=True)
 
     _, fig = calibration_curve(model_test_probabilities=proba_df)
-    log_figure(fig, "calibration_curve.png", DPI)
+    log_figure(fig, "calibration_curve.png", DPI, graceful=True)

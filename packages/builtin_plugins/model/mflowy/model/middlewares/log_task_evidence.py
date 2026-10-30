@@ -14,10 +14,9 @@ logger = logging.getLogger(__name__)
 
 
 def log_task_evidence(ctx: Context, next: Handler):
-    import mlflow
-
     result = next(ctx)
     evidence = getattr(result, "task_evidence", None)
-    if evidence is not None and not evidence.empty and mlflow.active_run():
-        mlflow_util.log_table(evidence, f"{result.task}_evidence.parquet")
+    if evidence is not None and not evidence.empty:
+        # graceful：直调形态（窗外）跳过——落盘壳守卫收编，不再散守 active_run
+        mlflow_util.log_table(evidence, f"{result.task}_evidence.parquet", graceful=True)
     return result

@@ -139,7 +139,7 @@ async def explanation(
             description="与 modeling 相同的 YAML 明文（顶层步骤列表片段：- name: 开头、无 name/description/flow 外壳）"
         ),
     ],
-    model: Annotated[str, Field(description="训练 run 的 id（从训练输出 RunInfo 或 list_runs 获取）")],
+    model: Annotated[str, Field(description="训练 run 的 id（从训练输出 RunInfo 或 get_experiment 获取）")],
     name: Annotated[str, Field(description="任务名称")],
     desc: Annotated[str, Field(description="任务描述")],
     lowess_frac: Annotated[float, Field(description="LOWESS 平滑比例")] = 0.3,
@@ -162,7 +162,7 @@ async def explanation(
 
 async def predict(
     data: Annotated[str, Field(description="预测数据绝对路径（csv/xlsx/parquet，或 py 文件 'path:func' 引用）")],
-    model: Annotated[str, Field(description="训练 run 的 id（从训练输出 RunInfo 或 list_runs 获取）")],
+    model: Annotated[str, Field(description="训练 run 的 id（从训练输出 RunInfo 或 get_experiment 获取）")],
     ctx: Context | None = None,
 ) -> DAGResult:
     """加载已训练模型对新数据做预测。
@@ -177,7 +177,7 @@ async def inverse_optimization(
     data: Annotated[
         str, Field(description="数据绝对路径（推断搜索空间；csv/xlsx/parquet，或 py 文件 'path:func' 引用）")
     ],
-    model: Annotated[str, Field(description="训练 run 的 id（从训练输出 RunInfo 或 list_runs 获取）")],
+    model: Annotated[str, Field(description="训练 run 的 id（从训练输出 RunInfo 或 get_experiment 获取）")],
     direction: Annotated[
         dict[str, str] | None,
         Field(description='y→direction 映射（如 {"price": "maximize"}）'),

@@ -103,6 +103,123 @@ class TestDefaultTrackingUri:
         assert captured["uri"] == m.default_tracking_uri()
 
 
+class TestArtifactShellContract:
+    """工件落盘壳契约（经公有业务接口观察）：active run 守卫 fail-loud、graceful
+    降级、Saved 通知走 logger（stdout 是业务数据通道，落盘通知属过程诊断）。"""
+
+    @pytest.fixture(autouse=True)
+    def _no_dangling_run(self):
+        import mlflow
+
+        yield
+        if mlflow.active_run() is not None:  # 红阶段的 fluent 自动建 run 兜底清理
+            mlflow.end_run()
+
+    @pytest.mark.parametrize(
+        "call",
+        [
+            lambda m: m.log_table(None, "x.json"),
+            lambda m: m.log_dict({}, "x.json"),
+            lambda m: m.log_figure(
+                type("F", (), {"subplots_adjust": lambda self, **k: None, "set_dpi": lambda self, d: None})(),
+                "x.png",
+            ),
+            lambda m: m.log_pickle(object(), "x.pkl"),
+        ],
+    )
+    def test_no_active_run_fail_loud(self, call):
+        import mlflow
+
+        assert mlflow.active_run() is None  # 前置：窗外
+        with pytest.raises(RuntimeError, match="active run"):
+            call(mlflow_util)
+
+    def test_graceful_skips_with_warning(self, caplog):
+        """直调形态：窗口外 skip + warning + None，不抛不落盘。"""
+        import logging
+
+        import mlflow
+
+        assert mlflow.active_run() is None
+        with caplog.at_level(logging.WARNING):
+            result = mlflow_util.log_dict({"k": 1}, "x.json", graceful=True)
+        assert result is None
+        assert any("跳过工件落盘" in r.message for r in caplog.records)
+
+    def test_log_figure_graceful_zero_side_effect(self, caplog):
+        """log_figure 窗外跳过零副作用：图形微调随 writer 进壳——不触 subplots_adjust/set_dpi。"""
+        import logging
+
+        import mlflow
+
+        calls: list[str] = []
+        fig = type(
+            "F",
+            (),
+            {
+                "subplots_adjust": staticmethod(lambda **k: calls.append("adjust")),
+                "set_dpi": staticmethod(lambda d: calls.append("dpi")),
+            },
+        )()
+        assert mlflow.active_run() is None
+        with caplog.at_level(logging.WARNING):
+            assert mlflow_util.log_figure(fig, "x.png", graceful=True) is None
+        assert calls == []  # 微调未发生——副作用与落盘同窗
+
+    @pytest.fixture
+    def run_window(self, tmp_path, monkeypatch):
+        """显式本地 artifact 根的 run 窗口（sqlite 缺省根落 CWD——防仓库污染）。"""
+        import mlflow
+
+        db = tmp_path / "mlflow.db"
+        monkeypatch.setenv("MLFLOW_TRACKING_URI", f"sqlite:///{db}")
+        mlflow.set_tracking_uri(f"sqlite:///{db}")
+        eid = mlflow.create_experiment("shell_exp", artifact_location=(tmp_path / "arts").as_uri())
+        return mlflow.start_run(experiment_id=eid)
+
+    def test_saved_via_logger_stdout_clean(self, run_window, caplog, capsys):
+        """Saved 通知走 logger.info 且为解析后本地路径；stdout（业务数据通道）纯净。"""
+        import logging
+
+        import pandas as pd
+
+        with run_window, caplog.at_level(logging.INFO):
+            mlflow_util.log_table(pd.DataFrame({"a": [1]}), "t.json")
+        saved = [r.message for r in caplog.records if r.message.startswith("Saved:")]
+        assert len(saved) == 1
+        assert saved[0].endswith("t.json")
+        assert capsys.readouterr().out == ""
+
+    def test_pickle_writes_resolved_destination(self, run_window, tmp_path):
+        """直写形态：writer 收到的目的地即工件树终路径（无 tmp 暂存/二次拷贝）。"""
+        import os
+
+        with run_window as run:
+            mlflow_util.log_pickle({"x": 1}, "split.pkl")
+            rid = run.info.run_id
+        assert (tmp_path / "arts" / rid / "artifacts" / "split.pkl").is_file()
+        assert os.path.getsize(tmp_path / "arts" / rid / "artifacts" / "split.pkl") > 0
+
+    def test_direct_write_remote_scheme_fail_loud(self, monkeypatch):
+        """直写形态远程 artifact 根 fail-loud（直写只对本地工件树成立）。"""
+        import mlflow
+
+        fake = type("R", (), {})()
+        fake.info = type("I", (), {"artifact_uri": "s3://bucket/root"})()
+        monkeypatch.setattr(mlflow, "active_run", lambda: fake)
+        with pytest.raises(ValueError, match="非本地"):
+            mlflow_util.log_pickle(object(), "x.pkl")
+
+    def test_log_model_graceful_without_run(self, caplog):
+        """log_model 直调形态：窗外降级 None + warning（守卫前置，不触 sklearn）。"""
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            uri = mlflow_util.log_model(object(), name="final")
+        assert uri is None
+        assert any("跳过工件落盘" in r.message for r in caplog.records)
+
+
 class TestTrackingSeam:
     """Tracking seam 契约：ContextVar 绑定 + FakeTracking 内存 adapter（内核测试的观察面）。"""
 
@@ -172,6 +289,71 @@ class TestTrackingSeam:
         from mflowy.utils.mlflow import Tracking
 
         assert "active_run_id" in Tracking.__protocol_attrs__
+
+    def test_run_artifacts_query_face(self):
+        """run_artifacts 查询面在 Protocol 声明内；FakeTracking 播种清单可断言，未知 run 不吞。"""
+        from mflowy.utils.mlflow import FakeTracking, Tracking
+
+        assert "run_artifacts" in Tracking.__protocol_attrs__
+        fake = FakeTracking()
+        with fake.node_run("n", "e1") as run:
+            fake.artifacts[run.info.run_id] = ["t.json", "t.png"]
+            assert fake.run_artifacts(run.info.run_id) == ["t.json", "t.png"]
+        with pytest.raises(KeyError):
+            fake.run_artifacts("nope")
+
+    def test_set_experiment_tag_face(self):
+        """实验 tag 写入面：Protocol 声明 + FakeTracking 记录（未知实验不吞）。"""
+        from mflowy.utils.mlflow import FakeTracking, Tracking
+
+        assert "set_experiment_tag" in Tracking.__protocol_attrs__
+        fake = FakeTracking()
+        eid = fake.ensure_experiment("e", "d").experiment_id
+        fake.set_experiment_tag(eid, "mflowy.graph", "```mermaid\n```")
+        assert fake.experiment_tags[eid]["mflowy.graph"].startswith("```mermaid")
+        with pytest.raises(KeyError):
+            fake.set_experiment_tag("nope", "k", "v")
+
+    def test_describe_run_face(self):
+        """run 描述写入面（mlflow.note.content tag 的 account 期通道）：Protocol 声明 + Fake 记录。"""
+        from mflowy.utils.mlflow import FakeTracking, Tracking
+
+        assert "describe_run" in Tracking.__protocol_attrs__
+        fake = FakeTracking()
+        with fake.node_run("n", "e1") as run:
+            fake.describe_run(run.info.run_id, "业务输出\nValueError('boom')")
+        assert fake.descriptions[run.info.run_id] == "业务输出\nValueError('boom')"
+        with pytest.raises(KeyError):
+            fake.describe_run("nope", "x")
+
+    def test_mlflow_tracking_describe_run_writes_note_tag(self, tmp_mlflow_db):
+        """生产 adapter：描述落 mlflow.note.content tag（超长截断同 clip）。"""
+        from mflowy.utils.mlflow import MlflowTracking
+
+        rid = _create_terminated_run(tmp_mlflow_db, "r", None)
+        MlflowTracking().describe_run(rid, "x" * 9000)
+        import mlflow
+
+        v = mlflow.get_run(rid).data.tags["mlflow.note.content"]
+        assert len(v) == 8000 and v.endswith("…")
+
+    def test_mlflow_tracking_set_experiment_tag_clips(self, tmp_mlflow_db):
+        """生产 adapter：超长图 tag 截断（实验 tag 上限 5000——run tag 8000 为另一类约束）。"""
+        import mlflow
+        from mflowy.utils.mlflow import MlflowTracking
+
+        MlflowTracking().set_experiment_tag(tmp_mlflow_db, "mflowy.graph", "x" * 9000)
+        v = mlflow.get_experiment(tmp_mlflow_db).tags["mflowy.graph"]
+        assert len(v) == 5000 and v.endswith("…")  # 实验 tag 上限 5000（run tag 8000——两类约束）
+
+    def test_mlflow_tracking_run_artifacts_lists_paths(self, tmp_mlflow_db):
+        """生产 adapter：工件树路径清单（account 快照的数据源）。"""
+        from mflowy.utils.mlflow import MlflowTracking
+        from mlflow.tracking import MlflowClient
+
+        rid = _create_terminated_run(tmp_mlflow_db, "r", None)
+        MlflowClient().log_dict(rid, {"a": 1}, "report.json")
+        assert MlflowTracking().run_artifacts(rid) == ["report.json"]
 
     def test_clip_tag_value_mlflow_limit(self):
         """mlflow tag 值上限截断（backend 约束由 adapter 吸收）——宽 fan-in 血缘不炸 run。"""
