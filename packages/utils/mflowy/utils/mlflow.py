@@ -312,16 +312,24 @@ def download_run_artifact(run_id: str, artifact_file: str) -> str:
 
 
 def log_figure(fig, filename: str, dpi: int = 300):
-    """mlflow.log_figure + print 绝对路径（进 NodeResult.output）。"""
+    """mlflow.log_figure + print 绝对路径（进 NodeResult.output）。
+
+    落盘即闭图（#92 单源纪律）：600dpi Agg 缓冲 ~80MB/张，泄漏即 pyplot
+    图管理器进程级累积（长跑 server 每次 holdout 终评漏 ~5 张）——闭图收在
+    本缝，直调方（_evaluation_plots/_loss_curve）与 log_plot 中间件一次覆盖。"""
     import mlflow
+    from matplotlib import pyplot as plt
 
     fig.subplots_adjust(left=0, right=1)  # 保证标题水平居中对齐
     fig.set_dpi(dpi)
-    mlflow.log_figure(
-        fig,
-        filename,
-        save_kwargs={"dpi": dpi, "bbox_inches": "tight"},
-    )
+    try:
+        mlflow.log_figure(
+            fig,
+            filename,
+            save_kwargs={"dpi": dpi, "bbox_inches": "tight"},
+        )
+    finally:
+        plt.close(fig)
     print(f"Saved: {_artifact_local_path(filename)}")
 
 

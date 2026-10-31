@@ -62,7 +62,11 @@ def oof_proba_long_df(y_true: pd.DataFrame, y_proba) -> pd.DataFrame:
 
 def oof_plot_album(task, y_true: pd.DataFrame, y_pred: pd.DataFrame, y_proba, out_dir: Path) -> list[str]:
     """OOF 图集：回归 4 图（scatter/residual/error_dist/bland_altman）/ 分类 4 图
-    （confusion/roc/pr/calibration），落 ``out_dir`` 返回相对文件名清单。"""
+    （confusion/roc/pr/calibration），落 ``out_dir`` 返回相对文件名清单。
+
+    落盘即闭图（#92）：直存路径不经 log_plot 中间件的 close——600dpi Agg 缓冲
+    ~80MB/张，泄漏即 pyplot 图管理器进程级累积（长跑 server 一次 run_hpo 漏 ~5 张）。"""
+    from matplotlib import pyplot as plt
     from mflowy.utils.plot import DPI
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -71,7 +75,10 @@ def oof_plot_album(task, y_true: pd.DataFrame, y_pred: pd.DataFrame, y_proba, ou
     t = TASKTYPE(task)
 
     def _save(fig, name: str) -> None:
-        fig.savefig(out_dir / name, dpi=DPI, bbox_inches="tight")
+        try:
+            fig.savefig(out_dir / name, dpi=DPI, bbox_inches="tight")
+        finally:
+            plt.close(fig)
         written.append(name)
 
     if t == TASKTYPE.REGRESSION:
@@ -188,6 +195,11 @@ def taylor_for_runs(runs: list[tuple[str, str]], task, out_dir: Path) -> dict:
         from mflowy.model.plot.model_evaluation.regression.taylor_diagram import taylor_diagram as taylor_plot
 
         _, fig = taylor_plot(model_test_predictions=(TASKTYPE(task), plot_df))
+        from matplotlib import pyplot as plt
+
         figure = out_dir / TAYLOR_FIGURE
-        fig.savefig(figure, dpi=150, bbox_inches="tight")
+        try:
+            fig.savefig(figure, dpi=150, bbox_inches="tight")
+        finally:
+            plt.close(fig)  # 落盘即闭图（#92，同 OOF 图集纪律）
     return {"stats": rows, "figure": figure, "note": note}
