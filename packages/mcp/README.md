@@ -21,7 +21,7 @@ MFlowy 以 MCP 为架构主体：本包的 `tools.py` 定义全部工具（pyfun
 | info | `list_nodes` / `get_node_info` / `validate_modeling_steps` / `file_hash` | 始终本地（base 依赖够用） |
 | 分析与问卷 | `data_profile` / `eda` / `propose_questions` | 始终本地（轻量、无跨环境状态） |
 | 建模 | `modeling` / `explanation` / `predict` / `inverse_optimization` | **JobProvider 委派** |
-| mlflow | `get_experiment` / `list_runs` / `get_run` / `list_run_artifacts` / `read_artifact` | 始终本地 |
+| mlflow | `get_experiment` / `get_run` | 始终本地（工件后端为本地文件树，内容直接访问） |
 | 平台登录 | `login` | 本地（拉起浏览器授权，loopback 回调） |
 
 建模类经 JobProvider 委派：内置 `local` 实现（LocalJobProvider，[modeling] extra 直调 driver 编排），远程实现接管执行环境。
