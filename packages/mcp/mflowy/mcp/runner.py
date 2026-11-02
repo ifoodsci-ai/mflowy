@@ -7,6 +7,11 @@
 
 [project.scripts] ``mflowy`` 指向此模块的 main()（CLI 通道）。
 Job 容器内默认 LocalJobProvider（[modeling] extra），直调 compute。
+
+环境变量::
+
+    MFLOWY_TASK_DIR  — 工件锚（task_dir）钉住（#95 裁定 B）：设则优先于一切推导；
+                       未设时按工具声明锚参数推导，推不出缺省 cwd
 """
 
 from __future__ import annotations

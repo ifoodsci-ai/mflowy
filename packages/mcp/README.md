@@ -8,6 +8,8 @@ MFlowy 以 MCP 为架构主体：本包的 `tools.py` 定义全部工具（pyfun
 | **MCP 通道** | `mflowy-mcp` | stdio server，MCP 客户端 / agent（Claude Code、Cursor 等）接入；SDK+遥测住 `[mcp]` extra |
 | 直接 import | `mflowy.mcp.tools` pyfunc | 宿主程序内嵌调用 |
 
+**工件锚定（task_dir）双路由**（#95）：两入口路由到同一工具函数，锚由入口中间件（`route_task_dir`）决定——工具以 `@anchor_task_dir("<参数名>")` 声明锚参数（纯元数据，签名/schema 零影响），从业务路径参数推父目录为任务目录（实验工件根 = `task_dir/.mlruns`）。CLI：`MFLOWY_TASK_DIR` env **钉住**（推导不覆写）→ 未设时推导 → 缺省 `cwd`；MCP：推导 → 缺省 `~/.mflowy`（server 无业务 CWD 语义）。MCP 侧数据路径须绝对（相对路径不推锚，解析处 fail-loud）。
+
 > **0.2.0 tools 解耦**：域工具（数据/建模）已下沉域包自持（`mflowy.{data,model}.tools`），
 > 经 entry points 组 `mflowy.tools` 注册；本包为**零域依赖 host**——平台工具（词表/mlflow
 > 观测/工件/指纹/登录）由 mflowy-mcp pyproject **同组静态声明**（与域包同构，server/runner

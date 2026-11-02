@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - Unreleased
 
+### BREAKING：工件系统收口（#95）——落盘壳全覆盖 + task_dir 双路由锚定 + OOF/study 归位父 run
+
+- **task_dir 双路由锚定（裁定 B）**：锚由入口中间件 `route_task_dir` 决定，工具以
+  `@anchor_task_dir("<参数名>")` 声明锚参数（纯元数据——不包函数，签名/schema 零影响）。
+  CLI（runner）：`MFLOWY_TASK_DIR` env **钉住**（`pin_task_dir`，推导不覆写）→ 推导 →
+  缺省 `cwd`；MCP（server.register）：推导 → 缺省 `~/.mflowy`。七个数据工具已声明锚
+  （compute 五工具 `data`、data_profile/eda `file_path`）。`resolve_data_ref` 的锚定
+  **副作用退役**（只读解析）；`LocalJobProvider` 的 YAML load 步扫描降级为「未钉住时的
+  推导」；`anchor_of_source` 单源上移 utils/path。
+- **OOF 观察面工件挂父 run 工件树（裁定 A）**：run_hpo 的 OOF 图集经 `log_figure`、
+  `oof_y_pred.parquet` 经 `log_table` 落父 run；session 镜像目录 `runs/<run_id>/` **退役**
+  ——账本 `oof.y_pred` 指针从 session 相对路径改为**run 工件名**（寻址 = (run_id, name)，
+  `download_run_artifact` 读回），skeleton `oof_plots` 解析为本地绝对路径。`log_table`
+  不保索引——OOF parquet 按位对齐（行序 ≡ y_train 行序，与 #66 holdout 副产物同契）。
+  `oof_plot_album` 签名去 `out_dir`（挂当前 run）。trial 嵌套 run 工件面零记录为原则。
+- **study storage 随父 run 只读投影**：每次 run_hpo 上传 sqlite 副本（`log_file` 落盘壳新
+  原语，工件名 = 账本 `study` 字段同名）；session 盘上真源不变（账本 append-only）。
+- **figure 落盘纪律单源**：`utils.plot.prepare_figure`（居中微调 + dpi）为 `log_figure`
+  （run 工件树）与新增 `save_figure`（会话聚合面直写，Saved 通知走 logger）共用，闭图纪律（#92）随两缝继承；泰勒图
+  `dpi=150` 硬编码退役（统一 `DPI`）。
+- **metrics 落盘壳**：`utils.mlflow.log_metrics(metrics, *, graceful=False)` 守卫前置
+  fail-loud / graceful 直调降级 warning（对齐工件壳语义）；8 处 `mlflow.log_metrics`
+  fluent 直调收敛（4 域中间件 graceful、`_log_metrics` 静默跳过→有声降级、HPO objective
+  `in_window` 分支走壳）。测试 patch 目标相应移至壳缝 `mflowy.utils.mlflow.log_metrics`。
+- session 缓存（split.pkl / loader_*.pkl）转 `write_bytes_atomic`（tmp+rename）。
+
+
 ### 测试内存纪律——图落盘即闭（生产级泄漏）+ 重栈会话 fixture 模块级共享（#92）
 
 - **闭图单源纪律（生产修复，长跑 MCP server 同病）**：三处直存/直 log 图路径从不
