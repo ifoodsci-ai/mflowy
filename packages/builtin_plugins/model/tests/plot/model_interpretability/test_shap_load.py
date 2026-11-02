@@ -32,7 +32,7 @@ def _values_df() -> pd.DataFrame:
     """经中间件真实产出宽表副产物。"""
     captured = {}
     with (
-        patch("mlflow.log_metrics"),
+        patch("mflowy.utils.mlflow.log_metrics"),
         patch("mflowy.utils.mlflow.log_table", side_effect=lambda df, name: captured.update(df=df)),
     ):
         log_shap_explanation(
@@ -105,7 +105,7 @@ def test_multiclass_stack_roundtrip():
     exp.y_name, exp.categorical_features, exp.classes = "target", ["sex"], ["a", "b"]
     captured = {}
     with (
-        patch("mlflow.log_metrics"),
+        patch("mflowy.utils.mlflow.log_metrics"),
         patch("mflowy.utils.mlflow.log_table", side_effect=lambda df, name: captured.update(df=df)),
     ):
         log_shap_explanation(Context(NodeConf(name="x", node_key="shap__explanation"), []), lambda c, **kw: exp)

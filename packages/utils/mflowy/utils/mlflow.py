@@ -283,6 +283,21 @@ def setup():
     mlflow.set_tracking_uri(tracking_uri)
 
 
+def _window_or_skip(subject, *, what: str, graceful: bool):
+    """active run 守卫（工件壳 / metrics 壳共用单源）：窗内返回 run；窗外
+    ``graceful`` → warning + None，否则 fail-loud——mlflow fluent 无窗口会静默自建
+    孤儿 run 污染默认实验，守卫必须前置。"""
+    import mlflow
+
+    run = mlflow.active_run()
+    if run is not None:
+        return run
+    if graceful:
+        logger.warning("无 active run，跳过%s: %s", what, subject)
+        return None
+    raise RuntimeError(f"{what}须在 active run 窗口内（无窗口即无居所）")
+
+
 def _artifact_shell(
     artifact_file: str,
     writer: Callable[[str], Any],
@@ -302,14 +317,9 @@ def _artifact_shell(
     """
     from urllib.parse import unquote, urlparse
 
-    import mlflow
-
-    run = mlflow.active_run()
+    run = _window_or_skip(artifact_file, what="工件落盘", graceful=graceful)
     if run is None:
-        if graceful:
-            logger.warning("无 active run，跳过工件落盘: %s", artifact_file)
-            return None
-        raise RuntimeError("工件落盘须在 active run 窗口内（无窗口即无居所）")
+        return None
     uri = f"{run.info.artifact_uri}/{artifact_file}"
     parsed = urlparse(uri)
     if parsed.scheme == "file":
@@ -417,14 +427,17 @@ def set_tags(tags: dict):
     mlflow.set_tags(tags)
 
 
-def log_metrics(metrics: dict[str, float]):
-    """mlflow.log_metrics 的 seam 包装——域中间件不直呼 fluent API。
+def log_metrics(metrics: dict[str, float], *, graceful: bool = False):
+    """mlflow.log_metrics 的 seam 包装（守卫前置）——域代码不直呼 fluent API。
 
-    直呼的代价：无 active experiment 时 fluent 落 CWD 默认 ``./mlruns``（包根
-    污染成因之一）；收敛单缝后，锚定/降级策略只改本文件（地图 #47 落盘点）。
+    直呼的代价：无 active run 时 fluent 静默自建孤儿 run（落 CWD 默认
+    ``./mlruns``，包根污染成因之一）；守卫语义对齐工件落盘壳——默认
+    fail-loud，``graceful`` 为直调形态的合法降级（跳过 + warning）。
     """
     import mlflow
 
+    if _window_or_skip(sorted(metrics)[:5], what="metrics 落盘", graceful=graceful) is None:
+        return
     mlflow.log_metrics(metrics)
 
 

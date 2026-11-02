@@ -220,6 +220,36 @@ class TestArtifactShellContract:
         assert any("跳过工件落盘" in r.message for r in caplog.records)
 
 
+class TestMetricsShellContract:
+    """metrics 落盘壳契约（对齐工件壳）：active run 守卫前置 fail-loud、graceful
+    直调降级 warning、窗口内委托 fluent——fluent 无窗口会静默自建孤儿 run。"""
+
+    def test_no_active_run_fail_loud(self):
+        import mlflow
+
+        assert mlflow.active_run() is None  # 前置：窗外
+        with pytest.raises(RuntimeError, match="active run"):
+            mlflow_util.log_metrics({"m": 1.0})
+
+    def test_graceful_skips_with_warning(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            mlflow_util.log_metrics({"m": 1.0}, graceful=True)
+        assert any("跳过metrics" in r.message for r in caplog.records)
+
+    def test_windowed_delegates_to_fluent(self, tmp_path, monkeypatch):
+        import mlflow
+
+        db = tmp_path / "mlflow.db"
+        monkeypatch.setenv("MLFLOW_TRACKING_URI", f"sqlite:///{db}")
+        mlflow.set_tracking_uri(f"sqlite:///{db}")
+        eid = mlflow.create_experiment("metrics_shell", artifact_location=(tmp_path / "arts").as_uri())
+        with mlflow.start_run(experiment_id=eid) as run:
+            mlflow_util.log_metrics({"score": 0.91})
+        assert mlflow.get_run(run.info.run_id).data.metrics["score"] == 0.91
+
+
 class TestTrackingSeam:
     """Tracking seam 契约：ContextVar 绑定 + FakeTracking 内存 adapter（内核测试的观察面）。"""
 

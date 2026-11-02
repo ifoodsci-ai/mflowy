@@ -29,7 +29,7 @@ def _ctx():
 def _run_mw(result=None):
     captured = {}
     with (
-        patch("mlflow.log_metrics") as m_metrics,
+        patch("mflowy.utils.mlflow.log_metrics") as m_metrics,
         patch(
             "mflowy.utils.mlflow.log_table", side_effect=lambda df, name: captured.update(name=name, df=df)
         ) as m_table,
@@ -57,7 +57,7 @@ def test_wide_byproduct_self_contained():
     assert df["value__sex"].dtype == object
     assert df["value__age"].dtype == float
     assert df["cat__sex"].all() and not df["cat__age"].any()
-    m_metrics.assert_called_once_with({"shap_samples": 2, "shap_features": 2})
+    m_metrics.assert_called_once_with({"shap_samples": 2, "shap_features": 2}, graceful=True)  # 壳收编：直调形态降级
 
 
 def test_wide_byproduct_parquet_roundtrip(tmp_path):
@@ -76,7 +76,7 @@ def test_multiclass_blocks():
     exp = _explanation(np.zeros((2, 2, 2)) + np.arange(2).reshape(1, 1, 2))
 
     with (
-        patch("mlflow.log_metrics"),
+        patch("mflowy.utils.mlflow.log_metrics"),
         patch("mflowy.utils.mlflow.log_table", side_effect=lambda df, name: captured.update(df=df)),
     ):
         log_shap_explanation(_ctx(), lambda c, **kw: exp)
@@ -90,7 +90,7 @@ def test_multiclass_blocks():
 def test_none_result_passthrough():
     """None 透传、零工件写入。"""
     with (
-        patch("mlflow.log_metrics") as m_metrics,
+        patch("mflowy.utils.mlflow.log_metrics") as m_metrics,
         patch("mflowy.utils.mlflow.log_table") as m_table,
     ):
         out = log_shap_explanation(_ctx(), lambda c, **kw: None)
