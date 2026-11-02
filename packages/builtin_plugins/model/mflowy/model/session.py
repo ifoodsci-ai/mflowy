@@ -50,7 +50,7 @@ from mflowy.model import registry
 from mflowy.model.model._pipeline import oof_predictions, u_inner_of
 from mflowy.model.model.types import MetricName
 from mflowy.model.model.utils import MACHINERY_SKIP, infer_metric, normalize_space, space_from_json, space_to_json
-from mflowy.utils.file import write_text_atomic
+from mflowy.utils.file import write_bytes_atomic, write_text_atomic
 
 logger = logging.getLogger(__name__)
 
@@ -324,8 +324,9 @@ def _materialize(m: dict, df: pd.DataFrame, raw_task: str) -> None:
 
     with open(download_run_artifact(split_ctx.run_id, "split.pkl"), "rb") as f:
         ts = pickle.load(f)  # 身份按引用：会话 split.pkl ≡ run 副产物（零二次物化）
-    with open(_store().session_dir(m["session_id"]) / "split.pkl", "wb") as f:
-        pickle.dump(ts, f)
+    write_bytes_atomic(
+        _store().session_dir(m["session_id"]) / "split.pkl", pickle.dumps(ts, protocol=pickle.HIGHEST_PROTOCOL)
+    )
     m["task"] = xy.task.value
 
 
@@ -1520,8 +1521,10 @@ def _json(v) -> str:
 
 def save_loader(session_id: str, loader, key: str) -> None:
     """final_train_test 后持久化 loader 门面（键 = 结构键；多模型会话各持一份，sid 相对寻址）。"""
-    with open(_store().session_dir(session_id) / f"loader_{_key_file(key)}.pkl", "wb") as f:
-        pickle.dump(loader, f)
+    write_bytes_atomic(
+        _store().session_dir(session_id) / f"loader_{_key_file(key)}.pkl",
+        pickle.dumps(loader, protocol=pickle.HIGHEST_PROTOCOL),
+    )
 
 
 def load_loader(session_id: str, key: str):
