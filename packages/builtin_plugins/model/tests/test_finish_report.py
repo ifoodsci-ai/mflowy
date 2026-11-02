@@ -154,7 +154,9 @@ def delivered_rf(sessions_root, reg_csv, shared_tracking):
 
 
 def test_run_hpo_writes_oof_plot_album(sessions_root, reg_csv, shared_tracking):
-    """OOF 图集：run_hpo 产物挂 run 下（run_id 寻址）——图集可按 run 列出。"""
+    """OOF 观察面工件挂父 run 工件树（#95 项4：log_figure/log_table 归位）——run_id 寻址，session 镜像目录移除。"""
+    from mflowy.utils.mlflow import download_run_artifact, run_artifacts
+
     s = _start(sessions_root, reg_csv)
     sid = s["session_id"]
     ms.apply_action(sid, "select_model", {"family": "RF"})
@@ -162,15 +164,17 @@ def test_run_hpo_writes_oof_plot_album(sessions_root, reg_csv, shared_tracking):
     ms.apply_action(sid, "run_hpo", {"n_trials": 2})
     m = _manifest(sessions_root, sid)
     oof = m["models"][_K]["oof"]
-    plots = (sessions_root / sid / "runs" / oof["run_id"] / "plots").glob("*.png")
-    files = sorted(p.name for p in plots)
-    assert any("prediction_scatter" in f for f in files)  # 回归图集指向 OOF 源
-    assert oof["plots"] and set(oof["plots"]) == set(files)  # manifest 面与盘一致
-    oof_df = pd.read_parquet(sessions_root / sid / oof["y_pred"])
+    arts = set(run_artifacts(oof["run_id"]))  # 真源 = 父 run 工件树清单
+    assert any("prediction_scatter" in p for p in oof["plots"])  # 回归图集指向 OOF 源
+    assert oof["plots"] and set(oof["plots"]) <= arts  # manifest 面与 run 工件树一致
+    assert oof["y_pred"] == "oof_y_pred.parquet"  # 指针 = run 工件名（run_id 已在 oof 面）
+    assert oof["y_pred"] in arts
+    oof_df = pd.read_parquet(download_run_artifact(oof["run_id"], oof["y_pred"]))
     assert len(oof_df) == 96  # 120 行 × 0.8 train（cv=3 → outer test_size 缺省 0.2）
     import matplotlib.pyplot as plt
 
-    assert not plt.get_fignums()  # #92 图集落盘即闭图——600dpi 缓冲 ~80MB/张，泄漏即进程级累积
+    assert not plt.get_fignums()  # #92 图集落盘即闭图（闭图随 log_figure 缝继承）——600dpi 缓冲泄漏即进程级累积
+    assert not (sessions_root / sid / "runs").exists()  # #95 镜像目录退役——寻址统一走 run 工件树
 
 
 # ── draw_taylor_diagram（副产物 fan-in + 同一性断言） ───────────────────────
@@ -189,7 +193,11 @@ def test_draw_taylor_diagram_multi_model(delivered, sessions_root):
     assert Path(out["figure"]).exists()
     import matplotlib.pyplot as plt
 
-    assert not plt.get_fignums()  # #92 泰勒图落盘即闭图（同 OOF 图集纪律）
+    assert not plt.get_fignums()  # #92 泰勒图落盘即闭图（闭图随 save_figure 缝）
+    from PIL import Image
+
+    with Image.open(out["figure"]) as im:  # #95 项6：dpi 硬编码 150 退役——图形落盘纪律统一 DPI
+        assert im.info.get("dpi", (0, 0))[0] == pytest.approx(600, rel=0.01)
 
 
 def test_draw_taylor_diagram_single_model_edge(delivered, sessions_root):

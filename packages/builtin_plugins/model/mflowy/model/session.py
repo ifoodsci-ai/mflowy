@@ -664,13 +664,15 @@ def _run_hpo(store, m: dict, params: dict) -> dict:
             )
             theta = {**base, **study.best_trial.params}
             y_oof, y_proba = oof_predictions(ts, make_pipe, theta)
-            runs_dir = _store().session_dir(m["session_id"]) / "runs" / run.info.run_id
-            runs_dir.mkdir(parents=True, exist_ok=True)
-            y_oof.to_parquet(runs_dir / "oof_y_pred.parquet", index=True)
-            # #64 OOF 图集：观察面指向 OOF 源（cross_val_predict × train 侧 y_true），挂 run 下
+            # #64 OOF 观察面指向 OOF 源（cross_val_predict × train 侧 y_true）；#95 项4：
+            # 工件挂父 run 工件树（log_table/log_figure 经落盘壳，run_id 寻址）——
+            # session 镜像目录 runs/<run_id>/ 退役，真源 = run 工件树
+            from mflowy.utils.mlflow import log_table as _log_table
+
+            _log_table(y_oof, "oof_y_pred.parquet")
             from mflowy.model.report import oof_plot_album
 
-            plots = oof_plot_album(m["task"], ts.y_train, y_oof, y_proba, runs_dir / "plots")
+            plots = oof_plot_album(m["task"], ts.y_train, y_oof, y_proba)
         captured = buf.getvalue().strip()
         if captured:
             logger.info("run_hpo[%s] 捕获输出：\n%s", key, captured)
@@ -709,8 +711,8 @@ def _run_hpo(store, m: dict, params: dict) -> dict:
             "std": round(float(np.std(scores)), 4) if len(scores) else None,
             "oof": {
                 "run_id": run.info.run_id,
-                "y_pred": f"runs/{run.info.run_id}/oof_y_pred.parquet",
-                "plots": plots,
+                "y_pred": "oof_y_pred.parquet",  # run 工件名（run_id 在本面——寻址 = (run_id, name)）
+                "plots": plots,  # 工件名清单（log_figure 落父 run 工件树）
             },
             # 规则 findings 随每次搜索刷新；LLM findings（#36）保留
             "findings": findings + [f for f in entry.get("findings", []) if f.get("source") == "llm"],
@@ -1038,6 +1040,7 @@ def report_skeleton(session_id: str) -> dict:
     m = _store().read_manifest(session_id)
     d = _store().session_dir(session_id)
     from mflowy.model.report import TAYLOR_FIGURE  # 图名单源——与写入方共享常量（#83）
+    from mflowy.utils.mlflow import download_run_artifact
 
     taylor_fig = str(d / TAYLOR_FIGURE) if (d / TAYLOR_FIGURE).exists() else None
     # rank：冻结面按 u 降序的名次（1 = 交付最优）；rank_consistency = u_inner/u 秩相关（SH 赌注出账）
@@ -1070,7 +1073,8 @@ def report_skeleton(session_id: str) -> dict:
             {
                 "key": k,
                 "run_id": e.get("run_id"),
-                "oof_plots": [f"runs/{e['oof']['run_id']}/plots/{p}" for p in e["oof"].get("plots", [])],
+                # OOF 图集寻址 = run 工件树（#95 项4）——本地仓库 download 即原路径（零拷贝，只读契约）
+                "oof_plots": [str(download_run_artifact(e["oof"]["run_id"], p)) for p in e["oof"].get("plots", [])],
                 "holdout_byproducts": e.get("byproducts"),
                 "findings": e.get("findings", []),
             }

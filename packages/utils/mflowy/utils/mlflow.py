@@ -404,14 +404,14 @@ def log_figure(fig, filename: str, dpi: int = 300, *, graceful: bool = False):
     本缝，直调方（_evaluation_plots/_loss_curve）与 log_plot 中间件一次覆盖。"""
     import mlflow
     from matplotlib import pyplot as plt
+    from mflowy.utils.plot import prepare_figure  # 惰性导入——plot 属 [plot] extra，不得进模块顶层
 
     def _write(_: str):
-        fig.subplots_adjust(left=0, right=1)  # 保证标题水平居中对齐
-        fig.set_dpi(dpi)
+        prepare_figure(fig, dpi)  # 微调单源（与 save_figure 共用，#95 项6）
         try:
             mlflow.log_figure(fig, filename, save_kwargs={"dpi": dpi, "bbox_inches": "tight"})
         finally:
-            plt.close(fig)  # 落盘即闭（#92）——只在真正落盘路径闭图；窗外跳过/守卫失败零副作用（#93 壳契约）
+            plt.close(fig)  # 落盘即闭（#92）——只在真正落盘路径闭图；窗外跳过/守卫失败零副作用（#93 壳契约）)
 
     return _artifact_shell(filename, _write, graceful=graceful)
 

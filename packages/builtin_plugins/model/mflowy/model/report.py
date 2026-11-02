@@ -60,25 +60,20 @@ def oof_proba_long_df(y_true: pd.DataFrame, y_proba) -> pd.DataFrame:
     return pd.concat(long_dfs, ignore_index=True)
 
 
-def oof_plot_album(task, y_true: pd.DataFrame, y_pred: pd.DataFrame, y_proba, out_dir: Path) -> list[str]:
+def oof_plot_album(task, y_true: pd.DataFrame, y_pred: pd.DataFrame, y_proba) -> list[str]:
     """OOF 图集：回归 4 图（scatter/residual/error_dist/bland_altman）/ 分类 4 图
-    （confusion/roc/pr/calibration），落 ``out_dir`` 返回相对文件名清单。
-
-    落盘即闭图（#92）：直存路径不经 log_plot 中间件的 close——600dpi Agg 缓冲
-    ~80MB/张，泄漏即 pyplot 图管理器进程级累积（长跑 server 一次 run_hpo 漏 ~5 张）。"""
-    from matplotlib import pyplot as plt
+    （confusion/roc/pr/calibration），经 ``log_figure`` 挂当前（父）run 工件树
+    （#95 项4——须在 run 窗口内），返回工件名清单。落盘即闭图（#92 单源纪律）
+    随 log_figure 缝继承——直调方不再自理 close。"""
+    from mflowy.utils.mlflow import log_figure
     from mflowy.utils.plot import DPI
 
-    out_dir.mkdir(parents=True, exist_ok=True)
     long_df = oof_long_df(y_true, y_pred)
     written: list[str] = []
     t = TASKTYPE(task)
 
     def _save(fig, name: str) -> None:
-        try:
-            fig.savefig(out_dir / name, dpi=DPI, bbox_inches="tight")
-        finally:
-            plt.close(fig)
+        log_figure(fig, name, DPI)  # 闭图随缝（#92）)
         written.append(name)
 
     if t == TASKTYPE.REGRESSION:
@@ -158,6 +153,7 @@ def taylor_for_runs(runs: list[tuple[str, str]], task, out_dir: Path) -> dict:
     """
     from mflowy.model.model._pipeline import HOLDOUT_BYPRODUCTS
     from mflowy.utils.mlflow import download_run_artifact, run_artifacts
+    from mflowy.utils.plot import save_figure
 
     byproducts: list[tuple[str, pd.DataFrame, pd.DataFrame]] = []
     for label, rid in runs:
@@ -195,11 +191,7 @@ def taylor_for_runs(runs: list[tuple[str, str]], task, out_dir: Path) -> dict:
         from mflowy.model.plot.model_evaluation.regression.taylor_diagram import taylor_diagram as taylor_plot
 
         _, fig = taylor_plot(model_test_predictions=(TASKTYPE(task), plot_df))
-        from matplotlib import pyplot as plt
 
         figure = out_dir / TAYLOR_FIGURE
-        try:
-            fig.savefig(figure, dpi=150, bbox_inches="tight")
-        finally:
-            plt.close(fig)  # 落盘即闭图（#92，同 OOF 图集纪律）
+        save_figure(fig, figure)  # 会话聚合面无 run 窗口——直落纪律与 log_figure 同源（dpi=150 退役；闭图随缝 #92）)
     return {"stats": rows, "figure": figure, "note": note}

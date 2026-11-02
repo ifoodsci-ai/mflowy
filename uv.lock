@@ -1564,6 +1564,7 @@ model = [
 [package.dev-dependencies]
 dev = [
     { name = "mflowy-mcp", extra = ["mcp"] },
+    { name = "pillow" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "ruff" },
@@ -1587,6 +1588,7 @@ provides-extras = ["data", "model", "mcp", "deep"]
 [package.metadata.requires-dev]
 dev = [
     { name = "mflowy-mcp", extras = ["mcp"], editable = "packages/mcp" },
+    { name = "pillow", specifier = ">=10.0" },
     { name = "pre-commit", specifier = ">=3.0" },
     { name = "pytest", specifier = ">=7.0" },
     { name = "ruff", specifier = ">=0.15.8" },

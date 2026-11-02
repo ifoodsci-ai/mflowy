@@ -98,6 +98,8 @@ dev = [
     "pre-commit>=3.0",
     # 测试面含 telemetry/schema 契约（模块级 import SDK）——dev 环境须带 server 形态
     "mflowy-mcp[mcp]",
+    # 测试直读 PNG dpi 元数据（figure 落盘纪律断言）——import 即声明，不靠 matplotlib 传递
+    "pillow>=10.0",
 ]
 jupyter = [
     "nbformat>=5.10.4",
