@@ -380,6 +380,17 @@ def log_model(pipe, name: str = "final", **kwargs) -> str | None:
     return _artifact_shell(name, _write, graceful=True)
 
 
+def log_file(src, *, graceful: bool = False):
+    """本地文件原样挂 run 工件树（mlflow.log_artifact 经落盘壳）——原始文件面
+    （如 study sqlite 的只读投影，#95 项5）；工件名 = 源文件名。"""
+    from pathlib import Path
+
+    import mlflow
+
+    name = Path(src).name
+    return _artifact_shell(name, lambda _: mlflow.log_artifact(str(src)), graceful=graceful)
+
+
 def run_artifacts(run_id: str) -> list[str]:
     """按 run_id 列工件路径（薄封装——域侧 fail-loud 清单的检索面）。"""
     import mlflow

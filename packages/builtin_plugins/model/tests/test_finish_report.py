@@ -173,8 +173,11 @@ def test_run_hpo_writes_oof_plot_album(sessions_root, reg_csv, shared_tracking):
     assert len(oof_df) == 96  # 120 行 × 0.8 train（cv=3 → outer test_size 缺省 0.2）
     import matplotlib.pyplot as plt
 
-    assert not plt.get_fignums()  # #92 图集落盘即闭图（闭图随 log_figure 缝继承）——600dpi 缓冲泄漏即进程级累积
+    assert not plt.get_fignums()  # #92 图集落盘即闭图（闭图随 log_figure 缝继承）
     assert not (sessions_root / sid / "runs").exists()  # #95 镜像目录退役——寻址统一走 run 工件树
+    study_name = m["models"][_K]["study"]  # #95 项5：study storage 随父 run 只读投影
+    assert study_name in arts
+    assert (sessions_root / sid / study_name).exists()  # session 盘上真源不变（账本 append-only）
 
 
 # ── draw_taylor_diagram（副产物 fan-in + 同一性断言） ───────────────────────

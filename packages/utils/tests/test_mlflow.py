@@ -190,6 +190,16 @@ class TestArtifactShellContract:
         assert saved[0].endswith("t.json")
         assert capsys.readouterr().out == ""
 
+    def test_log_file_uploads_source(self, run_window, tmp_path):
+        """log_file：本地文件原样挂 run 工件树（study 投影等原始文件面）——落盘后工件树可见。"""
+        src = tmp_path / "study_X.db"
+        src.write_bytes(b"sqlite-bytes")
+
+        with run_window as run:
+            mlflow_util.log_file(src)
+
+        assert "study_X.db" in mlflow_util.run_artifacts(run.info.run_id)
+
     def test_pickle_writes_resolved_destination(self, run_window, tmp_path):
         """直写形态：writer 收到的目的地即工件树终路径（无 tmp 暂存/二次拷贝）。"""
         import os

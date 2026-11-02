@@ -120,6 +120,11 @@ def _key_file(key: str) -> str:
     return key.replace("|", "__")
 
 
+def _study_db_name(key: str) -> str:
+    """study sqlite 文件名（单源）：盘上真源路径、账本 ``study`` 字段、父 run 投影工件名三处同名。"""
+    return f"study_{_key_file(key)}.db"
+
+
 def _signature_of(family: str):
     """族节点签名（约束单一真源——set_hp/set_hp_space 校验面）。"""
     import inspect
@@ -589,7 +594,7 @@ def _open_study(m: dict, key: str, objective_id: dict, scoring: MetricName, seed
     import optuna
     from optuna import samplers
 
-    db = _store().session_dir(m["session_id"]) / f"study_{_key_file(key)}.db"
+    db = _store().session_dir(m["session_id"]) / _study_db_name(key)
     storage = f"sqlite:///{db}"
     direction = "maximize" if MetricName.higher_is_better(scoring) else "minimize"
     sampler = samplers.TPESampler(seed=seed)
@@ -667,12 +672,15 @@ def _run_hpo(store, m: dict, params: dict) -> dict:
             # #64 OOF 观察面指向 OOF 源（cross_val_predict × train 侧 y_true）；#95 项4：
             # 工件挂父 run 工件树（log_table/log_figure 经落盘壳，run_id 寻址）——
             # session 镜像目录 runs/<run_id>/ 退役，真源 = run 工件树
-            from mflowy.utils.mlflow import log_table as _log_table
+            from mflowy.utils.mlflow import log_file, log_table
 
-            _log_table(y_oof, "oof_y_pred.parquet")
+            # log_table 不保索引（与 #66 holdout 副产物同契）：OOF 行序 ≡ y_train 行序，按位对齐
+            log_table(y_oof, "oof_y_pred.parquet")
             from mflowy.model.report import oof_plot_album
 
             plots = oof_plot_album(m["task"], ts.y_train, y_oof, y_proba)
+            # #95 项5：study storage 随父 run 落工件（只读投影——盘上真源不变，账本 append-only）
+            log_file(_store().session_dir(m["session_id"]) / _study_db_name(key))
         captured = buf.getvalue().strip()
         if captured:
             logger.info("run_hpo[%s] 捕获输出：\n%s", key, captured)
@@ -700,7 +708,7 @@ def _run_hpo(store, m: dict, params: dict) -> dict:
     ]
     entry.update(
         {
-            "study": f"study_{_key_file(key)}.db",
+            "study": _study_db_name(key),
             "objective": objective_id,
             "n_trials_at_last_eval": len(study.trials),
             "u_inner": new_u,
