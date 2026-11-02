@@ -15,6 +15,22 @@ utils 包测试的局部 teardown 重装）在 pytest 捕获流上装 root conso
 import io
 import logging
 import sys
+from functools import cache
+
+
+@cache
+def _root_conftest():
+    """根 conftest 显式按路径加载（#92）：裸名 ``import conftest`` 在多树收集下
+    会被子树同名 conftest 影子（sys.path 按收集序插入各测试目录——任何包测试
+    子树新增 conftest.py 即触发）。"""
+    import importlib.util
+    from pathlib import Path
+
+    p = Path(__file__).resolve().parents[1] / "conftest.py"
+    spec = importlib.util.spec_from_file_location("_root_conftest_for_isolation_nail", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def _fire_setup_on_short_lived_stream() -> io.StringIO:
@@ -38,7 +54,7 @@ def _fire_setup_on_short_lived_stream() -> io.StringIO:
 
 def test_setup_residue_cleared_between_tests():
     """用例内 setup() 装上的 handler/一次性门/级别，teardown 相全部复原。"""
-    import conftest
+    conftest = _root_conftest()
 
     phases = conftest._isolate_logging_setup()
     next(phases)  # setup 相：快照
@@ -57,7 +73,7 @@ def test_no_residue_noop():
     """用例未触发 setup() 时 teardown 相零动作（不误伤既有 handler/级别）。"""
     import mflowy.utils.logging as mlog
 
-    import conftest
+    conftest = _root_conftest()
 
     marker = logging.StreamHandler()
     root = logging.getLogger()
