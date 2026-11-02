@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from mflowy.driver.dag import DAGResult
+from mflowy.utils.path import anchor_task_dir
 from pydantic import Field
 
 from .job_provider import get_job_provider as _get_job_provider
@@ -75,6 +76,7 @@ def validate_modeling_steps(
 # ── modeling 工具（JobProvider 委派；#62 拆分：search 与 training 两入口） ───
 
 
+@anchor_task_dir("data")  # 入口路由据此推锚（#95 裁定 B）——元数据不包函数
 async def hyperparameters_search(
     modeling_steps: Annotated[
         str,
@@ -100,6 +102,7 @@ async def hyperparameters_search(
     )
 
 
+@anchor_task_dir("data")  # 入口路由据此推锚（#95 裁定 B）——元数据不包函数
 async def modeling(
     modeling_steps: Annotated[
         str,
@@ -132,6 +135,7 @@ async def modeling(
     )
 
 
+@anchor_task_dir("data")  # 入口路由据此推锚（#95 裁定 B）——元数据不包函数
 async def explanation(
     modeling_steps: Annotated[
         str,
@@ -160,6 +164,7 @@ async def explanation(
     )
 
 
+@anchor_task_dir("data")  # 入口路由据此推锚（#95 裁定 B）——元数据不包函数
 async def predict(
     data: Annotated[str, Field(description="预测数据绝对路径（csv/xlsx/parquet，或 py 文件 'path:func' 引用）")],
     model: Annotated[str, Field(description="训练 run 的 id（从训练输出 RunInfo 或 get_experiment 获取）")],
@@ -173,6 +178,7 @@ async def predict(
     return await _get_job_provider().predict(data=data, model=model, headers=ctx.request_context.meta if ctx else None)
 
 
+@anchor_task_dir("data")  # 入口路由据此推锚（#95 裁定 B）——元数据不包函数
 async def inverse_optimization(
     data: Annotated[
         str, Field(description="数据绝对路径（推断搜索空间；csv/xlsx/parquet，或 py 文件 'path:func' 引用）")
