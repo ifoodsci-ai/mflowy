@@ -68,8 +68,12 @@ class _LGBMMixin(LossCurveMixin, TreeExplainMixin):
 
     def get_loss_curve(self, **_):
         evals_result = getattr(self, "evals_result_", None) or {}
-        train_metrics = evals_result.get("training", {})
-        val_metrics = next((v for k, v in evals_result.items() if k.startswith("valid")), {})
+        # lgb sklearn 包装的两 eval 命名两族不一致：regressor = training/valid_1，
+        # classifier = valid_0/valid_1（首项恒为 train 面——mixin 按 (X, eval_X) 序传入）。
+        # train 面缺席时首项即 train 读数；val 面 = 末项。
+        items = list(evals_result.items())
+        train_metrics = evals_result.get("training") or (items[0][1] if items else {})
+        val_metrics = items[-1][1] if len(items) > 1 else {}
         return self._build_loss_curve_df(train_metrics, val_metrics)
 
     def get_feature_importance_df(self, **_):

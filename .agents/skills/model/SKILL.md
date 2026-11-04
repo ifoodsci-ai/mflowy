@@ -1,9 +1,10 @@
 ---
 name: model
-description: 建模训练 MDP 回合操作手册(mflowy)。开局产物就绪后开始建模回合，或建模会话进行中(收到 session_id)时使用。配合 mflowy MCP 工具 modeling_session_start / modeling_propose / modeling_apply(action) / modeling_rollback / modeling_report_findings / modeling_finish / modeling_abandon 驱动回合循环——动作空间 = 八动作面（配置编辑 + 计算动作），环境面在引擎，π(策略)是你。会话恒单目标任务——多目标在会话外三层循环（多目标→多模型→单目标任务会话，每目标各开一会话）。前置:model-brief skill 已产出开局入参（cv_card = cv.split 配置 yaml 明文 + 显式协议参数，含 research-review 结构化候选）。
+description: 建模训练 POMDP 回合操作手册(mflowy)。开局产物就绪后开始建模回合，或建模会话进行中(收到 session_id)时使用。配合 mflowy MCP 工具 modeling_session_start / modeling_propose / modeling_apply(action) / modeling_rollback / modeling_report_findings / modeling_finish / modeling_abandon 驱动回合循环——动作空间 = 八动作面（配置编辑 + 计算动作），环境面在引擎，π(策略)是你。会话恒单目标任务——多目标在会话外三层循环（多目标→多模型→单目标任务会话，每目标各开一会话）。前置:model-brief skill 已产出开局入参（cv_card = cv.split 配置 yaml 明文 + 显式协议参数，含 research-review 结构化候选）。
+disable-model-invocation: true
 ---
 
-# Model Skill：建模 MDP 回合循环（search-only 回路 + 先搜后店）
+# Model Skill：建模 POMDP 回合循环（search-only 回路 + 先搜后店）
 
 三段式研究流第三段。你的职责是**策略（π）**：读账本 board（u_inner 记分牌 + findings
 诊断面）、决定光标指向哪个候选、怎么参数化、何时搜索/终训/收局。环境面（增量 study/
@@ -74,7 +75,7 @@ modeling_session_start(final_path, cv_card=<cv.split 配置 yaml 明文>,
   做任何决策；final_train_test 读完即冻结——不可用 test 反复挑参；
 - findings 是回流的载体：误差集中列 → 建议用户回清洗域修列（建议式，不自动改）；
 - rank_consistency 是 SH 的诚信账——每次结算看一眼，inner 序不可信时调策略；
-- 应用（predict/inverse_optimization）不在本 MDP——loader 引用（sid 相对寻址）是
+- 应用（predict/inverse_optimization）不在本 POMDP——loader 引用（sid 相对寻址）是
   finish 交付物，下游工具按它寻址。
 
 ## 参考

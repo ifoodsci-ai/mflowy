@@ -91,18 +91,18 @@ def sessions_gc(
     ttl_days: Annotated[int, Field(description="过期天数（mtime 锚 manifest.json；缺省 30）")] = 30,
     dry_run: Annotated[bool, Field(description="只列不删（缺省 True——agent 手里的删除工具安全缺省）")] = True,
 ) -> dict:
-    """回收 MDP 会话目录（clean/modeling 会话共用的生命周期基座；状态无关，按龄清理）。
+    """回收 POMDP 会话目录（clean/modeling 会话共用的生命周期基座；状态无关，按龄清理）。
 
     何时使用 sessions_gc：
     - 回收泄漏的弃置会话（活/死/损坏一律按 mtime 龄期，不读 manifest 内容）
     - 审计删除范围：先缺省 dry_run 看清单，确认后再 dry_run=false 执行
     """
-    from mflowy.driver.mdp_session import SessionStore, gc_report_key
+    from mflowy.driver.session import SessionStore, gc_report_key
 
     if root is not None:
         roots = [Path(root)]
     else:
-        base = Path.home() / ".mflowy"  # 平台约定：全部 MDP 会话 root 住 ~/.mflowy/*_sessions
+        base = Path.home() / ".mflowy"  # 平台约定：全部 POMDP 会话 root 住 ~/.mflowy/*_sessions
         roots = sorted(p for p in base.glob("*_sessions") if p.is_dir())
     action_key = gc_report_key(dry_run)
     report: dict[str, list] = {"scanned_roots": [str(r) for r in roots], action_key: [], "ignored": []}

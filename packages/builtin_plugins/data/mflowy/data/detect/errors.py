@@ -8,8 +8,8 @@ print（M7）：输出通道由调用方决定——DAG 路径由引擎捕获窗
 
 from dataclasses import asdict, dataclass, field
 
-# 缺陷分类学闭合注册表：kind 作为 detect↔clean 外键（.repair 声明键、counts() 分组键、
-# 记分牌权重键）的唯一合法值域。对内置算子/权重/修复声明三方闭合（契约测试钉住，
+# 缺陷分类学闭合注册表：kind 作为 detect↔clean 外键（问题规则注册键、counts() 分组键、
+# 记分牌权重键）的唯一合法值域。对内置算子/权重/问题规则三方闭合（契约测试钉住，
 # tests/detect/test_kind_taxonomy.py）；第三方新 kind 开放——落记分牌 0.05 兜底，不入本表
 KINDS: frozenset[str] = frozenset(
     {
@@ -21,6 +21,7 @@ KINDS: frozenset[str] = frozenset(
         "constant",
         "stringly_numeric",
         "id_like",
+        "range_violation",
     }
 )
 

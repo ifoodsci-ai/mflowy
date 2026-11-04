@@ -13,7 +13,7 @@ import pandas as pd
 from mflowy.data.middlewares import df_diff
 from mflowy.driver.handler import handler
 
-from ._atom import family_cols, require_cols, require_family, tier_repair
+from ._atom import require_cols, require_family
 
 
 def _base(load, clean):
@@ -150,23 +150,3 @@ def _fill_seq(df: pd.DataFrame, cols: list[str], by: str | None, how: str) -> No
     for c in cols:
         target = df.groupby(by)[c] if by else df[c]
         df[c] = getattr(target, how)()
-
-
-# ── 候选声明（.repair v2，dtype 自筛）：有 kind 对应的原子全员入菜单，
-#    噪声由记分牌排序治理（菜单按 权重×severity 降序），不由遮蔽治理 ──────────
-
-
-def _const_repair(errors, card, df):
-    cols = family_cols(df, errors, "categorical")
-    if not cols:
-        return []
-    return [({"cols": cols, "value": "Unknown"}, f"常量 Unknown 填类别缺失(保留缺失信号): {cols}")]
-
-
-fill_median.repair = {"missing": tier_repair("numeric", "中位数填充数值缺失")}
-fill_mean.repair = {"missing": tier_repair("numeric", "均值填充数值缺失")}
-fill_interpolate.repair = {"missing": tier_repair("numeric", "线性插值填充数值缺失")}
-fill_mode.repair = {"missing": tier_repair("categorical", "众数填充类别缺失")}
-fill_const.repair = {"missing": _const_repair}
-fill_ffill.repair = {"missing": tier_repair("datetime", "前向填充时序缺失")}
-fill_bfill.repair = {"missing": tier_repair("datetime", "后向填充时序缺失")}

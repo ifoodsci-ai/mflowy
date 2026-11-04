@@ -98,13 +98,15 @@ def XGB(
     return training(split, "XGB", make_pipe, initial_params, scoring=scoring)  # training 行为
 
 
-# 结构相容性自声明（知识随词汇主人居住；registry 相容性矩阵的真源）：
+# 族自声明（.mdp_family 唯一尾巴，知识随词汇主人居住）：
 # cat_support = "native" 吃 passthrough 类别列（原生类别支持）/ "encode" 存在类别列时必须编码；
 # scaling_need/min_samples 为建模会话守卫预留的声明位，registry 现消费 cat_support。
-XGB.regularizers = ("gamma", "reg_alpha", "reg_lambda")  # 正则面自声明（#38 规则的目标参数）
-XGB.structure = {"cat_support": "native", "scaling_need": False, "min_samples": 30}
 
-# 会话语义元数据（.mdp_family）：目录标记 + structure 相容声明 + machinery
+# structure 相容 + regularizers 正则面（出题规则的目标参数）+ machinery
 # （会话直调的 estimator 机器——run_hpo/final_train_test 两动作的消费面）。
 _machinery = make_machinery(XGB, _model_cls, fixed={"enable_categorical": True, "verbosity": int(is_verbose())})
-XGB.mdp_family = {"structure": XGB.structure, "machinery": _machinery}
+XGB.mdp_family = {
+    "structure": {"cat_support": "native", "scaling_need": False, "min_samples": 30},
+    "regularizers": ("gamma", "reg_alpha", "reg_lambda"),
+    "machinery": _machinery,
+}

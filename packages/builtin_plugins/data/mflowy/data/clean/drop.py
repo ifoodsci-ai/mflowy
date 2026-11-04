@@ -12,7 +12,7 @@ from mflowy.data.detect.rules import iqr_mask, zscore_mask
 from mflowy.data.middlewares import df_diff
 from mflowy.driver.handler import handler
 
-from ._atom import claimed_columns, dedup, require_cols, require_family, tier_repair
+from ._atom import require_cols, require_family
 
 logger = logging.getLogger(__name__)
 
@@ -117,80 +117,3 @@ def drop_outlier_z(
     for c in cols:
         mask |= zscore_mask(df[c].dropna(), k).reindex(df.index, fill_value=False)
     return df[~mask]
-
-
-# ── 候选声明（.repair v2）：有 kind 对应的原子全员入菜单 ──────────────────
-
-
-def _duplicate_repair(errors, card, df):
-    return [({}, "全列判重去重(保留首次出现)")]
-
-
-def _missing_rows_repair(errors, card, df):
-    """激进档：只提低缺失率列（行级损失小）；跨 dtype 公共兜底不做类型过滤。"""
-    cols = dedup(e.column for e in errors if e.column and (e.evidence.get("missing_rate") or 0) < 0.5)
-    return [({"cols": cols}, f"低缺失列按行清理(缺失率<50%): {cols}")] if cols else []
-
-
-def _empty_rows_repair(errors, card, df):
-    """白盒化档：全空行(文件噪声,零信息)按 how=all 清行——load 遥测时代黑盒的显式替代。"""
-    n = sum(int(e.evidence.get("n_empty_rows") or 0) for e in errors)
-    return [({"how": "all"}, f"删除 {n} 条全空行(文件噪声,零信息)")] if n else []
-
-
-def _missing_cols_repair(errors, card, df):
-    """激进档：高缺失列(率≥80%)整列删除——全空列(率=1.0)的极端情形自然入选；
-    兑现退役 drop_missing 时"阈值判断上移候选层"的迁移承诺。"""
-    claimed = claimed_columns(card)
-    cols = dedup(
-        e.column
-        for e in errors
-        if e.column and e.column not in claimed and (e.evidence.get("missing_rate") or 0) >= 0.8
-    )
-    return [({"cols": cols}, f"删除高缺失列(率≥80%): {cols}")] if cols else []
-
-
-def _unclaimed(errors, card):
-    claimed = claimed_columns(card)
-    return dedup(e.column for e in errors if e.column and e.column not in claimed)
-
-
-def _constant_repair(errors, card, df):
-    cols = _unclaimed(errors, card)
-    return [({"cols": cols}, f"删除常量列(零信息): {cols}")] if cols else []
-
-
-def _idlike_repair(errors, card, df):
-    cols = _unclaimed(errors, card)
-    return [({"cols": cols}, f"剔除标识列(建议问卷确认后): {cols}")] if cols else []
-
-
-def _collinear_repair(errors, card, df):
-    """共线对逐对留方差大者（退役 correlation_filter 的选择策略居所）；
-    问卷认领列受保护——配对两端都认领则跳过，只认领一端则删另一端。"""
-    claimed = claimed_columns(card)
-    var = df.select_dtypes(include="number").var().to_dict()
-    to_drop: list[str] = []
-    for e in errors:  # detect.collinear 按 |r| 降序产出
-        a, b = e.column, e.evidence.get("with")
-        if not b:
-            continue
-        cands = [c for c in (a, b) if c not in claimed]
-        if not cands:
-            continue
-        drop = min(cands, key=lambda c: var.get(c, 0.0))  # 留方差大者
-        if drop not in to_drop:
-            to_drop.append(drop)
-    return [({"cols": to_drop}, f"共线对逐对留方差大者: {to_drop}")] if to_drop else []
-
-
-drop_duplicate.repair = {"duplicate": _duplicate_repair}
-drop_missing_rows.repair = {"missing": _missing_rows_repair, "empty_row": _empty_rows_repair}
-drop_cols.repair = {
-    "missing": _missing_cols_repair,
-    "constant": _constant_repair,
-    "id_like": _idlike_repair,
-    "collinear": _collinear_repair,
-}
-drop_outlier_iqr.repair = {"outlier": tier_repair("numeric", "IQR 栅栏外行删除(激进档)", {"k": 1.5})}
-drop_outlier_z.repair = {"outlier": tier_repair("numeric", "3σ 外行删除(正态激进档)", {"k": 3.0})}

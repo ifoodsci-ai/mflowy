@@ -10,7 +10,7 @@ import pandas as pd
 from mflowy.data.middlewares import df_diff
 from mflowy.driver.handler import handler
 
-from ._atom import dedup, require_cols
+from ._atom import require_cols
 
 
 @handler(df_diff, namespace="clean")
@@ -30,17 +30,3 @@ def add_missing_flag(
     for c in cols:
         out[f"{c}_is_missing"] = out[c].isna().astype(int)
     return out
-
-
-def _repair(errors, card, df):
-    """投资档：高缺失列填充前先固化缺失信号；已有旗标列的列不再提（幂等）。
-    跨 dtype 公共兜底不做类型过滤。"""
-    cols = dedup(
-        e.column
-        for e in errors
-        if e.column and (e.evidence.get("missing_rate") or 0) >= 0.3 and f"{e.column}_is_missing" not in df.columns
-    )
-    return [({"cols": cols}, f"高缺失列先固化缺失信号(投资动作): {cols}")] if cols else []
-
-
-add_missing_flag.repair = {"missing": _repair}

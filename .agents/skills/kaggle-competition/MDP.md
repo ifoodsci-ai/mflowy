@@ -60,7 +60,7 @@ $$P(s'|s,a) = P_{phase}(\text{π 判据}) \times P_{artifacts}(\text{本地确�
 
 T 三层叠加：competition deadline（**吸收壁，episode 的真视野**——DONE 在此之前非吸收，可重开）；日预算 5 次（可再生资源约束，平台强制）；"无 revise 空间→中止次日续"（π 判定）。多日续局是同一 episode。**γ 退化**：回合制 + 有限视野 ⇒ γ=1 未建模——代价不对称（submit ≫ 其余）+ T 才是真结构；deadline 邻近从探索转向保守提交是策略层考量，不是环境参数。
 
-## 4. Preflight：约束本地化（dry_run 的外环对应）
+## 4. Preflight：约束本地化
 
 lint = 零成本假想转移——把黑箱平台校验器内化为本地判定，等价于把「ERROR 才发现约束」的失败变成「lint 拦截」的零成本发现。守卫来源是**归纳**：每条 error_description 回流一条规则（对照 clean MDP 的守卫来自问卷先验）——规则表住 package reference，实现住 `scripts/submission_lint.py`（活脚本，飞轮单点生长；重试守卫=指纹比对同住脚本）。
 
