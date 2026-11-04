@@ -89,6 +89,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **消费接线点**：`ensure_access_token()` / `LoginRequiredError` 供未来远程 JobProvider
   附 Bearer（401 单次刷新重试），不重造轮子。
 - 顺手收敛：mcp 包显式声明 `mflowy-utils` 依赖（tools.py 直接 import 的存量缺口，红线 6）。
+- 复审收敛（同批）：凭据损坏面 fail-loud——未知字段（篡改/损坏信号）与非法 JSON 按类型
+  二分（`CorruptCredentialsError`，删文件重登即恢复；login 撞损坏文件自动重授权覆写）；
+  `client_id` 入库（凭据自包含）；token 端点响应 → `Credentials` 构造单源（登录/轮换共用，
+  claims 缺失按路径回退）；刷新锁等待上限 10s → 45s（须大于单次 HTTP 30s——持锁者的合法
+  刷新不该让等锁者伪失败）；scope 显式为空（`[]`/`""`）拒绝（静默回退全集 = 静默改写语义，
+  收窄请至少给一项）；切换 `base_url` 平台环境落 warning（旧环境凭据被覆写）。
 
 ### Fixed（#77）：inverse_optimization 模板补渲染 n_trials/random_seed——调用方传参不再被 Jinja 静默丢弃
 
@@ -771,6 +777,21 @@ std ddof 口径分歧从事故变结构）/ 执行归命名原子 / 映射归 `.
 - **域工具下沉**：数据域 9 工具（data_profile/eda/infer_task_type_by_statistic/compile_survey/clean_session_*）住 `mflowy.data.tools`（清洗会话引擎随迁 `mflowy.data.cleaning_session`、模板随迁）；建模域 5 工具（validate_modeling_steps/modeling/explanation/predict/inverse_optimization）住 `mflowy.model.tools`（JobProvider 协议+Local 实现随迁 `mflowy.model.job_provider`，`MFLOWY_JOB_PROVIDER` 语义不变；模板随迁）——**无装饰器、driver 零参与**，注册 = pyproject `[tool.mflowy.tools]` 手工声明（hatch 钩子并入 entry points 组 `mflowy.tools`，规避 PEP 621 动静冲突），镜像测试断言注册表 ≡ tools.py 公有函数
 - **mcp host 泛化**：server/runner 经 `mflowy.tools` 组发现域工具（装哪个域包多哪批工具，`tools/list` = 已安装能力词表）；mcp 硬依赖收窄为 `mflowy-driver`（**零域依赖**，测试断言），tools.py 只剩平台工具（词表查询/mlflow 观测/工件读取/身份指纹）——第三方插件包可经 `mflowy.tools` 组自带 MCP 工具，零改 host
 - 归位修正：`validate_modeling_steps` 实为建模域知识（消费建模模板与 step_options），随 model 域走
+- lightning 落盘锚定（M10·#47）：MLP 训练 `lightning_logs` 目录改锚 task_dir（缺省兜底
+  `~/.mflowy`）——仓库根/包根零运行产物（原 pytorch-lightning 缺省落 cwd 污染）
+
+### Added（mcp 遥测端点 env 逃生舱（M9）+ CLI runner 通道契约收口）
+
+- **遥测端点 `MFLOWY_TELEMETRY_ENDPOINT`**（M9·#46）：设备注册与 OTLP 导出共用同一解析
+  ——env > 官方默认网关，自建部署（`docker/telemetry`）可被指向，与既有
+  `MFLOWY_TELEMETRY=on|off` 运维逃生舱同层；agentcat 私有内部结构缺席（上游重构致
+  monkeypatch 失配）时 feature-detect 显式告警而非静默失效——遥测退回官方导出面，
+  工具 I/O 属性不可用随告警可知。
+- **CLI runner（`mflowy <tool> '<json>'`）通道契约**：DAG 执行失败（`DAGResult.status`
+  ≠ finished）退出码 1——原失败装在正常返回里静默 exit 0，e2e/CI 断链（SHAP 5/8 中止
+  而 `make e2e` exit=0 的 prior bug）；参数非法 JSON / 非 JSON 对象退出码 2 带用法提示；
+  info/查询类工具返回值回显 JSON（原一律不回显——查询通道经 runner 结构性不可用），
+  建模类仍由节点 output 实时 print 上屏不重复回显。
 
 ### Changed（BREAKING — 域即包：mflowy-builtin-plugins 拆分为 mflowy-data / mflowy-model）
 
@@ -971,10 +992,10 @@ std ddof 口径分歧从事故变结构）/ 执行归命名原子 / 映射归 `.
     driver；prune/resume 工厂与 x_transformer 结构规则迁 `builtin_plugins/model/step_options.py`
     （loader 参数契约随词汇主人）；mcp 只做策略装配
 
-- **`mflowy.utils.study` → `mflowy.builtin_plugins.model.study`**（BREAKING）：超参搜索空间与
-  Optuna 编排归位 model 能力族——生产消费方 100% 在 builtin_plugins，utils 回归纯通用工具；
-  `mflowy-utils`/`mflowy-driver` 的 modeling extra（optuna）随之移除，optuna 唯一归宿为
-  `mflowy-builtin-plugins[modeling]`
+- **`mflowy.utils.study` → `mflowy.model.model.study`**（BREAKING）：超参搜索空间与
+  Optuna 编排归位 model 能力族——生产消费方 100% 在 model 域包，utils 回归纯通用工具；
+  `mflowy-utils`/`mflowy-driver` 的 modeling extra（optuna）随之移除，optuna 终态为
+  mflowy-model 域包硬依赖（`[modeling]` extra 已随 extras 降格整体退役，见上）
 
 - **布局去 src 层 + 组件文档随包**：
   - 包内 `src/mflowy/<pkg>` 收敛为 `mflowy/<pkg>`（namespace wheel 与真 editable 行为不变，spike 验证）
@@ -996,8 +1017,8 @@ std ddof 口径分歧从事故变结构）/ 执行归命名原子 / 映射归 `.
 
 ### Added
 
-- **file_hash MCP 工具**: 文件指纹（sha256/md5/sha1，分块流式），供 agent 核验
-  数据文件在阶段间未被改动
+- **file_hash MCP 工具**: 文件指纹（sha256 单算法，分块流式——上线前的三算法面
+  已在同期收敛为 sha256，见上），供 agent 核验数据文件在阶段间未被改动
 
 ### Fixed
 
