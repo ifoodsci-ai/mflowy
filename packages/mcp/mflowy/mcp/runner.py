@@ -7,6 +7,11 @@
 
 [project.scripts] ``mflowy`` 指向此模块的 main()（CLI 通道）。
 Job 容器内默认 LocalJobProvider（[modeling] extra），直调 compute。
+
+环境变量::
+
+    MFLOWY_TASK_DIR  — 工件锚（task_dir）钉住（#95 裁定 B）：设则优先于一切推导；
+                       未设时按工具声明锚参数推导，推不出缺省 cwd
 """
 
 from __future__ import annotations
@@ -14,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -47,7 +53,13 @@ def main() -> None:
     except RuntimeError as e:  # 撞名 fail-loud（守卫单源住 tools.py）
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
-    table = {ep.name: ep.load() for ep in eps}
+    # CLI 路由锚定（#95 裁定 B）：MFLOWY_TASK_DIR env 钉住（优先级最高，推导不覆写）；
+    # 未钉时工具经 route_task_dir 中间件按声明锚参数推锚，推不出缺省 cwd
+    from mflowy.utils.path import pin_task_dir, route_task_dir
+
+    if env_dir := os.environ.get("MFLOWY_TASK_DIR"):
+        pin_task_dir(env_dir)
+    table = {ep.name: route_task_dir(Path.cwd())(ep.load()) for ep in eps}
     func = table.get(tool_name)
     if func is None:
         print(f"Unknown tool: {tool_name}", file=sys.stderr)

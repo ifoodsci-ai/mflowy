@@ -88,3 +88,17 @@ class TestAnchorTaskDir:
 
     def test_no_load_step_not_anchored(self, tmp_path):
         assert self._anchor("- x_y:\n    params:\n      target: t\n") == tmp_path / "known"
+
+    def test_pinned_env_wins_over_scan(self, tmp_path):
+        """#95 裁定 B：env 钉住（CLI MFLOWY_TASK_DIR）→ 扫描降级不推导。"""
+        from pathlib import Path as _P
+
+        from mflowy.utils.path import pin_task_dir, reset_task_dir, task_dir_pinned
+
+        token = pin_task_dir("/pinned/dir")
+        try:
+            assert task_dir_pinned() is True
+            steps = f"- load__csv:\n    params:\n      source: {tmp_path}/data.csv\n"
+            assert self._anchor(steps) == _P("/pinned/dir")
+        finally:
+            reset_task_dir(token)

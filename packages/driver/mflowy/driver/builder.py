@@ -48,7 +48,7 @@ type BuilderOption = Callable[[NodeConf], NodeConf]
 # 编译后钩子：Context → Context | None——生效于编译后，可见上下游血缘（ctx.nexts/
 # prevs 只读视图）。返回 None = 剪枝（沿必选边连带传播，构建期 warning 点名）；
 # 返回**同一** ctx = 保留（允许就地微调 conf；替换新 Context 不受支持——
-# node_id/prevs/nexts/取值闭包共享列表在编译期织入）。契约在内核，规则实现
+# id/prevs/nexts/取值闭包共享列表在编译期织入）。契约在内核，规则实现
 # 随词汇主人（能力族/编排层）。
 type StructuralRule = Callable[[Context], Context | None]
 

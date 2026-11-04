@@ -24,6 +24,7 @@ from contextvars import ContextVar
 import numpy as np
 import pandas as pd
 from mflowy.model.model._split import TrainSplit
+from mflowy.utils import mlflow as mlflow_util
 from mflowy.utils.constants import RANDOM_STATE
 from mflowy.utils.logging import is_verbose
 from mflowy.utils.mlflow import active_experiment_id
@@ -253,11 +254,7 @@ def _expected_calibration_error(y_true: np.ndarray, y_proba: np.ndarray, n_bins:
 
 
 def _log_metrics(metrics: Metrics) -> None:
-    """终评指标展平后 log 到 parent run：``{target}.{metric}``。无 active run 时静默跳过。"""
-    import mlflow
-
-    if not mlflow.active_run():
-        return
+    """终评指标展平后 log 到 parent run：``{target}.{metric}``。直调形态（窗外）经 metrics 壳降级。"""
     import re
 
     flat = {}
@@ -265,7 +262,7 @@ def _log_metrics(metrics: Metrics) -> None:
         safe_target = re.sub(r"[^/\w.\- :]", "", target)
         for metric, score in target_metrics.items():
             flat[f"{safe_target}.{metric.value}"] = float(score)
-    mlflow.log_metrics(flat)
+    mlflow_util.log_metrics(flat, graceful=True)
 
 
 def terminal_u(metrics: Metrics, scoring: MetricName) -> float:
@@ -387,7 +384,7 @@ def hyperparameters_search(
             trial.set_user_attr("scores", scores.tolist())
             mean, std = float(np.mean(scores)), float(np.std(scores))
             if in_window:
-                mlflow.log_metrics({f"{scoring}": mean, f"{scoring}_std": std})
+                mlflow_util.log_metrics({f"{scoring}": mean, f"{scoring}_std": std})
             return mean
 
         # holdout-val 手动路径：与最终训练同切分同口径（早停可用）；单指标子集省概率计算
@@ -397,7 +394,7 @@ def hyperparameters_search(
         metrics = evaluate(split.task, y_val, y_pred, y_proba, scoring=scoring)
         score = float(next(iter(metrics.values()))[scoring])
         if in_window:
-            mlflow.log_metrics({f"{scoring}": score})
+            mlflow_util.log_metrics({f"{scoring}": score})
         return score
 
     def _suggesting(trial):
@@ -411,11 +408,10 @@ def hyperparameters_search(
 
     best = study.best_trial
     scores = np.asarray(best.user_attrs.get("scores", []))
-    if mlflow.active_run():
-        metrics = {"best_trial_number": best.number, f"best_{scoring}": study.best_value}
-        if len(scores):
-            metrics[f"{scoring}_std"] = float(np.std(scores))
-        mlflow.log_metrics(metrics)
+    metrics = {"best_trial_number": best.number, f"best_{scoring}": study.best_value}
+    if len(scores):
+        metrics[f"{scoring}_std"] = float(np.std(scores))
+    mlflow_util.log_metrics(metrics, graceful=True)  # 直调形态（窗外）降级——不散守 active_run
     std_repr = f"{np.std(scores):.4f}" if len(scores) else "n/a"
     print(f"best_{scoring}={study.best_value:.4f}, trial={best.number}, std={std_repr}, params={best.params}")
     return study
@@ -488,7 +484,6 @@ def training(
         fit_params: 透传给 estimator.fit 的参数（如 LGBM 的 early_stopping_rounds）
         scoring: 报告面指标（日志/图表用）；None 时按任务自动推断
     """
-    import mlflow.sklearn  # 绑定 mlflow 顶层 + 拉起子模块（save 段 log_model 与 active_run 共用）
 
     task = split.task
     fit_params = fit_params or {}
@@ -518,29 +513,27 @@ def training(
 
     # #66 节点副产物：X_test/y_test/y_pred parquet 随 run（run_id 寻址、行位对齐——
     # log_table 不保索引，y_pred 行序 ≡ X_test ≡ y_test 行序）；loader.holdout =
-    # 终评快照（final_train_test 经 DAGResult 回读的数值面）
-    if mlflow.active_run():
-        from mflowy.utils.mlflow import log_table as _log_table
+    # 终评快照（final_train_test 经 DAGResult 回读的数值面）。直调形态（窗外）
+    # 经落盘壳 graceful 跳过——不再散守 `if mlflow.active_run()`
+    from mflowy.utils.mlflow import log_table as _log_table
 
-        y_pred_df = pd.DataFrame(y_pred, columns=split.y_test.columns)
-        _log_table(split.X_test, HOLDOUT_BYPRODUCTS["X_test"])
-        _log_table(split.y_test, HOLDOUT_BYPRODUCTS["y_test"])
-        _log_table(y_pred_df, HOLDOUT_BYPRODUCTS["y_pred"])
-        parts = [(X_fit, y_fit, "Train")]
-        if X_val is not None:
-            parts.append((X_val, y_val, "Val"))
-        parts.append((split.X_test, split.y_test, "Test"))
-        plot_loss_curve(pipe)
-        plot_evaluation(pipe, parts, task)
+    y_pred_df = pd.DataFrame(y_pred, columns=split.y_test.columns)
+    _log_table(split.X_test, HOLDOUT_BYPRODUCTS["X_test"], graceful=True)
+    _log_table(split.y_test, HOLDOUT_BYPRODUCTS["y_test"], graceful=True)
+    _log_table(y_pred_df, HOLDOUT_BYPRODUCTS["y_pred"], graceful=True)
+    parts = [(X_fit, y_fit, "Train")]
+    if X_val is not None:
+        parts.append((X_val, y_val, "Val"))
+    parts.append((split.X_test, split.y_test, "Test"))
+    plot_loss_curve(pipe)
+    plot_evaluation(pipe, parts, task)
 
-    # save：恒 ModelPipeline、恒 mlflow.sklearn、名字恒 final——产物格式单一
+    # save：恒 ModelPipeline、恒 mlflow.sklearn、名字恒 final——产物格式单一；
+    # pickle 格式：skops 默认拒绝自定义类型（ModelPipeline/estimator 子类）
     pipe.set_names(split.y_train.columns.tolist())
-    model_uri = None
-    if mlflow.active_run():
-        # pickle 格式：skops 默认拒绝自定义类型（ModelPipeline/estimator 子类）
-        example = split.X_test.head(1)
-        model_info = mlflow.sklearn.log_model(pipe, name="final", input_example=example, serialization_format="pickle")
-        model_uri = model_info.model_uri
+    from mflowy.utils.mlflow import log_model
+
+    model_uri = log_model(pipe, name="final", input_example=split.X_test.head(1), serialization_format="pickle")
 
     return ModelLoader(name=name, _pipe=pipe, _model_uri=model_uri, holdout={"u": round(u, 4), "metrics": metrics})
 

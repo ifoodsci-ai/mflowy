@@ -213,7 +213,10 @@ def test_run_hpo_returns_delta_reward_and_writes_study(sessions_root, reg_csv):
     m = _manifest(sessions_root, s["session_id"])
     assert (sessions_root / s["session_id"] / m["models"][_K_RF]["study"]).exists()
     oof = m["models"][_K_RF]["oof"]
-    assert oof["run_id"] and (sessions_root / s["session_id"] / "runs" / oof["run_id"] / "oof_y_pred.parquet").exists()
+    assert oof["run_id"]  # OOF 工件挂父 run 工件树（#95 项4）——真源 = run_artifacts 清单
+    from mflowy.utils.mlflow import run_artifacts
+
+    assert "oof_y_pred.parquet" in run_artifacts(oof["run_id"])
     entry = m["models"][_K_RF]
     assert entry["u"] is None and entry["run_id"] is None and not entry["frozen"]  # no-peeking：无 holdout 面
     assert "holdout_y_pred" not in json.dumps(entry)
@@ -606,8 +609,10 @@ def test_classification_run_hpo_all_families(sessions_root, cls_csv, family):
     m = _manifest(sessions_root, s["session_id"])
     entry = m["models"][key]
     assert entry["u_inner"] is not None and entry["oof"]["run_id"]
-    oof_path = sessions_root / s["session_id"] / entry["oof"]["y_pred"]
-    assert oof_path.exists() and len(pd.read_parquet(oof_path)) == 72  # train 侧逐行 OOF
+    from mflowy.utils.mlflow import download_run_artifact
+
+    oof_path = download_run_artifact(entry["oof"]["run_id"], entry["oof"]["y_pred"])
+    assert len(pd.read_parquet(oof_path)) == 72  # train 侧逐行 OOF（#95 项4：寻址走 run 工件树）
     assert "reward" in r
 
 

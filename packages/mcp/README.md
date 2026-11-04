@@ -8,6 +8,8 @@ MFlowy 以 MCP 为架构主体：本包的 `tools.py` 定义全部工具（pyfun
 | **MCP 通道** | `mflowy-mcp` | stdio server，MCP 客户端 / agent（Claude Code、Cursor 等）接入；SDK+遥测住 `[mcp]` extra |
 | 直接 import | `mflowy.mcp.tools` pyfunc | 宿主程序内嵌调用 |
 
+**工件锚定（task_dir）双路由**（#95）：两入口路由到同一工具函数，锚由入口中间件（`route_task_dir`）决定——工具以 `@anchor_task_dir("<参数名>")` 声明锚参数（纯元数据，签名/schema 零影响），从业务路径参数推父目录为任务目录（实验工件根 = `task_dir/.mlruns`）。CLI：`MFLOWY_TASK_DIR` env **钉住**（推导不覆写）→ 未设时推导 → 缺省 `cwd`；MCP：推导 → 缺省 `~/.mflowy`（server 无业务 CWD 语义）。MCP 侧数据路径须绝对（相对路径不推锚，解析处 fail-loud）。
+
 > **0.2.0 tools 解耦**：域工具（数据/建模）已下沉域包自持（`mflowy.{data,model}.tools`），
 > 经 entry points 组 `mflowy.tools` 注册；本包为**零域依赖 host**——平台工具（词表/mlflow
 > 观测/工件/指纹/登录）由 mflowy-mcp pyproject **同组静态声明**（与域包同构，server/runner
@@ -21,7 +23,7 @@ MFlowy 以 MCP 为架构主体：本包的 `tools.py` 定义全部工具（pyfun
 | info | `list_nodes` / `get_node_info` / `validate_modeling_steps` / `file_hash` | 始终本地（base 依赖够用） |
 | 分析与问卷 | `data_profile` / `eda` / `propose_questions` | 始终本地（轻量、无跨环境状态） |
 | 建模 | `modeling` / `explanation` / `predict` / `inverse_optimization` | **JobProvider 委派** |
-| mlflow | `list_runs` / `get_run` / `list_run_artifacts` | 始终本地 |
+| mlflow | `get_experiment` / `get_run` | 始终本地（工件后端为本地文件树，内容直接访问） |
 | 平台登录 | `login` | 本地（拉起浏览器授权，loopback 回调） |
 
 建模类经 JobProvider 委派：内置 `local` 实现（LocalJobProvider，[modeling] extra 直调 driver 编排），远程实现接管执行环境。

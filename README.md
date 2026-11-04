@@ -19,7 +19,7 @@ MFlowy 不内置 agent；它提供让 agent 自主运转的四个阶段，每个
 | 发现 | `list-nodes` / `get-node-info` | 枚举 `namespace.node_name` 能力目录（entry points 插件注册，签名式富化显依赖）；参数契约由函数签名内省进 inputSchema，拿到即会用 |
 | 组装 | `validate_modeling_steps` | 预检 LLM 生成的 YAML 图——节点名、图结构错误在编译期抓出（结构化错误详情供 agent 自我纠正，另出带标签数据边的 mermaid 预览），通过后再执行 |
 | 执行 | `modeling` / `data_profile` / `eda` / `predict` … | 运行单能力或整图；结构化 `DAGResult` 逐节点回报 run_id/状态/输出 |
-| 读回 | `list_runs` / `get_run` / `list_run_artifacts` | 查 MLflow 实验记录：对比历史 run、定位产物，据实决定下一步 |
+| 读回 | `get_experiment` / `get_run` | 查 MLflow 实验仪表盘（本体+run 目录）与 run 详情（params/metrics/tags/产物目录），据实决定下一步 |
 
 回路可靠运转的两块基石：可枚举的插件词表（`namespace.node_name` 节点 + `edges` 边函数，内置 entry points + 第三方 `mflowy.plugins` 组）让 LLM 与人共享同一图语言，YAML 可序列化往返、生成图可被工具改写复用；复用旧结果是显式 run_id 引用、不做静默缓存——agent 的控制流永远可预测。
 

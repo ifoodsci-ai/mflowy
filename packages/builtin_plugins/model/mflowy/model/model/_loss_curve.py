@@ -46,6 +46,12 @@ class LossCurveMixin:
 
 def plot_loss_curve(pipe: ModelPipeline):
     """最终模型（单条）的 loss 曲线落盘：loss_curve.parquet + loss_curve.png。"""
+    import mlflow
+
+    if mlflow.active_run() is None:
+        logger.warning("无 active run，跳过损失曲线（副产物族计算+落盘整体随 run——直调形态不白算）")
+        return
+
     est = pipe.estimator
     try:
         lc = est.get_loss_curve()
@@ -59,13 +65,13 @@ def plot_loss_curve(pipe: ModelPipeline):
     assert set(lc.columns) == {"type", "iteration", "loss"}, f"loss curve 列不匹配: {lc.columns}"
     metric_name = lc.attrs.get("metric_name") or "Loss"
     lc.attrs["metric_name"] = metric_name
-    mlflow_util.log_table(lc, "loss_curve.parquet")
+    mlflow_util.log_table(lc, "loss_curve.parquet", graceful=True)
     # 绘图
     from mflowy.data.middlewares import log_figure
     from mflowy.model.plot.model_evaluation.loss_curve import loss_curve
     from mflowy.utils.plot import DPI
 
     fig = loss_curve(lc)
-    log_figure(fig, "loss_curve.png", DPI)
+    log_figure(fig, "loss_curve.png", DPI, graceful=True)
 
     logger.info("损失曲线已绘制: loss_curve.png, loss_curve.parquet")

@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - Unreleased
 
+### BREAKING：工件系统收口（#95）——落盘壳全覆盖 + task_dir 双路由锚定 + OOF/study 归位父 run
+
+- **task_dir 双路由锚定（裁定 B）**：锚由入口中间件 `route_task_dir` 决定，工具以
+  `@anchor_task_dir("<参数名>")` 声明锚参数（纯元数据——不包函数，签名/schema 零影响）。
+  CLI（runner）：`MFLOWY_TASK_DIR` env **钉住**（`pin_task_dir`，推导不覆写）→ 推导 →
+  缺省 `cwd`；MCP（server.register）：推导 → 缺省 `~/.mflowy`。七个数据工具已声明锚
+  （compute 五工具 `data`、data_profile/eda `file_path`）。`resolve_data_ref` 的锚定
+  **副作用退役**（只读解析）；`LocalJobProvider` 的 YAML load 步扫描降级为「未钉住时的
+  推导」；`anchor_of_source` 单源上移 utils/path。
+- **OOF 观察面工件挂父 run 工件树（裁定 A）**：run_hpo 的 OOF 图集经 `log_figure`、
+  `oof_y_pred.parquet` 经 `log_table` 落父 run；session 镜像目录 `runs/<run_id>/` **退役**
+  ——账本 `oof.y_pred` 指针从 session 相对路径改为**run 工件名**（寻址 = (run_id, name)，
+  `download_run_artifact` 读回），skeleton `oof_plots` 解析为本地绝对路径。`log_table`
+  不保索引——OOF parquet 按位对齐（行序 ≡ y_train 行序，与 #66 holdout 副产物同契）。
+  `oof_plot_album` 签名去 `out_dir`（挂当前 run）。trial 嵌套 run 工件面零记录为原则。
+- **study storage 随父 run 只读投影**：每次 run_hpo 上传 sqlite 副本（`log_file` 落盘壳新
+  原语，工件名 = 账本 `study` 字段同名）；session 盘上真源不变（账本 append-only）。
+- **figure 落盘纪律单源**：`utils.plot.prepare_figure`（居中微调 + dpi）为 `log_figure`
+  （run 工件树）与新增 `save_figure`（会话聚合面直写，Saved 通知走 logger）共用，闭图纪律（#92）随两缝继承；泰勒图
+  `dpi=150` 硬编码退役（统一 `DPI`）。
+- **metrics 落盘壳**：`utils.mlflow.log_metrics(metrics, *, graceful=False)` 守卫前置
+  fail-loud / graceful 直调降级 warning（对齐工件壳语义）；8 处 `mlflow.log_metrics`
+  fluent 直调收敛（4 域中间件 graceful、`_log_metrics` 静默跳过→有声降级、HPO objective
+  `in_window` 分支走壳）。测试 patch 目标相应移至壳缝 `mflowy.utils.mlflow.log_metrics`。
+- session 缓存（split.pkl / loader_*.pkl）转 `write_bytes_atomic`（tmp+rename）。
+
+
 ### 测试内存纪律——图落盘即闭（生产级泄漏）+ 重栈会话 fixture 模块级共享（#92）
 
 - **闭图单源纪律（生产修复，长跑 MCP server 同病）**：三处直存/直 log 图路径从不
@@ -36,6 +63,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **验收（#92）**：`make test` 单进程峰值 ~19.8GB → **2.1GB**、全量 ~15min →
   ~9:40，连续全绿（1236 用例）；`test_finish_report.py` 12 → 13 用例（+scope 钉
   +零开图断言）、原断言逐字保留。
+### 依赖钉版：mlflow 收窄至 3.15 系（`~=3.15.2`）
+
+- 默认库 `~/.mflowy/mlflow.db` 跨安装形态（dev 锁 / uvx 自由解析）共享单文件，
+  mlflow schema 随 minor 前移——开放上界（`>=3.14`）曾致 uvx 解析 3.17 前向迁移
+  共享库、dev 全部观测工具 schema 失配不可读（2026-10 事故，库已降级修复）。
+  mflowy 分发形态（uvx/Docker/专用 venv）为 app 语义，窄钉零依赖地狱代价。
+- 升级纪律：锁（uv.lock）与声明（utils pyproject）**必须同 PR 同步**，并在
+  CHANGELOG 记 BREAKING（共享库 schema 迁移影响全体用户）。
+- 迁移小项「utils mlflow 转 extra」撤销：tracking 是节点 run 刚需（每个 handler
+  开窗），hard dep 合理。
+
+
+### BREAKING：执行结果目录收敛——DAGResult/NodeResult 最小元信息面 + 工件落盘壳 + mlflow 观测双工具
+
+- `DAGResult.graph` 保持 mermaid 展示形态（机器投影 = `to_graph()` 公共方法，
+  `walk()` 单源）；结构图持久化为实验级 tag `mflowy.graph`（rerun 覆写 = 本实验
+  最新结构，超长截断——实验 tag 上限 5000 与 run tag 8000 双上限由
+  `clip_tag_value` 参数化吸收）。字段 `experiment_name`/`description` 删除——
+  入参回显零熵，实验本体经 `get_experiment` 查询。
+- `NodeResult` 新增 `artifacts: list[str]`：account 时刻 run 工件树**顶层清单**
+  快照（`Tracking` seam 增 `run_artifacts`，FakeTracking 同步记录面）——工件索引
+  真源从 output 的 Saved print 行转为结构化字段；run 描述（`mlflow.note.content`）
+  ≡ `NodeResult.output`（account 期经 seam `describe_run` 回写，单源合成）。
+- 失败 output 语义 **替换→追加**：崩溃前 partial stdout 暂存于 `Context.partial_output`，
+  失败记账 = partial + `repr(e)`（崩溃前证据不丢，描述同构）；`mlflow_log`
+  中间件的失败 note.content 写入删除（单写者收敛至 account）。
+- `utils/mlflow.py` 工件落盘族收编 `_artifact_shell` 模板方法：active run 守卫
+  前置 fail-loud（mlflow fluent 无窗口会静默自建孤儿 run 污染默认实验）、目的地
+  解析（file://→本地路径；直写形态远程根 fail-loud）、Saved 通知 print→logger
+  （stdout 纯业务数据通道）。`log_table/log_dict/log_pickle/log_figure` 改写为
+  壳上薄封装（`graceful` 旗标 = 直调形态跳过 + warning），新增 `log_model`
+  （恒 graceful，返回 model_uri）；`_artifact_local_path` 删除（无 run 静默回退
+  分支消灭）。`_pipeline`/`log_task_evidence` 散守的 `if mlflow.active_run()`
+  全部归一为 graceful 调用；终评图/损失曲线另设窗外整跳过（判 fluent 窗口而非
+  seam——副产物族计算+落盘整体随 run，直调形态不白算）。
+- **Context 身份重设计（BREAKING）**：`Context.id` = `node_key#分组序号`
+  （ContextVar 分组计数 map，从 0、构造期定终身——跨配置编辑不漂移；身份与执行地址
+  `run_id` 彻底分离）；`node_id` 属性与双语义 `id` property（执行后=run_id）删除，
+  图键/失败地址/mermaid id 统一为 `Context.id`，mermaid label 改用
+  `Context.label`（`conf.name` 优先、降级 id）；`_node_key()` 辅助函数消亡。
+- **mlflow 观测工具 4→2**：`list_runs` 并入 `get_experiment`（实验仪表盘 = 本体 +
+  run 状态目录 `node/name/run_id/status/start_time` 五元组投影，对标 NodeResult、
+  过滤/翻页随迁；params/metrics 全量返回收窄为 `get_run` 下钻）；`list_run_artifacts`
+  并入 `get_run`（详情 = params/metrics/tags/artifacts 产物目录）；`read_artifact`
+  退役（工件后端为本地文件树，内容直接访问）。工具总数 33→31（平台 9→7）。
+
 
 ### BREAKING：插件注册静态化——构建期 hatch AST 扫描钩子退役，entry points 手写声明（贡献者工作流 breaking，词表零破坏）
 

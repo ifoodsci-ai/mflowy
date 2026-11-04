@@ -42,7 +42,7 @@ uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 
 依赖方向保持单向：utils ← driver ← data ← model ← mcp（内核零域感知、两 MDP 域隔离——`tests/test_workspace.py` 断言，改动 import 保持全绿）。模块内相对导入、跨模块绝对导入。
 
-工具六组共 33 个（真源 = `tools/list`）：平台 9（info 3 + mlflow 观测 4 + 会话回收 1 + 登录 1，本地）；本地分析 5（`data_profile`/`eda`/`propose_questions`/`draw_taylor_diagram`/`modeling_report_skeleton`）；YAML 预检 1（`validate_modeling_steps`）；compute 5（`hyperparameters_search`/`modeling`/`explanation`/`predict`/`inverse_optimization`，经 JobProvider 委派，协议在 model 包）；MDP 会话 13（`clean_*`×6 + `modeling_*`×7——含 `modeling_report_findings`，引擎在两域 session 模块，动作面 = modeling 八动作面）。
+工具六组共 31 个（真源 = `tools/list`）：平台 7（info 3 + mlflow 观测 2（`get_experiment`/`get_run`）+ 会话回收 1 + 登录 1，本地）；本地分析 5（`data_profile`/`eda`/`propose_questions`/`draw_taylor_diagram`/`modeling_report_skeleton`）；YAML 预检 1（`validate_modeling_steps`）；compute 5（`hyperparameters_search`/`modeling`/`explanation`/`predict`/`inverse_optimization`，经 JobProvider 委派，协议在 model 包）；MDP 会话 13（`clean_*`×6 + `modeling_*`×7——含 `modeling_report_findings`，引擎在两域 session 模块，动作面 = modeling 八动作面）。
 
 插件身份静态声明：`@handler(namespace=...)` 标记（裸命名参数=参数边，Annotated=用户可配）+ 域包 pyproject `[project.entry-points."mflowy.builtin_plugins"]` 手写条目（0.2.0 起构建期 AST 扫描钩子退役，与第三方包声明方式同构），运行期 `driver/discover.py` 按元数据解析——声明与装饰器的一致性由 CR 交叉检查兜底（见「添加能力」）。
 
@@ -73,7 +73,7 @@ uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 | M11 | 剧本层完整入库：skills 全 git 追踪、引用文档入仓、工具名 ⊆ `tools/list` 有测试锁定 | research-review 未追踪；引用被 ignore 的文档断链  | `test_workspace.py` 增 SKILL 工具名断言               |
 | M12 | breaking 小步走 0.x minor，0.2.0 尽快切 released                       | unreleased 堆 81 commit 三批 BREAKING             | CHANGELOG 0.2.0 带 release 日期                        |
 
-小项随触碰收敛（不单列）：finish 与过程奖励同尺（卡权重）、propose 只出签名可受理的候选、`utils` mlflow 转 extra、域专用查询迁出 utils。
+小项随触碰收敛（不单列）：finish 与过程奖励同尺（卡权重）、propose 只出签名可受理的候选、域专用查询迁出 utils。（原「utils mlflow 转 extra」已撤销——tracking 是节点 run 刚需，hard dep 合理。）
 
 ## 添加能力
 

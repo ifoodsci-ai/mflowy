@@ -15,18 +15,17 @@ from mflowy.utils import mlflow as mlflow_util
 
 
 def log_shap_explanation(ctx: Context, next: Handler):
-    import mlflow
-
     result = next(ctx)
     if result is None:
         return result
 
     df = explanation_to_frame(result)  # 契约注记缺失在此 fail-loud（不再 '-' 占位落盘）
-    mlflow.log_metrics(
+    mlflow_util.log_metrics(
         {
             "shap_samples": int(df[LEDGER_SAMPLE_IDX].nunique()),
             "shap_features": len(list(result.feature_names)),
-        }
+        },
+        graceful=True,  # 直调形态跳过
     )
     mlflow_util.log_table(df, "shap_values.parquet")
     return result

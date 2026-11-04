@@ -43,6 +43,25 @@ OKABE_ITO_PALETTE = [
 ]
 
 
+def prepare_figure(fig, dpi: int = DPI) -> None:
+    """图形落盘前统一微调：标题水平居中 + dpi——log_figure（run 工件树）与
+    save_figure（会话直写）共用单源（#95 项6）。"""
+    fig.subplots_adjust(left=0, right=1)
+    fig.set_dpi(dpi)
+
+
+def save_figure(fig, path, dpi: int = DPI) -> None:
+    """会话侧 figure 直落本地路径（无 run 窗口的聚合面，如泰勒图）——与
+    log_figure 同一微调纪律；落盘即闭图（#92 单源：直存路径无中间件 close，
+    600dpi Agg 缓冲泄漏即 pyplot 图管理器进程级累积）；Saved 通知走 logger。"""
+    prepare_figure(fig, dpi)
+    try:
+        fig.savefig(path, dpi=dpi, bbox_inches="tight")
+    finally:
+        plt.close(fig)
+    logger.info("Saved: %s", path)
+
+
 def _make_diverging_cmap(
     name: str = "mflowy_diverging",
 ) -> mcolors.LinearSegmentedColormap:

@@ -13,7 +13,7 @@ from typing import Annotated
 
 from mflowy.driver.dag import DAGResult
 from mflowy.utils.file import fingerprint_tags
-from mflowy.utils.path import resolve_data_ref
+from mflowy.utils.path import anchor_task_dir, resolve_data_ref
 from pydantic import Field
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -42,6 +42,7 @@ def _run_analysis(template: Path, env_extra: dict, file_path: str) -> DAGResult:
 # ── 数据分析工具 ───────────────────────────────────────
 
 
+@anchor_task_dir("file_path")  # 入口路由据此推锚（#95 裁定 B）——元数据不包函数
 async def data_profile(
     file_path: Annotated[str, Field(description="数据文件绝对路径（csv/xlsx/parquet）")],
     sheet: Annotated[str | None, Field(description="Excel sheet 名（仅 xlsx）")] = None,
@@ -57,6 +58,7 @@ async def data_profile(
     return await asyncio.to_thread(_run_analysis, DATA_PROFILE_TEMPLATE, {"sheet": sheet, "skip": skip}, file_path)
 
 
+@anchor_task_dir("file_path")  # 入口路由据此推锚（#95 裁定 B）——元数据不包函数
 async def eda(
     file_path: Annotated[str, Field(description="数据文件绝对路径")],
     target: Annotated[str, Field(description="因变量列名")],

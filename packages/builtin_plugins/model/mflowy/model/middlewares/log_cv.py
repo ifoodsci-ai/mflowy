@@ -21,8 +21,6 @@ logger = logging.getLogger(__name__)
 
 
 def log_cv(ctx: Context, next: Handler) -> SplitSpec:
-    import mlflow
-
     result = next(ctx)
     assert isinstance(result, SplitSpec)
 
@@ -47,7 +45,8 @@ def log_cv(ctx: Context, next: Handler) -> SplitSpec:
     metrics = {"n_rows": result.n_rows}
     if test_size is not None:
         metrics["test_size"] = float(test_size)
-    mlflow.log_metrics(metrics)
+    # graceful：直调形态（窗外）跳过——守卫收编 metrics 壳，不再散守 active_run
+    mlflow_util.log_metrics(metrics, graceful=True)
     mlflow_util.log_dict(meta, "split.json")
 
     # #66 副产物：物化划分 split.pkl 直写 run 工件树（划分身份 = run_id 引用）。

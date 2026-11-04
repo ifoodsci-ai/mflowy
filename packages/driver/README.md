@@ -108,8 +108,8 @@ sequenceDiagram
 - **Kahn 入度 + LIFO 就绪栈**：深度优先，刚解锁的下游先跑、独立分支按声明逆序。总时间不变（串行求和），但下游结果更早产出。
 - **双入口，同一执行原语**：`DAG` 是 Kahn 调度器（push 全图），`Context.run()` 是单节点执行原语（自带 NodeResult 记账）；**单独 run 任一未执行节点即按需子图入口**——其绑定期惰性拉起全部未执行前驱（详见「解析、执行与血缘」）。
 - **通道边界**：节点 `print`（stdout）被 `capture_prints` 捕获进 `NodeResult.output`（ContextVar 路由，线程/请求间互不干扰），`logger`（stderr）走过程诊断；回显是入口层职责（DAG / 直接调用方）。
-- **失败语义（#59 血缘剪枝）**：节点异常 = 剪掉其血缘后代闭包、其余路径继续（`stop_on_error` 已退役，一切异常一视同仁）；失败节点以 `repr(e)` 记账进 runs、被剪节点计入 runs 且 `status="skipped"`（无 run）；`DAGResult.status`：finished / partial（有失败且有完成）/ failed（全灭），`error` 全量聚合、定位到图键 `[namespace.node_name.node_N]`。
-- **结果结构**：实验名/ID + 逐节点 run_id/状态/输出 + graph（mermaid DAG 视图，节点按调度序、**数据边带标签**：直连 `a --> b`，经边函数 `a -->|edge1| b`；`to_graph()` 另出 nodes+edges JSON）。
+- **失败语义（#59 血缘剪枝）**：节点异常 = 剪掉其血缘后代闭包、其余路径继续（`stop_on_error` 已退役，一切异常一视同仁）；失败节点以 `repr(e)` 记账进 runs、被剪节点计入 runs 且 `status="skipped"`（无 run）；`DAGResult.status`：finished / partial（有失败且有完成）/ failed（全灭），`error` 全量聚合、定位到图键 `[namespace.node_name#N]`（`Context.id` = node_key#分组序号，分组计数从 0——跨配置编辑不漂移）。
+- **结果结构**：`experiment_id`（跨 run 检索主键，实验本体经 `get_experiment` 查）+ 逐节点 run_id/状态/工件清单快照/输出 + graph（**mermaid 展示形态**——`__repr__` 委托 `DAG.mermaid()`，节点按调度序、数据边带标签：直连 `a --> b`，经边函数 `a -->|edge1| b`；机器投影 = `to_graph()` 公共方法，最新结构持久化于实验 tag `mflowy.graph`——超长截断至实验 tag 上限）。
 
 ## 函数声明节点
 

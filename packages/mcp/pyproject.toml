@@ -44,10 +44,8 @@ mflowy-utils = { workspace = true }
 file_hash = "mflowy.mcp.tools:file_hash"
 list_nodes = "mflowy.mcp.tools:list_nodes"
 get_node_info = "mflowy.mcp.tools:get_node_info"
-list_runs = "mflowy.mcp.tools:list_runs"
+get_experiment = "mflowy.mcp.tools:get_experiment"
 get_run = "mflowy.mcp.tools:get_run"
-list_run_artifacts = "mflowy.mcp.tools:list_run_artifacts"
-read_artifact = "mflowy.mcp.tools:read_artifact"
 sessions_gc = "mflowy.mcp.tools:sessions_gc"
 login = "mflowy.mcp.tools:login"
 

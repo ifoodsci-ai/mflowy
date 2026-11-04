@@ -50,7 +50,7 @@ from mflowy.model import registry
 from mflowy.model.model._pipeline import oof_predictions, u_inner_of
 from mflowy.model.model.types import MetricName
 from mflowy.model.model.utils import MACHINERY_SKIP, infer_metric, normalize_space, space_from_json, space_to_json
-from mflowy.utils.file import write_text_atomic
+from mflowy.utils.file import write_bytes_atomic, write_text_atomic
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +118,11 @@ def _structure_key(family: str, fe: dict) -> str:
 
 def _key_file(key: str) -> str:
     return key.replace("|", "__")
+
+
+def _study_db_name(key: str) -> str:
+    """study sqlite 文件名（单源）：盘上真源路径、账本 ``study`` 字段、父 run 投影工件名三处同名。"""
+    return f"study_{_key_file(key)}.db"
 
 
 def _signature_of(family: str):
@@ -324,8 +329,9 @@ def _materialize(m: dict, df: pd.DataFrame, raw_task: str) -> None:
 
     with open(download_run_artifact(split_ctx.run_id, "split.pkl"), "rb") as f:
         ts = pickle.load(f)  # 身份按引用：会话 split.pkl ≡ run 副产物（零二次物化）
-    with open(_store().session_dir(m["session_id"]) / "split.pkl", "wb") as f:
-        pickle.dump(ts, f)
+    write_bytes_atomic(
+        _store().session_dir(m["session_id"]) / "split.pkl", pickle.dumps(ts, protocol=pickle.HIGHEST_PROTOCOL)
+    )
     m["task"] = xy.task.value
 
 
@@ -588,7 +594,7 @@ def _open_study(m: dict, key: str, objective_id: dict, scoring: MetricName, seed
     import optuna
     from optuna import samplers
 
-    db = _store().session_dir(m["session_id"]) / f"study_{_key_file(key)}.db"
+    db = _store().session_dir(m["session_id"]) / _study_db_name(key)
     storage = f"sqlite:///{db}"
     direction = "maximize" if MetricName.higher_is_better(scoring) else "minimize"
     sampler = samplers.TPESampler(seed=seed)
@@ -663,13 +669,18 @@ def _run_hpo(store, m: dict, params: dict) -> dict:
             )
             theta = {**base, **study.best_trial.params}
             y_oof, y_proba = oof_predictions(ts, make_pipe, theta)
-            runs_dir = _store().session_dir(m["session_id"]) / "runs" / run.info.run_id
-            runs_dir.mkdir(parents=True, exist_ok=True)
-            y_oof.to_parquet(runs_dir / "oof_y_pred.parquet", index=True)
-            # #64 OOF 图集：观察面指向 OOF 源（cross_val_predict × train 侧 y_true），挂 run 下
+            # #64 OOF 观察面指向 OOF 源（cross_val_predict × train 侧 y_true）；#95 项4：
+            # 工件挂父 run 工件树（log_table/log_figure 经落盘壳，run_id 寻址）——
+            # session 镜像目录 runs/<run_id>/ 退役，真源 = run 工件树
+            from mflowy.utils.mlflow import log_file, log_table
+
+            # log_table 不保索引（与 #66 holdout 副产物同契）：OOF 行序 ≡ y_train 行序，按位对齐
+            log_table(y_oof, "oof_y_pred.parquet")
             from mflowy.model.report import oof_plot_album
 
-            plots = oof_plot_album(m["task"], ts.y_train, y_oof, y_proba, runs_dir / "plots")
+            plots = oof_plot_album(m["task"], ts.y_train, y_oof, y_proba)
+            # #95 项5：study storage 随父 run 落工件（只读投影——盘上真源不变，账本 append-only）
+            log_file(_store().session_dir(m["session_id"]) / _study_db_name(key))
         captured = buf.getvalue().strip()
         if captured:
             logger.info("run_hpo[%s] 捕获输出：\n%s", key, captured)
@@ -697,7 +708,7 @@ def _run_hpo(store, m: dict, params: dict) -> dict:
     ]
     entry.update(
         {
-            "study": f"study_{_key_file(key)}.db",
+            "study": _study_db_name(key),
             "objective": objective_id,
             "n_trials_at_last_eval": len(study.trials),
             "u_inner": new_u,
@@ -708,8 +719,8 @@ def _run_hpo(store, m: dict, params: dict) -> dict:
             "std": round(float(np.std(scores)), 4) if len(scores) else None,
             "oof": {
                 "run_id": run.info.run_id,
-                "y_pred": f"runs/{run.info.run_id}/oof_y_pred.parquet",
-                "plots": plots,
+                "y_pred": "oof_y_pred.parquet",  # run 工件名（run_id 在本面——寻址 = (run_id, name)）
+                "plots": plots,  # 工件名清单（log_figure 落父 run 工件树）
             },
             # 规则 findings 随每次搜索刷新；LLM findings（#36）保留
             "findings": findings + [f for f in entry.get("findings", []) if f.get("source") == "llm"],
@@ -1037,6 +1048,7 @@ def report_skeleton(session_id: str) -> dict:
     m = _store().read_manifest(session_id)
     d = _store().session_dir(session_id)
     from mflowy.model.report import TAYLOR_FIGURE  # 图名单源——与写入方共享常量（#83）
+    from mflowy.utils.mlflow import download_run_artifact
 
     taylor_fig = str(d / TAYLOR_FIGURE) if (d / TAYLOR_FIGURE).exists() else None
     # rank：冻结面按 u 降序的名次（1 = 交付最优）；rank_consistency = u_inner/u 秩相关（SH 赌注出账）
@@ -1069,7 +1081,8 @@ def report_skeleton(session_id: str) -> dict:
             {
                 "key": k,
                 "run_id": e.get("run_id"),
-                "oof_plots": [f"runs/{e['oof']['run_id']}/plots/{p}" for p in e["oof"].get("plots", [])],
+                # OOF 图集寻址 = run 工件树（#95 项4）——本地仓库 download 即原路径（零拷贝，只读契约）
+                "oof_plots": [str(download_run_artifact(e["oof"]["run_id"], p)) for p in e["oof"].get("plots", [])],
                 "holdout_byproducts": e.get("byproducts"),
                 "findings": e.get("findings", []),
             }
@@ -1520,8 +1533,10 @@ def _json(v) -> str:
 
 def save_loader(session_id: str, loader, key: str) -> None:
     """final_train_test 后持久化 loader 门面（键 = 结构键；多模型会话各持一份，sid 相对寻址）。"""
-    with open(_store().session_dir(session_id) / f"loader_{_key_file(key)}.pkl", "wb") as f:
-        pickle.dump(loader, f)
+    write_bytes_atomic(
+        _store().session_dir(session_id) / f"loader_{_key_file(key)}.pkl",
+        pickle.dumps(loader, protocol=pickle.HIGHEST_PROTOCOL),
+    )
 
 
 def load_loader(session_id: str, key: str):
