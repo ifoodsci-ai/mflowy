@@ -14,6 +14,7 @@ ROOT = pathlib.Path(__file__).parent.parent
 def _load_module(rel: str):
     path = ROOT / rel
     spec = importlib.util.spec_from_file_location(path.stem, path)
+    assert spec is not None and spec.loader is not None  # 文件存在即非 None；fail-loud 转显式断言
     mod = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = mod
     spec.loader.exec_module(mod)

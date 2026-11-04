@@ -65,6 +65,7 @@ def plot_evaluation(pipe: ModelPipeline, parts: list[_Part], task: TASKTYPE) -> 
     mlflow_util.log_table(long_df, "actual_vs_predictions.parquet")
 
     test_df = long_df[long_df["type"] == "Test"]
+    assert isinstance(test_df, pd.DataFrame)  # 布尔掩码索引恒返回 DataFrame（推断联合噪声）
 
     match task:
         case TASKTYPE.REGRESSION:

@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import shap as shap_lib  # 模块别名：参数名 shap（组边寻址名）不遮蔽模块
+from matplotlib.colors import Normalize
 from mflowy.data.middlewares import log_plot
 from mflowy.driver.handler import handler
 from mflowy.utils.constants import RANDOM_STATE
@@ -91,7 +92,7 @@ def shap_dependence(
     from statsmodels.nonparametric.smoothers_lowess import lowess
 
     categorical_features = annotation_triple(shap)[1]
-    feature_data = shap.data
+    feature_data = np.asarray(shap.data)  # shap 无 py.typed：data 推断联合——asarray 收敛数组面
     feature_names = list(shap.feature_names)
     for label, shap_values in iter_output_blocks(shap):
         target_features = rank_features(shap_values, feature_names, feature=feature, top_n=top_n)
@@ -233,7 +234,7 @@ def shap_dependence(
             axes_flat[j].set_visible(False)
 
         if has_any_interaction:
-            sm = plt.cm.ScalarMappable(cmap=CMAP_DIVERGING, norm=plt.Normalize(0, 1))
+            sm = plt.cm.ScalarMappable(cmap=CMAP_DIVERGING, norm=Normalize(0, 1))
             sm.set_array([])
             cb = fig.colorbar(sm, cax=cax)
             unique_names = list(dict.fromkeys(interaction_names))
@@ -245,7 +246,7 @@ def shap_dependence(
                 inter_feat_idx = feature_names.index(unique_names[0])
                 cats = np.unique(feature_data[:, inter_feat_idx])
                 if len(cats) <= 8:
-                    cb.set_ticks(np.linspace(0, 1, len(cats)))
+                    cb.set_ticks(np.linspace(0, 1, len(cats)).tolist())
                     cb.set_ticklabels([str(c) for c in cats])
                 else:
                     cb.set_ticks([0, 1])

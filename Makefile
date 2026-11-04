@@ -1,4 +1,4 @@
-.PHONY: install build build-whl test lint fmt precommit clean help e2e-info e2e-statistic e2e-mcp e2e-bench e2e ui
+.PHONY: install build build-whl test typecheck lint fmt precommit clean help e2e-info e2e-statistic e2e-mcp e2e-bench e2e ui
 
 # 默认目标
 help:
@@ -11,6 +11,7 @@ help:
 	@echo "  make build            构建 Docker 镜像（全部依赖，自动先建 wheel）"
 	@echo "  make build-whl        构建 wheel 至 dist/（uvx 分发与镜像构建产物）"
 	@echo "  make test             运行测试"
+	@echo "  make typecheck        运行 pyright 类型检查（basic 档，门范围 packages+tests）"
 	@echo "  make lint             运行 ruff 检查"
 	@echo "  make fmt              运行 ruff 格式化"
 	@echo "  make precommit        安装 pre-commit 钩子（commit 时自动 lint + UT）"
@@ -33,6 +34,11 @@ install:
 # 运行全量测试（tests/ 根 + packages/*/tests，见 pyproject testpaths）
 test:
 	uv run pytest
+
+# 类型门（#42 决议→#91）：pyright basic 全仓门（packages+tests）；配置单源在根
+# pyproject [tool.pyright]（venvPath+venv 键——pythonPath 键静默失效）
+typecheck:
+	uv run pyright
 
 # 构建 wheel（workspace 五 distribution 锁步，uvx 分发产物 + 镜像构建输入）
 build-whl:

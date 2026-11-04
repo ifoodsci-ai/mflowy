@@ -42,7 +42,7 @@ def _start(root, csv, cv_card=CV_CARD, **kw):
 def test_start_requires_cv_card(sessions_root, reg_csv):
     """cv_card（split yaml 明文）必填——协议谈判在剧本层（model-brief）。"""
     with pytest.raises(TypeError):
-        ms.start_session(reg_csv, card=CARD)  # 缺 positional cv_card
+        ms.start_session(reg_csv, card=CARD)  # type: ignore[reportCallIssue]  # 负例：断言 TypeError（cv_card 必填）
     with pytest.raises(ValueError, match="cv_card 必填"):
         ms.start_session(reg_csv, "   ", card=CARD, task="regression")
 

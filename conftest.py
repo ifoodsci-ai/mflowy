@@ -29,7 +29,7 @@ class _FnCatalog:
         fn = self.table.get(ns, {}).get(node_name)
         if fn is None:
             raise CatalogMiss(ns, node_name, self.table.get(ns, {}))
-        return fn if raw else getattr(fn, "handler", fn)
+        return fn if raw else fn.handler
 
     def edge(self, edge_name: str, raw: bool = False):
         fn = self.table.get("edges", {}).get(edge_name)
@@ -54,7 +54,8 @@ class _FnCatalog:
 def fake_plugins(monkeypatch):
     """伪插件目录：{namespace: {node: fn}} 直填，patch discover 唯一 adapter 位。
 
-    表值 = 原函数（.handler/.edge 属性自携带；裸桩直通 handler）。用法：
+    表值 = @handler/@edge 装饰后的函数（与真目录同构——discover._load_ep 的装饰
+    校验在此由直接访问等价保证，缺装饰即 AttributeError fail-loud）。用法：
 
         table.setdefault("load", {})["csv"] = my_fn
     """

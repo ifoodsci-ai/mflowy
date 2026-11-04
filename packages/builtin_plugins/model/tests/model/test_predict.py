@@ -1,5 +1,6 @@
 """predict handler 单元测试 —— 上游 model 门面消费（组寻址注入，无 run_id 耦合）"""
 
+from typing import cast
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -34,8 +35,9 @@ class TestPredictFacade:
         assert list(result.columns) == ["price"]
         np.testing.assert_array_almost_equal(result["price"], [10.0, 20.0, 30.0])
         # 输入按模型原始特征列对齐（extra 被剔除）
-        loader.pipe.predict.assert_called_once()
-        aligned = loader.pipe.predict.call_args[0][0]
+        mock = cast("MagicMock", loader.pipe.predict)  # 测试内 patch 的替身
+        mock.assert_called_once()
+        aligned = mock.call_args[0][0]
         assert list(aligned.columns) == ["feat"]
 
     def test_multi_target_regression(self, mock_mlflow):

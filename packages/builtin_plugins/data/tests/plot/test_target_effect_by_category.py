@@ -3,6 +3,7 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 import pytest
+from matplotlib.figure import Figure  # 类型断言源（pyplot 再导出为私有面）
 from mflowy.data.middlewares import MissingCategoricalColumns, NotAnyCategoricalColumns, SkipPlotError
 from mflowy.data.plot.target_effect_by_category import (
     target_effect_by_category,
@@ -42,7 +43,7 @@ def cleanup_figures():
 class TestTargetEffectByCategoryNumeric:
     def test_single_target_returns_dfs_and_figure(self, sample_df):
         dfs, fig = target_effect_by_category(load=sample_df, targets="feature1", categorical_cols="group")
-        assert isinstance(fig, plt.Figure)
+        assert isinstance(fig, Figure)
         assert len(dfs) == 1
         assert list(dfs[0].columns) == ["feature1", "group"]
         assert dfs[0].attrs["suffix"] == "_feature1"
@@ -88,7 +89,7 @@ class TestTargetEffectByCategoryNumeric:
             col_wrap=2,
         )
         # 行带模式：target 数不受 col_wrap 分块，恒单张 figure
-        assert isinstance(fig, plt.Figure)
+        assert isinstance(fig, Figure)
         assert len(dfs) == 3
         assert list(dfs[2].columns) == ["target", "group"]
 
@@ -127,7 +128,7 @@ class TestTargetEffectByCategoryCommon:
 
     def test_targets_accepts_set(self, mixed_df):
         dfs, fig = target_effect_by_category(load=mixed_df, targets={"numeric1"}, categorical_cols="group")
-        assert isinstance(fig, plt.Figure)
+        assert isinstance(fig, Figure)
 
     def test_duplicate_targets_deduped(self, sample_df):
         dfs, fig = target_effect_by_category(load=sample_df, targets=["feature1", "feature1"], categorical_cols="group")

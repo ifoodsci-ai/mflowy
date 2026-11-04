@@ -212,7 +212,7 @@ def test_finish_missing_pdf_fail_loud(delivered, tmp_path):
 def test_finish_pdf_required(delivered):
     """BREAKING：pdf 必填——preview 分支退役（无 pdf 调用即 TypeError）。"""
     with pytest.raises(TypeError):
-        ms.finish_session(delivered["session_id"])
+        ms.finish_session(delivered["session_id"])  # type: ignore[reportCallIssue]  # 负例：断言 TypeError（pdf 必填）
 
 
 def test_finish_pdf_adoption_and_verdict(delivered, sessions_root, tmp_path):

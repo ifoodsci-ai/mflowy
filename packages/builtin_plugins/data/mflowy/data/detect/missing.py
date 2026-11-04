@@ -3,6 +3,7 @@
 from typing import Annotated
 
 import pandas as pd
+from mflowy.data.types import as_series
 from mflowy.driver.handler import handler
 
 from .errors import DataError, ErrorReport
@@ -44,7 +45,7 @@ def missing(
             )
         )
 
-    empty_mask = df.isna().all(axis=1)
+    empty_mask = as_series(df.isna().all(axis=1))
     if n_empty := int(empty_mask.sum()):
         errors.append(
             DataError(

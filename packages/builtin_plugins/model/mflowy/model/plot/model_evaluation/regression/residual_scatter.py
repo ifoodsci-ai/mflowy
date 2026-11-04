@@ -44,7 +44,7 @@ def residual_scatter(
     scatter_color = OKABE_ITO_PALETTE[0]
 
     fig = plt.figure(figsize=(n_cols * height * aspect * 1.6, n_rows * height * 1.4))
-    gs = GridSpec(n_rows, n_cols, figure=fig, hspace=0.15, wspace=0.15)
+    gs = GridSpec(int(n_rows), int(n_cols), figure=fig, hspace=0.15, wspace=0.15)  # ceil 返回联合——int 收敛
 
     for i, (y_name, group) in enumerate(plot_data.groupby("y_name", sort=False)):
         r, c = divmod(i, n_cols)
@@ -103,7 +103,7 @@ def residual_scatter(
         ax_right.axis("off")
 
         # 目标名 + 指标标注
-        lines = [y_name]
+        lines = [str(y_name)]  # groupby 键 Hashable → str
         if not metrics_df.empty and y_name in metrics_df.index:
             row = metrics_df.loc[y_name]
             lines += [f"{k} = {v:.4f}" for k, v in row.items()]

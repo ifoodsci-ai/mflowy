@@ -17,6 +17,14 @@ from pydantic_core import core_schema
 logger = logging.getLogger(__name__)
 
 
+def as_series(value: object) -> pd.Series:
+    """单键取列联合收窄（单源）：pandas-stubs 的 ``df[key]`` 返回 Series|DataFrame
+    联合（MultiIndex 列可能性），本域列寻址恒单层——isinstance 显式断言 fail-loud。
+    """
+    assert isinstance(value, pd.Series), f"期望单列 Series，得到 {type(value).__name__}"
+    return value
+
+
 class DualFormStrEnum(StrEnum):
     """值/名双形式枚举：pydantic 校验按值或按名解析（yaml/JSON 两种输入都收）。
 
@@ -47,7 +55,7 @@ class TASKTYPE(DualFormStrEnum):
         prev = None
         task = None
         for col in y.columns:
-            e = cls.infer_task(y[col])
+            e = cls.infer_task(as_series(y[col]))
             expected = e["task"]
             task = task or expected
             if task != expected:
@@ -102,7 +110,7 @@ class TASKTYPE(DualFormStrEnum):
 
         # 唯一值占比 5% ~ 50%
         # 计算唯一值排序后的步长
-        sorted_vals = np.sort(y.unique())
+        sorted_vals = np.sort(np.asarray(y.unique()))
         diffs = np.diff(sorted_vals)
 
         # 计算步长是否有小数位，步长有小数位时，优先判定为回归任务

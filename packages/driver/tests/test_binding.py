@@ -7,7 +7,7 @@ seam 即 interface，测试即消费方——builder（编译）/context（绑�
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated, cast
 
 import pytest
 from mflowy.driver.binding import (
@@ -22,6 +22,9 @@ from mflowy.driver.binding import (
     raise_if_params_collide,
     verify_output_hint,
 )
+
+if TYPE_CHECKING:
+    from mflowy.driver.context import Context  # cast 目标（运行期零 Context 依赖）
 
 
 class TestNonAnnotatedParams:
@@ -142,17 +145,23 @@ class TestUpstreamNode:
     def test_lazy_pull_runs_each_once_and_shapes(self):
         """惰性拉起恰一次；collect 出迭代器、single 出末位值。"""
         a, b = _cell(1), _cell(2)
-        collect = Upstream.node(UpstreamMeta("feat", True), int, [a, b], check_expect=int, collect=True)
+        collect = Upstream.node(
+            UpstreamMeta("feat", True), int, cast("list[Context]", [a, b]), check_expect=int, collect=True
+        )
         assert list(collect.call()) == [1, 2]
         collect.call()  # 再次取值不重跑（哨兵去重）
         assert (a.runs, b.runs) == (1, 1)
-        single = Upstream.node(UpstreamMeta("feat", True), int, [a], check_expect=int, collect=False)
+        single = Upstream.node(
+            UpstreamMeta("feat", True), int, cast("list[Context]", [a]), check_expect=int, collect=False
+        )
         assert single.call() == 1
 
     def test_in_place_filter_seen_by_call(self):
         """同源焊点：rewire 就地过滤 nodes，闭包即时看见（剪枝语义的机制面）。"""
         a, b = _cell(1), _cell(2)
-        u = Upstream.node(UpstreamMeta("feat", False), int, [a, b], check_expect=int, collect=True)
+        u = Upstream.node(
+            UpstreamMeta("feat", False), int, cast("list[Context]", [a, b]), check_expect=int, collect=True
+        )
         u.nodes[:] = [n for n in u.nodes if n is a]  # 模拟 rewire 剥除 b
         assert list(u.call()) == [1]
         assert b.runs == 0
@@ -160,14 +169,14 @@ class TestUpstreamNode:
     def test_empty_after_filter_returns_missing(self):
         """成员全被剥除 → MISSING（省略注入，签名默认值生效的机制面）。"""
         a = _cell(1)
-        u = Upstream.node(UpstreamMeta("feat", False), int, [a], check_expect=int, collect=True)
+        u = Upstream.node(UpstreamMeta("feat", False), int, cast("list[Context]", [a]), check_expect=int, collect=True)
         u.nodes[:] = []
         assert u.call() is MISSING
 
     def test_liar_raises_with_meta_name(self):
         """值级复核点名参数边（meta.name 进错误文案）。"""
         a = _cell("s")  # 声明 int 实产 str
-        u = Upstream.node(UpstreamMeta("feat", True), int, [a], check_expect=int, collect=False)
+        u = Upstream.node(UpstreamMeta("feat", True), int, cast("list[Context]", [a]), check_expect=int, collect=False)
         with pytest.raises(TypeError, match=r"feat: 上游声明输出"):
             u.call()
 

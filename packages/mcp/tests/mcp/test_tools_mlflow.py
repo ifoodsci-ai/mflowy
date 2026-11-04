@@ -16,7 +16,9 @@ def test_list_run_artifacts_absolute_path(monkeypatch, tmp_path):
     exp_id = mlflow.MlflowClient().create_experiment("t_artifacts", artifact_location=(tmp_path / "arts").as_uri())
     with mlflow.start_run(experiment_id=exp_id):
         mlflow.log_dict({"a": 1}, "sub/metrics.json")
-        run_id = mlflow.active_run().info.run_id
+        run = mlflow.active_run()
+        assert run is not None  # with start_run 窗口内必在
+        run_id = run.info.run_id
 
     arts = tools.list_run_artifacts(run_id)
     dirs = [a for a in arts if a["is_dir"]]

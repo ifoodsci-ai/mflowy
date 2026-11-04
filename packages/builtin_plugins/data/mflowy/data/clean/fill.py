@@ -7,10 +7,11 @@ ValueError，无静默回退；单一副作用：只填值，不追加指示列�
 ffill/bfill 的 by= 组内填充不跨组泄漏（批量一致性场景）。
 """
 
-from typing import Annotated
+from typing import Annotated, cast
 
 import pandas as pd
 from mflowy.data.middlewares import df_diff
+from mflowy.data.types import as_series
 from mflowy.driver.handler import handler
 
 from ._atom import family_cols, require_cols, require_family, tier_repair
@@ -74,10 +75,10 @@ def fill_mode(
 
     for c in cols:
         if by is None:
-            df[c] = df[c].fillna(_mode(df[c]))
+            df[c] = df[c].fillna(_mode(as_series(df[c])))
         else:
-            modes = df.groupby(by)[c].agg(_mode)
-            df[c] = df[c].fillna(df[by].map(modes))
+            modes = cast(pd.Series, df.groupby(by)[c].agg(_mode))  # agg 弱类型：组→众数 Series（运行期形态）
+            df[c] = df[c].fillna(df[by].map(modes.to_dict()))  # type: ignore[reportArgumentType]  # pandas-stubs map 重载漏 dict 分支（运行期官方支持）
     return df
 
 

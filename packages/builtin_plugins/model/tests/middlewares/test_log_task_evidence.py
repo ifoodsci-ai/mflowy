@@ -6,11 +6,12 @@ import pandas as pd
 from mflowy.driver.config import NodeConf
 from mflowy.driver.context import Context
 from mflowy.model.middlewares import log_task_evidence
+from mflowy.model.model.types import TASKTYPE
 from mflowy.model.x_y import XySpec
 
 
 def _xy(evidence: pd.DataFrame | None) -> XySpec:
-    return XySpec(pd.DataFrame({"x": [1.0]}), pd.DataFrame({"y": [0.0]}), "regressor", evidence)
+    return XySpec(pd.DataFrame({"x": [1.0]}), pd.DataFrame({"y": [0.0]}), TASKTYPE.REGRESSION, evidence)
 
 
 def _run_mw(result: XySpec):

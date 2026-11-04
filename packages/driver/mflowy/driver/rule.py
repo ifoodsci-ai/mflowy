@@ -44,7 +44,8 @@ class Rule(Protocol):
     配置；词表/注册表对象在 propose 内现查，不持引用）。
     """
 
-    key: str
+    @property
+    def key(self) -> str: ...  # 只读身份（property 形态）：读写属性会把仅实现读取面的规则挡在结构匹配外
 
     def propose(self, R: Any) -> list[Activation]: ...
 

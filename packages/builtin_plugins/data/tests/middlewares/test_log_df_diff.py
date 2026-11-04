@@ -21,6 +21,7 @@ def _dag(fake_plugins, tmp_path):
 
     @handler(df_diff, namespace="clean")
     def _step2(load: pd.DataFrame, clean: pd.DataFrame | None = None) -> pd.DataFrame:
+        assert clean is not None  # 链式第二步恒有上一步产物
         return clean  # 不再变换——diff 的 before/after 均应为 step1 输出
 
     fake_plugins.setdefault("load", {})["csv"] = _csv

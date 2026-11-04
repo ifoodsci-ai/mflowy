@@ -163,7 +163,7 @@ def test1():
     # Taylor diagram
     dia = TaylorDiagram(refstd, fig=fig, rect=122, label="Reference", srange=(0.5, 1.5))
 
-    colors = PLT.matplotlib.cm.jet(NP.linspace(0, 1, len(samples)))
+    colors = PLT.matplotlib.cm.jet(NP.linspace(0, 1, len(samples)))  # type: ignore[reportPrivateImportUsage]  # vendored copin 原样保留
 
     ax1.plot(x, data, "ko", label="Data")
     for i, m in enumerate([m1, m2, m3]):

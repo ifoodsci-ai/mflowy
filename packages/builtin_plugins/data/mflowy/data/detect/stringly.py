@@ -3,6 +3,7 @@
 import re
 
 import pandas as pd
+from mflowy.data.types import as_series
 from mflowy.driver.handler import handler
 
 from .errors import DataError, ErrorReport
@@ -22,7 +23,9 @@ def stringly_frac(series: pd.Series) -> tuple[float, str | None]:
     if s.empty:
         return 0.0, None
     parts = s.str.extract(_NUMERIC_LIKE.pattern, expand=True)
-    numeric_like = parts[0].notna() | pd.to_numeric(s, errors="coerce").notna()
+    numeric_like = (
+        as_series(parts[0]).notna() | as_series(pd.to_numeric(s, errors="coerce")).notna()
+    )  # Series 入 → Series 出（stub 返标量联合）
     frac = float(numeric_like.mean())
     suffixes = parts[1][numeric_like & parts[1].notna() & (parts[1] != "")]
     suffix = str(suffixes.mode().iloc[0]) if not suffixes.empty else None
@@ -38,7 +41,7 @@ def stringly(load: pd.DataFrame) -> ErrorReport:
     """
     errors = []
     for col in load.columns:
-        series = load[col]
+        series = as_series(load[col])
         if pd.api.types.is_numeric_dtype(series) or series.nunique(dropna=False) <= 1:
             continue
         frac, suffix = stringly_frac(series)

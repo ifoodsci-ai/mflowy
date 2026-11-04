@@ -91,7 +91,7 @@ def test_default_engine_registers_family_and_fe_rules():
 def test_default_engine_subscribes_exactly_known_finding_kinds():
     """订阅面 = #35 词表：规则 kind 并集恰为 KNOWN_FINDING_KINDS（校验面 = 订阅面）。"""
     engine = propose_rules.default_engine()
-    kinds = {r.kind for r in engine.rules.values()}
+    kinds = {getattr(r, "kind") for r in engine.rules.values()}  # noqa: B009 — 注册面恒 FamilyRule/FERule（Rule 协议不含 kind）
     assert kinds == set(propose_rules.KNOWN_FINDING_KINDS)
 
 

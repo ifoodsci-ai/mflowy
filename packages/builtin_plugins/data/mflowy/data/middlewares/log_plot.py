@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import inspect
 import logging
+from collections.abc import Iterable
+from typing import Any, cast
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -64,7 +66,10 @@ def log_plot(ctx: Context, next: Handler):
         print(f"Skipped: {e} ({base})")
         return None
     is_multi_fig = inspect.isgenerator(result)
-    items = result if is_multi_fig else (result,)
+    # 绘图节点产物联合：生成器 yield (data, fig) 序列 / 单值即一个 (data, fig)——结构上窄化
+    items: Iterable[tuple[Any, Any]] = (
+        cast("Iterable[tuple[Any, Any]]", result) if is_multi_fig else (cast("tuple[Any, Any]", result),)
+    )
 
     try:
         for fig_idx, (data, fig) in enumerate(items):

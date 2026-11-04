@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from mflowy.data import cleaning_session as cs
+from mflowy.data.types import as_series
 
 
 @pytest.fixture
@@ -315,7 +316,7 @@ def test_propose_menu_partitions_by_dtype(sessions_root, tmp_path):
     for p in fills:
         cols = p["params"].get("cols") or list(p["params"].get("columns", {}))
         assert cols, p
-        fams = {type_family(df[c]) for c in cols if c in df.columns}
+        fams = {type_family(as_series(df[c])) for c in cols if c in df.columns}
         assert fams == {atom_family[p["action"]]}, (p["action"], fams)
         seen_parts.add(atom_family[p["action"]])
     assert {"numeric", "categorical"} <= seen_parts  # 两个分区都有各自菜单

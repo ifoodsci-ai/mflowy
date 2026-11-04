@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import pandas as pd
 from lightgbm import LGBMClassifier as lgbmc
@@ -15,8 +16,14 @@ from .utils import as_y_frame, validate_input
 
 logger = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
+    # 类型面借具体基类：解析 super().fit 与拟合后属性；运行期真实基类由子类 (mixin, lgbmr/lgbmc) 组合
+    _LGBMBase = lgbmr
+else:
+    _LGBMBase = object
 
-class _LGBMMixin(LossCurveMixin, TreeExplainMixin):
+
+class _LGBMMixin(LossCurveMixin, TreeExplainMixin, _LGBMBase):
     """LightGBM estimator 子类。
 
     fit 流程：SubTask.from_y(y, self.task) → set_params 增量调 objective → 底层 fit。

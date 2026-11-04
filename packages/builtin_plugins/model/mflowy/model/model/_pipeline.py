@@ -20,6 +20,7 @@ import json
 import logging
 from collections.abc import Callable
 from contextvars import ContextVar
+from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -46,7 +47,7 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import GroupShuffleSplit, cross_val_score, train_test_split
 
-from ._evaluation_plots import plot_evaluation
+from ._evaluation_plots import _Part, plot_evaluation
 from ._loss_curve import plot_loss_curve
 from ._model import fit_with_eval
 from .study import ParameterSearchSpace, search_ml, suggest_params
@@ -58,7 +59,7 @@ from .types import (
     ModelLoader,
     ModelPipeline,
 )
-from .utils import infer_metric
+from .utils import abs_spearman_per_column, infer_metric
 
 logger = logging.getLogger(__name__)
 
@@ -82,12 +83,13 @@ def _regression_metrics(y_true: np.ndarray, y_pred_col: np.ndarray) -> Metric:
 
 
 def _label_metrics(y_true: np.ndarray, y_pred_col: np.ndarray) -> Metric:
+    # sklearn 无 py.typed：zero_division 文档面收 int|str（0/1/"warn"），推断只见默认 str
     return {
         MetricName.ACCURACY: float(accuracy_score(y_true, y_pred_col)),
         MetricName.BALANCED_ACCURACY: float(balanced_accuracy_score(y_true, y_pred_col)),
-        MetricName.PRECISION: float(precision_score(y_true, y_pred_col, average="weighted", zero_division=0)),
-        MetricName.RECALL: float(recall_score(y_true, y_pred_col, average="weighted", zero_division=0)),
-        MetricName.F1: float(f1_score(y_true, y_pred_col, average="weighted", zero_division=0)),
+        MetricName.PRECISION: float(precision_score(y_true, y_pred_col, average="weighted", zero_division=0)),  # type: ignore[reportArgumentType]
+        MetricName.RECALL: float(recall_score(y_true, y_pred_col, average="weighted", zero_division=0)),  # type: ignore[reportArgumentType]
+        MetricName.F1: float(f1_score(y_true, y_pred_col, average="weighted", zero_division=0)),  # type: ignore[reportArgumentType]
         MetricName.MCC: float(matthews_corrcoef(y_true, y_pred_col)),
         MetricName.KAPPA: float(cohen_kappa_score(y_true, y_pred_col)),
     }
@@ -136,14 +138,16 @@ def _resolve_scoring(task: TASKTYPE, scoring) -> list[MetricName] | None:
     full = _suite_keys(task)
     out: list[MetricName] = []
     for name in names:
+        m: MetricName | None
         try:
             m = name if isinstance(name, MetricName) else MetricName(name)
         except ValueError:
-            m = None  # type: ignore[assignment]
+            m = None
         if m not in full:
             raise ValueError(
                 f"未知指标或与任务 {task} 不相容: {name!r}（{task} 可用: {sorted(s.value for s in full)}）"
             )
+        assert m is not None  # 上行 not in full 已排除 None（full 只含 MetricName）
         out.append(m)
     return out
 
@@ -381,7 +385,7 @@ def hyperparameters_search(
                 cv=cv,
                 scoring=scorer,
                 groups=groups_train,
-                error_score="raise",
+                error_score="raise",  # type: ignore[reportArgumentType]  # sklearn 无 py.typed：error_score 文档面收 float|"raise"
                 n_jobs=1,
             )
             trial.set_user_attr("scores", scores.tolist())
@@ -391,6 +395,7 @@ def hyperparameters_search(
             return mean
 
         # holdout-val 手动路径：与最终训练同切分同口径（早停可用）；单指标子集省概率计算
+        assert y_val is not None  # cv is None 分支即 holdout-val 计划——_inner_cv_plan 恒配对返回 val
         pipe = fit_with_eval(make_pipe, X_fit, y_fit, eval_X=X_val, eval_y=y_val, fit_params=fit_params, **merged)
         y_pred = pipe.predict(X_val)
         y_proba = pipe.predict_proba(X_val) if split.task == TASKTYPE.CLASSIFICATION else None
@@ -488,7 +493,8 @@ def training(
         fit_params: 透传给 estimator.fit 的参数（如 LGBM 的 early_stopping_rounds）
         scoring: 报告面指标（日志/图表用）；None 时按任务自动推断
     """
-    import mlflow.sklearn  # 绑定 mlflow 顶层 + 拉起子模块（save 段 log_model 与 active_run 共用）
+    import mlflow.sklearn  # 绑定 mlflow 顶层 + 拉起子模块（save 段与 active_run 共用）
+    from mlflow.sklearn import log_model as _mlflow_log_model
 
     task = split.task
     fit_params = fit_params or {}
@@ -526,8 +532,9 @@ def training(
         _log_table(split.X_test, HOLDOUT_BYPRODUCTS["X_test"])
         _log_table(split.y_test, HOLDOUT_BYPRODUCTS["y_test"])
         _log_table(y_pred_df, HOLDOUT_BYPRODUCTS["y_pred"])
-        parts = [(X_fit, y_fit, "Train")]
+        parts: list[_Part] = [(X_fit, y_fit, "Train")]
         if X_val is not None:
+            assert y_val is not None  # split_val 恒成对返回（X_val/y_val 同源切分）
             parts.append((X_val, y_val, "Val"))
         parts.append((split.X_test, split.y_test, "Test"))
         plot_loss_curve(pipe)
@@ -539,7 +546,7 @@ def training(
     if mlflow.active_run():
         # pickle 格式：skops 默认拒绝自定义类型（ModelPipeline/estimator 子类）
         example = split.X_test.head(1)
-        model_info = mlflow.sklearn.log_model(pipe, name="final", input_example=example, serialization_format="pickle")
+        model_info = _mlflow_log_model(pipe, name="final", input_example=example, serialization_format="pickle")
         model_uri = model_info.model_uri
 
     return ModelLoader(name=name, _pipe=pipe, _model_uri=model_uri, holdout={"u": round(u, 4), "metrics": metrics})
@@ -587,7 +594,8 @@ def oof_predictions(
             method="predict_proba",
             n_jobs=1,
         )
-        y_proba = proba
+        # sklearn 无 py.typed：predict_proba 路径运行期恒 ndarray（单目标）/ list[ndarray]（多目标）
+        y_proba = cast("np.ndarray | list[np.ndarray]", proba)
     return y_pred, y_proba
 
 
@@ -601,8 +609,6 @@ def holdout_findings(split: TrainSplit, y_pred: pd.DataFrame, u_inner: float | N
     #66 从 holdout_report 抽出单源：DAG 终训路径（final_train_test）与 SDK 面
     （holdout_report）共用同一诊断机器。
     """
-    import scipy.stats as st
-
     y_true = split.y_test.iloc[:, 0].to_numpy()
     y_hat = y_pred.iloc[:, 0].to_numpy() if isinstance(y_pred, pd.DataFrame) else np.asarray(y_pred)
 
@@ -623,7 +629,7 @@ def holdout_findings(split: TrainSplit, y_pred: pd.DataFrame, u_inner: float | N
         classes, counts = np.unique(y_true, return_counts=True)
         recalls = {c: float(correct[y_true == c].mean()) for c in classes if (y_true == c).sum() > 0}
         if recalls:
-            worst = min(recalls, key=recalls.get)
+            worst = min(recalls, key=lambda c: recalls[c])  # lambda 直取值——.get 的 Optional 返回面与 min 不合
             mean_r = float(np.mean(list(recalls.values())))
             if recalls[worst] < 0.5 * mean_r and counts[list(classes).index(worst)] >= 3:
                 findings.append(
@@ -637,11 +643,9 @@ def holdout_findings(split: TrainSplit, y_pred: pd.DataFrame, u_inner: float | N
     if split.task == TASKTYPE.REGRESSION:
         resid = np.abs(y_hat - y_true)
         worst_col, worst_rho = None, 0.0
-        for c in split.X_test.columns:
-            if pd.api.types.is_numeric_dtype(split.X_test[c]):
-                rho = abs(st.spearmanr(split.X_test[c].to_numpy(), resid).statistic)
-                if rho == rho and rho > worst_rho:  # NaN 防护
-                    worst_col, worst_rho = c, float(rho)
+        for c, rho in abs_spearman_per_column(split.X_test, resid):
+            if rho > worst_rho:
+                worst_col, worst_rho = c, rho
         if worst_col and worst_rho > 0.3:
             findings.append(
                 {

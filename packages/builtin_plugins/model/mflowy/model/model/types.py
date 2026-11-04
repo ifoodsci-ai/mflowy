@@ -184,9 +184,9 @@ class ModelLoader:
         if self._pipe is None:
             if self._model_uri is None:
                 raise ValueError(f"{self.name} 无可用模型（既无内存 pipeline 也无 uri）")
-            import mlflow.sklearn
+            from mlflow.sklearn import load_model
 
-            self._pipe = mlflow.sklearn.load_model(self._model_uri)
+            self._pipe = load_model(self._model_uri)
             assert isinstance(self._pipe, ModelPipeline)
         return self._pipe
 
@@ -221,4 +221,6 @@ class ModelLoader:
         missing = [c for c in expected if c not in X.columns]
         if missing:
             raise ValueError(f"预测数据缺少模型输入列: {missing}；模型期望 {expected}")
-        return X[expected]
+        aligned = X[expected]
+        assert isinstance(aligned, pd.DataFrame)  # 列名清单索引恒返回 DataFrame（推断联合噪声）
+        return aligned

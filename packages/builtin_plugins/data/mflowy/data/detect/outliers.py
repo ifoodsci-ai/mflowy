@@ -2,7 +2,9 @@
 
 from typing import Annotated, Literal
 
+import numpy as np
 import pandas as pd
+from mflowy.data.types import as_series
 from mflowy.driver.handler import handler
 
 from .errors import DataError, ErrorReport
@@ -30,7 +32,7 @@ def outliers(
     errors = []
     num = df.select_dtypes(include="number")
     for col in num.columns:
-        series = num[col]
+        series = as_series(num[col])
         mask = mask_fn(series, k)
         n_out = int(mask.sum())
         if n_out == 0:
@@ -40,7 +42,9 @@ def outliers(
             DataError(
                 kind="outlier",
                 column=str(col),
-                rows=tuple(int(i) for i in series.index[mask]),
+                rows=tuple(
+                    int(i) for i in np.asarray(series.index)[np.asarray(mask)]
+                ),  # Index 布尔下标 stub 重载怪癖，ndarray 路径干净
                 severity=round(n_out / len(series), 4),
                 evidence={
                     "rule": rule,

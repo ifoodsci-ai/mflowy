@@ -11,6 +11,11 @@ from xgboost import plot_tree as _xgb_plot_tree
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
+    # 类型面借具体基类：解析 super().fit 与拟合后属性；运行期真实基类由子类 (mixin, xgbr/xgbc) 组合
+    _XGBBase = xgbr
+else:
+    _XGBBase = object
+
 import logging
 
 from mflowy.utils.logging import is_verbose
@@ -23,7 +28,7 @@ from .utils import as_y_frame, validate_input
 logger = logging.getLogger(__name__)
 
 
-class _XGBMixin(LossCurveMixin, TreeExplainMixin):
+class _XGBMixin(LossCurveMixin, TreeExplainMixin, _XGBBase):
     task: TASKTYPE  # 子类类属性声明——SubTask 路由用（sklearn clone 存活）
 
     def fit(self, X: pd.DataFrame, y: pd.DataFrame, eval_X=None, eval_y=None, **_):

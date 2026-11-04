@@ -4,17 +4,19 @@ from mflowy.model.x_transformer.numeric.minmax_scaler import minmax_scaler
 from sklearn.compose import ColumnTransformer
 
 
-def _fit_transform(df, numerical_cols, **kwargs):
+def _fit_transform(df, numerical_cols, **kwargs) -> pd.DataFrame:
     """通过 ColumnTransformer 执行 fit/transform"""
     name, scaler, cols = minmax_scaler(
         x_y=(df, pd.DataFrame(index=df.index), "regression"), numerical_cols=numerical_cols, **kwargs
     )
     ct = ColumnTransformer([(name, scaler, cols)], remainder="passthrough", verbose_feature_names_out=False)
     ct.set_output(transform="pandas")
-    return ct.fit_transform(df)
+    result = ct.fit_transform(df)
+    assert isinstance(result, pd.DataFrame)  # set_output(pandas) 后输出必为 DataFrame
+    return result
 
 
-def _fit_then_transform(df_train, df_test, numerical_cols, **kwargs):
+def _fit_then_transform(df_train, df_test, numerical_cols, **kwargs) -> pd.DataFrame:
     """在训练集上 fit，在测试集上 transform"""
     name, scaler, cols = minmax_scaler(
         x_y=(df_train, pd.DataFrame(index=df_train.index), "regression"),
@@ -24,7 +26,9 @@ def _fit_then_transform(df_train, df_test, numerical_cols, **kwargs):
     ct = ColumnTransformer([(name, scaler, cols)], remainder="passthrough", verbose_feature_names_out=False)
     ct.set_output(transform="pandas")
     ct.fit(df_train)
-    return ct.transform(df_test)
+    result = ct.transform(df_test)
+    assert isinstance(result, pd.DataFrame)  # set_output(pandas) 后输出必为 DataFrame
+    return result
 
 
 def test_minmax_scaler_default_range():
@@ -35,7 +39,7 @@ def test_minmax_scaler_default_range():
 
     assert X_scaled["a"].min() >= 0
     assert X_scaled["a"].max() <= 1
-    assert np.allclose(X_scaled["a"].values, [0, 0.5, 1])
+    assert np.allclose(X_scaled["a"].to_numpy(), [0, 0.5, 1])
 
 
 def test_minmax_scaler_custom_range():
@@ -44,7 +48,7 @@ def test_minmax_scaler_custom_range():
 
     X_scaled = _fit_transform(X, ["a"], feature_range=(-1, 1))
 
-    assert np.allclose(X_scaled["a"].values, [-1, 0, 1])
+    assert np.allclose(X_scaled["a"].to_numpy(), [-1, 0, 1])
 
 
 def test_minmax_scaler_clip():

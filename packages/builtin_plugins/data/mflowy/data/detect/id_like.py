@@ -1,6 +1,7 @@
 """标识列检测算子（只读，advisory）：全唯一且非 float 的标识列疑似。"""
 
 import pandas as pd
+from mflowy.data.types import as_series
 from mflowy.driver.handler import handler
 
 from .errors import DataError, ErrorReport
@@ -17,7 +18,7 @@ def id_like(load: pd.DataFrame) -> ErrorReport:
     """
     errors = []
     for col in load.columns:
-        series = load[col]
+        series = as_series(load[col])
         if pd.api.types.is_numeric_dtype(series) or not is_id_like(series):
             continue
         frac, _ = stringly_frac(series)

@@ -125,7 +125,7 @@ class LocalJobProvider:
         modeling_steps: str,
         name: str,
         desc: str,
-        headers: Mapping[str, str] | None = None,
+        headers: Mapping[str, object] | None = None,
     ) -> DAGResult:
         """搜索-only DAG：model 步带搜索空间 → search 行为（inner CV 选参，不终训不碰 holdout）。"""
 
@@ -151,7 +151,7 @@ class LocalJobProvider:
         desc: str,
         experiment_id: str | None = None,
         prune_missing: bool = False,
-        headers: Mapping[str, str] | None = None,
+        headers: Mapping[str, object] | None = None,
     ) -> DAGResult:
         def _run():
             from mflowy.model.model.step_options import resume_model_step
@@ -192,7 +192,7 @@ class LocalJobProvider:
         name: str,
         desc: str,
         lowess_frac: float = 0.3,
-        headers: Mapping[str, str] | None = None,
+        headers: Mapping[str, object] | None = None,
     ) -> DAGResult:
         def _run():
             _validate_model_arg(model)
@@ -232,7 +232,7 @@ class LocalJobProvider:
         *,
         data: str,
         model: str,
-        headers: Mapping[str, str] | None = None,
+        headers: Mapping[str, object] | None = None,
     ) -> DAGResult:
         def _run():
             _validate_model_arg(model)
@@ -262,7 +262,7 @@ class LocalJobProvider:
         cross_rules: str | None = None,
         n_trials: int = 10000,
         seed: int = 42,
-        headers: Mapping[str, str] | None = None,
+        headers: Mapping[str, object] | None = None,
     ) -> DAGResult:
         def _run():
             _validate_model_arg(model)

@@ -60,9 +60,11 @@ def _infer_search_spaces(
         match df[col].dtype.kind:
             case "i" | "u":  # 整数（numpy + pandas Int*）
                 desc = df[col].describe()
+                assert isinstance(desc, pd.Series)  # 数值单列 describe 恒为 Series（推断联合噪声）
                 spaces[col] = ContinuousSpace(int(desc["min"]), int(desc["max"]))
             case "f":  # 浮点（numpy + pandas Float*）
                 desc = df[col].describe()
+                assert isinstance(desc, pd.Series)  # 同上
                 spaces[col] = ContinuousSpace(float(desc["min"]), float(desc["max"]))
             case "b":  # 布尔（numpy bool + pandas Boolean）
                 spaces[col] = DiscreteSpace([True, False])

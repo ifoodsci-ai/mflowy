@@ -13,6 +13,7 @@ import shap
 from mflowy.driver.config import NodeConf
 from mflowy.driver.context import Context
 from mflowy.model.middlewares import log_shap_explanation
+from mflowy.model.plot.model_interpretability.shap.contract import annotation_triple, attach_annotations
 from mflowy.model.plot.model_interpretability.shap.load import load
 
 
@@ -22,10 +23,7 @@ def _explanation() -> shap.Explanation:
         data=np.array([[1.0, "m"], [2.0, "f"]], dtype=object),
         feature_names=["age", "sex"],
     )
-    exp.y_name = "target"
-    exp.categorical_features = ["sex"]
-    exp.classes = ["target"]
-    return exp
+    return attach_annotations(exp, "target", ["sex"], ["target"])
 
 
 def _values_df() -> pd.DataFrame:
@@ -50,9 +48,10 @@ def test_rebuild_roundtrip_without_test_face():
     assert list(out.feature_names) == ["age", "sex"]
     np.testing.assert_allclose(out.values, [[0.1, 0.2], [0.3, 0.4]])
     assert [list(row) for row in out.data] == [[1.0, "m"], [2.0, "f"]]
-    assert out.y_name == "target"
-    assert out.classes == ["target"]
-    assert out.categorical_features == ["sex"]
+    y_name, cat_feats, classes = annotation_triple(out)
+    assert y_name == "target"
+    assert classes == ["target"]
+    assert cat_feats == ["sex"]
 
 
 def test_partition_and_test_face_override():
@@ -102,7 +101,7 @@ def test_multiclass_stack_roundtrip():
         data=np.array([[1.0, "m"], [2.0, "f"]], dtype=object),
         feature_names=["age", "sex"],
     )
-    exp.y_name, exp.categorical_features, exp.classes = "target", ["sex"], ["a", "b"]
+    attach_annotations(exp, "target", ["sex"], ["a", "b"])
     captured = {}
     with (
         patch("mlflow.log_metrics"),

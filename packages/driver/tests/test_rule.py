@@ -132,7 +132,7 @@ def test_fire_fail_loud_on_malformed_activation():
             return self._out
 
     engine = RuleEngine()
-    engine.register(_Bad(["裸 dict"]))
+    engine.register(_Bad(["裸 dict"]))  # type: ignore[reportArgumentType]  # 非 Rule 负例：断言 TypeError
     with pytest.raises(TypeError, match="Activation 实例"):
         engine.fire(R={})
 
@@ -147,7 +147,7 @@ def test_fire_fail_loud_on_malformed_activation():
         engine3.fire(R={})
 
     engine4 = RuleEngine()
-    engine4.register(_Bad([Activation("bad", {"action": "x", "params": {}}, 1.5, "r")]))
+    engine4.register(_Bad([Activation("bad", {"action": "x", "params": {}}, 1.5, "r")]))  # type: ignore[reportArgumentType]  # salience float 负例：断言 TypeError
     with pytest.raises(TypeError, match="salience"):
         engine4.fire(R={})
 

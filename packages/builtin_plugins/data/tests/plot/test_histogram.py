@@ -3,6 +3,7 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 import pytest
+from matplotlib.figure import Figure  # 类型断言源（pyplot 再导出为私有面）
 from mflowy.data.middlewares import MissingNumericalColumns, NotAnyNumericalColumns
 from mflowy.data.plot.histogram import histogram
 
@@ -29,7 +30,7 @@ class TestHistogram:
     def test_single_feature(self, sample_df):
         df, fig = histogram(load=sample_df, numerical_cols="feature1")
         assert isinstance(df, pd.DataFrame)
-        assert isinstance(fig, plt.Figure)
+        assert isinstance(fig, Figure)
         assert len(df.columns) == 1
 
     def test_multiple_features(self, sample_df):
@@ -48,7 +49,7 @@ class TestHistogram:
 
     def test_auto_detect_all_numeric(self, sample_df):
         df, fig = histogram(load=sample_df)
-        assert isinstance(fig, plt.Figure)
+        assert isinstance(fig, Figure)
 
     def test_nonexistent_column_raises(self, sample_df):
         with pytest.raises(MissingNumericalColumns):

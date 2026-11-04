@@ -14,10 +14,15 @@ from __future__ import annotations
 import asyncio
 import inspect
 from types import SimpleNamespace
+from typing import TYPE_CHECKING, cast
 
 import mflowy.model.job_provider as jp
 import pytest
 from mflowy.model import tools
+
+if TYPE_CHECKING:
+    from mcp.server.mcpserver import Context  # cast 目标（结构替身）
+    from mflowy.model.job_provider.protocol import JobProvider  # cast 目标（替身）
 
 DELEGATED_TOOLS = {
     "hyperparameters_search": {"modeling_steps": "- model__XGB:\n    params: {}", "name": "n", "desc": "d"},
@@ -71,7 +76,7 @@ def _reset():
 @pytest.mark.parametrize("tool", DELEGATED_TOOLS)
 def test_headers_passthrough_with_ctx(tool):
     provider = RecordingProvider()
-    jp.set_job_provider(provider)
+    jp.set_job_provider(cast("JobProvider", provider))  # 记录替身：结构实现 protocol 面
     headers = {"X-User-ID": "u-1", "X-Org-ID": "org-9", "Authorization": "Bearer t"}
     ctx = SimpleNamespace(request_context=SimpleNamespace(meta=headers))
 
@@ -83,10 +88,14 @@ def test_headers_passthrough_with_ctx(tool):
 
 def test_headers_none_when_meta_absent():
     provider = RecordingProvider()
-    jp.set_job_provider(provider)
+    jp.set_job_provider(cast("JobProvider", provider))  # 记录替身：结构实现 protocol 面
 
     asyncio.run(
-        tools.predict(data="a.csv", model="XGB=abc", ctx=SimpleNamespace(request_context=SimpleNamespace(meta=None)))
+        tools.predict(
+            data="a.csv",
+            model="XGB=abc",
+            ctx=cast("Context", SimpleNamespace(request_context=SimpleNamespace(meta=None))),
+        )  # 结构替身
     )
 
     assert provider.calls[0]["headers"] is None
@@ -95,7 +104,7 @@ def test_headers_none_when_meta_absent():
 @pytest.mark.parametrize("tool", DELEGATED_TOOLS)
 def test_headers_none_without_ctx(tool):
     provider = RecordingProvider()
-    jp.set_job_provider(provider)
+    jp.set_job_provider(cast("JobProvider", provider))  # 记录替身：结构实现 protocol 面
 
     asyncio.run(getattr(tools, tool)(**DELEGATED_TOOLS[tool]))
 

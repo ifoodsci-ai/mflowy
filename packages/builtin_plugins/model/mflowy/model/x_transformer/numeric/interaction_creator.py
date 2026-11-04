@@ -41,6 +41,7 @@ class _Wrapper(BaseEstimator, TransformerMixin):
         out = pd.DataFrame(index=X.index)
         for (f1, f2), new_name in zip(self.pairs, self.names, strict=True):
             v1, v2 = X[f1], X[f2]
+            assert isinstance(v1, pd.Series) and isinstance(v2, pd.Series)  # 单键取列恒 Series（联合噪声）
             if self.handle_missing == "fill":
                 v1, v2 = v1.fillna(0), v2.fillna(0)
             values = _compute(v1, v2, self.itype, self.handle_zero_div)

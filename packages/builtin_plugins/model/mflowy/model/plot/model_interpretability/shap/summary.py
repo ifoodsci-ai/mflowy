@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import shap as shap_lib  # 模块别名：参数名 shap（组边寻址名）不遮蔽模块
+from matplotlib.colors import Normalize
 from mflowy.data.middlewares import log_plot
 from mflowy.driver.handler import handler
 from mflowy.utils.constants import RANDOM_STATE
@@ -78,7 +79,7 @@ def shap_summary(
     解读：特征按 mean|SHAP| 排序，条形越长=对模型输出整体影响越大。蜂群散点宽=该 SHAP 值区间样本密集；颜色红=高特征值，蓝=低特征值。看散点偏离零线的方向和颜色梯度判断特征如何推高/拉低预测。
     """
     categorical_features = annotation_triple(shap)[1]
-    feature_data = shap.data
+    feature_data = np.asarray(shap.data)  # shap 无 py.typed：data 推断联合——asarray 收敛数组面
     feature_names = list(shap.feature_names)
     for label, shap_values in iter_output_blocks(shap):
         mean_abs = np.mean(np.abs(shap_values), axis=0)
@@ -133,7 +134,7 @@ def shap_summary(
         ax_scatter.axvline(0, color="gray", linewidth=2, alpha=0.8, zorder=3)
 
         fig.suptitle(f"{title} ({label})", y=1.04)
-        sm = plt.cm.ScalarMappable(cmap=CMAP_DIVERGING, norm=plt.Normalize(0, 1))
+        sm = plt.cm.ScalarMappable(cmap=CMAP_DIVERGING, norm=Normalize(0, 1))
         sm.set_array([])
         cb = fig.colorbar(sm, cax=cax)
         cb.set_label("Feature Value", labelpad=-2)

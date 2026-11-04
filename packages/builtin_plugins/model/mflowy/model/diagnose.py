@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from mflowy.model.model.utils import abs_spearman_per_column
 
 # 阈值单一真源（#38 规则门的数值面）
 ERROR_CONCENTRATED_RHO = 0.3  # |残差| 与列的 |spearman ρ| 超此值 → 误差集中
@@ -24,16 +25,12 @@ _COMPLEXITY_EDGE_TOL = 1e-9  # 贴界判定容差
 
 def error_concentrated(X: pd.DataFrame, y: pd.DataFrame, y_pred) -> list[dict]:
     """回归：|残差| 与数值列的秩相关——误差集中于哪列（回流清洗候选）。"""
-    import scipy.stats as st
 
     y_true = y.iloc[:, 0].to_numpy()
     resid = np.abs(np.asarray(y_pred) - y_true)
     findings = []
-    for c in X.columns:
-        if not pd.api.types.is_numeric_dtype(X[c]):
-            continue
-        rho = abs(st.spearmanr(X[c].to_numpy(), resid).statistic)
-        if rho == rho and rho > ERROR_CONCENTRATED_RHO:  # NaN 防护
+    for c, rho in abs_spearman_per_column(X, resid):
+        if rho > ERROR_CONCENTRATED_RHO:
             findings.append(
                 {
                     "kind": "error_concentrated",
@@ -55,7 +52,7 @@ def slice_collapse(y: pd.DataFrame, y_pred) -> list[dict]:
     if not recalls:
         return []
     mean_r = float(np.mean(list(recalls.values())))
-    worst = min(recalls, key=recalls.get)
+    worst = min(recalls, key=lambda c: recalls[c])  # lambda 直取值——.get 的 Optional 返回面与 min 不合
     if recalls[worst] < SLICE_COLLAPSE_RATIO * mean_r and counts[list(classes).index(worst)] >= SLICE_MIN_COUNT:
         return [
             {

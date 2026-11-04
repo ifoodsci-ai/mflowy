@@ -41,6 +41,9 @@ class _Stub:
     def __init__(self, handler_cls):
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), handler_cls)
         self.port = self.server.server_address[1]
+        # 替身记录面（_stub() 装填）：注册/落库两侧出站请求
+        self.register_records: list = []
+        self.sink_records: list = []
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
 
     def close(self):

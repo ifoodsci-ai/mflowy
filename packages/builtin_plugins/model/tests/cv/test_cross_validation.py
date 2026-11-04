@@ -1,6 +1,7 @@
 """cross_validate.split handler 单元测试 —— 契约（划分器对）与 (cv, repeats, group_by) 决策表。"""
 
 import pickle
+from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -8,6 +9,7 @@ import pytest
 from mflowy.model.cv.split import split
 from mflowy.model.cv.types import SplitSpec
 from mflowy.model.model._split import materialize_split
+from mflowy.model.model.types import TASKTYPE
 from mflowy.model.x_y import XySpec
 from sklearn.model_selection import (
     GroupKFold,
@@ -40,7 +42,7 @@ def sample_data():
 
 
 def _xy(X, y, task="regression") -> XySpec:
-    return XySpec(X, y, task)
+    return XySpec(X, y, cast(TASKTYPE, task))  # 双形式枚举收 str（pydantic 校验面）
 
 
 def _run(X, y, **params) -> SplitSpec:
@@ -206,7 +208,7 @@ class TestGroups:
         ts = _mat(spec, X, y)
         # train 切片上的公共不变量：同 (g1,g2) 组合同码、异组合异码（factorize 语义）
         combos = list(zip(ts.X_train["g1"], ts.X_train["g2"], strict=True))
-        assert len(np.unique(ts.groups)) == len(set(combos))
+        assert len(np.unique(np.asarray(ts.groups))) == len(set(combos))  # groups 联合面 asarray 收敛
 
     def test_train_space_groups_exposed(self, sample_data):
         """TrainSplit.groups 对齐 train 行空间（inner CV / split_val 消费面）。"""
@@ -249,7 +251,7 @@ class TestTestSizeParam:
     def test_default_test_size_is_fifth(self, sample_data):
         """缺省 0.2 ≡ 旧缺省 train_ratio=0.8（等价换算钉住）。"""
         X, _, y_reg = sample_data
-        assert _run(X, y_reg, cv=3).outer.test_size == 0.2
+        assert getattr(_run(X, y_reg, cv=3).outer, "test_size") == 0.2  # noqa: B009 — Shuffle 系持有 test_size（Splitter 协议不含）
 
     def test_train_ratio_rejected(self, sample_data):
         """旧参数名 loud 失败——显式 pin 旧名的 YAML/plan 在边界拦截（BREAKING）。"""

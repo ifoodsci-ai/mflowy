@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
+from matplotlib.figure import Figure  # 类型断言源（pyplot 再导出为私有面）
 from mflowy.data.plot.correlation_heatmap import (
     correlation_heatmap,
     correlation_heatmap_data,
@@ -41,7 +42,7 @@ class TestCorrelationHeatmap:
         assert len(out_data) == 2
         assert isinstance(out_data[0], pd.DataFrame)
         assert isinstance(out_data[1], pd.DataFrame)
-        assert isinstance(fig, plt.Figure)
+        assert isinstance(fig, Figure)
 
     def test_matrix_shape(self, sample_df):
         out_data, _ = correlation_heatmap(load=sample_df)
@@ -81,7 +82,7 @@ class TestCorrelationHeatmap:
 
     def test_value_range(self, sample_df):
         out_data, fig = correlation_heatmap(load=sample_df, vmin=-1.0, vmax=1.0)
-        assert isinstance(fig, plt.Figure)
+        assert isinstance(fig, Figure)
 
     def test_attrs_suffix(self, sample_df):
         out_data, _ = correlation_heatmap(load=sample_df)
@@ -168,7 +169,7 @@ class TestHighCorrelationPairs:
                 "a": [1.0, 1.0],
                 "b": [1.0, 1.0],
             },
-            index=["a", "b"],
+            index=pd.Index(["a", "b"]),  # 显式 Index：list[str] 在 stub 重载怪癖下不过
         )
         pairs = high_correlation_pairs(corr, threshold=0.85)
         assert len(pairs) == 1
@@ -182,7 +183,7 @@ class TestHighCorrelationPairs:
                 "a": [1.0, 0.1],
                 "b": [0.1, 1.0],
             },
-            index=["a", "b"],
+            index=pd.Index(["a", "b"]),  # 显式 Index：list[str] 在 stub 重载怪癖下不过
         )
         pairs = high_correlation_pairs(corr, threshold=0.85)
         assert len(pairs) == 0

@@ -28,7 +28,7 @@ def test_data_profile_steps_are_load_profile_only(csv, fake_tracking):
 
     assert result.status == "finished"
     assert [r.node for r in result.runs] == ["load__file", "statistic__profile"]
-    assert not hasattr(result, "findings") or result.findings is None  # 编译层退役
+    assert getattr(result, "findings", None) is None  # 编译层退役（属性缺失与 None 同判）
 
 
 def test_eda_steps_are_statistic_plots_no_detect(csv, fake_tracking):

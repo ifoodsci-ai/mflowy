@@ -22,7 +22,7 @@ def _split_holders() -> list[str]:
     from mflowy.utils.mlflow import run_artifacts
 
     client = mlflow.MlflowClient()
-    exps = [e.experiment_id for e in client.search_experiments()]
+    exps: list[str] = [e.experiment_id for e in client.search_experiments()]
     return [
         r.info.run_id
         for r in client.search_runs(experiment_ids=exps, filter_string=f"tags.`mflowy.node` = '{_K_NODE_TAG}'")

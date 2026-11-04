@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier as rfc
@@ -12,8 +13,14 @@ from .utils import as_y_frame, validate_input
 
 logger = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
+    # 类型面借具体基类：解析 super().fit 与拟合后属性；运行期真实基类由子类 (mixin, rfr/rfc) 组合
+    _RFBase = rfr
+else:
+    _RFBase = object
 
-class _RFMixin(TreeExplainMixin):
+
+class _RFMixin(TreeExplainMixin, _RFBase):
     """RandomForest estimator 子类。
 
     特殊点：
@@ -35,7 +42,8 @@ class _RFMixin(TreeExplainMixin):
         raise NotImplementedError("RandomForest uses OOB score, no loss curve")
 
     def get_feature_importance_df(self, **_):
-        return self._build_importance_df(self.feature_names_in_, self.feature_importances_)
+        # sklearn 无 py.typed：feature_names_in_ 系拟合期动态属性，类型面不可见
+        return self._build_importance_df(self.feature_names_in_, self.feature_importances_)  # type: ignore[reportAttributeAccessIssue]
 
     def plot_tree(self, **kwargs):
         """生成器：先 yield 树数量，再逐棵 yield Figure。"""

@@ -14,6 +14,7 @@ import pandas as pd
 import seaborn as sns
 from mflowy.data.detect.rules import iqr_fences
 from mflowy.data.middlewares import filter_numerical_cols, log_plot
+from mflowy.data.types import as_series
 from mflowy.driver.handler import handler
 from mflowy.utils.plot import OKABE_ITO_PALETTE
 
@@ -98,7 +99,7 @@ def _quantile_stats(numerical_df: pd.DataFrame):
     """计算数值列分位统计表，返回含 name/min/q1/median/q3/max/mean/whiskers/outliers 的 DataFrame。"""
     records = []
     for col in numerical_df.columns:
-        col_data = numerical_df[col].dropna()
+        col_data = as_series(numerical_df[col]).dropna()
         q1 = col_data.quantile(0.25)
         q3 = col_data.quantile(0.75)
         lower, upper = iqr_fences(col_data)  # 规则实现唯一居所 detect/rules.py
