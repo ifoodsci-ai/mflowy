@@ -1,10 +1,11 @@
 """RandomForest 单元测试（estimator 子类：fit override + 诊断接口）"""
 
+from typing import Any, cast
+
 import numpy as np
 import pandas as pd
 import pytest
 from mflowy.model.model._random_forest import model_cls
-from mflowy.model.model.random_forest import RF  # noqa: F401
 from mflowy.model.model.types import TASKTYPE
 
 
@@ -102,7 +103,7 @@ def test_random_forest_task_class_attr_survives_clone(sample_data):
 
     X, _, y_clf = sample_data
     est = _make_est(TASKTYPE.CLASSIFICATION, random_state=42, n_jobs=1)
-    cloned = clone(est)
+    cloned = cast(Any, clone(est))  # sklearn clone 联合返回面；RF 为工厂函数（类在 model_cls 表）
     assert cloned.task == TASKTYPE.CLASSIFICATION
     cloned.fit(X, y_clf)  # clone 后 fit 不因 task 缺失而炸
     assert set(cloned.predict(X)).issubset({0, 1})

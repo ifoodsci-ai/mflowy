@@ -94,7 +94,8 @@ class YPreprocessorsMixin:
             match preprocessor:
                 case StandardScaler():
                     data_2d = data.reshape(-1, 1)  # 强制2D
-                    transformed = preprocessor.transform(data_2d).flatten().astype(np.float32)
+                    # sklearn 无 py.typed：transform 返回推断混入 str/tuple 噪声，asarray 收敛为数组面
+                    transformed = np.asarray(preprocessor.transform(data_2d)).flatten().astype(np.float32)
                 case LabelEncoder():
                     transformed = np.asarray(preprocessor.transform(data), dtype=np.long)
 
@@ -137,17 +138,40 @@ class YPreprocessorsMixin:
         return np.stack(inverted_cols, axis=-1)
 
 
+class ACTIVATION(StrEnum):
+    """激活函数词表——单源：枚举成员派生 `_ACTIVATION_MAPPING` 键（类基声明使类型面可见成员）"""
+
+    relu = "relu"
+    elu = "elu"
+    gelu = "gelu"
+    tanh = "tanh"
+
+
+class OPTIMIZER(StrEnum):
+    """优化器词表——单源：枚举成员派生 `_OPTIMIZER_MAPPING` 键"""
+
+    adam = "adam"
+    adamw = "adamw"
+    sgd = "sgd"
+
+
 class LitNeuralNetwork(pl.LightningModule, YPreprocessorsMixin):
+    _ACTIVATION_CLASSES: ClassVar[dict[ACTIVATION, type[nn.ReLU | nn.ELU | nn.GELU | nn.Tanh]]] = {
+        ACTIVATION.relu: nn.ReLU,
+        ACTIVATION.elu: nn.ELU,
+        ACTIVATION.gelu: nn.GELU,
+        ACTIVATION.tanh: nn.Tanh,
+    }
+    _OPTIMIZER_CLASSES: ClassVar[dict[OPTIMIZER, type[optim.Adam | optim.AdamW | optim.SGD]]] = {
+        OPTIMIZER.adam: optim.Adam,
+        OPTIMIZER.adamw: optim.AdamW,
+        OPTIMIZER.sgd: optim.SGD,
+    }
     _ACTIVATION_MAPPING: ClassVar[dict[str, type[nn.ReLU | nn.ELU | nn.GELU | nn.Tanh]]] = {
-        "relu": nn.ReLU,
-        "elu": nn.ELU,
-        "gelu": nn.GELU,
-        "tanh": nn.Tanh,
+        a.value: cls for a, cls in _ACTIVATION_CLASSES.items()
     }
     _OPTIMIZER_MAPPING: ClassVar[dict[str, type[optim.Adam | optim.AdamW | optim.SGD]]] = {
-        "adam": optim.Adam,
-        "adamw": optim.AdamW,
-        "sgd": optim.SGD,
+        o.value: cls for o, cls in _OPTIMIZER_CLASSES.items()
     }
 
     def __init__(
@@ -243,10 +267,6 @@ class LitNeuralNetwork(pl.LightningModule, YPreprocessorsMixin):
             ) from e
 
 
-ACTIVATION = StrEnum("ACTIVATION", list(LitNeuralNetwork._ACTIVATION_MAPPING.keys()))
-OPTIMIZER = StrEnum("OPTIMIZER", list(LitNeuralNetwork._OPTIMIZER_MAPPING.keys()))
-
-
 class MultiTaskDataset(Dataset[dict[str, torch.Tensor]]):
     def __init__(
         self,
@@ -313,7 +333,7 @@ def derive_task_params(
                     loss_func[col] = _bce
                     dtypes[col] = torch.float32
                 else:
-                    output_dims[col] = n_unique
+                    output_dims[col] = int(n_unique)  # Series.nunique 推断联合含 Series——int() 收敛标量
                     _ce = _ce or nn.CrossEntropyLoss()
                     loss_func[col] = _ce
                     dtypes[col] = torch.long

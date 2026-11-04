@@ -158,9 +158,9 @@ def test_start_takes_cv_card_and_stores_candidates(sessions_root, reg_csv):
 def test_start_rejects_dict_cv_card(sessions_root, reg_csv):
     """BREAKING：cv_card 收窄为 cv.split 配置 yaml 明文——dict 协议卡形态退役（校验门 fail-loud）。"""
     with pytest.raises((ValueError, TypeError)):
-        ms.start_session(reg_csv, {"cv": 3, "task": "regression"}, card={"domain": "t", "target": "target"})
+        ms.start_session(reg_csv, {"cv": 3, "task": "regression"}, card={"domain": "t", "target": "target"})  # type: ignore[reportArgumentType]  # 负例：dict 协议卡退役
     with pytest.raises(TypeError):
-        ms.start_session(reg_csv, card={"domain": "t", "target": "target"}, protocol_card="cv: 3")  # 旧名退役
+        ms.start_session(reg_csv, card={"domain": "t", "target": "target"}, protocol_card="cv: 3")  # type: ignore[reportCallIssue]  # 负例：旧名退役（TypeError）
 
 
 # ── hints 注入与 π 覆盖 ─────────────────────────────────────────────────────

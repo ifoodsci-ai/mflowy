@@ -3,6 +3,7 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 import pytest
+from matplotlib.figure import Figure  # 类型断言源（pyplot 再导出为私有面）
 from mflowy.data.middlewares import NotAnyCategoricalColumns, SkipPlotError
 from mflowy.data.plot.target_association_by_category import (
     target_association_by_category,
@@ -30,7 +31,7 @@ def cleanup_figures():
 class TestTargetAssociationByCategory:
     def test_single_target_returns_dfs_and_figure(self, cat_df):
         dfs, fig = target_association_by_category(load=cat_df, targets="label", categorical_cols="machine")
-        assert isinstance(fig, plt.Figure)
+        assert isinstance(fig, Figure)
         assert len(dfs) == 1
         assert list(dfs[0].columns) == ["label", "machine"]
         assert dfs[0].attrs["suffix"] == "_label"

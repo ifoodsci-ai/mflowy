@@ -380,6 +380,7 @@ def _materialize(ss: POMDPSession, m: dict, df: pd.DataFrame, raw_task: str) -> 
         mlflow.MlflowClient().set_tag(m["split"]["run_id"], k, v)
     from mflowy.utils.mlflow import download_run_artifact
 
+    assert split_ctx.run_id is not None  # split 链落 run 后必在（窗内执行）
     with open(download_run_artifact(split_ctx.run_id, "split.pkl"), "rb") as f:
         ts = pickle.load(f)  # 身份按引用：会话 split.pkl ≡ run 副产物（零二次物化）
     write_bytes_atomic(_root() / m["session_id"] / "split.pkl", pickle.dumps(ts, protocol=pickle.HIGHEST_PROTOCOL))
@@ -1221,7 +1222,7 @@ def _rank_consistency(m: dict, keys: list[str]) -> float | None:
     pairs = [(m["models"][k]["u_inner"], m["models"][k]["u"]) for k in keys]
     if len(pairs) < 2:
         return None
-    rho = st.spearmanr([p[0] for p in pairs], [p[1] for p in pairs]).statistic
+    rho = st.spearmanr([p[0] for p in pairs], [p[1] for p in pairs]).statistic  # type: ignore[reportAttributeAccessIssue]  # scipy 无 py.typed：.statistic 运行期存在
     return round(float(rho), 4) if rho == rho else None
 
 

@@ -150,7 +150,9 @@ def clean_propose(session_id: Annotated[str, Field(description="会话 ID")]) ->
 def clean_apply(
     session_id: Annotated[str, Field(description="会话 ID")],
     node: Annotated[str, Field(description="clean 词表动作名（clean_propose 的 action 字段）")],
-    params: Annotated[dict, Field(description="动作参数（clean_propose 的 params 字段）")] = None,
+    params: Annotated[
+        dict | None, Field(description="动作参数（clean_propose 的 params 字段，None=用动作缺省）")
+    ] = None,
 ) -> dict:
     """执行一个清洗动作：守卫 → 转移 → 快照 → diff/错误清单/质量分（s′ 观测）→ 决策日志。
 

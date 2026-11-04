@@ -96,6 +96,8 @@ dev = [
     "pytest>=7.0",
     "ruff>=0.15.8",
     "pre-commit>=3.0",
+    # 类型门（#42 决议→#91）：pyright basic；本地/CI 同版本（make typecheck）
+    "pyright>=1.1.414",
     # 测试面含 telemetry/schema 契约（模块级 import SDK）——dev 环境须带 server 形态
     "mflowy-mcp[mcp]",
     # 测试直读 PNG dpi 元数据（figure 落盘纪律断言）——import 即声明，不靠 matplotlib 传递
@@ -104,3 +106,12 @@ dev = [
 jupyter = [
     "nbformat>=5.10.4",
 ]
+
+[tool.pyright]
+# 类型门（#42 决议→#91）：basic 钉死（pyright 1.1.373 起裸跑默认已漂移 standard）；
+# 门范围 = packages + tests（scripts/examples 不进门）；
+# venvPath+venv 键为唯一有效的解释器锚定——pythonPath 键静默失效（实测产 975 幻影 missing-import）
+typeCheckingMode = "basic"
+venvPath = "."
+venv = ".venv"
+include = ["packages", "tests"]

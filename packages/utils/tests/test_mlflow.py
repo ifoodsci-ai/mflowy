@@ -296,10 +296,13 @@ class TestTrackingSeam:
         from mflowy.utils.mlflow import FakeTracking
 
         fake = FakeTracking()
+        run_id: str | None = None
         with pytest.raises(ValueError, match="boom"):
             with fake.node_run("坏节点", "e1") as run:
+                run_id = run.info.run_id  # with 内先行取（body 抛错后 run 绑定不再可靠）
                 raise ValueError("boom")
-        assert fake.run_status(run.info.run_id) == "FAILED"  # 失败也记账（输入证据）
+        assert run_id is not None
+        assert fake.run_status(run_id) == "FAILED"  # 失败也记账（输入证据）
 
     def test_fake_run_ids_unique(self):
         """重复 run = 新 run_id（执行不记忆语义的 fake 投影）。"""
@@ -328,7 +331,7 @@ class TestTrackingSeam:
         """interface 完整性：active_run_id 观察面在 Protocol 声明内（adapter 不得缺）。"""
         from mflowy.utils.mlflow import Tracking
 
-        assert "active_run_id" in Tracking.__protocol_attrs__
+        assert "active_run_id" in getattr(Tracking, "__protocol_attrs__")  # noqa: B009 — 协议运行期内部属性  # 协议运行期内部属性，经 getattr 访问
 
     def test_run_artifacts_query_face(self):
         """run_artifacts 查询面在 Protocol 声明内；FakeTracking 播种清单可断言，未知 run 不吞。"""

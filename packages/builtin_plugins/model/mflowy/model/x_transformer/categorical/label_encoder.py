@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, cast
 
 import numpy as np
 import pandas as pd
@@ -29,7 +29,9 @@ class _MultiColumnLabelEncoder(BaseEstimator, TransformerMixin):
         X = X.copy()
         for col in X.columns:
             le = self.encoders_[col]
-            mapping = {cls: idx for idx, cls in enumerate(le.classes_) if pd.notna(cls)}
+            mapping = {
+                cls: idx for idx, cls in enumerate(cast("np.ndarray", le.classes_)) if pd.notna(cls)
+            }  # sklearn 无 py.typed：classes_ 拟合期联合面
             vals = X[col].astype(object)
             X[col] = vals.map(mapping).fillna(-1).astype(np.int64)
         return X

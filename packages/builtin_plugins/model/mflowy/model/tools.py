@@ -25,9 +25,7 @@ from .templates import MODELING_TEMPLATE, count_model_steps, parse_steps_fragmen
 try:  # SDK 仅 server 形态需要（[mcp] extra）——runner 路径零 SDK 可导入；
     from mcp.server.mcpserver import Context
 except ImportError:  # pragma: no cover — 无 [mcp] extra 的 runner/import 安装形态
-
-    class Context:  # 注解占位：``Context | None`` 可被 get_type_hints 求值；永不实例化
-        __slots__ = ()
+    from typing import Any as Context  # 注解占位：``Context | None`` 可被 get_type_hints 求值；永不实例化
 
 
 def validate_modeling_steps(

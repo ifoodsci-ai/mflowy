@@ -11,6 +11,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import shap
+from mflowy.model.plot.model_interpretability.shap.contract import attach_annotations
 from mflowy.model.plot.model_interpretability.shap.dependence import shap_dependence
 from mflowy.model.plot.model_interpretability.shap.sample_waterfall import sample_waterfall
 from mflowy.model.plot.model_interpretability.shap.summary import shap_summary
@@ -23,10 +24,7 @@ def _explanation(values: np.ndarray) -> shap.Explanation:
         data=np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]], dtype=float)[: values.shape[0]],
         feature_names=["age", "bp"],
     )
-    exp.y_name = "target"
-    exp.categorical_features = []
-    exp.classes = ["target"] if values.ndim == 2 else ["c0", "c1"]
-    return exp
+    return attach_annotations(exp, "target", [], ["target"] if values.ndim == 2 else ["c0", "c1"])
 
 
 def _drain(gen):
@@ -82,7 +80,7 @@ def test_dependence_block_label_not_shadowed():
     values = rng.normal(size=(6, 3, 2))
     data = rng.normal(size=(6, 3))
     exp = shap.Explanation(values=values, data=data, feature_names=["f0", "f1", "f2"])
-    exp.y_name, exp.categorical_features, exp.classes = "target", [], ["c0", "c1"]
+    attach_annotations(exp, "target", [], ["c0", "c1"])
 
     items = _drain(shap_dependence(exp, top_n=2))
 

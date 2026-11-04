@@ -15,6 +15,7 @@ MFlowy：YAML 配置驱动的模块化 ML 工作流引擎，全部能力以 **MC
 ```bash
 uv sync --all-packages --all-extras --all-groups   # 首次/依赖变更后；新增插件模块/注册条目后必跑（entry points 随安装元数据生效）
 make test                           # 全量测试
+make typecheck                      # pyright basic 类型门（packages+tests；压制纪律见 #91）
 make lint && make fmt               # ruff
 uv run mflowy list-nodes            # 能力词表
 uv run mflowy-mcp                   # MCP server（stdio）

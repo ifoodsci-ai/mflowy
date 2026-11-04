@@ -10,6 +10,7 @@ from typing import Annotated, Literal
 import pandas as pd
 from mflowy.data.detect.rules import iqr_mask, zscore_mask
 from mflowy.data.middlewares import df_diff
+from mflowy.data.types import as_series
 from mflowy.driver.handler import handler
 
 from ._atom import require_cols, require_family
@@ -80,7 +81,9 @@ def drop_outside(
     mask = pd.Series(False, index=df.index)
     for c in cols:
         mask |= (df[c] < lo) | (df[c] > hi)
-    return df[~mask]
+    out = df[~mask]
+    assert isinstance(out, pd.DataFrame)  # 布尔掩码索引恒 DataFrame（联合噪声）
+    return out
 
 
 @handler(df_diff, namespace="clean")
@@ -97,8 +100,10 @@ def drop_outlier_iqr(
     require_family(df, cols, "numeric")
     mask = pd.Series(False, index=df.index)
     for c in cols:
-        mask |= iqr_mask(df[c].dropna(), k).reindex(df.index, fill_value=False)
-    return df[~mask]
+        mask |= iqr_mask(as_series(df[c]).dropna(), k).reindex(df.index, fill_value=False)
+    out = df[~mask]
+    assert isinstance(out, pd.DataFrame)  # 布尔掩码索引恒 DataFrame（联合噪声）
+    return out
 
 
 @handler(df_diff, namespace="clean")

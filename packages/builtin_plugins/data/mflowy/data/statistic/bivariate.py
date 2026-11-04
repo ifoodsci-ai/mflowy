@@ -8,12 +8,13 @@ num×num 用 |ρ|（Spearman 缺省）、cat×cat 用 Cramér's V、num×cat 用
 """
 
 from itertools import combinations
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 
 import numpy as np
 import pandas as pd
 from mflowy.data.detect.rules import corr_pair, is_id_like
 from mflowy.data.middlewares import log_statistic, type_family
+from mflowy.data.types import as_series
 from mflowy.driver.handler import handler
 from scipy import stats as sps
 
@@ -44,7 +45,7 @@ def bivariate(
     cat_cols: list[str] = []
 
     for c in df.columns:
-        s = df[c]
+        s = as_series(df[c])
         fam = type_family(s)
         if s.nunique(dropna=False) <= 1:
             skipped.append(f"{c}(constant)")
@@ -68,8 +69,12 @@ def bivariate(
         pair = df[[a, b]].dropna()
         if len(pair) < 3:
             continue
-        r_s, p_s = corr_pair(pair[a], pair[b], "spearman")
-        r_p, p_p = corr_pair(pair[a], pair[b], "pearson")
+        sa, sb = as_series(pair[a]), as_series(pair[b])  # 单键取列收窄
+        s_pair = corr_pair(sa, sb, "spearman")
+        p_pair = corr_pair(sa, sb, "pearson")
+        assert s_pair is not None and p_pair is not None  # len(pair)>=3 已守卫——corr_pair 同数据再 dropna，None 不可达
+        r_s, p_s = s_pair
+        r_p, p_p = p_pair
         effect = abs(r_s if method == "spearman" else r_p)
         p = p_s if method == "spearman" else p_p
         rows.append(
@@ -85,7 +90,7 @@ def bivariate(
                 "p_spearman": float(p_s),
                 "r_pearson": round(float(r_p), 4),
                 "p_pearson": float(p_p),
-                "covariance": float(pair[a].cov(pair[b])),
+                "covariance": float(sa.cov(sb)),
             }
         )
 
@@ -95,7 +100,8 @@ def bivariate(
         ct = pd.crosstab(pair[a], pair[b])
         if min(ct.shape) < 2 or len(pair) < 3:
             continue
-        chi2, p, _, _ = sps.chi2_contingency(ct)
+        chi2_r, p_r, _, _ = sps.chi2_contingency(ct)
+        chi2, p = cast(float, chi2_r), cast(float, p_r)  # 同上：弱类型命名元组
         v = float(np.sqrt(chi2 / (len(pair) * (min(ct.shape) - 1))))
         rows.append(
             {
@@ -115,7 +121,7 @@ def bivariate(
     for num in num_cols:
         for cat in cat_cols:
             pair = df[[num, cat]].dropna()
-            groups = [g for _, g in pair[num].groupby(pair[cat]) if len(g) >= 2]
+            groups = [g for _, g in as_series(pair[num]).groupby(as_series(pair[cat])) if len(g) >= 2]
             k = len(groups)
             if k < 2:
                 continue
@@ -124,7 +130,8 @@ def bivariate(
             ss_between = sum(len(g) * (g.mean() - grand.mean()) ** 2 for g in groups)
             eta_sq = float(ss_between / ss_total) if ss_total > 0 else 0.0  # SS 分解精确(等组时与 d 转换等值)
             if k == 2:
-                t_stat, p = sps.ttest_ind(*groups)
+                t_r, p_r = sps.ttest_ind(*groups)
+                t_stat, p = cast(float, t_r), cast(float, p_r)  # scipy 结果弱类型命名元组——显式 float
                 d = float(
                     (groups[0].mean() - groups[1].mean())
                     / np.sqrt(
@@ -134,7 +141,8 @@ def bivariate(
                 )
                 stat_name, stat_val, extra = "t", float(t_stat), {"cohens_d": round(d, 4)}
             else:
-                f_stat, p = sps.f_oneway(*groups)
+                f_r, p_r2 = sps.f_oneway(*groups)
+                f_stat, p = cast(float, f_r), cast(float, p_r2)  # 同上：弱类型命名元组
                 stat_name, stat_val, extra = "F", float(f_stat), {}
             effect = float(np.sqrt(eta_sq))
             common = {
@@ -149,7 +157,7 @@ def bivariate(
                 "eta_sq": round(eta_sq, 4),
                 **extra,
             }
-            for g_name, g in pair[num].groupby(pair[cat]):
+            for g_name, g in as_series(pair[num]).groupby(as_series(pair[cat])):
                 rows.append(
                     {
                         **common,
@@ -176,11 +184,11 @@ _LABEL = {"num_num": "ρ", "cat_cat": "V", "num_cat": "η"}
 
 def _print_report(table: pd.DataFrame, skipped: list[str]) -> None:
     def _hit(r: pd.Series) -> str:
-        return f"{r['a']}×{r['b']}({_LABEL[r['pair_type']]}={r['effect']:.2f},p={r['p']:.1g})"
+        return f"{r['a']}×{r['b']}({_LABEL[str(r['pair_type'])]}={r['effect']:.2f},p={r['p']:.1g})"
 
     sections = []
     for tier, label in (("strong", "strong"), ("weak", "weak"), ("unproven", "unproven")):
-        hits = table[table["tier"] == tier].drop_duplicates(subset=["a", "b"])
+        hits = table[table["tier"] == tier].drop_duplicates(subset=["a", "b"])  # type: ignore[reportCallIssue]  # pandas-stubs drop_duplicates subset 重载缺 list[str]
         if len(hits):
             sections.append(f"{label}: {' '.join(_hit(r) for _, r in hits.iterrows())}")
     print(f"[findings] {' | '.join(sections) if sections else 'none'}")

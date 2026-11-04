@@ -68,7 +68,7 @@ def test_param_edges_exposed_as_structured_bindings(fake_plugins):
 
     class _Out: ...
 
-    def _edge_fn(b: _B, d: _D) -> _Out:  # 边函数替身：两个节点参数 + 返回注解
+    def _edge_fn(b: _B, d: _D) -> _B:  # 边函数替身：两个节点参数 + 返回注解（注解与实返一致）
         return b
 
     def _node(payload, edge, label: Annotated[str, "标签"] = "x", **_):

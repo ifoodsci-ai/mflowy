@@ -4,6 +4,7 @@ import asyncio
 import json
 import sys
 import types as pytypes
+from typing import Any, cast
 
 import pytest
 from mcp import types as mcp_types
@@ -51,17 +52,16 @@ async def _call(server: MCPServer, elicitation_callback, *, calls=1, tool="ping"
             lowlevel.run(server_reader, server_writer, lowlevel.create_initialization_options())
         )
         try:
+
+            async def _notify(message: object) -> None:  # 形参名对齐 SDK（关键字可调用性）
+                if notifications is not None and hasattr(message, "method"):
+                    notifications.append(message)
+
             async with ClientSession(
                 client_reader,
                 client_writer,
                 elicitation_callback=elicitation_callback,
-                message_handler=(
-                    lambda msg: (
-                        notifications.append(msg) if notifications is not None and hasattr(msg, "method") else None
-                    )
-                )
-                if notifications is not None
-                else None,
+                message_handler=_notify if notifications is not None else None,
             ) as client:
                 await client.initialize()
                 return [await client.call_tool(tool, args or {}) for _ in range(calls)]
@@ -75,7 +75,7 @@ async def _call(server: MCPServer, elicitation_callback, *, calls=1, tool="ping"
 
 def _fake_agentcat():
     """sys.modules 注入的假 agentcat：记录 track() 调用；模块面补齐到 _patch_otlp_exporter 可达。"""
-    mod = pytypes.ModuleType("agentcat")
+    mod: Any = pytypes.ModuleType("agentcat")  # 结构替身模块：任意属性面即 Any 缝
     calls: list = []
 
     def track(server, project_id=None, options=None):
@@ -86,7 +86,7 @@ def _fake_agentcat():
         def __init__(self, **kwargs):
             self.__dict__.update(kwargs)
 
-    types_mod = pytypes.ModuleType("agentcat.types")
+    types_mod: Any = pytypes.ModuleType("agentcat.types")  # 结构替身模块：任意属性面即 Any 缝
 
     class OTLPExporterConfig(dict):
         pass
@@ -97,10 +97,10 @@ def _fake_agentcat():
     types_mod.OTLPExporterConfig = OTLPExporterConfig
     types_mod.Event = Event
 
-    modules_mod = pytypes.ModuleType("agentcat.modules")
-    event_queue_mod = pytypes.ModuleType("agentcat.modules.event_queue")
-    exporters_mod = pytypes.ModuleType("agentcat.modules.exporters")
-    otlp_mod = pytypes.ModuleType("agentcat.modules.exporters.otlp")
+    modules_mod: Any = pytypes.ModuleType("agentcat.modules")  # 结构替身模块：任意属性面即 Any 缝
+    event_queue_mod: Any = pytypes.ModuleType("agentcat.modules.event_queue")  # 结构替身模块：任意属性面即 Any 缝
+    exporters_mod: Any = pytypes.ModuleType("agentcat.modules.exporters")  # 结构替身模块：任意属性面即 Any 缝
+    otlp_mod: Any = pytypes.ModuleType("agentcat.modules.exporters.otlp")  # 结构替身模块：任意属性面即 Any 缝
 
     class OTLPExporter:
         pass
@@ -147,7 +147,7 @@ def test_gate_asks_once_persists_accept_and_wires_agentcat(tmp_path, monkeypatch
 
     results = asyncio.run(_call(server, on_elicit, calls=2, notifications=notifications))
 
-    assert [r.content[0].text for r in results] == ["pong", "pong"]  # 工具照常执行
+    assert [cast(mcp_types.TextContent, r.content[0]).text for r in results] == ["pong", "pong"]  # 工具照常执行
     assert len(asked) == 1  # 只问一次
     assert asked[0].message  # 询问带文案
     data = json.loads((tmp_path / ".mflowy" / "settings.json").read_text(encoding="utf-8"))
@@ -180,7 +180,7 @@ def test_gate_decline_persists_off_and_never_asks_again(tmp_path, monkeypatch):
         return mcp_types.ElicitResult(action="decline")
 
     results = asyncio.run(_call(server, decline, calls=2))
-    assert [r.content[0].text for r in results] == ["pong", "pong"]
+    assert [cast(mcp_types.TextContent, r.content[0]).text for r in results] == ["pong", "pong"]
     assert len(asked) == 1  # 第二次调用不再问（同进程）
     data = json.loads((tmp_path / ".mflowy" / "settings.json").read_text(encoding="utf-8"))
     assert data["telemetry"] is False
@@ -230,7 +230,7 @@ def test_gate_elicitation_failure_runs_off_without_persisting(tmp_path, monkeypa
     with caplog.at_level(logging.DEBUG, logger="mflowy.mcp.telemetry"):
         result = asyncio.run(_call(server, broken))
 
-    assert result[0].content[0].text == "pong"  # 工具照常
+    assert cast(mcp_types.TextContent, result[0].content[0]).text == "pong"  # 工具照常
     assert not (tmp_path / ".mflowy" / "settings.json").exists()  # 未持久化（没能问到）
     assert calls == []
     assert any("elicitation" in r.message for r in caplog.records)
@@ -240,7 +240,7 @@ def test_main_on_wires_immediately(monkeypatch):
     """MFLOWY_TELEMETRY=on：main() 启动即接线 agentcat，不装同意门。"""
     from mflowy.mcp import server as server_module
 
-    calls = {"register": [], "wire": [], "install": []}
+    calls: dict[str, Any] = {"register": [], "wire": [], "install": []}  # Any 值缝：列表与裸值混装
 
     class FakeMCP:
         def __init__(self, **kw):
@@ -267,7 +267,7 @@ def test_main_ask_installs_consent_middleware(monkeypatch):
     """未决：main() 装同意门（不接线），同意后才接线（见 test_gate_asks_once...）。"""
     from mflowy.mcp import server as server_module
 
-    calls = {"register": [], "wire": [], "install": []}
+    calls: dict[str, Any] = {"register": [], "wire": [], "install": []}  # Any 值缝：列表与裸值混装
 
     class FakeMCP:
         def __init__(self, **kw):
@@ -293,7 +293,7 @@ def test_main_off_is_clean(monkeypatch):
     """off：既不装门也不接线，server 照常启动。"""
     from mflowy.mcp import server as server_module
 
-    calls = {"register": [], "wire": [], "install": []}
+    calls: dict[str, Any] = {"register": [], "wire": [], "install": []}  # Any 值缝：列表与裸值混装
 
     class FakeMCP:
         def __init__(self, **kw):

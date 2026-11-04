@@ -45,13 +45,13 @@ class TestPreviewParamRemoved:
         yaml = tmp_path / "w.yaml"
         yaml.write_text("name: t\nflow:\n  - load__csv: {name: a}\n")
         with pytest.raises(TypeError):
-            Builder(str(yaml)).build(preview="mermaid")
+            Builder(str(yaml)).build(preview="mermaid")  # type: ignore[reportCallIssue]  # 退役键负例：断言 TypeError
 
     def test_workflow_rejects_preview(self):
         import pytest
 
         with pytest.raises(TypeError):
-            DAG(conf=Conf(name="test"), nodes=[], preview="mermaid")
+            DAG(conf=Conf(name="test"), nodes=[], preview="mermaid")  # type: ignore[reportCallIssue]  # 退役键负例：断言 TypeError
 
 
 class TestWalkProjection:

@@ -21,7 +21,9 @@ from mflowy.model.model.types import TASKTYPE
 def _tail_one_data(n: int = 33):
     """n % batch_size == 1 的回归数据（33 % 16 = 1）——尾批恰好 1 条。"""
     rng = np.random.default_rng(42)
-    X = pd.DataFrame(rng.normal(size=(n, 4)), columns=[f"f{i}" for i in range(4)])
+    X = pd.DataFrame(
+        rng.normal(size=(n, 4)), columns=pd.Index([f"f{i}" for i in range(4)])
+    )  # 显式 Index：stub 重载怪癖
     y = pd.DataFrame({"target": rng.normal(size=n)})
     return X, y
 

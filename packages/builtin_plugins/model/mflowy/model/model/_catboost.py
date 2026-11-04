@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 import pandas as pd
 from catboost import CatBoostClassifier as catc
@@ -14,8 +15,14 @@ from .utils import as_y_frame, validate_input
 
 logger = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
+    # 类型面借具体基类：解析 super().fit 与拟合后属性；运行期真实基类由子类 (mixin, catr/catc) 组合
+    _CATBase = catr
+else:
+    _CATBase = object
 
-class _CATMixin(LossCurveMixin, TreeExplainMixin):
+
+class _CATMixin(LossCurveMixin, TreeExplainMixin, _CATBase):
     """CatBoost estimator 子类。
 
     fit 流程：SubTask.from_y(y, self.task) → set_params 增量调 loss_function → 底层 fit。
@@ -46,7 +53,7 @@ class _CATMixin(LossCurveMixin, TreeExplainMixin):
         if cat_features := X.select_dtypes("category").columns.tolist():
             # fail-loud 守卫（P1-5）：cat_features 拒 NaN（CatBoostError 直达内部异常
             # 无引导）——脏表先清洗或切编码，在此给出指路
-            nan_cols = [c for c in cat_features if X[c].isna().any()]
+            nan_cols = [c for c in cat_features if bool(X[c].isna().any())]
             if nan_cols:
                 raise ValueError(
                     f"CatBoost 原生类别列不接受 NaN（{nan_cols}）——先清洗（clean 域 "

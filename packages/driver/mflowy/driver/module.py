@@ -12,7 +12,7 @@ import logging
 from dataclasses import dataclass
 from inspect import Parameter
 from types import UnionType
-from typing import Annotated, TypeAliasType, Union, get_args, get_origin, get_type_hints
+from typing import Annotated, Literal, TypeAliasType, Union, get_args, get_origin, get_type_hints
 
 from pydantic import Field, create_model
 
@@ -149,7 +149,7 @@ def _upstream_metas(fn) -> list[UpstreamMeta]:
     一致），否则 ``node``（node_key 整相）。"""
     namespaces = {ns for ns in list_all() if ns and ns != "edges"}
 
-    def _kind(name: str) -> str:
+    def _kind(name: str) -> Literal["namespace", "node"]:
         return address_kind(name, namespaces)  # 语义单源在 binding（编译期 NodeTable 同源）
 
     metas: list[UpstreamMeta] = []

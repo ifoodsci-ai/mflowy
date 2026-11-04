@@ -7,7 +7,7 @@ split 与 x_y 是两条独立参数边，聚合在消费端完成）。
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import pandas as pd
@@ -67,13 +67,17 @@ def build_preprocessors(x_transformers: list[tuple]) -> ColumnTransformer | None
 
     if not x_transformers:
         return None
-    ct = clone(
-        ColumnTransformer(
-            x_transformers,
-            remainder="passthrough",
-            verbose=is_verbose(),
-            verbose_feature_names_out=False,
-        )
+    # sklearn 无 py.typed：clone 返回推断噪声——ct 实为入参 ColumnTransformer 的深拷贝
+    ct = cast(
+        "ColumnTransformer",
+        clone(
+            ColumnTransformer(
+                x_transformers,
+                remainder="passthrough",
+                verbose=is_verbose(),
+                verbose_feature_names_out=False,
+            )
+        ),
     )
     ct.set_output(transform="pandas")
     return ct

@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
+from matplotlib.figure import Figure  # 类型断言源（pyplot 再导出为私有面）
 from mflowy.data.middlewares import SkipPlotError
 from mflowy.data.plot.target_trend_by_numeric import (
     DEFAULT_LOWESS_FRAC,
@@ -48,7 +49,7 @@ class TestTargetTrendByNumeric:
 
     def test_returns_dfs_and_single_figure(self, sample_df):
         dfs, fig = target_trend_by_numeric(load=sample_df, targets="target")
-        assert isinstance(fig, plt.Figure)
+        assert isinstance(fig, Figure)
         assert len(dfs) == 1
         for df in dfs:
             assert isinstance(df, pd.DataFrame)
@@ -59,7 +60,7 @@ class TestTargetTrendByNumeric:
     def test_multi_targets_band_per_target(self, sample_df):
         dfs, fig = target_trend_by_numeric(load=sample_df, targets=["target", "feature4"], top_k=2)
         # 每 target 一段行带，全部拼单张 figure；df 按 target 顺序
-        assert isinstance(fig, plt.Figure)
+        assert isinstance(fig, Figure)
         assert len(dfs) == 2
         assert [d.attrs["suffix"] for d in dfs] == ["_target", "_feature4"]
         # 2 带 × 各 2 特征 = 4 格；子图无标题，r 值以无边框图例呈现
@@ -74,7 +75,7 @@ class TestTargetTrendByNumeric:
 
     def test_no_regression_line(self, sample_df):
         dfs, fig = target_trend_by_numeric(load=sample_df, targets="target", add_regression_line=False)
-        assert isinstance(fig, plt.Figure)
+        assert isinstance(fig, Figure)
 
     def test_with_custom_top_k(self, sample_df):
         dfs, fig = target_trend_by_numeric(load=sample_df, targets="target", top_k=2)

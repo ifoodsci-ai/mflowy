@@ -9,7 +9,7 @@
 """
 
 from math import sqrt
-from typing import Annotated
+from typing import Annotated, cast
 
 import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
@@ -28,8 +28,8 @@ _MARKERS_POOL = ["o", "s", "^", "v", "d", "p", "h", "*", "P", "X"]
 
 def _compute_taylor_stats(group: pd.DataFrame) -> tuple[float, float, float, float, float]:
     """从 (y, y_pred) 分组计算 sigma_ratio, correlation, rmse_norm。"""
-    y_obs = group["y"]
-    y_pred = group["y_pred"]
+    y_obs = cast("pd.Series", group["y"])  # 单键取列恒 Series（联合噪声）
+    y_pred = cast("pd.Series", group["y_pred"])
     sigma_obs = float(y_obs.std())
     if sigma_obs == 0:
         return float("nan"), float("nan"), float("nan"), float("nan"), float("nan")
@@ -156,7 +156,7 @@ def taylor_diagram(
 
     # RMS 等值线（标签黑色，线红色虚线；兼容旧 tickRMS 集合 [0.2, 0.4, 0.6, 0.8, 1.0]）+ 图例项
     rms_levels = [0.2, 0.4, 0.6, 0.8, 1.0]
-    contours = dia.add_contours(levels=rms_levels, colors="#D50035", linestyles="--", linewidths=2)
+    contours = dia.add_contours(levels=rms_levels, colors="#D50035", linestyles="--", linewidths=2)  # type: ignore[reportArgumentType]  # vendored copin：add_contours levels 实受等值线清单
     fig.canvas.draw()  # 先渲染一次，等值线 clabel 才能放置标签
     dia.ax.clabel(contours, inline=True, fontsize=9, colors="black", fmt="%.1f")
     # clabel 文本重挂到可见浮动轴 dia._ax（aux axes 的 artist 不进图录树；数据坐标两轴一致）

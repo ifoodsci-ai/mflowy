@@ -6,11 +6,13 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator, Sized
 from typing import Any
 
 import numpy as np
 import pandas as pd
 from mflowy.model.model.study import ContinuousSpace, DiscreteSpace, ParameterSearchSpace
+from scipy import stats as _sps
 
 from .types import TASKTYPE, MetricName
 
@@ -36,10 +38,26 @@ def as_y_frame(y) -> pd.DataFrame:
         arr = arr.reshape(-1, 1)
     if arr.ndim != 2:
         raise ValueError(f"y 须为 1D/2D（DataFrame/ndarray），got shape {arr.shape}")
-    return pd.DataFrame(arr, columns=[f"target{i}" for i in range(arr.shape[1])])
+    return pd.DataFrame(
+        arr,
+        columns=[f"target{i}" for i in range(arr.shape[1])],  # type: ignore[reportArgumentType]  # pandas 无 py.typed：columns 形参 Axes 联合推断不含 list[str]
+    )
 
 
-def validate_input(X: pd.DataFrame, y: pd.DataFrame) -> None:
+def abs_spearman_per_column(X: pd.DataFrame, resid: np.ndarray) -> Iterator[tuple[str, float]]:
+    """数值列 × 残差的 |Spearman ρ| 扫描（NaN 防护内建）——diagnose 阈值判定与
+    holdout findings 最差列共用的单源（红线2：同形拷贝收敛）。
+    scipy 无 py.typed：SignificanceResult.statistic 运行期存在、推断面不可见。
+    """
+    for c in X.columns:
+        if not pd.api.types.is_numeric_dtype(X[c]):
+            continue
+        rho = abs(_sps.spearmanr(X[c].to_numpy(), resid).statistic)  # type: ignore[reportAttributeAccessIssue]
+        if rho == rho:  # NaN 防护（ρ==ρ 为假即常数/NaN 列）
+            yield str(c), float(rho)
+
+
+def validate_input(X: Sized, y: Sized) -> None:
     """验证输入数据（监督学习：X/y 恒成对）"""
     if len(X) != len(y):
         raise ValueError(f"X 和 y 长度不匹配: {len(X)} vs {len(y)}")

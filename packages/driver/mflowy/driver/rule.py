@@ -51,7 +51,8 @@ class Rule(Protocol):
     落盘要求：实现须可 pickle（模块级类、只持 str/num 配置）。
     """
 
-    key: str
+    @property
+    def key(self) -> str: ...  # 只读身份（property 形态）：读写属性会把仅实现读取面的规则挡在结构匹配外
 
     def propose(self, o: Observation) -> list[Activation]: ...
 

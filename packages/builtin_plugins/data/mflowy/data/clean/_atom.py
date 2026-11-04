@@ -11,6 +11,7 @@ from collections.abc import Iterable
 
 import pandas as pd
 from mflowy.data.middlewares import type_family
+from mflowy.data.types import as_series
 
 
 def dedup(items: Iterable) -> list:
@@ -31,7 +32,7 @@ def require_cols(df: pd.DataFrame, cols) -> list[str]:
 
 def require_family(df: pd.DataFrame, cols: list[str], family: str) -> None:
     """全部列属同一类型族，否则报错点名越族列（type_family 单一事实源）。"""
-    bad = [c for c in cols if type_family(df[c]) != family]
+    bad = [c for c in cols if type_family(as_series(df[c])) != family]
     if bad:
         raise ValueError(f"列 {bad} 不属于 {family} 类型族——原子不适配，改选同缺陷的其他档位候选")
 

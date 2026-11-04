@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import ClassVar
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from jinja2.sandbox import SandboxedEnvironment
@@ -20,7 +19,6 @@ class JinjaEnvRegistry:
 
     _instance: JinjaEnvRegistry | None = None
     _initialized: bool = False
-    _yaml_envs: ClassVar[dict[Path, Environment]] = {}
 
     def __new__(cls):
         if cls._instance is None:
@@ -29,7 +27,8 @@ class JinjaEnvRegistry:
 
     def __init__(self):
         if not self._initialized:
-            self._yaml_envs = {}
+            # 单例的实例级缓存（__init__ 必先于任何使用——类默认无消费面）
+            self._yaml_envs: dict[Path, Environment] = {}
             self._initialized = True
 
     def get_yaml_env(self, dag_yaml: Path) -> Environment:

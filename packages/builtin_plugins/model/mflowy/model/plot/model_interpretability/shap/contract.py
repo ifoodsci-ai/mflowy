@@ -42,16 +42,28 @@ def annotation_triple(explanation: shap.Explanation) -> tuple[str, list[str], li
             f"explanation 缺契约属性注记 {missing}（{ANNOTATION_KEYS}）——"
             "由 shap__explanation 真算或 shap__load 重建组装；裸 shap.Explanation 请走族节点产出，勿直落副产物/直入绘图面"
         )
-    return str(explanation.y_name), list(explanation.categorical_features), [str(c) for c in explanation.classes]
+    # shap 无 py.typed 且注记三元组为动态属性——循环键 getattr 读（缺失面由上行 fail-loud 兜住；
+    # 键经变量取，防 ruff B009 重写为直接属性访问）
+    values = {k: getattr(explanation, k) for k in ANNOTATION_KEYS}
+    return (
+        str(values["y_name"]),
+        list(values["categorical_features"]),
+        [str(c) for c in values["classes"]],
+    )
 
 
 def attach_annotations(
     explanation: shap.Explanation, y_name: str, categorical_features: list[str], classes: list[str]
 ) -> shap.Explanation:
     """注记三元组组装单源（两生产者共用——属性名与形态一处定义）。"""
-    explanation.y_name = str(y_name)
-    explanation.categorical_features = list(categorical_features)
-    explanation.classes = list(classes)
+    # shap.Explanation 动态属性面（shap 无 py.typed）——setattr 组装与 getattr 读对称
+    # （键经变量取，防 ruff B010 重写为直接属性赋值）
+    for k, v in (
+        ("y_name", str(y_name)),
+        ("categorical_features", list(categorical_features)),
+        ("classes", list(classes)),
+    ):
+        setattr(explanation, k, v)
     return explanation
 
 
@@ -61,7 +73,7 @@ def iter_output_blocks(explanation: shap.Explanation) -> Iterator[tuple[str, np.
     label 经 ``annotation_triple`` fail-loud 取 ``classes`` 注记；写方（宽表分块）
     与 plot 侧（逐块出图）共用本件（#85 收敛——块序 = classes 序，重建按同一序 stack）。
     """
-    values = explanation.values
+    values = np.asarray(explanation.values)  # shap 无 py.typed：values 推断联合——asarray 收敛数组面
     _, _, classes = annotation_triple(explanation)
     if values.ndim == 3:
         for i, label in enumerate(classes):
@@ -78,7 +90,7 @@ def explanation_to_frame(explanation: shap.Explanation) -> pd.DataFrame:
     ``sample_idx`` 块内行位）。``shap__load`` 按列签名分区重建。
     """
     y_name, cat_feats, _classes = annotation_triple(explanation)
-    data = explanation.data
+    data = np.asarray(explanation.data)  # 同 values：asarray 收敛数组面
     feats = list(explanation.feature_names)
     frames = []
     for label, vals in iter_output_blocks(explanation):

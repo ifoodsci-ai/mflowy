@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 from types import SimpleNamespace
+from typing import cast
 
 import mflowy.model.job_provider as jp
 import pytest
@@ -86,7 +87,7 @@ def test_sample_kwargs_are_typed_dummies_not_all_none():
 @pytest.mark.parametrize("tool", PROVIDER_METHODS)
 def test_headers_passthrough_with_ctx(tool):
     provider = RecordingProvider()
-    jp.set_job_provider(provider)
+    jp.set_job_provider(cast("JobProvider", provider))  # 记录替身：结构实现 protocol 面
     headers = {"X-User-ID": "u-1", "X-Org-ID": "org-9", "Authorization": "Bearer t"}
     ctx = _ctx_with_meta(headers)
 
@@ -98,7 +99,7 @@ def test_headers_passthrough_with_ctx(tool):
 
 def test_headers_none_when_meta_absent():
     provider = RecordingProvider()
-    jp.set_job_provider(provider)
+    jp.set_job_provider(cast("JobProvider", provider))  # 记录替身：结构实现 protocol 面
 
     asyncio.run(tools.predict(data="a.csv", model="XGB=abc", ctx=_ctx_with_meta(None)))
 
@@ -108,7 +109,7 @@ def test_headers_none_when_meta_absent():
 @pytest.mark.parametrize("tool", PROVIDER_METHODS)
 def test_headers_none_without_ctx(tool):
     provider = RecordingProvider()
-    jp.set_job_provider(provider)
+    jp.set_job_provider(cast("JobProvider", provider))  # 记录替身：结构实现 protocol 面
 
     asyncio.run(getattr(tools, tool)(**DELEGATED_TOOLS[tool]))
 

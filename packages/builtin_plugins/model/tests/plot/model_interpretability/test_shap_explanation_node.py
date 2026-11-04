@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import shap
+from mflowy.model.plot.model_interpretability.shap.contract import annotation_triple
 from mflowy.model.plot.model_interpretability.shap.explanation_node import explanation
 
 
@@ -33,11 +34,12 @@ def test_load_face_by_model_x_names():
     out = explanation(model=_model(), load=load)  # 直调原函数（绕过 .handler 链与 validate_call）
 
     assert isinstance(out, shap.Explanation)
-    assert out.values.shape == (3, 2)
+    assert np.asarray(out.values).shape == (3, 2)  # shap 无 py.typed：values 联合面 asarray 收敛
     assert list(out.feature_names) == ["age", "sex"]
-    assert out.y_name == "target"
-    assert out.classes == ["target"]
-    assert out.categorical_features == ["sex"]  # 字符串列按 dtype 入选
+    y_name, cat_feats, classes = annotation_triple(out)
+    assert y_name == "target"
+    assert classes == ["target"]
+    assert cat_feats == ["sex"]  # 字符串列按 dtype 入选
 
 
 def test_load_missing_model_column_raises():

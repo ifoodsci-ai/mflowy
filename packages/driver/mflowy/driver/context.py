@@ -48,9 +48,11 @@ class NodeResult:
     output: str
 
     # 结构化返回值通道：value 不进 dataclass 字段——asdict/pydantic 序列化天然
-    # 排除（防 DataFrame/ModelLoader 炸 MCP 通道），同进程应用层经 .value 读取
+    # 排除（防 DataFrame/ModelLoader 炸 MCP 通道），同进程应用层经 .value 读取。
+    # TYPE_CHECKING 带默认值仅为构造器类型面（pyright 合成 init 视为可选参），
+    # 运行期 dataclass 不认该字段——value 恒由构造后赋值注入
     if TYPE_CHECKING:
-        value: Any
+        value: Any = None
 
 
 class Context:
@@ -141,13 +143,13 @@ class Context:
         return tuple(self._nexts)
 
     @property
-    def handler(self):
-        if self._handler is None:
-            raw = (
-                self.handler_raw
-            )  # 共享同一份缓存：链从 raw 函数属性派生（镜像 adapter 的 getattr(fn, "handler", fn)）
-            self._handler = raw.handler if hasattr(raw, "handler") else raw
-        return self._handler
+    def handler(self) -> Callable:
+        if self._handler is not None:
+            return self._handler
+        # 链由 @handler 装饰挂载——不变式由 discover._load_ep 加载期校验钉死（直接访问）
+        h = self.handler_raw.handler
+        self._handler = h
+        return h
 
     @property
     def handler_raw(self):

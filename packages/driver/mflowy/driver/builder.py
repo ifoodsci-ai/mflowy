@@ -21,7 +21,7 @@ import logging
 from collections import deque
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from mflowy.utils.file import read_text
@@ -74,7 +74,7 @@ class NodeTable:
             return list(self._by_ns[name])
         return list(self._by_key.get(name, ()))
 
-    def kind(self, name: str) -> str:
+    def kind(self, name: str) -> Literal["namespace", "node"]:
         """寻址命中的索引层（先组名后 node_key）——编译产物 type 分类的依据
         （语义单源 ``binding.address_kind``，对本编译期表投影）。"""
         return address_kind(name, self._by_ns)

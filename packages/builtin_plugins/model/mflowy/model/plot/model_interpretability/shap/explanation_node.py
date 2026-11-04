@@ -48,11 +48,12 @@ def explanation(
 
     pipe = model.pipe
     ct = pipe.named_steps.get("preprocess")
-    X_t: pd.DataFrame = ct.transform(X) if ct is not None else X
+    X_t = ct.transform(X) if ct is not None else X
+    assert isinstance(X_t, pd.DataFrame)  # set_output(pandas) 后 transform 恒 DataFrame（推断联合噪声）
 
     est = pipe.estimator
     raw = est.shap_values(X_t, nsamples=SHAP_NSAMPLES, random_state=random_state)
-    values: np.ndarray = raw.values if isinstance(raw, shap.Explanation) else np.asarray(raw)
+    values = np.asarray(raw.values if isinstance(raw, shap.Explanation) else raw)  # shap 无 py.typed：收敛数组面
 
     # 输出标签：单输出 2D = [y_name]；多分类 3D = k 个类（y_names 对不上时按序编号）
     y_names = list(pipe.y_names)

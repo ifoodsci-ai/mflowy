@@ -37,7 +37,7 @@ def _cls_split(n: int = 90):
         center = rng.normal(size=4) * 3
         for _ in range(n // 3):
             rows.append(center + rng.normal(size=4))
-    X = pd.DataFrame(rows, columns=[f"f{i}" for i in range(4)])
+    X = pd.DataFrame(rows, columns=pd.Index([f"f{i}" for i in range(4)]))  # 显式 Index：stub 重载怪癖
     y = pd.DataFrame({"target": np.repeat([0, 1, 2], n // 3)})
     xy = XySpec(X, y, TASKTYPE.CLASSIFICATION)
     return materialize_split(split_fn(x_y=xy, cv=3), xy)

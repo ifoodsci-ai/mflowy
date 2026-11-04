@@ -42,7 +42,7 @@ def log_cv(ctx: Context, next: Handler) -> SplitSpec:
         "data_summary": result.data_summary,
         "source_artifacts": source_artifacts,
     }
-    metrics = {"n_rows": result.n_rows}
+    metrics: dict[str, float] = {"n_rows": result.n_rows}
     if test_size is not None:
         metrics["test_size"] = float(test_size)
     # graceful：直调形态（窗外）跳过——守卫收编 metrics 壳，不再散守 active_run
