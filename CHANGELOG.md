@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - Unreleased
 
+### 测试内存纪律——图落盘即闭（生产级泄漏）+ 重栈会话 fixture 模块级共享（#92）
+
+- **闭图单源纪律（生产修复，长跑 MCP server 同病）**：三处直存/直 log 图路径从不
+  `plt.close`，600dpi Agg 缓冲 ~80MB/张由 pyplot 图管理器进程级持有——`run_hpo`
+  OOF 图集（`report.oof_plot_album`）漏 ~5 张/次、holdout 终评（`_evaluation_plots`/
+  `_loss_curve` 经 `log_figure`）漏 ~5 张/次、泰勒图 1 张/次。闭图收进
+  `utils.mlflow.log_figure` 本体（单源，调用方一次覆盖；log_plot 中间件自身的
+  close 变幂等冗余）+ `report.py` 两处直存点；回归钉 = `run_hpo`/`draw_taylor`
+  用例断言跑完零开图。
+- **取证（#92）**：make test 单进程 RSS 线性爬升至 ~19.8GB 的根因不是（只是）
+  fixture 逐用例重建——malloc_trim 一字节还不回、会话末 164 张未闭图实锤活引用；
+  闭图后 model 包峰值 13.7GB → 2.1GB。
+- **fixture 收敛**：`test_finish_report.py` 终态会话 `delivered`（4 条训练管线）
+  function → module 作用域（只读族一次构建；finish 终态化用例走独立
+  `delivered_fresh`/`delivered_rf`），scope 回归钉入文件；终训副产物按 run_id
+  跨用例读回的前提 = tracking 库模块级共享（`shared_tracking`：fluent 随建随还 +
+  cwd=tmp 急切建库锚定工件根 + `_pin_shared_tracking` 复指 env——`run_artifacts
+  → setup()` 从 env 解析 tracking，env 不钉即断 fan-in 寻址）。单文件 40 → 11
+  条管线，峰值 10.4GB → 3.6GB、142s → 41s，用例零增减、断言零弱化。
+- **model 域 tests conftest**：用例间 `gc.collect() + malloc_trim(0)` teardown
+  （非 glibc 优雅降级）；状态机型文件（test_modeling_session 34 用例等）结构性
+  不可共享会话，靠闭图 + trim 兜底——model 包 449 用例峰值 2.05GB / 7:17。
+- **顺手修（conftest 裸名 import 影子）**：`tests/test_logging_setup_isolation.py`
+  裸名 `import conftest` 在多树收集下被任一子树同名 conftest 影子（sys.path 按
+  收集序插入各测试目录——本 PR 新增 `model/tests/conftest.py` 即触发两钉红），
+  改为显式按路径加载根 conftest。
+- **验收（#92）**：`make test` 单进程峰值 ~19.8GB → **2.1GB**、全量 ~15min →
+  ~9:40，连续全绿（1236 用例）；`test_finish_report.py` 12 → 13 用例（+scope 钉
+  +零开图断言）、原断言逐字保留。
+
 ### BREAKING：插件注册静态化——构建期 hatch AST 扫描钩子退役，entry points 手写声明（贡献者工作流 breaking，词表零破坏）
 
 - 两份 `hatch_metadata.py`（105 行 × 2，构建期扫描 `@handler`/`@edge` 生成注册）删除：
