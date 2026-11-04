@@ -126,11 +126,13 @@ def session_chain(tmp: str) -> None:
         max_steps=8,
         candidates=[{"family": "RF", "baseline": True}],
     )
-    ms.apply_action(s["session_id"], "select_model", {"family": "RF"})
-    ms.apply_action(s["session_id"], "run_hpo", {"n_trials": 2})
-    ms.apply_action(s["session_id"], "final_train_test")
-    manifest = json.loads((pathlib.Path(sessions_root) / s["session_id"] / "manifest.json").read_text(encoding="utf-8"))
-    entry = manifest["models"]["RF|passthrough|passthrough"]
+    sid = s.session_id  # #89 会话基座：start/apply 响应 = Observation 封闭模型（属性面，非 dict）
+    ms.apply_action(sid, "select_model", {"family": "RF"})
+    ms.apply_action(sid, "run_hpo", {"n_trials": 2})
+    ms.apply_action(sid, "final_train_test")
+    # 账本板面读 board.json（域状态）——manifest.json 随 #89 溶解为 observation.json + board.json
+    board = json.loads((pathlib.Path(sessions_root) / sid / "board.json").read_text(encoding="utf-8"))
+    entry = board["models"]["RF|passthrough|passthrough"]
     u_inner, u_final = entry.get("u_inner"), entry.get("u")
     _report(
         u_inner is not None and u_final is not None,
