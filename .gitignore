@@ -16,6 +16,7 @@ superpowers
 catboost_info
 lightning_logs
 .coverage
+coverage.xml
 
 # 本地 MCP 客户端配置（含机器绝对路径）；提交 .mcp.json.example 模板
 .mcp.json
