@@ -2,7 +2,7 @@
 
 插件身份三面（#126）：静态声明在 entry point name（``namespace.node_name``，见
 discover.py）；运行期真源在 Node 实例（身份弱键映射 ``_NODE_OF``——加载期装饰性校验
-经此桥；名字键注册表 ``discover.NODE_REGISTRY`` 为诊断/词表投影索引）；**装饰器零属性
+经此桥；名字键注册表 ``NODE_REGISTRY``（本模块）为诊断/词表投影索引）；**装饰器零属性
 挂载、原样返回 fn**——直接 import/直调不受影响（直调保持原函数语义，调度入口
 ``Node.run`` 才织入中间件与 ``validate_call`` 校验）。
 
@@ -40,8 +40,12 @@ type Chain[R] = Callable[Concatenate[Context, ...], R]
 type Middleware[R] = Callable[[Context, Chain[R]], R]
 
 # fn 本尊 → Node 的身份弱键映射（#126 桥）——node_of 的真源；名字键注册表
-# （discover.NODE_REGISTRY）只服务目录一致性校验，同名遮蔽不影响本桥
+# 只服务诊断/词表投影面，同名遮蔽不影响本桥
 _NODE_OF: WeakKeyDictionary[Callable, Node] = WeakKeyDictionary()
+
+# 名字键注册表（#132 归居契约模块——注册状态随契约 + 唯一写者同居；装饰期零
+# import discover——直接边已删、传递边经 context.get_node 惰性，导入期图无环）：<node_key, Node>
+NODE_REGISTRY: dict[str, Node] = {}
 
 
 class Node[R](Protocol):
@@ -182,7 +186,6 @@ def node[R](*middlewares: Middleware, namespace: str = ""):
 
         # 默认尾链在函数体内延迟导入，避免装饰器定义期循环导入
         from .builtin_middleware import mlflow_log
-        from .discover import NODE_REGISTRY
 
         for mw in (*middlewares, mlflow_log):
             chain = wrap(chain, mw)

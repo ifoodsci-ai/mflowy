@@ -12,9 +12,9 @@ YAML 列表项键 / NodeEntry.name 同构——寻址单源贯穿）；分组视
 
 模块级门面（``get_node``/``get_edge``/``find_edge``/``list_all``/``entry``）委托唯一（节点查询键一律 node_key；边查询令牌=裸边名，内部组 ``edges__`` 键）
 adapter（``EntryPointCatalog``：entry points 现算零缓存——热更新，安装/卸载即时可见），
-是目录消费的唯一姿势。全部查询只读元数据零 import；import 惰性发生在加载，且以
-运行期注册表（``NODE_REGISTRY``/``EDGE_REGISTRY``——装饰器写入，#126 零属性
-挂载）校验声明↔注册一致性，坏声明 fail-loud。
+是目录消费的唯一姿势。全部查询只读元数据零 import；import 惰性发生在加载，且经
+身份桥（``node_of``/``edge_of``——注册表随契约居 node.py/edge.py，#132 归居）校验
+装饰性（只查装饰、不比名），坏声明 fail-loud。
 
 词表 miss 类型化：``CatalogMiss`` ⊂ ModuleNotFoundError =「能力没装」，与 ``ep.load()``
 的导入失败（裸 ModuleNotFoundError =「装了但导不进」）按类型二分——探针
@@ -33,13 +33,6 @@ from .config import node_key, split_node_key
 if TYPE_CHECKING:
     from .edge import Edge
     from .node import Node
-
-# 运行期注册表（#126）：装饰器写入（node.py/edge.py 零属性挂载）——
-# <node_key, Node> / <edges__name, Edge> 的名字键索引（诊断/词表投影面）；
-# 加载期一致性校验走身份桥（node_of/edge_of，只查装饰性不比名）；词表枚举
-# 仍以 entry points 为准（注册表条目不进 list_all，测试本地装饰不入词表）
-NODE_REGISTRY: dict[str, Node] = {}
-EDGE_REGISTRY: dict[str, Edge] = {}
 
 logger = logging.getLogger(__name__)
 
