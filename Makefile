@@ -1,4 +1,4 @@
-.PHONY: install build build-whl test typecheck lint fmt precommit clean help e2e-info e2e-statistic e2e-mcp e2e-bench e2e ui
+.PHONY: install build build-whl test test-cov typecheck lint fmt precommit clean help e2e-info e2e-statistic e2e-mcp e2e-bench e2e ui
 
 # 默认目标
 help:
@@ -11,6 +11,7 @@ help:
 	@echo "  make build            构建 Docker 镜像（全部依赖，自动先建 wheel）"
 	@echo "  make build-whl        构建 wheel 至 dist/（uvx 分发与镜像构建产物）"
 	@echo "  make test             运行测试"
+	@echo "  make test-cov         运行测试并产出覆盖率（term 日志 + coverage.xml，CI 消费）"
 	@echo "  make typecheck        运行 pyright 类型检查（basic 档，门范围 packages+tests）"
 	@echo "  make lint             运行 ruff 检查"
 	@echo "  make fmt              运行 ruff 格式化"
@@ -34,6 +35,10 @@ install:
 # 运行全量测试（tests/ 根 + packages/*/tests，见 pyproject testpaths）
 test:
 	uv run pytest
+
+# 覆盖率面（#43）：数字不设阈值——term 报告进日志，coverage.xml 供 CI 工件/后续阈值化
+test-cov:
+	uv run pytest --cov=mflowy --cov-report=term --cov-report=xml
 
 # 类型门（#42 决议→#91）：pyright basic 全仓门（packages+tests）；配置单源在根
 # pyproject [tool.pyright]（venvPath+venv 键——pythonPath 键静默失效）

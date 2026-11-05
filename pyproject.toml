@@ -94,6 +94,8 @@ explicit = true
 [dependency-groups]
 dev = [
     "pytest>=7.0",
+    # 覆盖率报告（#43）：make test-cov 消费
+    "pytest-cov>=5.0",
     "ruff>=0.15.8",
     "pre-commit>=3.0",
     # 类型门（#42 决议→#91）：pyright basic；本地/CI 同版本（make typecheck）

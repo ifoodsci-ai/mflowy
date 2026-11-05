@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### CI 矩阵：无 torch 环境 job + 覆盖率报告（#43）
+
+- **no-torch job（M6 环境级验收）**：`uv sync --all-groups --extra data --extra model`
+  （显式 extras 不带 `[deep]`）后跑两条证据链——① `mflowy list_nodes` 词表降级断言：
+  `model.MLP` 条目 `upstream=null` + ns 级 `requires={"MLP": "deep"}` 标注 + RF 条目
+  可内省复核（防整体 import 崩溃的假阳性）；② RF 建模会话全链冒烟
+  （`test_modeling_session.py`，MLP 用例 `importorskip` 自跳过）。引擎侧降级契约
+  #49 已钉测，本 job 补真无 torch 环境证据。
+- **覆盖率报告**：dev 组新增 pytest-cov；`make test-cov`（term 日志 + coverage.xml）
+  由 CI test job 消费并上传工件——先有数字不设阈值。
+- 环境矩阵维持 Python 3.12 单版本（既定支撑面，扩版本另议）。
+
 ### 类型门回归清零：dev 0.2.0 收拢后 pyright 126 errors（#107）
 
 - **清零 126→0**（#42 压制纪律：真修为主，带码 ignore 5 处带理由——pandas-stubs ×3、

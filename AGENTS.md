@@ -64,7 +64,7 @@ uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 
 | #   | 目标态                                                                 | 存量违规点                                        | 验收                                                   |
 | --- | ---------------------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------ |
-| M6  | `registry.families()` 对缺 extra 条目降级跳过                          | 已收敛（#49：ImportError 跳过+warning+钉测）——CI no-torch job 见 #43 | 无 torch 环境 CI job 跑通 RF 会话                     |
+| M6  | `registry.families()` 对缺 extra 条目降级跳过                          | 已收敛（#49 引擎侧 ImportError 跳过+warning+钉测；#43 CI no-torch job 环境级验收：词表降级断言 + RF 会话链冒烟） | 无 torch 环境 CI job 跑通 RF 会话                     |
 | M9  | 遥测端点 env 可覆盖 + agentcat monkeypatch 带 feature-detect           | 已收敛（0.2.0：`telemetry.py` env 逃生舱 + feature-detect 告警，`test_telemetry.py` 钉测） | `MFLOWY_TELEMETRY_ENDPOINT` 指向 `docker/telemetry` 可用 |
 | M10 | 重栈产物锚定 task_dir/`~/.mflowy`；仓库根与包根零运行产物              | lightning_logs/mlruns/catboost_info 落包根        | `make test` 后 `git status` 干净                       |
 | M11 | 剧本层完整入库：skills 全 git 追踪、引用文档入仓、工具名 ⊆ `tools/list` 有测试锁定 | 已收敛（0.2.0：skills 全 git 追踪，`test_workspace.py` SKILL 工具名断言钉测） | `test_workspace.py` 增 SKILL 工具名断言               |
