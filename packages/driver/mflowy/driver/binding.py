@@ -7,7 +7,8 @@
 - ``non_annotated_params``：raw 函数的非 Annotated 命名参数（= 参数边候选）
 - ``param_edge_names`` / ``raise_if_params_collide``：M1 撞名判定的单源
 - ``edge_hint``：注解 → (元素类型, 是否收集形态)——注入形态的单一判定源
-- ``verify_output_hint``（编译期）/ ``check_value``（值级）：撒谎 fail-loud 双层
+- ``verify_output_hint``（编译期，agent 校验反馈面）：撒谎 fail-loud——静态安全
+  哲学（Protocol 代 ABC）：运行期保证仅业务需要时做（#57 裁定，运行期值级复核已退役）
 - ``UpstreamMeta`` / ``Upstream``：词表投影与编译产物共用的上游数据结构；
   构造走 ``Upstream.node`` / ``Upstream.edge``（生产唯一构造点，nodes 与取值
   闭包的列表同源在工厂结构焊死）
@@ -103,7 +104,7 @@ def edge_hint(hint: object) -> tuple[type | None, bool]:
 
 
 def _unwrap(expect: object) -> object:
-    """注解归一（值级复核的比对域）：别名解包；``X | None`` 取 X；``Iterator[X]`` 取 X。"""
+    """注解归一（``verify_output_hint`` 的比对域）：别名解包；``X | None`` 取 X；``Iterator[X]`` 取 X。"""
     if isinstance(expect, TypeAliasType):
         return _unwrap(expect.__value__)
     if expect is Iterator or get_origin(expect) is Iterator:
@@ -120,11 +121,10 @@ def _unwrap(expect: object) -> object:
 def verify_output_hint(name: str, expect: object, fn: Callable):
     """编译期校验：消费方参数注解 vs 上游/边函数返回注解，不兼容 raise TypeError。
 
-    与值级复核（``check_value``）同域：``_unwrap`` 归一（别名解包、``X | None``
-    取 X、收集边取元素型）后比对——相等或 origin 相等（``tuple`` vs
-    ``tuple[A, B]``）即兼容；多成员并集无单一比对域，跳过（值级复核兜底）。
-    optionality 只影响空边省略注入，不参与兼容性判定（可选边不匹配同样编译期
-    fail-raise，而非运行期爆炸）。
+    ``_unwrap`` 归一（别名解包、``X | None`` 取 X、收集边取元素型）后比对——
+    相等或 origin 相等（``tuple`` vs ``tuple[A, B]``）即兼容；多成员并集无单一
+    比对域，跳过（静态哲学下不做运行期兜底，#57）。optionality 只影响空边省略
+    注入，不参与兼容性判定（可选边不匹配同样编译期 fail-raise）。
     """
     output_hint = get_type_hints(fn).get("return")
     if expect is None or output_hint is None:
@@ -135,28 +135,6 @@ def verify_output_hint(name: str, expect: object, fn: Callable):
     if lhs == rhs or lhs is get_origin(rhs) or get_origin(lhs) is rhs:
         return
     raise TypeError(f"{name}: 期望 {expect} 与上游输出 {output_hint} 不兼容")
-
-
-def _allows_none(expect: object) -> bool:
-    """注解是否接纳 None（并集含 NoneType 成员——``X | None`` 契约下 None 是合法产出）。"""
-    if isinstance(expect, TypeAliasType):
-        return _allows_none(expect.__value__)
-    return get_origin(expect) in (Union, UnionType) and type(None) in get_args(expect)
-
-
-def check_value(name: str, expect: object, output) -> None:
-    """值级复核（运行期，撒谎 fail-loud）：解包后为具体 type 时 isinstance 复核实际产出。
-
-    与 verify_output_hint 构成双层：声明查编译期，实值查运行期。
-    ``X | None`` 契约下 None 合法（如边函数无对应上游时返回 None），不误报。
-    """
-    concrete = _unwrap(expect)
-    if not isinstance(concrete, type):
-        return
-    if output is None and _allows_none(expect):
-        return
-    if not isinstance(output, concrete):
-        raise TypeError(f"{name}: 上游声明输出 {concrete.__name__} 与实际 {type(output).__name__} 不符（签名撒谎）")
 
 
 @dataclass
@@ -184,7 +162,7 @@ if TYPE_CHECKING:
 
 @dataclass
 class Upstream:
-    """编译期上游：meta + 期望注解 + 取值闭包（call=惰性拉起+哨兵去重+值级复核+整形）。
+    """编译期上游：meta + 期望注解 + 取值闭包（call=惰性拉起+哨兵去重+整形）。
 
     构造走 ``node`` / ``edge`` 工厂（生产代码唯一构造点，测试手搭缝位可直构）——
     ``nodes`` 与 ``call`` 闭包捕获的**同一列表对象**只在工厂里结构焊死：剪枝期
@@ -205,10 +183,9 @@ class Upstream:
         expect: object,
         chosen: list[Context],
         *,
-        check_expect: object,
         collect: bool,
     ) -> Upstream:
-        """直连取值条目工厂（meta.type="node"）：惰性拉起（哨兵去重）+ 值级复核 +
+        """直连取值条目工厂（meta.type="node"）：惰性拉起（哨兵去重）+
         collect/single 整形。
 
         上游按鸭子协议消费（``result`` 哨兵 + ``run``）——拉起是绑定期行为
@@ -221,7 +198,6 @@ class Upstream:
             for c in nodes:
                 if c.result is _NOT_RUN:
                     c.run()  # 惰性拉起：绑定/子图入口发现前驱未执行
-                check_value(meta.name, check_expect, c.result)
                 values.append(c.result)
             if not values:
                 return MISSING
@@ -240,8 +216,7 @@ class Upstream:
         inner: dict[str, Callable[[], Any]],
     ) -> Upstream:
         """边自指条目工厂（meta.type="edge"，nodes 恒空）：内层取值闭包聚合（MISSING
-        省略参数，边函数签名默认值原生生效）→ 边函数调用 → 返回值复核（与
-        节点输出对称的撒谎防线）。"""
+        省略参数，边函数签名默认值原生生效）→ 边函数调用。"""
 
         def edge_call():
             params = {}
@@ -249,8 +224,6 @@ class Upstream:
                 v = fetch()
                 if v is not MISSING:
                     params[n] = v
-            result = edge_raw(**params)
-            check_value(name, expect, result)
-            return result
+            return edge_raw(**params)
 
         return cls(UpstreamMeta(name, required, "edge", via=name), expect, edge_call)

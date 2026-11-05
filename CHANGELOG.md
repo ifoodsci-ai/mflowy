@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### BREAKING：运行期值级复核退役——静态安全哲学收口（#57）
+
+- `binding.check_value` / `_allows_none` 删除，`Upstream.node` 去 `check_expect`
+  形参、`Upstream.edge` 去边返回值复核、`builder._match_upstream` 收窄二元组
+  返回——**此前运行期拦截的「签名撒谎」（声明 X 实产 Y）不再 raise**，错型值
+  按鸭子协议流入下游（远处异常或静默语义漂移）。
+- 裁定依据（地图主人重申）：**Protocol 代 ABC = 选择静态安全、舍弃运行时保证；
+  运行时保证仅业务需要时做**。编译期 `verify_output_hint`（agent 校验反馈面）
+  与共用件 `_unwrap` 保留；值级复核的独捕面（第三方插件签名 / Any 洗白 /
+  失败定位）无业务需要存活——复活触发器：①第三方插件生态出现 ②首起静默
+  语义漂移事故。
+- 同频：binding/context 模块 docstring、driver README（execute 行/解析核心/
+  血缘三处——顺带修正陈名 `_check_value`）、`test_binding.py` 值级用例组
+  （5+1+1=7 用例）随层退役，编译期契约基线不动。
+
 ### CI 矩阵：无 torch 环境 job + 覆盖率报告（#43）
 
 - **no-torch job（M6 环境级验收）**：`uv sync --all-groups --extra data --extra model`

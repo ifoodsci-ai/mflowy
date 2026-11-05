@@ -214,10 +214,10 @@ flow:
 | parse | Builder 解析 YAML → NodeConf 平铺列表 |
 | **plan** | `builder.py: _compile` 增量编译——节点表解析 + 血缘接线（编译即校验，`valid` 门已退役） |
 | **EXPLAIN** | `to_graph()`/`__repr__`（构建期即出真图——mermaid 带标签边 / nodes+edges JSON） |
-| **execute** | `run()`/调度器——消费编译产物（direct 列取值闭包：拉起、值级复核、整形） |
+| **execute** | `run()`/调度器——消费编译产物（direct 列取值闭包：拉起、整形） |
 | **EXPLAIN ANALYZE** | 血缘 tag（`_prevs` 派生声明集）↔ 静态边表对账——不等即失败 run |
 
-- **解析核心是纯函数**（`resolve_upstream` + 模块层谓词/整形）：零副作用；dry 消费者只读检查，wet 消费者拉起 + 值级复核（撒谎 fail-loud，三处对称：节点输出 / 收集成员 / 边返回——声明查构建期 `verify_output_hint`，实值查运行期 `_check_value`）。
+- **解析核心是纯函数**（`resolve_upstream` + 模块层谓词/整形）：零副作用；dry 消费者只读检查，wet 消费者拉起 + 整形。撒谎防线单层居构建期（`verify_output_hint` 声明比对）——静态安全哲学（Protocol 代 ABC），运行期保证仅业务需要时做（#57 裁定，运行期值级复核退役）。
 - **快照语义**：编译产物（upstreams 两列 + 接线）定格于所属 DAG 实例，run 期零目录查询；目录变了走显式重建 DAG。`ContextVar` 计数器保证并发 `Builder.build()` 编号隔离。
 
 ### 惰性拉起与按需子图执行
@@ -231,7 +231,7 @@ flow:
 
 ### 血缘：_prevs 派生视图
 
-血缘不再是运行期缓冲——`Context.lineage` 是 `_prevs`（声明消费集）的只读派生视图：`mlflow_log` 收尾 `finally` 点分串接（保序去重）写入 tag，**成功/失败 run 皆落盘**。语义：成功 run 下 tag 与实际消费恒等；失败 run 下为声明超集（push 调度先行的上游也在 `_prevs` 中），差集由失败异常文案指认（`check_value`/`validate_call` 均点名参数）——异常已携带的信息不再用一个可变缓冲去复刻。
+血缘不再是运行期缓冲——`Context.lineage` 是 `_prevs`（声明消费集）的只读派生视图：`mlflow_log` 收尾 `finally` 点分串接（保序去重）写入 tag，**成功/失败 run 皆落盘**。语义：成功 run 下 tag 与实际消费恒等；失败 run 下为声明超集（push 调度先行的上游也在 `_prevs` 中），差集由失败异常文案指认（`validate_call` 点名参数）——异常已携带的信息不再用一个可变缓冲去复刻。
 
 血缘 tag：`context.py: LINEAGE_TAG_KEY = "mflowy.lineage"`（公开常量，中间件经 `adopt_run` 上报执行身份），值为声明消费的直接上游节点 run_id 的点分集合——数据血缘而非路径。
 
