@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
 import pandas as pd
 from catboost import CatBoostClassifier as catc
@@ -15,14 +14,8 @@ from .utils import as_y_frame, validate_input
 
 logger = logging.getLogger(__name__)
 
-if TYPE_CHECKING:
-    # 类型面借具体基类：解析 super().fit 与拟合后属性；运行期真实基类由子类 (mixin, catr/catc) 组合
-    _CATBase = catr
-else:
-    _CATBase = object
 
-
-class _CATMixin(LossCurveMixin, TreeExplainMixin, _CATBase):
+class _CATMixin(LossCurveMixin, TreeExplainMixin):
     """CatBoost estimator 子类。
 
     fit 流程：SubTask.from_y(y, self.task) → set_params 增量调 loss_function → 底层 fit。
@@ -46,7 +39,7 @@ class _CATMixin(LossCurveMixin, TreeExplainMixin, _CATBase):
             SubTask.BINARY: "Logloss",
             SubTask.MULTICLASS: "MultiClass",
         }
-        self.set_params(loss_function=loss_map[subtask])
+        self.set_params(loss_function=loss_map[subtask])  # type: ignore[reportAttributeAccessIssue]  # 组合方契约：由子类 (mixin, 具体估计器) 组合满足——mixin 定义期不可见（#122）
 
         fit_params: dict = {}
         # 激活内部自动处理分类列的机制
@@ -63,20 +56,20 @@ class _CATMixin(LossCurveMixin, TreeExplainMixin, _CATBase):
         if eval_X is not None:
             # CatBoost 原生 API 仍是 eval_set（无弃用）——统一 seam 在此翻译（#61）
             fit_params["eval_set"] = [(eval_X, eval_y)]
-        return super().fit(X, y, verbose=is_verbose(), **fit_params)
+        return super().fit(X, y, verbose=is_verbose(), **fit_params)  # type: ignore[reportAttributeAccessIssue]  # 组合方契约：由子类 (mixin, 具体估计器) 组合满足——mixin 定义期不可见（#122）
 
     def get_loss_curve(self, **_):
-        e = self.evals_result_
+        e = self.evals_result_  # type: ignore[reportAttributeAccessIssue]  # 组合方契约：由子类 (mixin, 具体估计器) 组合满足——mixin 定义期不可见（#122）
         return self._build_loss_curve_df(e.get("learn", {}), e.get("validation", {}))
 
     def get_feature_importance_df(self, **_):
-        return self._build_importance_df(self.feature_names_, self.feature_importances_)
+        return self._build_importance_df(self.feature_names_, self.feature_importances_)  # type: ignore[reportAttributeAccessIssue]  # 组合方契约：由子类 (mixin, 具体估计器) 组合满足——mixin 定义期不可见（#122）
 
     def plot_tree(self, **kwargs):
         """生成器：先 yield 树数量，再逐棵 yield Figure。"""
         from matplotlib import pyplot as plt
 
-        tree_count: int = self.tree_count_ or 0
+        tree_count: int = self.tree_count_ or 0  # type: ignore[reportAttributeAccessIssue]  # 组合方契约：由子类 (mixin, 具体估计器) 组合满足——mixin 定义期不可见（#122）
         yield tree_count
         for tree_idx in range(tree_count):
             fig = plt.figure()

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 估计器 mixin 纯化：剥 TYPE_CHECKING 借基（#122）
+
+- 4 个估计器族文件（`_random_forest`/`_catboost`/`_lightgbm`/`_xgboost`）删除
+  「类型面借具体基类」惯用法（`if TYPE_CHECKING: _XBase = 具体类 else: object`）——
+  运行期零作用（super() 按实例 MRO 协作解析至组合方基类），纯类型面变更。
+- mixin 内 **20 处跨界引用 / 17 条标注**（`super().fit` ×5、组合方属性 ×14、self 作参数 ×1；3 行含双属性引用）
+  统一改为**组合方契约局部标注**：带码 ignore + 理由「由子类 (mixin, 具体估计器)
+  组合满足——mixin 定义期不可见」。
+- 裁定（地图主人重申）：mixin 内部是否满足需要的属性和方法，取决于**组合方**
+  而非 mixin 本身——fit 与属性同理；借基是大于局部 ignore 的蒙眼布（让整个三方
+  成员面静默可见）。
+
 ### BREAKING：运行期值级复核退役——静态安全哲学收口（#57）
 
 - `binding.check_value` / `_allows_none` 删除，`Upstream.node` 去 `check_expect`

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier as rfc
@@ -13,14 +12,8 @@ from .utils import as_y_frame, validate_input
 
 logger = logging.getLogger(__name__)
 
-if TYPE_CHECKING:
-    # 类型面借具体基类：解析 super().fit 与拟合后属性；运行期真实基类由子类 (mixin, rfr/rfc) 组合
-    _RFBase = rfr
-else:
-    _RFBase = object
 
-
-class _RFMixin(TreeExplainMixin, _RFBase):
+class _RFMixin(TreeExplainMixin):
     """RandomForest estimator 子类。
 
     特殊点：
@@ -36,21 +29,21 @@ class _RFMixin(TreeExplainMixin, _RFBase):
         validate_input(X, y)
         # sklearn 原生 multi-output estimator 按 y 的形状维度 dispatch:
         # (n,) 1D 单目标 → predict (n,)；(n,m) 2D 多目标 → predict (n,m)
-        return super().fit(X, y if y.shape[1] > 1 else y.to_numpy().ravel())
+        return super().fit(X, y if y.shape[1] > 1 else y.to_numpy().ravel())  # type: ignore[reportAttributeAccessIssue]  # 组合方契约：由子类 (mixin, 具体估计器) 组合满足——mixin 定义期不可见（#122）
 
     def get_loss_curve(self, **_):
         raise NotImplementedError("RandomForest uses OOB score, no loss curve")
 
     def get_feature_importance_df(self, **_):
         # sklearn 无 py.typed：feature_names_in_ 系拟合期动态属性，类型面不可见
-        return self._build_importance_df(self.feature_names_in_, self.feature_importances_)  # type: ignore[reportAttributeAccessIssue]
+        return self._build_importance_df(self.feature_names_in_, self.feature_importances_)  # type: ignore[reportAttributeAccessIssue]  # 组合方契约：由子类 (mixin, 具体估计器) 组合满足——mixin 定义期不可见（#122）
 
     def plot_tree(self, **kwargs):
         """生成器：先 yield 树数量，再逐棵 yield Figure。"""
         from matplotlib import pyplot as plt
         from sklearn.tree import plot_tree as _sk_plot_tree
 
-        estimators = list(self.estimators_)
+        estimators = list(self.estimators_)  # type: ignore[reportAttributeAccessIssue]  # 组合方契约：由子类 (mixin, 具体估计器) 组合满足——mixin 定义期不可见（#122）
         yield len(estimators)
         for est in estimators:
             fig, ax = plt.subplots()
