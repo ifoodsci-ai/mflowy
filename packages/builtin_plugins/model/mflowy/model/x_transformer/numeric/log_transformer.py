@@ -3,7 +3,7 @@
 from typing import Annotated, Literal
 
 import numpy as np
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.model.x_y import XySpec
 from sklearn.base import BaseEstimator, TransformerMixin
 
@@ -56,7 +56,7 @@ class _Wrapper(BaseEstimator, TransformerMixin):
         return np.array(self.cols)
 
 
-@handler(namespace="x_transformer")
+@node(namespace="x_transformer")
 def log_transformer(
     x_y: XySpec,
     numerical_cols: Annotated[str | list[str] | None, "待变换的数值列，None 自动检测"] = None,

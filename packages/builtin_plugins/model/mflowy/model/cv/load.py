@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.model.model._split import TrainSplit
 
 _K_NODE_TAG = "cv__split"  # mlflow_log 的 mflowy.node tag = 节点键（holders 检索面）
@@ -55,7 +55,7 @@ def _load_split_by_reference(from_run_id: str) -> TrainSplit:
     return ts
 
 
-@handler(namespace="cv")
+@node(namespace="cv")
 def load(
     from_run_id: Annotated[
         str, "持有 split.pkl 副产物的 run_id（cv.split 产物——划分身份按引用保证同一，不依赖确定性重现）"

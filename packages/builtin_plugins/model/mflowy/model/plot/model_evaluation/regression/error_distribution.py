@@ -2,7 +2,7 @@
 预测误差分布图
 
 接收含 error 列的预测 DataFrame，按 y_name 分组，每组产出一张 1×3 子图（直方图 + Q-Q + 箱线图）。
-由 _evaluation_plots.py 内部调用，不走 @handler 注册。
+由 _evaluation_plots.py 内部调用，不走 @node 注册。
 """
 
 from collections.abc import Iterator

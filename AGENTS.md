@@ -38,14 +38,14 @@ uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 | MCP    | `packages/mcp/mflowy/mcp/`        | 工具注册面、stdio server、runner、遥测                     |
 | Data   | `packages/builtin_plugins/data/mflowy/data/`      | 清洗 POMDP 动作域（load/statistic/detect/clean/plot + DomainCard） |
 | Model  | `packages/builtin_plugins/model/mflowy/model/`    | 建模 POMDP 动作域（x_y/cv/x_transformer/model + plot——cv 族 = split 参数构建/load 引用加载）+ JobProvider + diagnose/report 观察面 |
-| Driver | `packages/driver/mflowy/driver/`  | YAML→DAG 编译调度、@handler/@edge 插件 SDK、POMDP 会话基座（`pomdp` 契约 + `session` 壳）、规则引擎 SDK |
+| Driver | `packages/driver/mflowy/driver/`  | YAML→DAG 编译调度、@node/@edge 插件 SDK、POMDP 会话基座（`pomdp` 契约 + `session` 壳）、规则引擎 SDK |
 | Utils  | `packages/utils/mflowy/utils/`    | mlflow seam、OAuth 2.1 客户端（login/token 库）、脚本安全扫描、capture/path/logging/jinja |
 
 依赖方向保持单向：utils ← driver ← data ← model ← mcp（内核零域感知、两 POMDP 域隔离——`tests/test_workspace.py` 断言，改动 import 保持全绿）。模块内相对导入、跨模块绝对导入。
 
 工具六组共 31 个（真源 = `tools/list`）：平台 7（info 3 + mlflow 观测 2（`get_experiment`/`get_run`）+ 会话回收 1 + 登录 1，本地）；本地分析 5（`data_profile`/`eda`/`propose_questions`/`draw_taylor_diagram`/`modeling_report_skeleton`）；YAML 预检 1（`validate_modeling_steps`）；compute 5（`hyperparameters_search`/`modeling`/`explanation`/`predict`/`inverse_optimization`，经 JobProvider 委派，协议在 model 包）；POMDP 会话 13（`clean_*`×6 + `modeling_*`×7——含 `modeling_report_findings`，引擎在两域 session 模块，动作面 = modeling 八动作面）。
 
-插件身份静态声明：`@handler(namespace=...)` 标记（裸命名参数=参数边，Annotated=用户可配）+ 域包 pyproject `[project.entry-points."mflowy.builtin_plugins"]` 手写条目（0.2.0 起构建期 AST 扫描钩子退役，与第三方包声明方式同构），运行期 `driver/discover.py` 按注册表（装饰器写入 `<node_key, Handler>`，#126 零属性挂载）解析——声明与装饰器的一致性由 CR 交叉检查兜底（见「添加能力」）。
+插件身份静态声明：`@node(namespace=...)` 标记（裸命名参数=参数边，Annotated=用户可配）+ 域包 pyproject `[project.entry-points."mflowy.builtin_plugins"]` 手写条目（0.2.0 起构建期 AST 扫描钩子退役，与第三方包声明方式同构），运行期 `driver/discover.py` 按注册表（装饰器写入 `<node_key, Node>`，#126 零属性挂载）解析——声明与装饰器的一致性由 CR 交叉检查兜底（见「添加能力」）。
 
 ## 质量红线（每个变更遵守）
 
@@ -74,9 +74,9 @@ uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 
 ## 添加能力
 
-**新插件节点**（三站，缺一即断）：① 按域建模块（`packages/<data|model>/mflowy/<pkg>/<能力族>/`），入口加 `@handler(namespace=...)`（归组）或 `@handler()`（非归组）、纯变换边加 `@edge`（edges ns）；② 同 PR 在域包 pyproject `[project.entry-points."mflowy.builtin_plugins"]` 手写声明——节点 `namespace.node_name`（非归组裸名）、边 `edges.node_name`，值 `模块路径:函数名`；③ `uv sync` 后 `list-nodes` 可见。判据：镜像路径有测试 + `list-nodes` 可见。
+**新插件节点**（三站，缺一即断）：① 按域建模块（`packages/<data|model>/mflowy/<pkg>/<能力族>/`），入口加 `@node(namespace=...)`（归组）或 `@node()`（非归组）、纯变换边加 `@edge`（edges ns）；② 同 PR 在域包 pyproject `[project.entry-points."mflowy.builtin_plugins"]` 手写声明——节点 `namespace.node_name`（非归组裸名）、边 `edges.node_name`，值 `模块路径:函数名`；③ `uv sync` 后 `list-nodes` 可见。判据：镜像路径有测试 + `list-nodes` 可见。
 
-注册漂移不设镜像测试（2026-10 决策，限 `mflowy.builtin_plugins` 节点/边声明面——`mflowy.tools` 工具面两侧均沿用镜像测试）——CR 必查三项：**新 `@handler`/`@edge` 必有声明、声明必有函数、entry point 名 namespace 段与装饰器 `namespace=` 逐字一致**；机器兜底仅加载期单向（声明指向未装饰函数即 fail-loud），忘声明与错 namespace 是静默面，靠 CR + `list-nodes` 交叉检查。
+注册漂移不设镜像测试（2026-10 决策，限 `mflowy.builtin_plugins` 节点/边声明面——`mflowy.tools` 工具面两侧均沿用镜像测试）——CR 必查三项：**新 `@node`/`@edge` 必有声明、声明必有函数、entry point 名 namespace 段与装饰器 `namespace=` 逐字一致**；机器兜底仅加载期单向（声明指向未装饰函数即 fail-loud），忘声明与错 namespace 是静默面，靠 CR + `list-nodes` 交叉检查。
 
 **新 compute 工具**（JobProvider 委派，7 站点缺一即断）：
 
@@ -119,4 +119,4 @@ repo 从 `git remote -v` 推断。issue/PR 共号段：`#42` 先 `gh pr view 42`
 
 ## 词表
 
-两层：**引擎元词汇**（节点/边/组/Context 的定义与禁用别名）见 [CONTEXT.md](CONTEXT.md)；**节点名唯一词表 = 运行期插件目录**（`driver/discover.py` 读两组 entry points；边注册于 `edges` ns 但不进 `list_nodes`）。**编译即校验**：Builder 增量编译（平铺有序列表 + 节点表）对参数边全量 fail-loud——拓扑序/词表 miss/撞名/类型门。issue 标题 / 提案 / 测试名一律用 node/namespace 术语；目录里没有的概念 = 语言超纲信号。插件 SDK = `driver/handler.py` + `edge.py` + `builtin_middleware.py` 尾链，破坏性变更受 CHANGELOG 语义化版本约束。
+两层：**引擎元词汇**（节点/边/组/Context 的定义与禁用别名）见 [CONTEXT.md](CONTEXT.md)；**节点名唯一词表 = 运行期插件目录**（`driver/discover.py` 读两组 entry points；边注册于 `edges` ns 但不进 `list_nodes`）。**编译即校验**：Builder 增量编译（平铺有序列表 + 节点表）对参数边全量 fail-loud——拓扑序/词表 miss/撞名/类型门。issue 标题 / 提案 / 测试名一律用 node/namespace 术语；目录里没有的概念 = 语言超纲信号。插件 SDK = `driver/node.py`（@node 装饰器）+ `edge.py` + `builtin_middleware.py` 尾链，破坏性变更受 CHANGELOG 语义化版本约束。

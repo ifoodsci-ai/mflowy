@@ -21,13 +21,13 @@ if TYPE_CHECKING:
 @pytest.fixture(autouse=True)
 def _clean_task_dir():
     """清 ContextVar 残留（runner 进程级 pin 会越过调用作用域）。"""
-    from mflowy.utils import path as path_mod
+    from mflowy.utils import path as patn_mod
 
-    path_mod._TaskDir.set(None)
-    path_mod._TaskDirPinned.set(False)
+    patn_mod._TaskDir.set(None)
+    patn_mod._TaskDirPinned.set(False)
     yield
-    path_mod._TaskDir.set(None)
-    path_mod._TaskDirPinned.set(False)
+    patn_mod._TaskDir.set(None)
+    patn_mod._TaskDirPinned.set(False)
 
 
 def _patch_eps(monkeypatch, **tools_map):

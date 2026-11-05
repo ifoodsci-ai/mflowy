@@ -36,7 +36,7 @@ def cleanup_figures():
 
 
 class TestTargetTrendByNumeric:
-    """测试 target_trend_by_numeric() handler"""
+    """测试 target_trend_by_numeric() node"""
 
     def test_nonexistent_target_raises(self, sample_df):
         with pytest.raises(ValueError, match="not found in data"):

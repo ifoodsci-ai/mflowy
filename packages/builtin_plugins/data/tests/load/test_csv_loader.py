@@ -16,7 +16,7 @@ class TestCSVLoaderBasic:
     """测试 csv 基本功能"""
 
     def test_handler_is_registered(self):
-        """测试 csv 在 handler registry 中注册"""
+        """测试 csv 在 node registry 中注册"""
         from mflowy.driver import discover
 
         assert discover.entry("load__csv") is not None

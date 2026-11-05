@@ -47,7 +47,7 @@ MDP 形式化把每步决策变成可赋 credit 的单元。它同时是仓库�
 
 ### 转移 P：确定性（本问题最大的结构红利）
 
-**D_{t+1} = f_{a_t}(D_t)**，f 即 clean handler——df→df 纯函数，填充值、阈值、过滤集全部是当前数据的确定函数。P 退化为 δ 点质量：
+**D_{t+1} = f_{a_t}(D_t)**，f 即 clean node——df→df 纯函数，填充值、阈值、过滤集全部是当前数据的确定函数。P 退化为 δ 点质量：
 
 - Q 学习目标无转移噪声（TD 目标里没有 P 的方差）；
 - 可精确 undo（df 快照或按血缘重放）；
@@ -93,14 +93,14 @@ r_t = −c + γ·Φ(s_{t+1}) − Φ(s_t),  Φ(s_T)=0
 | MDP 元素 | 已有件（白嫖） | 新增增量 |
 | --- | --- | --- |
 | 动作空间枚举 | `clean` 目录（`list-nodes` / `get-node-info`），参数 schema 与 MCP schema 同源 | 参数离散化档位表 |
-| 转移算子 f_a | clean handler + `df_diff` 遥测 + 每节点 run | — |
+| 转移算子 f_a | clean node + `df_diff` 遥测 + 每节点 run | — |
 | 状态 φ | `statistic.profile` schema | 数值化编码 + 全局量（重复率、高相关对数）+ 列身份 embedding |
 | 终局评估 U | `split` + `model` 族 + inner CV + `{scoring}_std` | 奖励组装（λ、β 权重） |
 | 轨迹记录 | MLflow 血缘（`mflowy.lineage`）——清洗链即天然 trajectory log，可按血缘重放 | — |
 | 执行位置 | JobProvider 委派（策略训练是长任务）；推理期可本地 | 训练循环编排 |
 | baseline | Optuna TPE（链模板联合搜）、人工规则链（research-flow 顺序：缺失→异常→过滤）、空清洗 | — |
 
-真正的增量只有三件：**gym 风格环境包装器**（`reset(dataset) → s₀`，`step(a) → (s′, r, done)`，内部走 DAG 执行 clean handler）、**φ 编码器**、**策略侧**（搜索器或网络）。数学先立，实现落点（新插件族 vs JobProvider 新方法）是后续决策。
+真正的增量只有三件：**gym 风格环境包装器**（`reset(dataset) → s₀`，`step(a) → (s′, r, done)`，内部走 DAG 执行 clean node）、**φ 编码器**、**策略侧**（搜索器或网络）。数学先立，实现落点（新插件族 vs JobProvider 新方法）是后续决策。
 
 ## 4. 求解路径：搜索优先，学习看泛化
 

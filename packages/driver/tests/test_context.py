@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 from mflowy.driver.builder import Builder
 from mflowy.driver.context import Context
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 
 def _yaml(tmp_path, name: str, *nodes: str) -> Path:
@@ -30,15 +30,15 @@ def _node(name: str, ns: str, node: str) -> str:
 def _chain(fake_plugins):
     """三节点链 load__a → statistic__b → model__c（参数名逐级命中前驱组名）。"""
 
-    @handler()
+    @node()
     def a(**kw):
         return 1
 
-    @handler()
+    @node()
     def b(load: int) -> int:
         return load
 
-    @handler()
+    @node()
     def c(statistic: int) -> int:
         return statistic
 
@@ -52,13 +52,13 @@ def _count_handler_calls(monkeypatch) -> list[str]:
     from mflowy.driver import discover as d
 
     calls: list[str] = []
-    orig = d._DEFAULT_CATALOG.handler
+    orig = d._DEFAULT_CATALOG.node
 
     def counting(key, raw=False):
         calls.append(key)
         return orig(key, raw)
 
-    monkeypatch.setattr(d._DEFAULT_CATALOG, "handler", counting)
+    monkeypatch.setattr(d._DEFAULT_CATALOG, "node", counting)
     return calls
 
 
@@ -91,7 +91,7 @@ class TestSeededCompile:
         dag = Builder(_yaml(tmp_path, "兜底", _node("a", "load", "a"))).build()
         seeded = dag.nodes[0]
         fresh = Context(seeded.conf)
-        assert fresh.handler_raw is seeded.handler_raw  # 同一目录条目，经惰性路径取得
+        assert fresh.node_raw is seeded.node_raw  # 同一目录条目，经惰性路径取得
 
 
 class TestLineageViews:

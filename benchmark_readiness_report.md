@@ -10,7 +10,7 @@
 
 | # | 阻塞项 | 影响 | 定级 |
 |---|--------|------|------|
-| B1 | **MLP 节点全路径损坏**：handler 声明 `random_state`（默认 42 无条件传入），`MLPEstimator.__init__` 不收该参数 → 任何含 `model__MLP` 的 DAG 必炸 | 神经网络基线缺席，五模型对比降级为四 | P0 |
+| B1 | **MLP 节点全路径损坏**：node 声明 `random_state`（默认 42 无条件传入），`MLPEstimator.__init__` 不收该参数 → 任何含 `model__MLP` 的 DAG 必炸 | 神经网络基线缺席，五模型对比降级为四 | P0 |
 | B2 | **分类任务的 MDP 会话 `run_hpo` 全崩**：`_random_forest.py:31` 对 sklearn `cross_val_predict` 传入的 ndarray y 调 `.to_numpy()` | iris/digits/Titanic 这类分类基准走不了会话路径（回归会话正常） | P0 |
 | B3 | **10/10 示例 YAML 漂移 + `make e2e` 断链**：示例仍用已退役的裸节点 `split`（现名 `cv__split`）与参数 `targets`（现名 `target`）；Makefile e2e 传已退役参数 `modeling_steps_yaml`（现名 `modeling_steps`）；示例 MLP 参数（n_trials/epochs）也已不存在 | 新用户/Agent 按示例复现必然失败，"三入口分发冒烟"本身不可用 | P0（对基准复现） |
 
@@ -43,7 +43,7 @@
 
 ### P0（阻塞基准）
 
-1. **B1 MLP 套接不匹配**（`model/mlp.py:41` vs `model/_mlp.py:93`）：`make_machinery` 把 handler 签名默认（含 `random_state=42`）并入 `initial_params`，`MLPEstimator` 不收。进程内复现：`initial_params` 含 `random_state`。回归于 `78d4a089`（2026-10-19, #62 七票落地）。**任何数据、任何任务上都必炸**（默认值本身即毒）。
+1. **B1 MLP 套接不匹配**（`model/mlp.py:41` vs `model/_mlp.py:93`）：`make_machinery` 把 node 签名默认（含 `random_state=42`）并入 `initial_params`，`MLPEstimator` 不收。进程内复现：`initial_params` 含 `random_state`。回归于 `78d4a089`（2026-10-19, #62 七票落地）。**任何数据、任何任务上都必炸**（默认值本身即毒）。
 2. **B2 分类会话 OOF 崩溃**（`model/_random_forest.py:31`）：`y if y.shape[1] > 1 else y.to_numpy().ravel()` —— sklearn `cross_val_predict` 传 ndarray y 时 `.to_numpy` 不存在。DAG 路径 y 恒为 DataFrame 故幸免；会话 `run_hpo` 的 OOF 观察面走 `cross_val_predict` → 分类必炸。会话测试（`test_modeling_session.py::_hpo`）全部 `task="regression"`，未覆盖。
 3. **B3 示例/e2e 全漂移**：10 个 `examples/*/*.yaml` 均含 `split:`（已更名 `cv__split`，CHANGELOG #66）与 `targets:`（已收窄 `target`，CHANGELOG #66 BREAKING）；Makefile `e2e-info`/`e2e` 传 `modeling_steps_yaml`（#66 已改 `modeling_steps` 明文）；示例 MLP 参数（n_trials/epochs）随 #62 退役。**`make e2e` 逐条核对当前全不可用。**
 

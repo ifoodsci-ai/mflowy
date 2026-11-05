@@ -1,4 +1,4 @@
-"""cross_validate.split handler 单元测试 —— 契约（划分器对）与 (cv, repeats, group_by) 决策表。"""
+"""cross_validate.split node 单元测试 —— 契约（划分器对）与 (cv, repeats, group_by) 决策表。"""
 
 import pickle
 from typing import cast
@@ -60,9 +60,9 @@ def _run_chain(X, y, **params) -> SplitSpec:
     from mflowy.driver.context import Context
 
     ctx = Context(NodeConf(name="split_t", node_key="cv__split"))
-    from mflowy.driver.handler import handler_of
+    from mflowy.driver.node import node_of
 
-    return handler_of(split).run(ctx, x_y=_xy(X, y), **params)
+    return node_of(split).run(ctx, x_y=_xy(X, y), **params)
 
 
 class TestSpecContract:
@@ -266,7 +266,7 @@ class TestTestSizeParam:
 
 class TestValidation:
     def test_cv_ge_2_enforced_at_boundary(self, sample_data):
-        """cv 的 Field(ge=2) 约束在调用边界拦截（@handler validate_call，直呼同样生效）"""
+        """cv 的 Field(ge=2) 约束在调用边界拦截（@node validate_call，直呼同样生效）"""
         from pydantic import ValidationError
 
         X, y_clf, _ = sample_data

@@ -7,13 +7,13 @@ correlation_filter 退役后的判断面——删谁的选择策略(优先特征
 from typing import Annotated, Literal
 
 import pandas as pd
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 from .errors import DataError, ErrorReport
 from .rules import high_corr_pairs
 
 
-@handler(namespace="detect")
+@node(namespace="detect")
 def collinear(
     load: pd.DataFrame,
     method: Annotated[Literal["spearman", "pearson", "kendall"], "相关系数方法"] = "spearman",

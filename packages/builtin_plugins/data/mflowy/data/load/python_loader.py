@@ -5,7 +5,7 @@ from typing import Annotated
 
 import pandas as pd
 from mflowy.data.middlewares import log_load_data_fingerprint
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.utils.path import split_path_to_py_with_target
 from mflowy.utils.python_script_security_scan import scan_security
 
@@ -15,7 +15,7 @@ from .utils import set_data_fingerprint
 logger = logging.getLogger(__name__)
 
 
-@handler(log_load_data_fingerprint, namespace="load")
+@node(log_load_data_fingerprint, namespace="load")
 def python(
     source: Annotated[str | None, "python脚本路径，支持 file.py:func 指定入口函数（默认 load）"] = None,
     **kwargs,

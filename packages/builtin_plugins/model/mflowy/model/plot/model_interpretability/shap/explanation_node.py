@@ -15,7 +15,7 @@ from typing import Annotated
 import numpy as np
 import pandas as pd
 import shap
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.model.middlewares import log_shap_explanation
 from mflowy.model.model.types import ModelLoader
 from mflowy.utils.constants import RANDOM_STATE
@@ -25,7 +25,7 @@ from .contract import attach_annotations
 SHAP_NSAMPLES = 100
 
 
-@handler(log_shap_explanation, namespace="shap")
+@node(log_shap_explanation, namespace="shap")
 def explanation(
     model: ModelLoader,
     load: pd.DataFrame,

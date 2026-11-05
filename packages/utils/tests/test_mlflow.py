@@ -10,9 +10,9 @@ def tmp_mlflow_db(tmp_path, monkeypatch):
     db_path = tmp_path / "mlflow.db"
     monkeypatch.setenv("MLFLOW_TRACKING_URI", f"sqlite:///{db_path}")
     # 直接 setattr 绕过 set_task_dir 的 first-wins 限制
-    import mflowy.utils.path as path_mod
+    import mflowy.utils.path as patn_mod
 
-    monkeypatch.setattr(path_mod, "_TaskDir", tmp_path.resolve())
+    monkeypatch.setattr(patn_mod, "_TaskDir", tmp_path.resolve())
 
     import mlflow
 

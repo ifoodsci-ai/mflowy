@@ -1,11 +1,11 @@
-"""预测 handler：消费上游 model 门面（model__* 组寻址取最近），对新数据预测返回 DataFrame。"""
+"""预测 node：消费上游 model 门面（model__* 组寻址取最近），对新数据预测返回 DataFrame。"""
 
 from __future__ import annotations
 
 import logging
 
 import pandas as pd
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.model.middlewares import log_prediction
 
 from ._pipeline import _slice_pred
@@ -14,7 +14,7 @@ from .types import ModelLoader
 logger = logging.getLogger(__name__)
 
 
-@handler(log_prediction)
+@node(log_prediction)
 def predict(
     model: ModelLoader,
     load: pd.DataFrame,

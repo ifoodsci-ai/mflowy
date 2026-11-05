@@ -9,7 +9,7 @@ class TestExcelLoader:
     """测试 excel 类"""
 
     def test_handler_is_registered(self):
-        """测试 excel 在 handler registry 中注册"""
+        """测试 excel 在 node registry 中注册"""
         from mflowy.driver import discover
 
         assert discover.entry("load__excel") is not None

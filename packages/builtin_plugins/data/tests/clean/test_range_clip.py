@@ -1,4 +1,4 @@
-"""Tests for range_clip handler"""
+"""Tests for range_clip node"""
 
 import pandas as pd
 import pytest

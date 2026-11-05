@@ -356,12 +356,12 @@ def _materialize(ss: POMDPSession, m: dict, df: pd.DataFrame, raw_task: str) -> 
             upstream_by_param={"x_y": [xy_ctx]},  # log_cv 物化副产物的 x_y 侧信道（builder 同形播种）
         )
         with capture_prints() as buf:
-            xy = xy_ctx.handler.run(xy_ctx, load=df, target=m["target"], task=task, id_columns=m["id_columns"])
+            xy = xy_ctx.node.run(xy_ctx, load=df, target=m["target"], task=task, id_columns=m["id_columns"])
             xy_ctx.result = xy  # 链直调不自动落 result（Context.run 才落）——log_cv 侧信道依赖显式播种
             # 缺省单源（#83）：物化折数取冻结协议值——不二落 cv.split 签名缺省（两活源即漂移面）
             split_kwargs = {**m["protocol"]["split_params"]}
             split_kwargs.setdefault("cv", m["protocol"]["cv"])
-            spec = split_ctx.handler.run(split_ctx, x_y=xy, **split_kwargs)
+            spec = split_ctx.node.run(split_ctx, x_y=xy, **split_kwargs)
     finally:
         set_active_experiment(prev_exp)
     captured = buf.getvalue().strip()

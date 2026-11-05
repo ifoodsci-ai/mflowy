@@ -1,7 +1,7 @@
 """Predict 中间件：log_table 持久化预测结果为 prediction.parquet"""
 
 from mflowy.driver.context import Context
-from mflowy.driver.handler import Chain
+from mflowy.driver.node import Chain
 from mflowy.utils import mlflow as mlflow_util
 
 

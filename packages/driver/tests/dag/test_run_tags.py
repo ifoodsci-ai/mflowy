@@ -3,10 +3,10 @@
 from mflowy.driver.config import Conf, NodeConf
 from mflowy.driver.context import Context
 from mflowy.driver.dag import DAG
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 
-@handler()
+@node()
 def _node(**kwargs):
     return "ok"
 

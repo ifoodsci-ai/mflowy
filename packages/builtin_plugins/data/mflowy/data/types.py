@@ -29,17 +29,17 @@ class DualFormStrEnum(StrEnum):
     """值/名双形式枚举：pydantic 校验按值或按名解析（yaml/JSON 两种输入都收）。
 
     parse_enum（driver/config.py）的 pydantic 钩子版——serializer._plain 序列化为名、
-    用户输入多用值，两侧兼容。进 handler 签名的枚举继承本类即获得双形式校验。
+    用户输入多用值，两侧兼容。进 node 签名的枚举继承本类即获得双形式校验。
     """
 
     @classmethod
-    def __get_pydantic_core_schema__(cls, source_type, handler):
+    def __get_pydantic_core_schema__(cls, source_type, node):
         from mflowy.driver.config import parse_enum
 
         def _coerce(v):
             return v if isinstance(v, cls) else parse_enum(cls, v)
 
-        return core_schema.no_info_before_validator_function(_coerce, handler(source_type))
+        return core_schema.no_info_before_validator_function(_coerce, node(source_type))
 
 
 class TASKTYPE(DualFormStrEnum):

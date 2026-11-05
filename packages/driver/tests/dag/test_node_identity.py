@@ -9,14 +9,14 @@ import pytest
 from mflowy.driver.config import Conf, NodeConf
 from mflowy.driver.context import Context
 from mflowy.driver.dag import DAG
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.utils.mlflow import FakeTracking, use_tracking
 
 if TYPE_CHECKING:
-    from mflowy.driver.handler import Handler
+    from mflowy.driver.node import Node
 
 
-@handler()
+@node()
 def _node(**kwargs):
     return "ok"
 
@@ -61,7 +61,7 @@ class TestNodeIdentity:
     def test_run_resets_run_id_before_bind(self, fake_plugins, fake_tracking):
         """执行不记忆落到记账：run 入口先清 run_id——重跑的窗前失败不背上一次的 run_id。"""
 
-        @handler()
+        @node()
         def _needs(load, **_):
             return load
 
@@ -75,7 +75,7 @@ class TestNodeIdentity:
     def test_echo_failure_not_misbooked(self, fake_plugins, fake_tracking, monkeypatch):
         """回显写失败（管道关闭）不把成功节点误记为失败——try 只圈执行，不圈回显。"""
 
-        @handler()
+        @node()
         def _ok(**kw):
             return "ok"
 
@@ -102,7 +102,7 @@ class TestNodeIdentity:
                 seen["experiment_id"] = experiment_id
                 return super().node_run(run_name, experiment_id)
 
-        @handler()
+        @node()
         def _ok(**kw):
             return "ok"
 
@@ -119,15 +119,15 @@ class TestNodeIdentity:
         assert ctx.run_id == "r1"
 
     def test_bare_stub_run_without_mlflow_chain(self, fake_plugins):
-        """裸桩（无中间件链）执行：handler 成功即成功——NodeResult.status 容忍无 run_id（""）。"""
+        """裸桩（无中间件链）执行：node 成功即成功——NodeResult.status 容忍无 run_id（""）。"""
 
         def _plain(ctx=None, **kw):  # 链签名首参为 ctx
             return "bare"
 
         ctx = Context(NodeConf(name="裸桩", node_key="load__plain"), [])
-        # 直注桩 Handler（不经目录，替身缝 cast）——成功而窗前无 run 的最小形态（#126：_handler 槽位为 Handler 契约）
-        ctx._handler = cast("Handler", SimpleNamespace(fn=_plain, run=_plain))
-        result = ctx.run()  # 此前：handler 已成功却在 status 上 RuntimeError
+        # 直注桩 Node（不经目录，替身缝 cast）——成功而窗前无 run 的最小形态（#126：_handler 槽位为 Node 契约）
+        ctx._handler = cast("Node", SimpleNamespace(fn=_plain, run=_plain))
+        result = ctx.run()  # 此前：node 已成功却在 status 上 RuntimeError
         assert result.status == ""
         assert result.run_id == ""  # 无 run 留空——不拿 id 冒充 run_id
         assert ctx.result == "bare"
@@ -148,7 +148,7 @@ class TestNodeIdentity:
 
         fake_plugins.setdefault("load", {})["node"] = _node
 
-        @handler()
+        @node()
         def _down(load, **_):  # 组层寻址绑 A，单值直注
             return load
 
@@ -172,7 +172,7 @@ class TestNodeIdentity:
 
         fake_plugins.setdefault("load", {})["node"] = _node
 
-        @handler()
+        @node()
         def _down(load, **_):
             return load
 

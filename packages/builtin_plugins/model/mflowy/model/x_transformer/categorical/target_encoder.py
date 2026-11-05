@@ -1,14 +1,14 @@
 from typing import Annotated, Literal
 
 import pandas as pd
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.model.x_y import XySpec
 from sklearn.preprocessing import TargetEncoder
 
 from ..utils import resolve_cols
 
 
-@handler(namespace="x_transformer")
+@node(namespace="x_transformer")
 def target_encoder(
     x_y: XySpec,
     target: Annotated[str, "目标列"],

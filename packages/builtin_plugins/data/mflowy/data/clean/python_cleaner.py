@@ -6,7 +6,7 @@ from typing import Annotated
 
 import pandas as pd
 from mflowy.data.middlewares import df_diff
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.utils.file import read_text
 from mflowy.utils.path import split_path_to_py_with_target
 from mflowy.utils.python_script_security_scan import scan_security
@@ -14,7 +14,7 @@ from mflowy.utils.python_script_security_scan import scan_security
 logger = logging.getLogger(__name__)
 
 
-@handler(df_diff, namespace="clean")
+@node(df_diff, namespace="clean")
 def python(
     load: pd.DataFrame,
     clean: pd.DataFrame | None = None,

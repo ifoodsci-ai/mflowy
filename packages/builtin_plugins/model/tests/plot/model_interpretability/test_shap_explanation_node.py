@@ -31,7 +31,7 @@ def test_load_face_by_model_x_names():
     """load 测试集按模型 x_names 取列（多余列剔除），属性注记齐备。"""
     load = pd.DataFrame({"age": [1.0, 2.0, 3.0], "sex": ["m", "f", "m"], "extra": [9, 9, 9]})
 
-    out = explanation(model=_model(), load=load)  # 直调原函数（绕过 .handler 链与 validate_call）
+    out = explanation(model=_model(), load=load)  # 直调原函数（绕过 .node 链与 validate_call）
 
     assert isinstance(out, shap.Explanation)
     assert np.asarray(out.values).shape == (3, 2)  # shap 无 py.typed：values 联合面 asarray 收敛

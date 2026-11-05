@@ -55,14 +55,14 @@ def _run_split_chain():
 
     with capture_prints():
         xy_ctx = Context(NodeConf(node_key="x_y", name="t:x_y"))
-        xy = xy_ctx.handler.run(xy_ctx, load=_reg_df(), target="y")
+        xy = xy_ctx.node.run(xy_ctx, load=_reg_df(), target="y")
         xy_ctx.result = xy  # 链直调不自动落 result——log_cv 侧信道依赖显式播种
         split_ctx = Context(
             NodeConf(node_key="cv__split", name="t:split"),
             prevs=[xy_ctx],
             upstream_by_param={"x_y": [xy_ctx]},
         )
-        spec = split_ctx.handler.run(split_ctx, x_y=xy)
+        spec = split_ctx.node.run(split_ctx, x_y=xy)
     return split_ctx.run_id, spec
 
 

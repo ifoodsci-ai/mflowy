@@ -25,7 +25,7 @@ class TestSetup:
         _logging_mod.setup(level=logging.INFO)
 
         root = logging.getLogger()
-        assert root.level == logging.DEBUG  # 总闸全开，由 handler 过滤
+        assert root.level == logging.DEBUG  # 总闸全开，由 node 过滤
         assert len(root.handlers) == 1
         assert isinstance(root.handlers[0], logging.StreamHandler)
         assert root.handlers[0].level == logging.INFO
@@ -46,7 +46,7 @@ class TestSetup:
         _logging_mod.setup(level=logging.INFO)
 
         assert lib.level == logging.WARNING
-        assert lib.handlers == []  # 自配 handler 清除，统一走 root
+        assert lib.handlers == []  # 自配 node 清除，统一走 root
         assert lib.propagate is True
 
     def test_src_loggers_untouched(self):

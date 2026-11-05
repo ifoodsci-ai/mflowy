@@ -4,7 +4,7 @@ import re
 
 import pandas as pd
 from mflowy.data.types import as_series
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 from .errors import DataError, ErrorReport
 
@@ -32,7 +32,7 @@ def stringly_frac(series: pd.Series) -> tuple[float, str | None]:
     return frac, suffix
 
 
-@handler(namespace="detect")
+@node(namespace="detect")
 def stringly(load: pd.DataFrame) -> ErrorReport:
     """格式检测(只读):文本列大部分值形如"数值+单位后缀"——强数值信号被字符串化
     (strip_units 的对应缺陷,evidence 携带众数后缀字符)。

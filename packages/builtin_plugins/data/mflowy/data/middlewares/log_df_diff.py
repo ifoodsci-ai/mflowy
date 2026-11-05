@@ -1,6 +1,6 @@
 import pandas as pd
 from mflowy.driver.context import Context
-from mflowy.driver.handler import Chain
+from mflowy.driver.node import Chain
 from mflowy.utils import mlflow as mlflow_util
 
 

@@ -10,11 +10,11 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from mflowy.data.middlewares import log_plot
 from mflowy.data.middlewares.log_plot import SkipPlotError
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from sklearn.metrics import average_precision_score, precision_recall_curve
 
 
-@handler(log_plot, namespace="plot")
+@node(log_plot, namespace="plot")
 def pr_curve(
     model_test_probabilities: pd.DataFrame | None,
     title: Annotated[str, "图表标题"] = "Precision-Recall Curve",

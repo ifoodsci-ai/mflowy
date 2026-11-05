@@ -8,7 +8,7 @@ sys.stderr 替换为代理——当前上下文（ContextVar，随线程/请求�
 状态惯用法。
 
 通道边界不变：业务 print 被 per-task 捕获进 output；
-logger 的 handler 在 setup 时绑定的原始流对象，天然绕过代理（实时上屏）。
+logger 的 node 在 setup 时绑定的原始流对象，天然绕过代理（实时上屏）。
 """
 
 from __future__ import annotations

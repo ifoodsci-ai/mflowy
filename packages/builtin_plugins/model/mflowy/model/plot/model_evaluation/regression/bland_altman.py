@@ -11,11 +11,11 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from mflowy.data.middlewares import log_plot
 from mflowy.data.middlewares.log_plot import SkipPlotError
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.model.model.types import TASKTYPE
 
 
-@handler(log_plot, namespace="plot")
+@node(log_plot, namespace="plot")
 def bland_altman(
     model_test_predictions: tuple,
     title: Annotated[str, "图表标题"] = "Bland-Altman Plot",

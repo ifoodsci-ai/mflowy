@@ -4,7 +4,7 @@ from mflowy.driver.config import Conf
 from mflowy.driver.dag import DAG, DAGResult
 from mflowy.driver.discover import entry
 from mflowy.driver.discover import get_node as discover_get_node
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 
 class TestDAGAPI:
@@ -29,7 +29,7 @@ class TestDAGAPI:
         assert DAG.run.__annotations__["return"] is DAGResult
 
     def test_run_executes_handlers(self):
-        """测试 DAG.run() 执行已注册的 handler"""
+        """测试 DAG.run() 执行已注册的 node"""
         # csv 已在 load 模块中注册，直接验证
         assert discover_get_node("load__csv") is not None
         assert entry("load__csv") is not None
@@ -58,11 +58,11 @@ class TestWalkProjection:
     def test_walk_yields_schedule_order(self, fake_plugins):
         """walk 单次走查：调度序产出 (node, key, [(up_key, label)])——三个投影的单一数据源。"""
 
-        @handler()
+        @node()
         def _producer(**kw) -> int:
             return 1
 
-        @handler()
+        @node()
         def _consumer(load, **_):
             return load
 

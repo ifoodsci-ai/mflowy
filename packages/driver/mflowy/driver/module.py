@@ -1,8 +1,8 @@
 """节点查询
 
-读取 discover 目录提供节点列表和参数查询。能力通过 @handler 装饰器注册（#126
+读取 discover 目录提供节点列表和参数查询。能力通过 @node 装饰器注册（#126
 注册表真源）、entry points 声明，此模块仅提供查询接口。schema 取注册表
-``Handler.param_schema``（纯 Annotated 用户可配参数）；
+``Node.param_schema``（纯 Annotated 用户可配参数）；
 参数边经 ``NodeEntry.upstream`` 独立下发，投影为类型化的 ``UpstreamMeta``
 （``type`` 判别节点/边，``via`` 标注消费途经的边名；``name == via`` 的边自指
 条目不进词表投影——边信息由 edges 词表承载）——词表投影与校验/注入通道分离。
@@ -80,17 +80,17 @@ class NodeInfo:
     # 逐参数保留（同名跨参数不去重）；诊断不展平在报错侧
     upstream: list[UpstreamMeta]
     # 标准 JSON Schema：properties/required/default/description/enum/$defs 全由 pydantic
-    # 生成——与 @handler 内嵌的 validate_call 同一套 schema 机器，文档与校验永不漂移；
+    # 生成——与 @node 内嵌的 validate_call 同一套 schema 机器，文档与校验永不漂移；
     # 只含 Annotated 用户可配参数，upstream 不进 schema
     parameters_schema: dict
 
 
 def get_node_info(namespace: str, node_name: str) -> NodeInfo:
-    """提取 handler 的用户可配参数（JSON Schema）+ 参数边依赖（结构化 upstream）。
+    """提取 node 的用户可配参数（JSON Schema）+ 参数边依赖（结构化 upstream）。
 
     对式 (namespace, node_name) 是 MCP 工具面的外部契约（用户分开填两组）；
-    内部组 node_key 查目录——词表边界翻译。schema 取注册表 ``Handler.param_schema``
-    （装饰期自签名派生，#126——派生逻辑单源居 handler.py）。
+    内部组 node_key 查目录——词表边界翻译。schema 取注册表 ``Node.param_schema``
+    （装饰期自签名派生，#126——派生逻辑单源居 node.py）。
     """
     entry = get_node(node_key(namespace, node_name))
     fn = entry.fn

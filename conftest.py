@@ -16,7 +16,7 @@ class _FnCatalog:
     """测试伪目录：唯一 adapter 的最小替身（{namespace: {node: fn}} 直填）。
 
     表值 = 原函数——非 raw 面与真目录同构返回注册表条目（#126：装饰者经
-    ``handler_of``/``edge_of`` 取本尊 Handler/Edge；裸桩回退透传最小条目
+    ``node_of``/``edge_of`` 取本尊 Node/Edge；裸桩回退透传最小条目
     ``run=fn``——测试替身不必装饰）；词表 miss 抛 CatalogMiss（对齐生产语义）；
     entry 恒 None（无 entry point 元数据）。
     """
@@ -31,20 +31,20 @@ class _FnCatalog:
         except ValueError:
             from types import SimpleNamespace
 
-            from mflowy.driver.handler import _param_schema
+            from mflowy.driver.node import _param_schema
 
             # 裸桩透传（未装饰替身）：schema 复用装饰期同一派生器（单源），ns 视为非归组
             return SimpleNamespace(fn=fn, run=fn, middlewares=[], param_schema=_param_schema(fn), ns=None)
 
-    def handler(self, key: str, raw: bool = False):
+    def node(self, key: str, raw: bool = False):
         from mflowy.driver.config import split_node_key
-        from mflowy.driver.handler import handler_of
+        from mflowy.driver.node import node_of
 
         ns, node_name = split_node_key(key)
         fn = self.table.get(ns, {}).get(node_name)
         if fn is None:
             raise CatalogMiss(ns, node_name, self.table.get(ns, {}))
-        return fn if raw else self._entry_of(fn, handler_of)
+        return fn if raw else self._entry_of(fn, node_of)
 
     def edge(self, edge_name: str, raw: bool = False):
         from mflowy.driver.edge import edge_of
@@ -71,7 +71,7 @@ class _FnCatalog:
 def fake_plugins(monkeypatch):
     """伪插件目录：{namespace: {node: fn}} 直填，patch discover 唯一 adapter 位。
 
-    表值 = @handler/@edge 装饰后的函数（与真目录同构——discover._load_ep 的装饰
+    表值 = @node/@edge 装饰后的函数（与真目录同构——discover._load_ep 的装饰
     校验在此由直接访问等价保证，缺装饰即 AttributeError fail-loud）。用法：
 
         table.setdefault("load", {})["csv"] = my_fn
@@ -112,14 +112,14 @@ def _isolate_logging_setup():
     """logging setup() 残留的用例间隔离（prior learning: 顺序依赖红）。
 
     server/runner 入口（main()）与 utils 包测试的局部 teardown 都会触发
-    utils.logging.setup()：console handler 绑定**调用时刻**的 sys.stderr 对象
+    utils.logging.setup()：console node 绑定**调用时刻**的 sys.stderr 对象
     （绑原始流是 capture 代理的设计要求——emit 期解析会撞 _RoutedStream 把日志
     灌进节点 output）并挂 root logger。pytest 捕获（capsys/全局捕获）下该流随
-    用例结束关闭，handler 进程级残留 → 后续任何日志触发 "--- Logging error ---"
+    用例结束关闭，node 进程级残留 → 后续任何日志触发 "--- Logging error ---"
     写向当时的 sys.stderr，在 capture_prints 窗口内污染 NodeResult.output。
 
     teardown 末段执行（autouse 根级晚于模块级 fixture 拆卸，能兜住局部 teardown
-    重装的 handler）：摘除本用例装上的 console handler、恢复 root 级别、_reset()
+    重装的 node）：摘除本用例装上的 console node、恢复 root 级别、_reset()
     重建一次性门。setup() 的第三方库降噪副作用保留——与生产入口进程语义一致。
 
     纯生成器（非 fixture）：autouse 包装与回归钉（tests/test_logging_setup_isolation.py）

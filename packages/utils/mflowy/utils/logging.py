@@ -4,7 +4,7 @@ stdlib 守则：库不配置 logging，入口配置。业务代码一律 ``loggi
 本模块只提供 ``setup()`` 供 ``mcp/server.py`` / ``mcp/runner.py`` 入口显式调用。
 direct import 场景遵循 stdlib 契约：默认 WARNING+，调用方自行 ``logging.basicConfig()``。
 
-console handler 绑定 stderr：MCP stdio server 的 stdout 是 JSON-RPC 协议通道。
+console node 绑定 stderr：MCP stdio server 的 stdout 是 JSON-RPC 协议通道。
 """
 
 import logging
@@ -45,8 +45,8 @@ class _ColorFormatter(logging.Formatter):
 def setup(level: int = logging.INFO) -> None:
     """配置全局日志（只执行一次，线程安全；后续调用直接返回）
 
-    - root 总闸 DEBUG，由 console handler 按 level 过滤
-    - 第三方库（非 ``mflowy.*``）统一 WARNING 并清除自配 handler，噪音走 root
+    - root 总闸 DEBUG，由 console node 按 level 过滤
+    - 第三方库（非 ``mflowy.*``）统一 WARNING 并清除自配 node，噪音走 root
     - mlflow 在非 DEBUG 级别下额外整体禁用（autologging 输出量大）
 
     Args:
@@ -82,9 +82,9 @@ def setup(level: int = logging.INFO) -> None:
 
 
 def _console_level() -> int | None:
-    """返回 console handler 的 level（setup 之前为 None）
+    """返回 console node 的 level（setup 之前为 None）
 
-    setup() 把 root 总闸设为 DEBUG、由 handler 过滤，因此
+    setup() 把 root 总闸设为 DEBUG、由 node 过滤，因此
     is_verbose/is_quiet 不能基于 root logger.level 判断。
     """
     return _console_handler.level if _console_handler is not None else None

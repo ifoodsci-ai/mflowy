@@ -12,12 +12,12 @@ def test_patches_active_run_with_updated_tags():
     set_workflow_tags({"mflowy.modeling_yaml_sha256": "yamlhash"})
     ctx = Context(NodeConf(name="加载", node_key="load__csv"), [])
 
-    def next_handler(c, **kw):
+    def next(c, **kw):
         set_workflow_tags({**workflow_tags(), "mflowy.data_sha256": "datahash"})  # 模拟 fn 内 set_data_fingerprint
         return "df"
 
     with patch("mflowy.data.middlewares.log_load_data_fingerprint.set_tags") as m:
-        result = log_load_data_fingerprint(ctx, next_handler)
+        result = log_load_data_fingerprint(ctx, next)
 
     assert result == "df"
     m.assert_called_once_with({"mflowy.modeling_yaml_sha256": "yamlhash", "mflowy.data_sha256": "datahash"})

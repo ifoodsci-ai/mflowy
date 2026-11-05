@@ -15,13 +15,13 @@ import pandas as pd
 from mflowy.data.detect.rules import corr_pair, is_id_like
 from mflowy.data.middlewares import log_statistic, type_family
 from mflowy.data.types import as_series
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from scipy import stats as sps
 
 _TOP_EFFECTS = 5
 
 
-@handler(log_statistic, namespace="statistic")
+@node(log_statistic, namespace="statistic")
 def bivariate(
     load: pd.DataFrame,
     *,

@@ -1,4 +1,4 @@
-"""通用模型加载 handler。
+"""通用模型加载 node。
 
 产物契约：训练步在 parent run 上以 name="final" 持久化唯一 ModelPipeline
 （mlflow.sklearn）；本 handler按 source_run_id 取回，惰性恢复为 ModelLoader 门面。
@@ -9,12 +9,12 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 from .types import ModelLoader
 
 
-@handler(namespace="model")
+@node(namespace="model")
 def loader(
     run_id: Annotated[str, "训练 model 步骤所在 Run 的 id，e.g. <RunInfo: ..., run-id=xxx>"],
 ):

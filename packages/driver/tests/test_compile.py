@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 from mflowy.driver.builder import Builder
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 
 def _yaml(tmp_path, name: str, *nodes: str) -> Path:
@@ -39,11 +39,11 @@ class TestFlatCompile:
     def test_no_param_match_no_dependency(self, fake_plugins, tmp_path):
         """相邻节点无参数匹配 → 互不依赖（叙事序只是编译序，不产生边）。"""
 
-        @handler()
+        @node()
         def alpha() -> int:
             return 1
 
-        @handler()
+        @node()
         def beta() -> int:
             return 2
 
@@ -57,11 +57,11 @@ class TestFlatCompile:
     def test_param_match_wires_lineage(self, fake_plugins, tmp_path):
         """参数名命中组名 → 血缘边（prevs/nexts 双向）。"""
 
-        @handler()
+        @node()
         def alpha() -> int:
             return 1
 
-        @handler()
+        @node()
         def beta(load: int) -> int:
             return load
 
@@ -75,15 +75,15 @@ class TestFlatCompile:
     def test_node_key_addressing(self, fake_plugins, tmp_path):
         """node_key 精确整相寻址：多实例组内点名。"""
 
-        @handler()
+        @node()
         def alpha() -> int:
             return 1
 
-        @handler()
+        @node()
         def omega() -> int:
             return 9
 
-        @handler()
+        @node()
         def beta(load__omega: int) -> int:
             return load__omega
 
@@ -105,11 +105,11 @@ class TestFlatCompile:
     def test_forward_reference_fails_loud(self, fake_plugins, tmp_path):
         """拓扑序强制：参数引用尚未编译的后续节点 → 编译期 fail-loud。"""
 
-        @handler()
+        @node()
         def late() -> int:
             return 1
 
-        @handler()
+        @node()
         def early(load: int) -> int:
             return load
 
@@ -121,7 +121,7 @@ class TestFlatCompile:
     def test_required_unmatched_fails_loud(self, fake_plugins, tmp_path):
         """必选参数边零命中 → 编译失败（带参数名）。"""
 
-        @handler()
+        @node()
         def beta(target: int) -> int:
             return target
 
@@ -132,7 +132,7 @@ class TestFlatCompile:
     def test_catalog_miss_fails_loud_with_available(self, fake_plugins, tmp_path):
         """词表 miss → CatalogMiss 带 Available 候选清单。"""
 
-        @handler()
+        @node()
         def beta() -> int:
             return 1
 
@@ -145,11 +145,11 @@ class TestFlatCompile:
     def test_params_collide_with_param_edge(self, fake_plugins, tmp_path):
         """M1：YAML params 撞参数边名 → 编译期 ValueError（单源判定）。"""
 
-        @handler()
+        @node()
         def alpha() -> int:
             return 1
 
-        @handler()
+        @node()
         def beta(load: int) -> int:
             return load
 
@@ -168,11 +168,11 @@ class TestFlatCompile:
     def test_hint_incompatible_fails_loud(self, fake_plugins, tmp_path):
         """声明期类型不兼容 → 编译期 ValueError（verify_output_hint）。"""
 
-        @handler()
+        @node()
         def alpha() -> str:
             return "s"
 
-        @handler()
+        @node()
         def beta(load: int) -> int:
             return load
 
@@ -186,15 +186,15 @@ class TestArity:
     def test_single_takes_last_instance(self, fake_plugins, tmp_path):
         """单值形态：同名多实例取最后声明（最近者胜）。"""
 
-        @handler()
+        @node()
         def v1() -> int:
             return 1
 
-        @handler()
+        @node()
         def v2() -> int:
             return 2
 
-        @handler()
+        @node()
         def beta(load: int) -> int:
             return load
 
@@ -216,15 +216,15 @@ class TestArity:
     def test_collect_takes_all_in_order(self, fake_plugins, tmp_path):
         """收集形态：同名多实例全收，YAML 声明序。"""
 
-        @handler()
+        @node()
         def v1() -> int:
             return 1
 
-        @handler()
+        @node()
         def v2() -> int:
             return 2
 
-        @handler()
+        @node()
         def beta(load: Iterator[int]) -> list[int]:
             return list(load)
 
@@ -246,7 +246,7 @@ class TestArity:
     def test_optional_unmatched_omitted(self, fake_plugins, tmp_path):
         """可选边零命中 → 省略注入，签名默认值原生生效（运行期验证）。"""
 
-        @handler()
+        @node()
         def beta(missing: int = 7) -> int:
             return missing
 
@@ -264,19 +264,19 @@ class TestPruneAtCompile:
     def test_disabled_prunes_lineage_descendants(self, fake_plugins, tmp_path):
         """disabled = 编译期血缘闭包剪枝：本体与传递后代出局，非血缘保留。"""
 
-        @handler()
+        @node()
         def a() -> int:
             return 1
 
-        @handler()
+        @node()
         def b(load: int) -> int:
             return load
 
-        @handler()
+        @node()
         def c(statistic: int) -> int:
             return statistic  # 消费 statistic 组末位实例（= b）→ b→c 血缘
 
-        @handler()
+        @node()
         def independent() -> int:
             return 42
 
@@ -304,15 +304,15 @@ class TestPruneAtCompile:
         回归锚点：闭包曾无差别穿透可选依赖把 d 误杀。
         """
 
-        @handler()
+        @node()
         def a(**kw) -> int:
             return 1
 
-        @handler()
+        @node()
         def b(load: int) -> int:
             return load * 10
 
-        @handler()
+        @node()
         def d(load: int, statistic: int | None = 5, **_) -> int | None:
             return statistic  # 可选 statistic 组末位 = disabled 的 b
 
@@ -339,15 +339,15 @@ class TestPruneAtCompile:
     def test_collect_partial_survives(self, fake_plugins, tmp_path, fake_tracking):
         """收集形态部分出局：幸存成员继续供数（collect 语义 = 收现存者）。"""
 
-        @handler()
+        @node()
         def v1(**kw) -> int:
             return 1
 
-        @handler()
+        @node()
         def v2(**kw) -> int:
             return 2
 
-        @handler()
+        @node()
         def d(load: Iterator[int], **_) -> list[int]:
             return list(load)
 
@@ -370,11 +370,11 @@ class TestPruneAtCompile:
     def test_structural_rule_prunes_consumerless(self, fake_plugins, tmp_path):
         """structural_rules 看 nexts：无消费者即剪（平铺图上的规则形态，新签名）。"""
 
-        @handler()
+        @node()
         def fe() -> int:
             return 1
 
-        @handler()
+        @node()
         def consumer(x_transformer: int) -> int:
             return x_transformer
 
@@ -401,7 +401,7 @@ class TestPruneAtCompile:
     def test_builder_option_still_transforms(self, fake_plugins, tmp_path):
         """BuilderOption 变换相保留（声明序逐节点）。"""
 
-        @handler()
+        @node()
         def a() -> int:
             return 1
 
@@ -429,7 +429,7 @@ def test_vocab_miss_carries_rename_hint(tmp_path):
 def test_run_echo_false_zero_stdout(fake_plugins, tmp_path, capsys):
     """#55 通道纪律逃生门：``DAG.run(echo=False)`` 零 stdout——回显属入口层，非 CLI 宿主（MCP 进程内调用）可关；默认开（CLI 观感不变）。"""
 
-    @handler()
+    @node()
     def alpha() -> int:
         return 1
 

@@ -1,12 +1,12 @@
 """常量列检测算子（只读）：方差维度——唯一值 ≤1 的死列。"""
 
 import pandas as pd
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 from .errors import DataError, ErrorReport
 
 
-@handler(namespace="detect")
+@node(namespace="detect")
 def constant(load: pd.DataFrame) -> ErrorReport:
     """常量检测(只读):唯一值 ≤1 的死列,数值与类别列同判(variance_filter(0) 的对应缺陷)。"""
     errors = []

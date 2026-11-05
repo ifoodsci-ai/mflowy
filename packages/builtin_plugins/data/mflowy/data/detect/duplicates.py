@@ -1,12 +1,12 @@
 """重复行检测算子:全列判重 → ErrorReport。"""
 
 import pandas as pd
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 from .errors import DataError, ErrorReport
 
 
-@handler(namespace="detect")
+@node(namespace="detect")
 def duplicates(load: pd.DataFrame) -> ErrorReport:
     """重复行检测(只读):keep="first" 语义下被判重复的行位置 + 重复率。
 

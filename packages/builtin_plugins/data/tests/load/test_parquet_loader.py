@@ -20,8 +20,8 @@ def sample_parquet(tmp_path):
     return str(parquet_file)
 
 
-def test_handler_is_registered():
-    """测试 parquet 在 handler registry 中注册"""
+def test_node_is_registered():
+    """测试 parquet 在 node registry 中注册"""
     from mflowy.driver import discover
 
     assert discover.entry("load__parquet") is not None

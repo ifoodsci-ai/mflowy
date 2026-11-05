@@ -75,7 +75,7 @@ def test_inverse_optimization_template_compiles():
     """inverse_optimization compute 工具活路径：run_id 经 model__loader 承载。
 
     n_trials/random_seed 必须渲染进 search_input params（#77）：LocalJobProvider 恒传
-    两键进 env，模板不渲染 = 调用方传参被 Jinja 静默丢弃、handler 默认值恒生效。
+    两键进 env，模板不渲染 = 调用方传参被 Jinja 静默丢弃、node 默认值恒生效。
     取非默认值（200/7）断言——恰好等于默认值的断言钉不住"渲染"这个行为。
     """
     env = {

@@ -327,7 +327,7 @@ def test_real_agentcat_otlp_includes_tool_io(tmp_path, monkeypatch):
 
     recorded: list[str] = []
 
-    class Handler(BaseHTTPRequestHandler):
+    class Node(BaseHTTPRequestHandler):
         def do_POST(self):
             recorded.append(self.rfile.read(int(self.headers.get("Content-Length", 0))).decode())
             self.send_response(200)
@@ -337,7 +337,7 @@ def test_real_agentcat_otlp_includes_tool_io(tmp_path, monkeypatch):
         def log_message(self, *args):
             pass
 
-    sink = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    sink = ThreadingHTTPServer(("127.0.0.1", 0), Node)
     threading.Thread(target=sink.serve_forever, daemon=True).start()
     try:
         monkeypatch.setenv("MFLOWY_TELEMETRY", "on")

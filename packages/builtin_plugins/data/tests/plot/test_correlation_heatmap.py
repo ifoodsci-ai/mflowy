@@ -34,7 +34,7 @@ def cleanup_figures():
 
 
 class TestCorrelationHeatmap:
-    """测试 correlation_heatmap() handler"""
+    """测试 correlation_heatmap() node"""
 
     def test_returns_tuple_and_figure(self, sample_df):
         out_data, fig = correlation_heatmap(load=sample_df)

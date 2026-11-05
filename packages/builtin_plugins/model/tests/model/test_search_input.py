@@ -1,4 +1,4 @@
-"""search_input handler 单元测试 —— Optuna 驱动的输入空间优化
+"""search_input node 单元测试 —— Optuna 驱动的输入空间优化
 
 策略：真实 Optuna study（per T1=B 决议）+ mock model 门面直接注入（model 边消费面）。
 每个 trial 调真实 ``suggest_params`` + 真实 ``study.optimize`` 循环，但模型 predict 走 mock。

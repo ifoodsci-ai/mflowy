@@ -18,7 +18,7 @@ from mflowy.data.middlewares import (
     log_plot,
     validate_targets,
 )
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.utils.plot import OKABE_ITO_PALETTE
 
 from ._grid import band_grid
@@ -40,7 +40,7 @@ def _plot_cell(ax, df: pd.DataFrame, target_col: str, cat_col: str):
     sns.despine(ax=ax, top=False, right=False)
 
 
-@handler(log_plot, namespace="plot")
+@node(log_plot, namespace="plot")
 def target_association_by_category(
     load: pd.DataFrame,
     targets: Annotated[str | list[str] | set[str], "分类目标列（必填，低基数）"],

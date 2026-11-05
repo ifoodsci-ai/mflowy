@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 
 import numpy as np
 import pandas as pd
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.model.x_y import XySpec
 from sklearn.base import BaseEstimator, TransformerMixin
 
@@ -73,7 +73,7 @@ def _compute_bins(strategy, thresholds, labels, data):
         raise ValueError(f"不支持的分箱策略: {strategy}")
 
 
-@handler(namespace="x_transformer")
+@node(namespace="x_transformer")
 def numerical_binner(
     x_y: XySpec,
     numerical_cols: Annotated[str | list[str] | None, "待分箱的列名，None 自动检测"] = None,

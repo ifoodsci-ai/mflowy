@@ -7,7 +7,7 @@ from typing import Annotated
 
 import pandas as pd
 from mflowy.data.middlewares import log_load_data_fingerprint
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.utils.path import ensure_relative_path_under_task_dir
 
 from . import report_loaded
@@ -16,7 +16,7 @@ from .utils import set_data_fingerprint
 logger = logging.getLogger(__name__)
 
 
-@handler(log_load_data_fingerprint, namespace="load")
+@node(log_load_data_fingerprint, namespace="load")
 def csv(
     source: Annotated[str | Path, "文件路径"],
     delimiter: Annotated[str, "字段分隔符"] = ",",

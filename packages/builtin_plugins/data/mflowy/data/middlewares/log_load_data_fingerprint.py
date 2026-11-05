@@ -1,4 +1,4 @@
-"""load 步数据文件指纹中间件：把 handler 内 ``set_data_fingerprint`` 更新后的
+"""load 步数据文件指纹中间件：把 node 内 ``set_data_fingerprint`` 更新后的
 workflow_tags 补写到当前 run。
 
 时序：声明中间件位于 mlflow_log **内层**（链构建使默认尾链在外）——next() 返回后
@@ -9,7 +9,7 @@ mlflow_log 起 run 时自动携带更新后的 tags。"""
 from __future__ import annotations
 
 from mflowy.driver.context import Context
-from mflowy.driver.handler import Chain
+from mflowy.driver.node import Chain
 from mflowy.utils.mlflow import set_tags, workflow_tags
 
 

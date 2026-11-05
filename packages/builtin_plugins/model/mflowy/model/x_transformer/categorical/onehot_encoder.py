@@ -2,14 +2,14 @@
 
 from typing import Annotated, Literal
 
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.model.x_y import XySpec
 from sklearn.preprocessing import OneHotEncoder
 
 from ..utils import resolve_cols
 
 
-@handler(namespace="x_transformer")
+@node(namespace="x_transformer")
 def onehot_encoder(
     x_y: XySpec,
     categorical_cols: Annotated[str | list[str] | None, "待编码的分类列，None 自动检测"] = None,

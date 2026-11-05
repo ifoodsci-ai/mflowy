@@ -1,13 +1,13 @@
 """交互特征创建器
 
-无 fit 阶段，handler 直接返回扩展后的 df（原列 + 新交互列）。
+无 fit 阶段，node 直接返回扩展后的 df（原列 + 新交互列）。
 """
 
 from typing import Annotated, Literal
 
 import numpy as np
 import pandas as pd
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.model.x_y import XySpec
 from sklearn.base import BaseEstimator, TransformerMixin
 
@@ -55,7 +55,7 @@ class _Wrapper(BaseEstimator, TransformerMixin):
         return np.array(self.names)
 
 
-@handler(namespace="x_transformer")
+@node(namespace="x_transformer")
 def interaction_creator(
     x_y: XySpec,
     interactions: Annotated[list[list[str]], "交互对列表，每对包含两个特征名"],

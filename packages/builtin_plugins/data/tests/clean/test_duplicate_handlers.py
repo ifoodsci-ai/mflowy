@@ -1,4 +1,4 @@
-"""Tests for duplicate handler"""
+"""Tests for duplicate node"""
 
 import pandas as pd
 import pytest

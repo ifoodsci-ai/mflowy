@@ -2,7 +2,7 @@ from typing import Annotated, cast
 
 import numpy as np
 import pandas as pd
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.model.x_y import XySpec
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.preprocessing import LabelEncoder
@@ -42,7 +42,7 @@ class _MultiColumnLabelEncoder(BaseEstimator, TransformerMixin):
         return np.array(input_features)
 
 
-@handler(namespace="x_transformer")
+@node(namespace="x_transformer")
 def label_encoder(
     x_y: XySpec,
     categorical_cols: Annotated[str | list[str] | None, "待编码的分类列，None 自动检测"] = None,

@@ -32,7 +32,7 @@ from .config import NodeConf
 from .discover import get_node
 
 if TYPE_CHECKING:
-    from .handler import Handler
+    from .node import Node
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ class Context:
         # 词表条目：编译期由 builder 播种（get_node 单点，每节点恰一次）；
         # None → 惰性词表兜底（直接构造/测试路径零破坏）
         self._injected_fn: Callable | None = fn  # 测试直注缝（裸 fn——签名内省直用）
-        self._handler: Handler | None = None
+        self._handler: Node | None = None
         # 编译产物（builder 播种）：direct 列 Upstream + 边内层依赖列（via）+
         # 绑定序 (ctx, 边名|None) + 直连参数名 → 绑定上游（中间件侧信道）
         self.upstreams: list[Upstream] = upstreams if upstreams is not None else []
@@ -146,26 +146,26 @@ class Context:
         return tuple(self._nexts)
 
     @property
-    def handler(self) -> Handler:
+    def node(self) -> Node:
         """调度契约（#126）：``run`` 即调度链。解析序——fn 种子经身份桥（编译期已织入，
         运行期零目录查询）；无种子走词表惰性兜底（直接构造/嵌入式用法）。"""
         if self._handler is None:
             if self._injected_fn is not None:
-                from .handler import handler_of
+                from .node import node_of
 
-                self._handler = handler_of(self._injected_fn)  # 编译期种子必然已装饰（builder 不变式）
+                self._handler = node_of(self._injected_fn)  # 编译期种子必然已装饰（builder 不变式）
             else:
                 self._handler = get_node(self.conf.node_key)
         return self._handler
 
     @property
-    def handler_raw(self):
+    def node_raw(self):
         """原函数（签名即约束）：测试直注优先，否则注册表条目的 fn。"""
-        return self._injected_fn if self._injected_fn is not None else self.handler.fn
+        return self._injected_fn if self._injected_fn is not None else self.node.fn
 
     @property
     def output_hint(self):
-        return get_type_hints(self.handler_raw).get("return")
+        return get_type_hints(self.node_raw).get("return")
 
     def upstream_contexts(self) -> list[Context]:
         """绑定序上游 ctx（含经由边消费的传递上游）——中间件侧信道（如 df_diff 前值回看）。"""
@@ -221,7 +221,7 @@ class Context:
         bound = self._bind()
         with capture_prints() as buf:
             try:
-                self.result = self.handler.run(self, **bound)
+                self.result = self.node.run(self, **bound)
             except BaseException:
                 self.partial_output = buf.getvalue().strip()  # 崩溃前证据不丢（P2c 追加语义）
                 raise

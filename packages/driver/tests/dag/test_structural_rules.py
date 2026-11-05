@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 from mflowy.driver.builder import Builder
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 
 def _yaml(tmp_path, name: str, *nodes: str) -> Path:
@@ -39,11 +39,11 @@ class TestNewContract:
     def test_none_prunes_same_object_keeps(self, fake_plugins, tmp_path):
         """返回 None = 剪枝；返回同一 ctx = 保留（新契约基本形态）。"""
 
-        @handler()
+        @node()
         def clean_node(**kw) -> int:
             return 1
 
-        @handler()
+        @node()
         def load_node(**kw) -> int:
             return 2
 
@@ -61,11 +61,11 @@ class TestNewContract:
     def test_rule_sees_nexts_view(self, fake_plugins, tmp_path):
         """规则经 ctx.nexts 只读视图看血缘：无消费者即剪的规则形态。"""
 
-        @handler()
+        @node()
         def fe() -> int:
             return 1
 
-        @handler()
+        @node()
         def consumer(x_transformer: int) -> int:
             return x_transformer
 
@@ -90,7 +90,7 @@ class TestNewContract:
     def test_replacement_context_fails_loud(self, fake_plugins, tmp_path):
         """同一对象契约：规则返回替换的新 Context → fail-loud（图身份编译期织入）。"""
 
-        @handler()
+        @node()
         def a(**kw) -> int:
             return 1
 
@@ -109,19 +109,19 @@ class TestRequiredCascade:
     def test_rule_cut_cascades_required_consumer(self, fake_plugins, tmp_path, caplog):
         """a|b→c：规则剪 b → 必选消费者 c 连带出局，warning 点名连带（构建期意图，与 disabled 同策略）。"""
 
-        @handler()
+        @node()
         def a(**kw) -> int:
             return 1
 
-        @handler()
+        @node()
         def b(**kw) -> int:
             return 2
 
-        @handler()
+        @node()
         def c(load: int, statistic: int) -> int:
             return load + statistic
 
-        @handler()
+        @node()
         def p(**kw) -> int:
             return 3
 
@@ -152,11 +152,11 @@ class TestRequiredCascade:
     def test_optional_consumer_survives_on_default(self, fake_plugins, tmp_path):
         """规则剪除的节点被可选消费 → 幸存走签名默认值（不连带）。"""
 
-        @handler()
+        @node()
         def b(**kw) -> int:
             return 2
 
-        @handler()
+        @node()
         def c(statistic: int | None = None) -> int:
             return statistic or 7
 
@@ -174,19 +174,19 @@ class TestRequiredCascade:
     def test_rule_refires_after_cascade(self, fake_plugins, tmp_path):
         """e←c←b：b 被剪 → c 连带出局 → 孤儿规则对 e 二次生效（反向 BFS + 剪即摘除的级联闭环）。"""
 
-        @handler()
+        @node()
         def b(**kw) -> int:
             return 1
 
-        @handler()
+        @node()
         def e() -> int:
             return 2
 
-        @handler()
+        @node()
         def c(cut: int, fe: int) -> int:
             return cut + fe
 
-        @handler()
+        @node()
         def p() -> int:
             return 3
 

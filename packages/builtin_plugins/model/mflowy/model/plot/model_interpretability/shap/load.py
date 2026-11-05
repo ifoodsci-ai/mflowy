@@ -12,7 +12,7 @@ from collections.abc import Iterator
 import numpy as np
 import pandas as pd
 import shap
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 from .contract import (
     CAT_PREFIX,
@@ -25,7 +25,7 @@ from .contract import (
 )
 
 
-@handler(namespace="shap")
+@node(namespace="shap")
 def load(
     load: Iterator[pd.DataFrame],
 ) -> shap.Explanation:

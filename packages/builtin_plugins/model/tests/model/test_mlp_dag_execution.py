@@ -5,7 +5,7 @@
 TypeError，任何含 `model__MLP` 的 DAG 必炸。本文件钉两层：
 
 - 套接：machinery(task, seed=…) → build_pipeline 实例化不 raise（estimator 参数面收 seed）
-- 执行：合成数据 → materialize_split → MLP handler → training 行为 → loader 可 predict
+- 执行：合成数据 → materialize_split → MLP node → training 行为 → loader 可 predict
 """
 
 import numpy as np
@@ -56,7 +56,7 @@ def test_machinery_seed_socket_instantiates_estimator():
 
 
 def test_mlp_dag_training_behavior_end_to_end():
-    """DAG 级执行：MLP handler training 行为跑通，loader 可 predict/predict_proba。"""
+    """DAG 级执行：MLP node training 行为跑通，loader 可 predict/predict_proba。"""
     from mflowy.model.model.mlp import MLP
 
     split = _cls_split()
