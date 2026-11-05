@@ -1,7 +1,7 @@
-"""binding 纯函数契约：签名解释/形态判定/撒谎复核双层/M1 撞名/MISSING 哨兵。
+"""binding 纯函数契约：签名解释/形态判定/编译期撒谎校验/M1 撞名/MISSING 哨兵。
 
 seam 即 interface，测试即消费方——builder（编译）/context（绑定）/module（投影）
-三方共享的公开面在此钉住。
+三方共享的公开面在此钉住。运行期值级复核已随 #57 退役（静态安全哲学）。
 """
 
 from __future__ import annotations
@@ -15,7 +15,6 @@ from mflowy.driver.binding import (
     MISSING,
     Upstream,
     UpstreamMeta,
-    check_value,
     edge_hint,
     non_annotated_params,
     param_edge_names,
@@ -88,26 +87,7 @@ class TestVerifyOutputHint:
     def test_upstream_no_return_hint_skips(self):
         def up(): ...
 
-        verify_output_hint("a", int, up)  # 上游无返回注解：跳过（值级兜底）
-
-
-class TestCheckValue:
-    def test_matching_type_passes(self):
-        check_value("a", int, 5)
-
-    def test_liar_raises(self):
-        with pytest.raises(TypeError, match="签名撒谎"):
-            check_value("a", int, "s")
-
-    def test_none_legal_under_optional_union(self):
-        check_value("a", int | None, None)
-
-    def test_none_illegal_under_bare(self):
-        with pytest.raises(TypeError):
-            check_value("a", int, None)
-
-    def test_non_type_hint_skips(self):
-        check_value("a", "not-a-type", object())
+        verify_output_hint("a", int, up)  # 上游无返回注解：跳过
 
 
 class TestUpstreamStructures:
@@ -135,33 +115,27 @@ def _cell(value):
 
 def _inner_x(a):
     """单内层取值闭包（x 参数绑定 a）——Upstream.edge 测试共用件。"""
-    return {"x": Upstream.node(UpstreamMeta("x", True), int, [a], check_expect=int, collect=False).call}
+    return {"x": Upstream.node(UpstreamMeta("x", True), int, [a], collect=False).call}
 
 
 class TestUpstreamNode:
     """Upstream.node 直连取值条目工厂（生产唯一构造点）：拉起/去重/同源过滤/
-    MISSING/collect-single/撒谎复核。上游按鸭子协议消费（result 哨兵 + run）。"""
+    MISSING/collect-single。上游按鸭子协议消费（result 哨兵 + run）。"""
 
     def test_lazy_pull_runs_each_once_and_shapes(self):
         """惰性拉起恰一次；collect 出迭代器、single 出末位值。"""
         a, b = _cell(1), _cell(2)
-        collect = Upstream.node(
-            UpstreamMeta("feat", True), int, cast("list[Context]", [a, b]), check_expect=int, collect=True
-        )
+        collect = Upstream.node(UpstreamMeta("feat", True), int, cast("list[Context]", [a, b]), collect=True)
         assert list(collect.call()) == [1, 2]
         collect.call()  # 再次取值不重跑（哨兵去重）
         assert (a.runs, b.runs) == (1, 1)
-        single = Upstream.node(
-            UpstreamMeta("feat", True), int, cast("list[Context]", [a]), check_expect=int, collect=False
-        )
+        single = Upstream.node(UpstreamMeta("feat", True), int, cast("list[Context]", [a]), collect=False)
         assert single.call() == 1
 
     def test_in_place_filter_seen_by_call(self):
         """同源焊点：rewire 就地过滤 nodes，闭包即时看见（剪枝语义的机制面）。"""
         a, b = _cell(1), _cell(2)
-        u = Upstream.node(
-            UpstreamMeta("feat", False), int, cast("list[Context]", [a, b]), check_expect=int, collect=True
-        )
+        u = Upstream.node(UpstreamMeta("feat", False), int, cast("list[Context]", [a, b]), collect=True)
         u.nodes[:] = [n for n in u.nodes if n is a]  # 模拟 rewire 剥除 b
         assert list(u.call()) == [1]
         assert b.runs == 0
@@ -169,16 +143,9 @@ class TestUpstreamNode:
     def test_empty_after_filter_returns_missing(self):
         """成员全被剥除 → MISSING（省略注入，签名默认值生效的机制面）。"""
         a = _cell(1)
-        u = Upstream.node(UpstreamMeta("feat", False), int, cast("list[Context]", [a]), check_expect=int, collect=True)
+        u = Upstream.node(UpstreamMeta("feat", False), int, cast("list[Context]", [a]), collect=True)
         u.nodes[:] = []
         assert u.call() is MISSING
-
-    def test_liar_raises_with_meta_name(self):
-        """值级复核点名参数边（meta.name 进错误文案）。"""
-        a = _cell("s")  # 声明 int 实产 str
-        u = Upstream.node(UpstreamMeta("feat", True), int, cast("list[Context]", [a]), check_expect=int, collect=False)
-        with pytest.raises(TypeError, match=r"feat: 上游声明输出"):
-            u.call()
 
 
 class TestUpstreamEdge:
@@ -192,17 +159,6 @@ class TestUpstreamEdge:
         u = Upstream.edge(edge_raw, "via_edge", dict, required=True, inner=_inner_x(a))
         assert u.meta.type == "edge" and u.meta.via == "via_edge" and u.nodes == []
         assert u.call() == {"x": 1, "y": 99}
-
-    def test_edge_result_checked(self):
-        """边返回值复核（与节点输出对称的撒谎防线）。"""
-        a = _cell(1)
-
-        def edge_raw(x) -> str:  # 声明 str 实产 int
-            return x
-
-        u = Upstream.edge(edge_raw, "via_edge", str, required=True, inner=_inner_x(a))
-        with pytest.raises(TypeError, match="签名撒谎"):
-            u.call()
 
 
 def test_missing_is_identity_sentinel():

@@ -4,7 +4,7 @@
   挂到 ``ctx.upstreams``；``ctx._upstream_pairs`` 为 (上游 ctx, 边名|None) 绑定序记录，
   供图物化与中间件侧信道（``upstream_contexts``）消费。
 - **运行期**：``_bind`` 逐 direct 项惰性取值——取值闭包（``binding.Upstream.node``/
-  ``Upstream.edge`` 构造，拉起/哨兵去重/值级复核/整形居 binding）完成拉起未执行
+  ``Upstream.edge`` 构造，拉起/哨兵去重/整形居 binding）完成拉起未执行
   上游与整形（血缘 = ``prevs`` 血缘视图派生）；``MISSING``（零命中）省略参数，
   Python 签名默认值原生生效。
 
@@ -126,7 +126,7 @@ class Context:
         """声明消费集的 run_id 点分串（保序去重；_prevs 派生只读视图，无缓冲）。
 
         成功 run 下与实际消费恒等；失败 run 下为超集（push 调度先行的上游也在
-        _prevs 中）——差集由失败异常文案指认（check_value/validate_call 均点名参数）。
+        _prevs 中）——差集由失败异常文案指认（validate_call 点名参数）。
         """
         if not self._prevs:
             return None

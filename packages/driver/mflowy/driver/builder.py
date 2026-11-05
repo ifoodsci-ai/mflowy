@@ -82,19 +82,18 @@ class NodeTable:
 
 def _match_upstream(
     nid: str, label: str, name: str, expect: object, optional: bool, table: NodeTable
-) -> tuple[list[Context], bool, object]:
+) -> tuple[list[Context], bool]:
     """查表 + 必选零命中 fail-loud + collect/single 整形（直连与边内层共用的单源）。
 
-    返回 (chosen, collect, elem)：chosen 为绑定的上游 ctx（collect 保序取全 /
-    single 取最后），collect 为收集形态标志，elem 为取值复核用的期望注解
-    （collect → 元素类型；single → 原注解）。"""
+    返回 (chosen, collect)：chosen 为绑定的上游 ctx（collect 保序取全 /
+    single 取最后），collect 为收集形态标志（``edge_hint`` 单源判定）。"""
     matched = table.lookup(name)
     if not matched:
         if not optional:
             raise ValueError(f"节点 {nid} 参数边不可达：['{label}']——上游未在更早位置出现（检查拼写或调整顺序）")
-        return [], False, expect  # 可选零命中：省略注入，签名默认值原生生效
-    elem, collect = edge_hint(expect)
-    return (matched if collect else matched[-1:]), collect, elem if collect else expect
+        return [], False  # 可选零命中：省略注入，签名默认值原生生效
+    _, collect = edge_hint(expect)
+    return (matched if collect else matched[-1:]), collect
 
 
 def _reverse_bfs(nodes: list[Context]) -> list[Context]:
@@ -246,7 +245,7 @@ class Builder:
         by_param: dict[str, list[Context]],
     ) -> None:
         """直连参数边：查表（组名→node_key），collect 保序取全 / single 取最后。"""
-        chosen, collect, elem = _match_upstream(nid, name, name, expect, optional, table)
+        chosen, collect = _match_upstream(nid, name, name, expect, optional, table)
         if not chosen:
             return  # 可选零命中：省略注入，签名默认值原生生效
         for up in chosen:
@@ -254,9 +253,7 @@ class Builder:
             pairs.append((up, None))
         by_param.setdefault(name, []).extend(chosen)
         direct.append(
-            Upstream.node(
-                UpstreamMeta(name, not optional, table.kind(name)), expect, chosen, check_expect=elem, collect=collect
-            )
+            Upstream.node(UpstreamMeta(name, not optional, table.kind(name)), expect, chosen, collect=collect)
         )
 
     def _bind_via(
@@ -272,20 +269,18 @@ class Builder:
         pairs: list[tuple[Context, str | None]],
     ) -> None:
         """变换参数边（param 名命中 edges 词表）：边函数自身参数对节点表解析（传递血缘，
-        边不吃边），消费方 expect 对边返回注解声明校验；边返回值运行期复核。内层依赖
-        记入 via_inner（builder 私有）——闭包传导与剪枝剥除的消费面。"""
+        边不吃边），消费方 expect 对边返回注解声明校验。内层依赖记入 via_inner
+        （builder 私有）——闭包传导与剪枝剥除的消费面。"""
         verify_output_hint(name, expect, edge_raw)
         inner: dict[str, Callable] = {}
         for n, h, opt in non_annotated_params(edge_raw):
-            chosen, collect, elem = _match_upstream(nid, f"{name}.{n}", n, h, opt, table)
+            chosen, collect = _match_upstream(nid, f"{name}.{n}", n, h, opt, table)
             if not chosen:
                 continue  # 可选内层零命中：省略参数，边函数签名默认值原生生效
             for up in chosen:
                 verify_output_hint(f"{name}.{n}", h, up.handler_raw)
                 pairs.append((up, name))
-            u = Upstream.node(
-                UpstreamMeta(n, not opt, table.kind(n), name), h, chosen, check_expect=elem, collect=collect
-            )
+            u = Upstream.node(UpstreamMeta(n, not opt, table.kind(n), name), h, chosen, collect=collect)
             via_inner.append(u)
             inner[n] = u.call
 
