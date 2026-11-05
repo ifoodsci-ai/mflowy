@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 
 from mflowy.driver.context import Context
-from mflowy.driver.handler import Handler
+from mflowy.driver.handler import Chain
 from mflowy.model.cv.types import SplitSpec
 from mflowy.utils import mlflow as mlflow_util
 from mflowy.utils.mlflow import workflow_tags
@@ -20,7 +20,7 @@ from mflowy.utils.mlflow import workflow_tags
 logger = logging.getLogger(__name__)
 
 
-def log_cv(ctx: Context, next: Handler) -> SplitSpec:
+def log_cv(ctx: Context, next: Chain) -> SplitSpec:
     result = next(ctx)
     assert isinstance(result, SplitSpec)
 

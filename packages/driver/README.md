@@ -48,8 +48,8 @@
 ```mermaid
 flowchart LR
     subgraph declare["① 函数声明节点（构建 / 安装期）"]
-        H["@handler 装饰器<br/>挂 .handler 调度链<br/>+ 内嵌 validate_call"] -- "同 PR 静态声明<br/>（CR 交叉检查）" --> EP1["entry points 组<br/>mflowy.builtin_plugins"]
-        E["@edge 装饰器<br/>挂 .edge 工厂"] --> EP1
+        H["@handler 装饰器<br/>注册表 &lt;node_key, Handler&gt;<br/>+ 内嵌 validate_call（零属性挂载 #126）"] -- "同 PR 静态声明<br/>（CR 交叉检查）" --> EP1["entry points 组<br/>mflowy.builtin_plugins"]
+        E["@edge 装饰器<br/>注册表 Edge（#126 零属性挂载）"] --> EP1
         THIRD["第三方插件包<br/>（以 mflowy 为 base 依赖）"] --> EP2["entry points 组<br/>mflowy.plugins"]
         EP1 --> DISC["discover.py 插件目录<br/>dict[node_key: EntryPoint]（扁平身份键）<br/>后组覆盖前组；分组视图派生"]
         EP2 --> DISC
@@ -123,8 +123,8 @@ def common_filter(...) -> pd.DataFrame: ...
 ```
 
 1. **身份声明**：`[project.entry-points."mflowy.builtin_plugins"]` 静态手写声明（0.2.0 起构建期 AST 扫描钩子退役，与第三方包同构）——name 即身份（节点 `namespace.node_name`，归组段与装饰器 `namespace=` 逐字一致由 CR 兜底；边函数注册于 `edges` ns；声明指向未装饰函数在加载期 fail-loud）
-2. **能力标记**：`handler.py: @handler` 内嵌 `validate_call`（签名即约束：`Annotated[T, "描述"]` 兼容旧约定、`Field(...)` 带约束、裸类型注入参数 is-instance 直通），织入中间件链后把 `.handler`（调度链，`__wrapped__` 回指原函数供内省）挂到函数属性上；`mlflow_log` 强制尾链（`builtin_middleware.py`——stop_on_error 已随 #59 血缘剪枝退役），每个 handler 必在 mlflow run 内执行
-3. **目录与解析**：`discover.py` 按序读两组 entry points（`mflowy.builtin_plugins` 内置 + `mflowy.plugins` 第三方），`discover()/list_all()/entry()` 纯元数据零 import；`get_node`/`get_edge` 惰性 import 并以 `.handler`/`.edge` 属性校验声明一致性，坏声明 fail-loud
+2. **能力注册**：`handler.py: @handler` 内嵌 `validate_call`（签名即约束：`Annotated[T, "描述"]` 兼容旧约定、`Field(...)` 带约束、裸类型注入参数 is-instance 直通），构造 `Handler`（fn/middlewares/param_schema/ns + `run` 调度链）注册进 `<node_key, Handler>` 注册表（`discover.HANDLER_REGISTRY`，#126 零属性挂载——fn 原样返回，直调不受影响）；`mlflow_log` 强制尾链（`builtin_middleware.py`——stop_on_error 已随 #59 血缘剪枝退役），每个 handler 必在 mlflow run 内执行
+3. **目录与解析**：`discover.py` 按序读两组 entry points（`mflowy.builtin_plugins` 内置 + `mflowy.plugins` 第三方），`discover()/list_all()/entry()` 纯元数据零 import；`get_node`/`get_edge` 惰性 import 并经身份桥（`handler_of`/`edge_of`，#126 零属性挂载）校验装饰性，坏声明 fail-loud（名 vs 声明逐字一致是 CR 面）
 4. **用户文档**：`module.py: get_node_info` 内省 `Annotated[T, "描述"]` → JSON Schema（纯用户可配参数），参数边依赖经 `NodeInfo.upstream`（展平边函数的节点名，保序去重）独立下发——MCP schema 即 API 文档
 
 **editable 陷阱**：entry points 元数据在 `uv sync` 时生效，新增插件模块或注册条目后必须重跑 `uv sync` 才会出现在 `list-nodes`。

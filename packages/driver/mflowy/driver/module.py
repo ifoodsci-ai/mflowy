@@ -1,7 +1,8 @@
 """节点查询
 
-读取 discover 目录提供节点列表和参数查询。能力通过 @handler 装饰器标记、
-entry points 声明，此模块仅提供查询接口。schema 纯 Annotated 用户可配参数；
+读取 discover 目录提供节点列表和参数查询。能力通过 @handler 装饰器注册（#126
+注册表真源）、entry points 声明，此模块仅提供查询接口。schema 取注册表
+``Handler.param_schema``（纯 Annotated 用户可配参数）；
 参数边经 ``NodeEntry.upstream`` 独立下发，投影为类型化的 ``UpstreamMeta``
 （``type`` 判别节点/边，``via`` 标注消费途经的边名；``name == via`` 的边自指
 条目不进词表投影——边信息由 edges 词表承载）——词表投影与校验/注入通道分离。
@@ -12,9 +13,7 @@ import logging
 from dataclasses import dataclass
 from inspect import Parameter
 from types import UnionType
-from typing import Annotated, Literal, TypeAliasType, Union, get_args, get_origin, get_type_hints
-
-from pydantic import Field, create_model
+from typing import Literal, TypeAliasType, Union, get_args, get_origin
 
 from .binding import UpstreamMeta, address_kind, non_annotated_params
 from .config import node_key
@@ -86,52 +85,23 @@ class NodeInfo:
     parameters_schema: dict
 
 
-def _bridge_metadata(m):
-    """旧式 Annotated[T, "描述"] 的字符串 metadata 桥接为 Field(description=...)。
-
-    pydantic 忽略无法识别的 Annotated metadata，不桥接则描述进不了 JSON Schema。
-    """
-    return Field(description=m) if isinstance(m, str) else m
-
-
-def _params_json_schema(wrapped) -> dict:
-    """Annotated 参数合成参数模型直出 JSON Schema。
-
-    裸类型参数（middleware 注入域）排除；默认值取自函数签名——默认值的单一事实源
-    是签名，Field 只带约束与描述。无 Annotated 参数时输出空 schema。
-    """
-    hints = get_type_hints(wrapped, include_extras=True)
-    sig = inspect.signature(wrapped)
-    fields = {}
-    for name, hint in hints.items():
-        if get_origin(hint) is not Annotated:
-            continue
-        args = get_args(hint)
-        if not args:
-            continue
-        typ = Annotated[args[0], *map(_bridge_metadata, args[1:])]
-        p = sig.parameters.get(name)
-        fields[name] = (typ, ...) if p is None or p.default is Parameter.empty else (typ, p.default)
-    if not fields:
-        return {"type": "object", "properties": {}}
-    return create_model("_Params", **fields).model_json_schema()
-
-
 def get_node_info(namespace: str, node_name: str) -> NodeInfo:
-    """提取 handler 函数的用户可配参数（JSON Schema）+ 参数边依赖（结构化 upstream）。
+    """提取 handler 的用户可配参数（JSON Schema）+ 参数边依赖（结构化 upstream）。
 
     对式 (namespace, node_name) 是 MCP 工具面的外部契约（用户分开填两组）；
-    内部组 node_key 查目录——词表边界翻译。
+    内部组 node_key 查目录——词表边界翻译。schema 取注册表 ``Handler.param_schema``
+    （装饰期自签名派生，#126——派生逻辑单源居 handler.py）。
     """
-    fn = get_node(node_key(namespace, node_name), raw=True)
+    entry = get_node(node_key(namespace, node_name))
+    fn = entry.fn
     doc = fn.__doc__
     return NodeInfo(
-        getattr(fn, "node_key", node_key(namespace, node_name)),
+        node_key(entry.ns or "", fn.__name__),  # 身份源自装饰器声明（表注册名仅目录层）
         namespace,
         node_name,
         (doc or "").strip().splitlines()[0] if doc and doc.strip() else "",
         _upstream_metas(fn),
-        _params_json_schema(fn),
+        entry.param_schema,
     )
 
 

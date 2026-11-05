@@ -2,7 +2,7 @@
 
 from mflowy.driver.config import NodeConf
 from mflowy.driver.context import Context
-from mflowy.driver.handler import handler
+from mflowy.driver.handler import handler, handler_of
 
 
 class TestMiddlewareUse:
@@ -23,7 +23,7 @@ class TestMiddlewareUse:
             return "test_result"
 
         task = Context(NodeConf(name="test_task", node_key="load__test"), [])
-        result = dummy_handler.handler(task)
+        result = handler_of(dummy_handler).run(task)
 
         assert "before: test_task" in execution_log
         assert "after: test_task" in execution_log
@@ -51,7 +51,7 @@ class TestMiddlewareUse:
             return "result"
 
         task = Context(NodeConf(name="test_task", node_key="load__test"), [])
-        dummy_handler.handler(task)
+        handler_of(dummy_handler).run(task)
 
         # wrap 顺序: a→b→mlflow_log→stop_on_error，每层包在外面
         # 可见顺序（系统中间件不写 log）: B → A → handler → A → B
@@ -81,7 +81,7 @@ class TestMiddlewareUse:
             return "handler_result"
 
         task = Context(NodeConf(name="cached_task", node_key="load__test"), [])
-        result = dummy_handler.handler(task)
+        result = handler_of(dummy_handler).run(task)
 
         assert "cache_check" in execution_log
         assert "cache_hit" in execution_log

@@ -31,6 +31,9 @@ from .binding import _NOT_RUN, MISSING, Upstream
 from .config import NodeConf
 from .discover import get_node
 
+if TYPE_CHECKING:
+    from .handler import Handler
+
 logger = logging.getLogger(__name__)
 
 # 分组计数 map：{node_key: count(0)}——同 key 多实例序号独立于其他类型（跨配置
@@ -96,8 +99,8 @@ class Context:
         self.result: Any = _NOT_RUN
         # 词表条目：编译期由 builder 播种（get_node 单点，每节点恰一次）；
         # None → 惰性词表兜底（直接构造/测试路径零破坏）
-        self._handler_raw: Callable | None = fn
-        self._handler: Callable | None = None
+        self._injected_fn: Callable | None = fn  # 测试直注缝（裸 fn——签名内省直用）
+        self._handler: Handler | None = None
         # 编译产物（builder 播种）：direct 列 Upstream + 边内层依赖列（via）+
         # 绑定序 (ctx, 边名|None) + 直连参数名 → 绑定上游（中间件侧信道）
         self.upstreams: list[Upstream] = upstreams if upstreams is not None else []
@@ -143,19 +146,22 @@ class Context:
         return tuple(self._nexts)
 
     @property
-    def handler(self) -> Callable:
-        if self._handler is not None:
-            return self._handler
-        # 链由 @handler 装饰挂载——不变式由 discover._load_ep 加载期校验钉死（直接访问）
-        h = self.handler_raw.handler
-        self._handler = h
-        return h
+    def handler(self) -> Handler:
+        """调度契约（#126）：``run`` 即调度链。解析序——fn 种子经身份桥（编译期已织入，
+        运行期零目录查询）；无种子走词表惰性兜底（直接构造/嵌入式用法）。"""
+        if self._handler is None:
+            if self._injected_fn is not None:
+                from .handler import handler_of
+
+                self._handler = handler_of(self._injected_fn)  # 编译期种子必然已装饰（builder 不变式）
+            else:
+                self._handler = get_node(self.conf.node_key)
+        return self._handler
 
     @property
     def handler_raw(self):
-        if self._handler_raw is None:
-            self._handler_raw = get_node(self.conf.node_key, raw=True)
-        return self._handler_raw
+        """原函数（签名即约束）：测试直注优先，否则注册表条目的 fn。"""
+        return self._injected_fn if self._injected_fn is not None else self.handler.fn
 
     @property
     def output_hint(self):
@@ -215,7 +221,7 @@ class Context:
         bound = self._bind()
         with capture_prints() as buf:
             try:
-                self.result = self.handler(self, **bound)
+                self.result = self.handler.run(self, **bound)
             except BaseException:
                 self.partial_output = buf.getvalue().strip()  # 崩溃前证据不丢（P2c 追加语义）
                 raise

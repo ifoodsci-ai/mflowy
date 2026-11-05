@@ -120,10 +120,10 @@ def test_get_node_info_unavailable_reports_extra(monkeypatch):
     """缺 extra 环境加载失败 → 结构化 available=false + 所需 extra，而非裸 ImportError"""
     import mflowy.driver.discover as discover_mod
 
-    def _missing_dep(key, valid="handler"):
+    def _missing_dep(key: str):
         raise ModuleNotFoundError("No module named 'torch'", name="torch")
 
-    monkeypatch.setattr(discover_mod, "_load_fn", _missing_dep)
+    monkeypatch.setattr(discover_mod, "_load_handler", _missing_dep)  # #126：加载器拆 _load_handler/_load_edge
     info = get_node_info("model", "MLP")
     assert info["available"] is False
     assert info["requires"] == "deep"

@@ -6,11 +6,11 @@
 """
 
 from mflowy.driver.context import Context
-from mflowy.driver.handler import Handler
+from mflowy.driver.handler import Chain
 from mflowy.utils import mlflow as mlflow_util
 
 
-def log_statistic(ctx: Context, next: Handler):
+def log_statistic(ctx: Context, next: Chain):
     result = next(ctx)
 
     if result is None:

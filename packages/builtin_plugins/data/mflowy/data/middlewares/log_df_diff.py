@@ -1,10 +1,10 @@
 import pandas as pd
 from mflowy.driver.context import Context
-from mflowy.driver.handler import Handler
+from mflowy.driver.handler import Chain
 from mflowy.utils import mlflow as mlflow_util
 
 
-def df_diff(ctx: Context, next: Handler):
+def df_diff(ctx: Context, next: Chain):
     """计算清洗前后的 DataFrame 差异并记录到 MLflow。
 
     前值取节点自身参数边的绑定：``clean``（可选单值边 = 最近前置 clean 实例）优先，

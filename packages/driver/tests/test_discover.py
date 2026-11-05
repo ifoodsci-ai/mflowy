@@ -43,8 +43,11 @@ class TestCatalog:
         """目录中全部插件可解析为可调用调度链/边工厂（缺 extra 的环境会在此暴露）"""
         for step, modules in list_all().items():
             module = modules[0]
-            h = get_edge(module) if step == "edges" else get_node(f"{step}__{module}" if step else module)
-            assert callable(h), f"{step}.{module} not callable"
+            if step == "edges":
+                assert callable(get_edge(module).fn), f"edges.{module} fn 不可调"
+            else:
+                h = get_node(f"{step}__{module}" if step else module)
+                assert callable(h.fn) and callable(h.run), f"{step}.{module} 契约不完整（fn/run，#126 条目面）"
 
     def test_metadata_queries_zero_import(self):
         """discover/entry 纯元数据查询：不触发任何插件 import"""
@@ -138,7 +141,7 @@ class TestLoadContract:
     def test_missing_marker_raises(self, fake_entry_points):
         """entry point 指向未标注 @handler 的函数 → fail-loud（声明与注册一致性）"""
         fake_entry_points.append(_ep("load.plain", "mflowy.utils.file:read_text"))
-        with pytest.raises(ValueError, match="未标注 @handler"):
+        with pytest.raises(ValueError, match="未注册 @handler"):
             get_node("load__plain")
 
     def test_get_miss_lists_available(self, fake_entry_points):
@@ -187,7 +190,7 @@ class TestEdgesNamespace:
         cat = EntryPointCatalog()
         assert cat.find_edge("as_df") is None  # 非 edges 桶不可见（纯元数据判定，不 load）
         assert cat.find_edge("nope") is None  # miss
-        with pytest.raises(ValueError, match="未标注 @edge"):
+        with pytest.raises(ValueError, match="未注册 @edge"):
             cat.find_edge("train_split")  # 坏声明不吞——比 None 更响
 
     def test_find_edge_import_failure_propagates(self, fake_entry_points):
@@ -203,35 +206,36 @@ class TestEdgesNamespace:
 
 
 class TestHandlerNamespaceDecl:
-    def test_decorator_namespace_kwarg_stored_on_fn(self):
-        """@handler(namespace='load') 声明归组：挂函数属性供 `_load_ep` 加载期属性校验消费。"""
+    def test_decorator_namespace_decl_to_registry(self):
+        """@handler(namespace=...) 声明归组（#126 零属性挂载）：注册表键 = node_key，ns 入条目。"""
         import mflowy.driver.handler as h_mod
+        from mflowy.driver.config import NodeConf
+        from mflowy.driver.discover import HANDLER_REGISTRY
 
         @h_mod.handler(namespace="load")
         def _ns_plugin(**kwargs):
             return "ok"
 
-        assert _ns_plugin.namespace == "load"
         # 桩自带前导下划线：load__ + _ns_plugin = load___ns_plugin（连接符是 __）
-        assert _ns_plugin.node_key == "load___ns_plugin"
+        assert HANDLER_REGISTRY["load___ns_plugin"].fn is _ns_plugin
+        assert h_mod.handler_of(_ns_plugin).ns == "load"
 
         @h_mod.handler(namespace="plot")  # 无前导下划线的干净桩——锚定连接符本身
         def feat(**kwargs):
             return "ok"
 
-        assert feat.node_key == "plot__feat"
+        assert HANDLER_REGISTRY["plot__feat"].fn is feat
+        # 装饰器键与内核 NodeConf 走同一构造来源（config.node_key 单一来源）
+        assert NodeConf(name="feat", node_key="plot__feat").node_key == "plot__feat"
 
-        from mflowy.driver.config import NodeConf
-
-        # 装饰器属性与内核 NodeConf 走同一构造来源（config.node_key 单一来源）
-        assert NodeConf(name="feat", node_key="plot__feat").node_key == feat.node_key
-
-        @h_mod.handler()  # 缺省 = 非归组
+        @h_mod.handler()  # 缺省 = 非归组（ns=None 归一）
         def _plain(**kwargs):
             return "ok"
 
-        assert _plain.namespace == ""
-        assert _plain.node_key == "_plain"  # 裸名只剥空组连接符——私有前导保留，寻址键忠实（与 NodeConf 语义统一）
+        assert HANDLER_REGISTRY["_plain"].fn is _plain  # 裸名只剥空组连接符——私有前导保留
+        assert h_mod.handler_of(_plain).ns is None
+        # 零属性挂载：fn 原样
+        assert not hasattr(_plain, "node_key") and not hasattr(_plain, "namespace")
 
 
 class TestRenameHint:

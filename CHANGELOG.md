@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### BREAKING：Handler/edge 契约升级 Protocol + 注册表，装饰器零属性挂载（#126）
+
+- `@handler` 构造 `Handler`（fn / middlewares / param_schema / ns + `run` 调度链）注册进
+  `discover.HANDLER_REGISTRY`（`<node_key, Handler>`），`@edge` 同构（`Edge` 单面 fn）——
+  **装饰器不再向 fn 挂任何属性，原样返回**；fn 直调语义与直接 import 入口不变。
+- **消费面迁移**：`Context.handler` = Handler 实例（`run` 即调度链；fn 种子经身份桥
+  解析——运行期零目录查询的结构性质保持）；`get_node(key)` 非 raw 返回 Handler
+  （raw 不变返回原函数）；`get_node_info` 的 schema 取 `Handler.param_schema`
+  （装饰期自签名派生，派生器自 module 单源迁居 handler）；中间件链类型别名
+  `Handler` 让名 **`Chain`**（SDK typing 导入面，builtin/data/model 中间件同步改名）。
+- fn↔entry 桥 `handler_of(fn)` / `edge_of(fn)`：**身份弱键映射**（同名不撞、随 fn
+  回收）——测试与持 fn 消费方取调度面的唯一姿势。
+- 目录加载校验语义等价迁移：旧 `hasattr(fn, valid)` → 身份桥本尊判定——**只查
+  装饰性、不比名**（entry point 名与装饰器 namespace 逐字一致仍是 CR 交叉检查面）。
+- **BREAKING 面**：读 `fn.handler`/`fn.namespace`/`fn.node_key`/`fn.edge` 的代码
+  （仓内零残留）与 `Handler` 别名按链类型消费的 SDK 导入需迁移。
+
 ### 估计器 mixin 纯化：剥 TYPE_CHECKING 借基（#122）
 
 - 4 个估计器族文件（`_random_forest`/`_catboost`/`_lightgbm`/`_xgboost`）删除
