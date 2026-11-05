@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import TYPE_CHECKING
 
 import pandas as pd
 from lightgbm import LGBMClassifier as lgbmc
@@ -16,14 +15,8 @@ from .utils import as_y_frame, validate_input
 
 logger = logging.getLogger(__name__)
 
-if TYPE_CHECKING:
-    # 类型面借具体基类：解析 super().fit 与拟合后属性；运行期真实基类由子类 (mixin, lgbmr/lgbmc) 组合
-    _LGBMBase = lgbmr
-else:
-    _LGBMBase = object
 
-
-class _LGBMMixin(LossCurveMixin, TreeExplainMixin, _LGBMBase):
+class _LGBMMixin(LossCurveMixin, TreeExplainMixin):
     """LightGBM estimator 子类。
 
     fit 流程：SubTask.from_y(y, self.task) → set_params 增量调 objective → 底层 fit。
@@ -55,7 +48,7 @@ class _LGBMMixin(LossCurveMixin, TreeExplainMixin, _LGBMBase):
             params = {"objective": "binary"}
         elif subtask == SubTask.MULTICLASS:
             params = {"objective": "multiclass", "num_class": y.iloc[:, 0].nunique()}
-        self.set_params(**params)
+        self.set_params(**params)  # type: ignore[reportAttributeAccessIssue]  # 组合方契约：由子类 (mixin, 具体估计器) 组合满足——mixin 定义期不可见（#122）
 
         # eval 指标只在有显式 val 时收集（train-in-eval 供 loss curve 的 Train 段）；
         # 无独立 val 时不挂任何 eval——K 折 trial 零 eval 开销。
@@ -71,7 +64,7 @@ class _LGBMMixin(LossCurveMixin, TreeExplainMixin, _LGBMBase):
             fit_params["eval_y"] = (y, eval_y)
             if callbacks:
                 fit_params["callbacks"] = callbacks
-        return super().fit(X, y, **fit_params)
+        return super().fit(X, y, **fit_params)  # type: ignore[reportAttributeAccessIssue]  # 组合方契约：由子类 (mixin, 具体估计器) 组合满足——mixin 定义期不可见（#122）
 
     def get_loss_curve(self, **_):
         evals_result = getattr(self, "evals_result_", None) or {}
@@ -84,18 +77,18 @@ class _LGBMMixin(LossCurveMixin, TreeExplainMixin, _LGBMBase):
         return self._build_loss_curve_df(train_metrics, val_metrics)
 
     def get_feature_importance_df(self, **_):
-        return self._build_importance_df(self.feature_name_, self.feature_importances_)
+        return self._build_importance_df(self.feature_name_, self.feature_importances_)  # type: ignore[reportAttributeAccessIssue]  # 组合方契约：由子类 (mixin, 具体估计器) 组合满足——mixin 定义期不可见（#122）
 
     def plot_tree(self, **kwargs):
         """生成器：先 yield 树数量，再逐棵 yield Figure。"""
         import lightgbm as lgb
         from matplotlib import pyplot as plt
 
-        n_trees = self.booster_.num_trees()
+        n_trees = self.booster_.num_trees()  # type: ignore[reportAttributeAccessIssue]  # 组合方契约：由子类 (mixin, 具体估计器) 组合满足——mixin 定义期不可见（#122）
         yield n_trees
         for tree_idx in range(n_trees):
             fig, ax = plt.subplots()
-            lgb.plot_tree(self, tree_index=tree_idx, ax=ax)
+            lgb.plot_tree(self, tree_index=tree_idx, ax=ax)  # type: ignore[reportArgumentType]  # 组合方契约：self 实为组合后的 LGBMModel（#122）
             yield fig
 
 

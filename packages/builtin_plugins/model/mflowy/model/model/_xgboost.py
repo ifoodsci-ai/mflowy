@@ -11,11 +11,6 @@ from xgboost import plot_tree as _xgb_plot_tree
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
-    # 类型面借具体基类：解析 super().fit 与拟合后属性；运行期真实基类由子类 (mixin, xgbr/xgbc) 组合
-    _XGBBase = xgbr
-else:
-    _XGBBase = object
-
 import logging
 
 from mflowy.utils.logging import is_verbose
@@ -28,7 +23,7 @@ from .utils import as_y_frame, validate_input
 logger = logging.getLogger(__name__)
 
 
-class _XGBMixin(LossCurveMixin, TreeExplainMixin, _XGBBase):
+class _XGBMixin(LossCurveMixin, TreeExplainMixin):
     task: TASKTYPE  # 子类类属性声明——SubTask 路由用（sklearn clone 存活）
 
     def fit(self, X: pd.DataFrame, y: pd.DataFrame, eval_X=None, eval_y=None, **_):
@@ -44,21 +39,21 @@ class _XGBMixin(LossCurveMixin, TreeExplainMixin, _XGBBase):
             params = {"objective": "binary:logistic"}
         elif subtask == SubTask.MULTICLASS:
             params = {"objective": "multi:softprob", "num_class": y.iloc[:, 0].nunique()}
-        self.set_params(**params)
+        self.set_params(**params)  # type: ignore[reportAttributeAccessIssue]  # 组合方契约：由子类 (mixin, 具体估计器) 组合满足——mixin 定义期不可见（#122）
 
         # eval 指标只在有显式 val 时收集（train-in-eval 供 loss curve 的 Train 段）；
         # 无独立 val 时不挂任何 eval——K 折 trial 零 eval 开销，且 ctor 早停不误触发；
         # xgboost 原生 API 仍是 eval_set（无弃用）——统一 seam 在此翻译（#61）
         if eval_X is None:
-            return super().fit(X, y, verbose=is_verbose())
-        return super().fit(X, y, eval_set=[(X, y), (eval_X, eval_y)], verbose=is_verbose())
+            return super().fit(X, y, verbose=is_verbose())  # type: ignore[reportAttributeAccessIssue]  # 组合方契约：由子类 (mixin, 具体估计器) 组合满足——mixin 定义期不可见（#122）
+        return super().fit(X, y, eval_set=[(X, y), (eval_X, eval_y)], verbose=is_verbose())  # type: ignore[reportAttributeAccessIssue]  # 组合方契约：由子类 (mixin, 具体估计器) 组合满足——mixin 定义期不可见（#122）
 
     def get_loss_curve(self, **_):
         evals_result = getattr(self, "evals_result_", None) or {}
         return self._build_loss_curve_df(evals_result.get("validation_0", {}), evals_result.get("validation_1", {}))
 
     def get_feature_importance_df(self, *, with_fig=False, **kwargs) -> pd.DataFrame:
-        df = self._build_importance_df(self.feature_names_in_, self.feature_importances_)
+        df = self._build_importance_df(self.feature_names_in_, self.feature_importances_)  # type: ignore[reportAttributeAccessIssue]  # 组合方契约：由子类 (mixin, 具体估计器) 组合满足——mixin 定义期不可见（#122）
         if with_fig:
             ax: Axes = plot_importance(self, importance_type="gain")
             df.attrs["fig"] = ax.figure
@@ -66,7 +61,7 @@ class _XGBMixin(LossCurveMixin, TreeExplainMixin, _XGBBase):
 
     def plot_tree(self, **kwargs):
         """生成器：先 yield 树数量，再逐棵 yield Figure。"""
-        n_trees = self.best_iteration + 1
+        n_trees = self.best_iteration + 1  # type: ignore[reportAttributeAccessIssue]  # 组合方契约：由子类 (mixin, 具体估计器) 组合满足——mixin 定义期不可见（#122）
         yield n_trees
         for tree_idx in range(n_trees):
             ax: Axes = _xgb_plot_tree(self, num_trees=tree_idx)
