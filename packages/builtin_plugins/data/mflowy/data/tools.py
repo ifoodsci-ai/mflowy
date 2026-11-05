@@ -215,10 +215,12 @@ def clean_finish(
     - terminal_utility.skill ≤ 0 时警惕「干净但不可学」——考虑回滚过度删改
     - 终局语义：已弃局不可收局；已收局重入 = 幂等重导出（响应丢失自愈）
     """
+    from mflowy.driver.pomdp import FinishVerdict
+
     from . import cleaning_session
 
     out = cleaning_session.finish_session(session_id, min_quality=min_quality, preview=preview)
-    return out.model_dump() if hasattr(out, "model_dump") else out
+    return out.model_dump() if isinstance(out, FinishVerdict) else out
 
 
 def clean_abandon(

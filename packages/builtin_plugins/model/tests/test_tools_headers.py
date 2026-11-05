@@ -18,7 +18,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 
 import mflowy.model.job_provider as jp
 import pytest
@@ -40,7 +40,7 @@ def _sample_kwargs(method_name: str) -> dict:
     for name, p in sig.parameters.items():
         if name in ("self", "headers") or p.default is not inspect.Parameter.empty:
             continue
-        out[name] = _DUMMY_OF_TYPE.get(getattr(p.annotation, "__name__", None))
+        out[name] = _DUMMY_OF_TYPE.get(getattr(p.annotation, "__name__", ""))
     return out
 
 
@@ -152,7 +152,8 @@ def test_tool_wrapper_covers_protocol_params(method):
         assert tool_params[name].default == p.default, f"{method}.{name} 缺省与协议分叉"
 
 
-def _ctx_with_meta(meta):
+def _ctx_with_meta(meta: dict[str, str] | None) -> Any:
+    """结构替身：只实现 request_context.meta 面（Context 鸭子型，SDK 同形读法）。"""
     return SimpleNamespace(request_context=SimpleNamespace(meta=meta))
 
 

@@ -8,10 +8,14 @@ import importlib.metadata
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from typing import TYPE_CHECKING, cast
 from unittest.mock import patch
 
 import pytest
 from mflowy.utils.path import anchor_task_dir, task_dir_or_none
+
+if TYPE_CHECKING:
+    from mcp.server.mcpserver import MCPServer
 
 
 @pytest.fixture(autouse=True)
@@ -109,7 +113,7 @@ class TestMcpRegisterAnchoring:
             SimpleNamespace(name="anchored_tool", load=lambda: anchored),
         ]
         with patch.object(importlib.metadata, "entry_points", lambda group: eps):
-            server.register(FakeMcp())
+            server.register(cast("MCPServer", FakeMcp()))  # 替身只实现注册消费面（mcp.tool()）——cast 对齐签名
 
         assert asyncio.run(registered[0]()) == str(Path.home() / ".mflowy")  # 推不出 → 缺省
         assert asyncio.run(registered[1](data="/abs/biz/x.csv")) == "/abs/biz"  # 声明锚推导

@@ -372,10 +372,10 @@ def log_model(pipe, name: str = "final", **kwargs) -> str | None:
     终训模型本体的唯一持久化面（产物名恒 ``final``）；恒 graceful——直调形态
     （DAG 窗口外）合法降级为内存态 loader（model_uri=None）。
     """
-    import mlflow.sklearn
+    import mlflow.sklearn as mlflow_sklearn  # 别名绑定子模块——经父模块属性访问不被 pyright 认可（mlflow __init__ 未重导出）
 
     def _write(_: str) -> str:
-        return mlflow.sklearn.log_model(pipe, name=name, **kwargs).model_uri
+        return mlflow_sklearn.log_model(pipe, name=name, **kwargs).model_uri
 
     return _artifact_shell(name, _write, graceful=True)
 

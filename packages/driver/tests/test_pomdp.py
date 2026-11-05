@@ -88,7 +88,7 @@ class TestObservationModel:
         """赋值期校验：改 steps 为 str、置未知属性，当场拒绝。"""
         o = Observation.model_validate(_observation())
         with pytest.raises(ValidationError):
-            o.steps = "3"
+            setattr(o, "steps", "3")  # noqa: B010 — 直赋的静态签名面即拒收 str；setattr 同走 __setattr__ 校验
         with pytest.raises(ValidationError):
             o.should_stop = True  # type: ignore[attr-defined]
 

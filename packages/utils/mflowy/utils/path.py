@@ -124,16 +124,16 @@ def route_task_dir(default: str | Path):
         if inspect.iscoroutinefunction(fn):
 
             @wraps(fn)
-            async def wrapper(*args, **kwargs):
+            async def async_wrapper(*args, **kwargs):
                 with _call_scoped(anchor, kwargs, default):
                     return await fn(*args, **kwargs)
 
-        else:
+            return async_wrapper
 
-            @wraps(fn)
-            def wrapper(*args, **kwargs):
-                with _call_scoped(anchor, kwargs, default):
-                    return fn(*args, **kwargs)
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            with _call_scoped(anchor, kwargs, default):
+                return fn(*args, **kwargs)
 
         return wrapper
 

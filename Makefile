@@ -111,7 +111,8 @@ e2e-mcp:
 
 # 六基准冒烟门（#75 三基准 + 工业三链）：iris 五族 / digits MLP+XGB / titanic 清洗链
 # 三树族 + bearing_rul RUL 回归 / steel_defect 不平衡分类 / soft_sensor 传感器缺失清洗
-# + 分类会话最小链。发布前人肉门 = 先 make e2e（三入口分发）再 make e2e-bench；
+# + 分类会话最小链。发布前人肉门 = 先 make lint && make typecheck 再 make e2e
+# （三入口分发）再 make e2e-bench（#107 教训：切版对账漏 typecheck，债务直通 release PR）；
 # 判据含指标下限（防绿但退化），越限 FAIL 行 + 非零退出。
 # 越限自证：BENCH_FLOOR_BUMP='iris|RF|99' make e2e-bench
 e2e-bench:

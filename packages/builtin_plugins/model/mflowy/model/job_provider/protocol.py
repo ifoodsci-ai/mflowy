@@ -11,8 +11,10 @@ from typing import Protocol
 from mflowy.driver.dag import DAGResult
 
 # headers 形参的共享类型（请求 _meta 直传；runner 场景恒 None）——protocol/local
-# 两处签名单源引用（#58），工具包装侧的 ctx 提取语义见 tools.py docstring
-type Headers = Mapping[str, str] | None
+# 两处签名单源引用（#58），工具包装侧的 ctx 提取语义见 tools.py docstring。
+# 值类型 object：SDK `_meta` 是 TypedDict（RequestParamsMeta，非 str→str 映射），
+# TypedDict 可赋 Mapping[str, object]——str→str 头（契约测试形态）仍兼容
+type Headers = Mapping[str, object] | None
 
 
 class JobProvider(Protocol):

@@ -87,10 +87,10 @@ def test_get_run_returns_artifact_directory(monkeypatch, tmp_path):
     mlflow.set_tracking_uri(uri)
 
     exp_id = mlflow.MlflowClient().create_experiment("t_drill", artifact_location=(tmp_path / "arts").as_uri())
-    with mlflow.start_run(experiment_id=exp_id):
+    with mlflow.start_run(experiment_id=exp_id) as run:
         mlflow.log_dict({"a": 1}, "sub/metrics.json")
         mlflow.log_param("lr", "0.1")
-        run_id = mlflow.active_run().info.run_id
+        run_id = run.info.run_id
 
     out = tools.get_run(run_id)
     assert out["data"]["params"]["lr"] == "0.1"

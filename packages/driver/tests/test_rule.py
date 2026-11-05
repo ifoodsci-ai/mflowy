@@ -18,9 +18,10 @@ seam（公共接口，2026-10 重构定案 + #89 归位——引擎服务于 POM
 """
 
 import pickle
+from typing import Any
 
 import pytest
-from mflowy.driver.pomdp import Activation
+from mflowy.driver.pomdp import Activation, Observation
 from mflowy.driver.rule import RuleEngine, compose_should_stop
 from pydantic import ValidationError
 
@@ -49,9 +50,17 @@ class _CustomRule(_EchoRule):
     """模块级自定义规则替身（pkl 落盘要求：类须可 import 定位）。"""
 
 
-def _budget_exhausted(o):
+def _budget_exhausted(o: Observation) -> bool:
     """模块级停止谓词（pickle 要求：模块级函数，非 lambda）。"""
-    return o.get("steps", 0) >= o.get("max_steps", 0)
+    return o.steps >= o.max_steps
+
+
+def _obs(**over: Any) -> Observation:
+    """最小合法观测（session_id/max_steps 缺省可覆写）——引擎与规则消费真模型，
+    非鸭子替身（契约面即 SDK 面：``Rule.propose(o: Observation)``）。"""
+    over.setdefault("session_id", "rule-test")
+    over.setdefault("max_steps", 8)
+    return Observation(**over)
 
 
 def test_register_fail_loud_on_duplicate_key():
@@ -89,12 +98,12 @@ def test_fire_all_rules_when_keys_empty_and_accumulates_across_fires():
             return []
 
     engine = RuleEngine().register(r1, r2, _Spy())
-    out1 = engine.fire(o={"state_digest": {"defects": 1}})
-    out2 = engine.fire(o={"state_digest": {"defects": 2}})
+    out1 = engine.fire(o=_obs(state_digest={"defects": 1}))
+    out2 = engine.fire(o=_obs(state_digest={"defects": 2}))
 
     assert [a.rule_key for a in out1] == ["a", "b"]  # 本次激活即刻可见
     assert [a.rule_key for a in out2] == ["a", "b"]
-    assert seen == [{"state_digest": {"defects": 1}}, {"state_digest": {"defects": 2}}]  # o 原样递给规则
+    assert seen == [_obs(state_digest={"defects": 1}), _obs(state_digest={"defects": 2})]  # o 原样递给规则
     acts = engine.poll_proposals()
     assert [a.rule_key for a in acts] == ["b", "b", "a", "a"]  # 聚合两次 fire，全局 salience 降序
     assert engine.poll_proposals() == []  # poll 排空
@@ -103,10 +112,10 @@ def test_fire_all_rules_when_keys_empty_and_accumulates_across_fires():
 def test_fire_selected_keys_and_fail_loud_on_unknown():
     """显式 keys 只激活命中规则；未知 key 报错带已注册候选清单（fail-loud）。"""
     engine = RuleEngine().register(_EchoRule("a"), _EchoRule("b"))
-    out = engine.fire("a", o={})
+    out = engine.fire("a", o=_obs())
     assert [x.rule_key for x in out] == ["a"]
     with pytest.raises(ValueError, match=r"nope.*可用.*\['a', 'b'\]"):
-        engine.fire("a", "nope", o={})
+        engine.fire("a", "nope", o=_obs())
 
 
 def test_poll_orders_by_salience_then_rule_key_deterministic():
@@ -116,19 +125,21 @@ def test_poll_orders_by_salience_then_rule_key_deterministic():
         _EchoRule("a.same", salience=5),
         _EchoRule("z.top", salience=9),
     )
-    acts = engine.fire(o={})
+    acts = engine.fire(o=_obs())
     assert [a.rule_key for a in acts] == ["c.same", "a.same", "z.top"]  # fire 返回注册序
     assert [a.rule_key for a in engine.poll_proposals()] == ["z.top", "a.same", "c.same"]  # poll 记分牌序排空
 
 
 def test_activation_shape_teeth_live_at_model_construction():
     """形状/类型牙齿住 pydantic 模型构造期（#89）：坏记分牌/空动作/旧 proposal 键当场拒收。"""
+    # 坏载荷以数据形态喂构造器（** 解包）：直写的静态签名面会先一步拒收，
+    # 测的是 pydantic 构造期牙齿对非法载荷的运行期拒绝
     with pytest.raises(ValidationError, match="salience"):
-        Activation(rule_key="bad", action="x", params={}, salience=1.5, rationale="r")
+        Activation(**{"rule_key": "bad", "action": "x", "params": {}, "salience": 1.5, "rationale": "r"})
     with pytest.raises(ValidationError, match="action"):
         Activation(rule_key="bad", action="", params={}, salience=1, rationale="r")
     with pytest.raises(ValidationError, match="proposal"):
-        Activation(rule_key="bad", proposal={"action": "x", "params": {}}, salience=1, rationale="r")
+        Activation(**{"rule_key": "bad", "proposal": {"action": "x", "params": {}}, "salience": 1, "rationale": "r"})
 
 
 def test_fire_fail_loud_on_foreign_instance_and_rule_key_mismatch():
@@ -136,20 +147,22 @@ def test_fire_fail_loud_on_foreign_instance_and_rule_key_mismatch():
     engine = RuleEngine()
     engine.register(_BadProducer(["裸 dict"]))
     with pytest.raises(TypeError, match="Activation 实例"):
-        engine.fire(o={})
+        engine.fire(o=_obs())
 
     engine2 = RuleEngine()
     engine2.register(_BadProducer([Activation(rule_key="other", action="x", params={}, salience=1, rationale="r")]))
     with pytest.raises(ValueError, match="不一致"):
-        engine2.fire(o={})
+        engine2.fire(o=_obs())
 
 
 class _BadProducer:
-    def __init__(self, out):
+    """替身：propose 产出宿主外预制内容（裸 dict / rule_key 不符的 Activation）。"""
+
+    def __init__(self, out: list[Any]):
         self.key = "bad"
         self._out = out
 
-    def propose(self, o):
+    def propose(self, o) -> list[Activation]:
         return self._out
 
 
@@ -160,8 +173,8 @@ def test_compose_should_stop_gate_short_circuit_and_salience_floor():
     """when(o) 假 → 零产出（资格门短路）；真 → 唯一 finish 提议（salience=0 记分牌垫底）。"""
     rule = compose_should_stop(_budget_exhausted)
     assert rule.key == "should_stop"
-    assert rule.propose({"steps": 1, "max_steps": 5}) == []
-    acts = rule.propose({"steps": 5, "max_steps": 5})
+    assert rule.propose(_obs(steps=1, max_steps=5)) == []
+    acts = rule.propose(_obs(steps=5, max_steps=5))
     assert len(acts) == 1
     a = acts[0]
     assert a.action == "finish" and a.params == {} and a.salience == 0
@@ -169,14 +182,14 @@ def test_compose_should_stop_gate_short_circuit_and_salience_floor():
 
     # 与高 salience 解题规则共排：finish 垫底（真实选项在前）
     engine = RuleEngine().register(_EchoRule("solve", salience=5), compose_should_stop(_budget_exhausted))
-    engine.fire(o={"steps": 5, "max_steps": 5})
+    engine.fire(o=_obs(steps=5, max_steps=5))
     assert [(a.action, a.salience) for a in engine.poll_proposals()] == [("solve", 5), ("finish", 0)]
 
 
 def test_compose_should_stop_custom_key_and_rationale():
     rule = compose_should_stop(_budget_exhausted, key="plateau_stop", rationale="质量平台期")
     assert rule.key == "plateau_stop"
-    assert rule.propose({"steps": 9, "max_steps": 9})[0].rationale == "质量平台期"
+    assert rule.propose(_obs(steps=9, max_steps=9))[0].rationale == "质量平台期"
 
 
 def test_compose_should_stop_picklable_via_rules_pkl(tmp_path):
@@ -189,7 +202,8 @@ def test_compose_should_stop_picklable_via_rules_pkl(tmp_path):
     pkl = tmp_path / "rules.pkl"
     save_rule_engine(str(pkl), engine)
     loaded = load_rule_engine(str(pkl))
-    assert [a.action for a in loaded.fire(o={"steps": 3, "max_steps": 3})] == ["finish"]
+    assert loaded is not None  # save 后必可载回（None 语义 = 缺文件回退，归调用方）
+    assert [a.action for a in loaded.fire(o=_obs(steps=3, max_steps=3))] == ["finish"]
 
 
 # ── 落盘：load/save 纯函数（引擎零路径状态；整读整写门面住 POMDPSession） ──

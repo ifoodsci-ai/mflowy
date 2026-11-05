@@ -69,7 +69,7 @@ def shared_tracking(tmp_path_factory):
         yield uri
     finally:
         os.chdir(prev_cwd)
-        mlflow.set_tracking_uri(None)  # 复位 env 驱动解析（受支持的复位面）
+        mlflow.set_tracking_uri(None)  # type: ignore[reportArgumentType]  # mlflow 注解不精确：复位 env 驱动解析（None 复位面受运行时支持）
 
 
 @pytest.fixture(autouse=True)
@@ -298,7 +298,7 @@ def test_finish_missing_pdf_fail_loud(delivered, tmp_path):
 def test_finish_pdf_required(delivered):
     """BREAKING：pdf 必填——preview 分支退役（无 pdf 调用即 TypeError）。"""
     with pytest.raises(TypeError):
-        ms.finish_session(delivered.session_id)
+        ms.finish_session(delivered.session_id)  # type: ignore[reportCallIssue]  # 负例：pdf 必填（TypeError）
 
 
 def test_finish_pdf_adoption_and_verdict(delivered_fresh, sessions_root, tmp_path):

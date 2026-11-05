@@ -26,7 +26,9 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -46,7 +48,7 @@ from mflowy.driver.session import POMDPSession
 from mflowy.utils.file import sha256_of, write_text_atomic
 
 
-def _quality_score(report, baseline=None, card: dict | None = None):
+def _quality_score(report, baseline=None, card: Mapping[str, Any] | None = None):
     """Φ 计分：卡携带的 defect_priority（kind→权重覆盖）随开局生效。"""
     prio = (card or {}).get("defect_priority") or {}
     return _qs_raw(report, baseline=baseline, weights=prio or None)
@@ -64,7 +66,7 @@ def _open(session_id: str) -> POMDPSession:
     return POMDPSession.open(_root() / session_id)
 
 
-def never_drop(card: dict | None) -> list[str]:
+def never_drop(card: Mapping[str, Any] | None) -> list[str]:
     """任何动作不得删除的列：目标/受保护/ID/时间（问卷先验）。"""
     if not card:
         return []
@@ -77,7 +79,7 @@ def never_drop(card: dict | None) -> list[str]:
     return [c for c in dict.fromkeys(c for c in cols if c)]
 
 
-def _detect_all(df: pd.DataFrame, card: dict | None = None) -> ErrorReport:
+def _detect_all(df: pd.DataFrame, card: Mapping[str, Any] | None = None) -> ErrorReport:
     """观测通道：检测算子合并（正交拆分后七算子 + 卡先验的 range_violation）。
 
     s′ 免费自带，agent 不需要花一步申请观测。card 的 expected_ranges 注入声明式
@@ -137,7 +139,7 @@ def _column_profile(df: pd.DataFrame) -> dict:
     from mflowy.data.statistic.univariate import univariate_facts
 
     rows, _findings = univariate_facts(df)
-    var = df.select_dtypes(include="number").var().to_dict()
+    var = df.select_dtypes(include="number").var().to_dict()  # type: ignore[reportAttributeAccessIssue]  # pandas-stubs var 重载联合含标量（DataFrame 轴 0 恒 Series）
     profile = {}
     for r in rows:
         col: dict = {"family": r["family"]}
@@ -182,7 +184,7 @@ def _diff_summary(before: pd.DataFrame, after: pd.DataFrame) -> dict:
     }
 
 
-def _guard(df: pd.DataFrame, out: pd.DataFrame, card: dict | None) -> None:
+def _guard(df: pd.DataFrame, out: pd.DataFrame, card: Mapping[str, Any] | None) -> None:
     """动作守卫：never_drop 存活 + 目标列值禁改（行删除允许）。"""
     gone = [c for c in never_drop(card) if c in df.columns and c not in out.columns]
     if gone:
@@ -194,7 +196,7 @@ def _guard(df: pd.DataFrame, out: pd.DataFrame, card: dict | None) -> None:
             raise ValueError(f"动作修改了目标列 `{target}` 的值（填充/截断禁止；行删除允许）")
 
 
-def _terminal_utility(df: pd.DataFrame, card: dict | None) -> dict | None:
+def _terminal_utility(df: pd.DataFrame, card: Mapping[str, Any] | None) -> dict | None:
     """终局 U：终态数据上一次固定 seed 的 train-fold 快速学习器 CV（数据域零建模栈）。
 
     回归 = 标准化 + 闭式岭回归（numpy），指标 MAE，基线 = 训练折中位数；
