@@ -15,27 +15,44 @@ from mflowy.driver.discover import CatalogMiss
 class _FnCatalog:
     """测试伪目录：唯一 adapter 的最小替身（{namespace: {node: fn}} 直填）。
 
-    表值 = 原函数（.handler/.edge 属性自携带；裸桩直通 handler——测试替身不必装饰）；
-    词表 miss 抛 CatalogMiss（对齐生产语义）；entry 恒 None（无 entry point 元数据）。
+    表值 = 原函数——非 raw 面与真目录同构返回注册表条目（#126：装饰者经
+    ``handler_of``/``edge_of`` 取本尊 Handler/Edge；裸桩回退透传最小条目
+    ``run=fn``——测试替身不必装饰）；词表 miss 抛 CatalogMiss（对齐生产语义）；
+    entry 恒 None（无 entry point 元数据）。
     """
 
     def __init__(self, table: dict[str, dict[str, object]]):
         self.table = table
 
+    @staticmethod
+    def _entry_of(fn, lookup):
+        try:
+            return lookup(fn)
+        except ValueError:
+            from types import SimpleNamespace
+
+            from mflowy.driver.handler import _param_schema
+
+            # 裸桩透传（未装饰替身）：schema 复用装饰期同一派生器（单源），ns 视为非归组
+            return SimpleNamespace(fn=fn, run=fn, middlewares=[], param_schema=_param_schema(fn), ns=None)
+
     def handler(self, key: str, raw: bool = False):
         from mflowy.driver.config import split_node_key
+        from mflowy.driver.handler import handler_of
 
         ns, node_name = split_node_key(key)
         fn = self.table.get(ns, {}).get(node_name)
         if fn is None:
             raise CatalogMiss(ns, node_name, self.table.get(ns, {}))
-        return fn if raw else fn.handler
+        return fn if raw else self._entry_of(fn, handler_of)
 
     def edge(self, edge_name: str, raw: bool = False):
+        from mflowy.driver.edge import edge_of
+
         fn = self.table.get("edges", {}).get(edge_name)
         if fn is None:
             raise CatalogMiss("edges", edge_name, self.table.get("edges", {}))
-        return fn if raw else fn.edge
+        return fn if raw else self._entry_of(fn, edge_of)
 
     def find_edge(self, edge_name: str, raw: bool = False):
         try:

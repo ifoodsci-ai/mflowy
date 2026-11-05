@@ -18,7 +18,7 @@ import logging
 from dataclasses import asdict
 
 from mflowy.driver.context import Context
-from mflowy.driver.handler import Handler
+from mflowy.driver.handler import Chain
 from mflowy.utils.mlflow import active_experiment_id, active_tracking, workflow_tags
 
 logger = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ def _flatten_params(params: dict, _prefix: str = "") -> dict:
     return flat
 
 
-def mlflow_log(ctx: Context, next: Handler):
+def mlflow_log(ctx: Context, next: Chain):
     """为每个 handler 自动创建独立 MLflow Run，仅记录 MLflow 无法自动获取的业务语义信息。"""
     t = active_tracking()
     run_name = ctx.conf.name

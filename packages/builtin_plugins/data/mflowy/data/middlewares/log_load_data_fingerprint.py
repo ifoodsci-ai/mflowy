@@ -9,11 +9,11 @@ mlflow_log 起 run 时自动携带更新后的 tags。"""
 from __future__ import annotations
 
 from mflowy.driver.context import Context
-from mflowy.driver.handler import Handler
+from mflowy.driver.handler import Chain
 from mflowy.utils.mlflow import set_tags, workflow_tags
 
 
-def log_load_data_fingerprint(ctx: Context, next: Handler):
+def log_load_data_fingerprint(ctx: Context, next: Chain):
     df = next(ctx)
     if tags := workflow_tags():
         set_tags(tags)

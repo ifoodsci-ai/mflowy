@@ -6,7 +6,7 @@
 """
 
 from mflowy.driver.context import Context
-from mflowy.driver.handler import Handler
+from mflowy.driver.handler import Chain
 from mflowy.model.plot.model_interpretability.shap.contract import (
     LEDGER_SAMPLE_IDX,
     explanation_to_frame,
@@ -14,7 +14,7 @@ from mflowy.model.plot.model_interpretability.shap.contract import (
 from mflowy.utils import mlflow as mlflow_util
 
 
-def log_shap_explanation(ctx: Context, next: Handler):
+def log_shap_explanation(ctx: Context, next: Chain):
     result = next(ctx)
     if result is None:
         return result

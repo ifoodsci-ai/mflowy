@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from matplotlib.figure import Figure
 from mflowy.driver.context import Context
-from mflowy.driver.handler import Handler
+from mflowy.driver.handler import Chain
 from mflowy.utils import mlflow as mlflow_util
 from mflowy.utils.mlflow import log_figure
 from mflowy.utils.plot import DPI, FONT_GROUPS, SANS_SERIF
@@ -45,7 +45,7 @@ class SkipPlotError(Exception):
     pass
 
 
-def log_plot(ctx: Context, next: Handler):
+def log_plot(ctx: Context, next: Chain):
     """Plot 中间件：迭代 (data, fig) 对，统一用 module + 序号命名记录到 MLflow"""
     base = ctx.conf.node_name
     dpi = ctx.conf.params.get("dpi", DPI)

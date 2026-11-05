@@ -2,12 +2,18 @@
 上报 / label 展示降级链。身份与执行地址分离——此前 id 双语义（执行后改写 run_id）已退役。
 """
 
+from types import SimpleNamespace
+from typing import TYPE_CHECKING, cast
+
 import pytest
 from mflowy.driver.config import Conf, NodeConf
 from mflowy.driver.context import Context
 from mflowy.driver.dag import DAG
 from mflowy.driver.handler import handler
 from mflowy.utils.mlflow import FakeTracking, use_tracking
+
+if TYPE_CHECKING:
+    from mflowy.driver.handler import Handler
 
 
 @handler()
@@ -119,7 +125,8 @@ class TestNodeIdentity:
             return "bare"
 
         ctx = Context(NodeConf(name="裸桩", node_key="load__plain"), [])
-        ctx._handler = _plain  # 直注桩链（不经目录）——handler 成功而窗前无 run 的最小形态
+        # 直注桩 Handler（不经目录，替身缝 cast）——成功而窗前无 run 的最小形态（#126：_handler 槽位为 Handler 契约）
+        ctx._handler = cast("Handler", SimpleNamespace(fn=_plain, run=_plain))
         result = ctx.run()  # 此前：handler 已成功却在 status 上 RuntimeError
         assert result.status == ""
         assert result.run_id == ""  # 无 run 留空——不拿 id 冒充 run_id
