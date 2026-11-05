@@ -26,7 +26,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Annotated, Concatenate, Protocol, get_args, get_origin, get_type_hints
 from weakref import WeakKeyDictionary
 
-from pydantic import ConfigDict, Field, create_model, validate_call
+from pydantic import ConfigDict, Field, ValidationError, create_model, validate_call
 
 from .binding import param_edge_names, raise_if_params_collide
 from .config import node_key
@@ -57,6 +57,11 @@ class Node[R](Protocol):
 
     def run(self, ctx: Context, **kwargs) -> R: ...
 
+    def validate_params(self, params: dict, nid: str) -> None:
+        """编译期参数校验面（#131 契约扩展）：已知键子集对装饰期模型 validate——
+        与运行期 validate_call 防线同源（lax 一致、未知键放过）。"""
+        ...
+
 
 def _bridge_metadata(m):
     """旧式 Annotated[T, "描述"] 的字符串 metadata 桥接为 Field(description=...)。
@@ -66,11 +71,11 @@ def _bridge_metadata(m):
     return Field(description=m) if isinstance(m, str) else m
 
 
-def _param_schema(fn: Callable) -> dict:
-    """Annotated 参数合成参数模型直出 JSON Schema（装饰期一次，词表投影消费）。
+def _params_contract(fn: Callable) -> tuple[type, dict]:
+    """Annotated 参数 → (校验模型, JSON Schema 投影)——装饰期一次派生两面（#131）。
 
     裸类型参数（middleware 注入域）排除；默认值取自函数签名——默认值的单一事实源
-    是签名，Field 只带约束与描述。无 Annotated 参数时输出空 schema。
+    是签名，Field 只带约束与描述。无 Annotated 参数时空模型 + 空 schema 字面量。
     """
     hints = get_type_hints(fn, include_extras=True)
     sig = inspect.signature(fn)
@@ -85,26 +90,49 @@ def _param_schema(fn: Callable) -> dict:
         p = sig.parameters.get(name)
         fields[name] = (typ, ...) if p is None or p.default is inspect.Parameter.empty else (typ, p.default)
     if not fields:
-        return {"type": "object", "properties": {}}
-    return create_model("_Params", **fields).model_json_schema()
+        return create_model("_Params"), {"type": "object", "properties": {}}
+    model = create_model("_Params", **fields)
+    return model, model.model_json_schema()
 
 
 class _NodeEntry[R]:
     """``Node`` Protocol 的构造实现（装饰器私有）：调度链在装饰期织入一次。"""
 
-    __slots__ = ("_chain", "fn", "middlewares", "ns", "param_schema")
+    __slots__ = ("_chain", "_params_model", "fn", "middlewares", "ns", "param_schema")
 
     def __init__(
-        self, fn: Callable[..., R], middlewares: list[Middleware], param_schema: dict, ns: str | None, chain: Chain[R]
+        self,
+        fn: Callable[..., R],
+        middlewares: list[Middleware],
+        param_schema: dict,
+        params_model: type,
+        ns: str | None,
+        chain: Chain[R],
     ):
         self.fn = fn
         self.middlewares = middlewares
-        self.param_schema = param_schema
+        self.param_schema = param_schema  # 公开契约投影（词表/MCP info）
+        self._params_model = params_model  # 校验面（与 validate_call 同一套机器）
         self.ns = ns
         self._chain = chain
 
     def run(self, ctx: Context, **kwargs) -> R:
         return self._chain(ctx, **kwargs)
+
+    def validate_params(self, params: dict, nid: str) -> None:
+        """编译期参数校验（#131）：已知键子集对装饰期模型 validate，违规带字段路径 fail-loud。
+
+        语义与运行期防线（validate_call）同源：lax 强转一致；**未知键放过**（插件签名
+        ``**_`` 兜底惯例——编译期不得比运行期严，新拒合法 YAML 即越界）。
+        """
+        known = {k: v for k, v in params.items() if k in self.param_schema.get("properties", {})}
+        if not known:
+            return
+        try:
+            self._params_model.model_validate(known)
+        except ValidationError as e:
+            detail = "；".join(f"{'.'.join(map(str, err['loc']))}：{err['msg']}" for err in e.errors(include_url=False))
+            raise ValueError(f"节点 {nid} params 编译期校验失败：{detail}") from e
 
 
 def node_of[R](fn: Callable[..., R]) -> Node[R]:
@@ -159,7 +187,8 @@ def node[R](*middlewares: Middleware, namespace: str = ""):
         for mw in (*middlewares, mlflow_log):
             chain = wrap(chain, mw)
 
-        entry = _NodeEntry(fn, list(middlewares), _param_schema(fn), namespace or None, chain)
+        params_model, schema = _params_contract(fn)
+        entry = _NodeEntry(fn, list(middlewares), schema, params_model, namespace or None, chain)
         NODE_REGISTRY[node_key(namespace, fn.__name__)] = entry  # 名字键索引（诊断/词表投影面）
         _NODE_OF[fn] = entry  # fn↔entry 桥（身份键——同名不撞）
         return fn

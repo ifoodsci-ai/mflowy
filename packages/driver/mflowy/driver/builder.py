@@ -189,10 +189,12 @@ class Builder:
         nodes: list[Context] = []
         for item in items:
             ((key, conf),) = item.items()
-            fn = get_node(key, raw=True)  # 词表 miss fail-loud（查询键=node_key，零拆装）
+            entry = get_node(key)  # 词表 miss fail-loud（查询键=node_key，零拆装；每节点恰一次）
+            fn = entry.fn
             nid = f"[{key}]"
             if conf.params:
                 raise_if_params_collide(param_edge_names(fn), conf.params, nid)
+                entry.validate_params(conf.params, nid)  # 编译期 schema 校验（#131）——运行期 validate_call 防线不变
             try:
                 direct, via_inner, pairs, by_param = self._resolve_upstreams(fn, table, nid)
             except TypeError as e:  # 声明不一致（binding.verify_output_hint）
@@ -252,9 +254,7 @@ class Builder:
             verify_output_hint(name, expect, up.node_raw)
             pairs.append((up, None))
         by_param.setdefault(name, []).extend(chosen)
-        direct.append(
-            Upstream.node(UpstreamMeta(name, not optional, table.kind(name)), expect, chosen, collect=collect)
-        )
+        direct.append(Upstream.node(UpstreamMeta(name, not optional, table.kind(name)), chosen, collect=collect))
 
     def _bind_via(
         self,
@@ -280,11 +280,11 @@ class Builder:
             for up in chosen:
                 verify_output_hint(f"{name}.{n}", h, up.node_raw)
                 pairs.append((up, name))
-            u = Upstream.node(UpstreamMeta(n, not opt, table.kind(n), name), h, chosen, collect=collect)
+            u = Upstream.node(UpstreamMeta(n, not opt, table.kind(n), name), chosen, collect=collect)
             via_inner.append(u)
             inner[n] = u.call
 
-        direct.append(Upstream.edge(edge_raw, name, expect, required=not optional, inner=inner))
+        direct.append(Upstream.edge(edge_raw, name, required=not optional, inner=inner))
 
     def _prune_disabled(self, nodes: list[Context]) -> list[Context]:
         """disabled = 必选依赖闭包剪枝（``lineage_closure(required_only=True)`` 单源）：

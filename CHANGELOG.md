@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 编译期 DAG 参数校验：Builder 消费 Node.param_schema（#131，契约扩展）
+
+- `Node` Protocol 增 `validate_params(params, nid)`（编译期校验面）；装饰期派生
+  `_params_contract` 一次出两面——校验模型（私有 `_params_model`）+ JSON Schema
+  投影（`param_schema` 公开不变）——**一次参数解析、多处复用**（builder 校验 /
+  词表投影 / MCP info）。
+- Builder 编译门：M1 撞名邻位新增已知键子集校验——坏类型/约束越界在
+  `Builder.build()` 即拒（带节点 id + 字段路径），不再等节点执行；
+  **语义与运行期防线同源**：lax 强转一致、未知键放过（`**_` 兜底惯例——
+  编译期不得比运行期严）；`validate_modeling_steps` 免费获得零执行成本的
+  结构化违规反馈。
+- **雾三随票收口**：`Upstream.expect` 纯只写字段退役（零读方证据：全仓唯一
+  `.expect` 读点属 UpstreamMeta 词表投影）——Upstream 收窄 meta+call+nodes，
+  两工厂与 builder/测试构造位同步。
+
 ### BREAKING：SDK 契约名对齐——handler.py→node.py、Handler→Node（#128）
 
 - 文件与契约名对齐：`driver/handler.py` → `driver/node.py`，`Handler` → `Node`；

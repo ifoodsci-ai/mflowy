@@ -12,10 +12,12 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Annotated
 
 import pytest
 from mflowy.driver.builder import Builder
 from mflowy.driver.node import node
+from pydantic import Field
 
 
 def _yaml(tmp_path, name: str, *nodes: str) -> Path:
@@ -446,3 +448,41 @@ def test_run_echo_false_zero_stdout(fake_plugins, tmp_path, capsys):
         res2 = Builder(_yaml(tmp_path, "echo开", _node("a", "load", "alpha"))).build().run()
     assert res2.status == "finished"
     assert capsys.readouterr().out != ""  # 默认回显保持
+
+
+# ---------- 编译期参数 schema 校验（#131）----------
+
+
+class TestCompileParamsValidation:
+    """Builder 编译期消费 Node.param_schema（装饰期一次派生，多处复用）：已知键子集
+    对装饰期模型 validate——与运行期 validate_call 同源（lax 一致、未知键放过）。"""
+
+    def test_bad_type_rejected_at_compile(self, fake_plugins, tmp_path):
+        """已知键类型不符 → Builder.build() 即 raise（带字段路径），不等节点执行"""
+        fake_plugins.setdefault("load", {})["p"] = _typed
+        with pytest.raises(ValueError, match=r"\[load__p\].*ratio："):
+            Builder(_yaml(tmp_path, "编译期拒", _node("p", "load", "p", params="      ratio: not-a-number"))).build()
+
+    def test_constraint_violated_at_compile(self, fake_plugins, tmp_path):
+        """Field 约束越界（ge=0）→ 编译期即拒"""
+        fake_plugins.setdefault("load", {})["p"] = _typed
+        with pytest.raises(ValueError, match="编译期校验失败"):
+            Builder(_yaml(tmp_path, "约束拒", _node("p", "load", "p", params="      ratio: -1"))).build()
+
+    def test_lax_scalar_coercion_passes(self, fake_plugins, tmp_path, fake_tracking):
+        """YAML 标量 str→float lax 强转：编译期放行 = 运行期防线同语义（双层面一致）"""
+        fake_plugins.setdefault("load", {})["p"] = _typed
+        dag = Builder(_yaml(tmp_path, "lax 过", _node("p", "load", "p", params="      ratio: '0.5'"))).build()
+        assert dag.run().status == "finished"
+
+    def test_unknown_key_passes_at_compile(self, fake_plugins, tmp_path, fake_tracking):
+        """未知键放过（**_ 兜底惯例——编译期不得比运行期严）"""
+        fake_plugins.setdefault("load", {})["p"] = _typed
+        dag = Builder(_yaml(tmp_path, "未知键过", _node("p", "load", "p", params="      mystery: 1"))).build()
+        assert dag.run().status == "finished"
+
+
+@node()
+def _typed(payload=None, ratio: Annotated[float, Field(ge=0, description="采样比例")] = 1.0, **_):
+    """编译期校验钉测件：Annotated 带约束 + 裸参数边 payload + **_ 兜底。"""
+    return ratio

@@ -96,7 +96,7 @@ class TestUpstreamStructures:
         assert (m.type, m.via, m.expect, m.default) == ("node", None, None, None)
 
     def test_upstream_carries_call(self):
-        up = Upstream(UpstreamMeta("load", True), int, lambda: 42)
+        up = Upstream(UpstreamMeta("load", True), lambda: 42)
         assert up.call() == 42
 
 
@@ -115,7 +115,7 @@ def _cell(value):
 
 def _inner_x(a):
     """单内层取值闭包（x 参数绑定 a）——Upstream.edge 测试共用件。"""
-    return {"x": Upstream.node(UpstreamMeta("x", True), int, [a], collect=False).call}
+    return {"x": Upstream.node(UpstreamMeta("x", True), [a], collect=False).call}
 
 
 class TestUpstreamNode:
@@ -125,17 +125,17 @@ class TestUpstreamNode:
     def test_lazy_pull_runs_each_once_and_shapes(self):
         """惰性拉起恰一次；collect 出迭代器、single 出末位值。"""
         a, b = _cell(1), _cell(2)
-        collect = Upstream.node(UpstreamMeta("feat", True), int, cast("list[Context]", [a, b]), collect=True)
+        collect = Upstream.node(UpstreamMeta("feat", True), cast("list[Context]", [a, b]), collect=True)
         assert list(collect.call()) == [1, 2]
         collect.call()  # 再次取值不重跑（哨兵去重）
         assert (a.runs, b.runs) == (1, 1)
-        single = Upstream.node(UpstreamMeta("feat", True), int, cast("list[Context]", [a]), collect=False)
+        single = Upstream.node(UpstreamMeta("feat", True), cast("list[Context]", [a]), collect=False)
         assert single.call() == 1
 
     def test_in_place_filter_seen_by_call(self):
         """同源焊点：rewire 就地过滤 nodes，闭包即时看见（剪枝语义的机制面）。"""
         a, b = _cell(1), _cell(2)
-        u = Upstream.node(UpstreamMeta("feat", False), int, cast("list[Context]", [a, b]), collect=True)
+        u = Upstream.node(UpstreamMeta("feat", False), cast("list[Context]", [a, b]), collect=True)
         u.nodes[:] = [n for n in u.nodes if n is a]  # 模拟 rewire 剥除 b
         assert list(u.call()) == [1]
         assert b.runs == 0
@@ -143,7 +143,7 @@ class TestUpstreamNode:
     def test_empty_after_filter_returns_missing(self):
         """成员全被剥除 → MISSING（省略注入，签名默认值生效的机制面）。"""
         a = _cell(1)
-        u = Upstream.node(UpstreamMeta("feat", False), int, cast("list[Context]", [a]), collect=True)
+        u = Upstream.node(UpstreamMeta("feat", False), cast("list[Context]", [a]), collect=True)
         u.nodes[:] = []
         assert u.call() is MISSING
 
@@ -156,7 +156,7 @@ class TestUpstreamEdge:
         def edge_raw(x, y=99):
             return {"x": x, "y": y}
 
-        u = Upstream.edge(edge_raw, "via_edge", dict, required=True, inner=_inner_x(a))
+        u = Upstream.edge(edge_raw, "via_edge", required=True, inner=_inner_x(a))
         assert u.meta.type == "edge" and u.meta.via == "via_edge" and u.nodes == []
         assert u.call() == {"x": 1, "y": 99}
 
