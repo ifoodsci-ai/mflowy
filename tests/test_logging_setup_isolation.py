@@ -28,6 +28,7 @@ def _root_conftest():
 
     p = Path(__file__).resolve().parents[1] / "conftest.py"
     spec = importlib.util.spec_from_file_location("_root_conftest_for_isolation_nail", p)
+    assert spec is not None and spec.loader is not None  # 根 conftest.py 必可定位（路径由 __file__ 推得）
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod

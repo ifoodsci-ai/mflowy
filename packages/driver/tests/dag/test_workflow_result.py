@@ -67,12 +67,15 @@ class TestDAGResult:
 
     def test_artifacts_snapshot_per_node(self, fake_plugins, fake_tracking):
         """NodeResult.artifacts = account 时刻 run 工件树清单快照（主键化工件索引）。"""
-        from mflowy.utils.mlflow import active_tracking
+        from mflowy.utils.mlflow import FakeTracking, active_tracking
 
         @handler()
         def makes_artifact(**kwargs):
             t = active_tracking()
-            t.artifacts[t.active_run_id] = ["t.json"]  # 模拟域侧落盘（fake 无自动记录面）
+            assert isinstance(t, FakeTracking)  # fake_tracking fixture 绑定的内存 adapter——artifacts 播种面在 Fake
+            rid = t.active_run_id
+            assert rid is not None  # node_run 窗口内必有活跃 run
+            t.artifacts[rid] = ["t.json"]  # 模拟域侧落盘（fake 无自动记录面）
             return "x"
 
         fake_plugins.setdefault("load", {})["makes_artifact"] = makes_artifact

@@ -120,5 +120,5 @@ def drop_outlier_z(
     require_family(df, cols, "numeric")
     mask = pd.Series(False, index=df.index)
     for c in cols:
-        mask |= zscore_mask(df[c].dropna(), k).reindex(df.index, fill_value=False)
-    return df[~mask]
+        mask |= zscore_mask(df[c].dropna(), k).reindex(df.index, fill_value=False)  # type: ignore[reportArgumentType]  # pandas-stubs __getitem__ 联合不收窄（str 键恒 Series）
+    return df[~mask]  # type: ignore[reportReturnType]  # pandas-stubs 布尔索引联合含 Series（掩码取反恒 DataFrame）

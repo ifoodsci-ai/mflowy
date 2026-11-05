@@ -478,7 +478,7 @@ def test_finish_requires_frozen_combo(sessions_root, reg_csv):
     同一契约路；文件检查在冻结面之后，拒收不触达）。"""
     s, _ = _hpo(sessions_root, reg_csv, n_trials=1)
     rej = ms.finish_session(s.session_id, pdf="/no/such/report.pdf")
-    assert rej.accepted is False and "final_train_test" in rej.reason
+    assert rej.accepted is False and "final_train_test" in (rej.reason or "")
     assert rej.deliverables == {} and rej.decision_log  # 无交付面、审计面在场
     # 拒收后可续局：终训后同 pdf 路径收局成功（文件此时才被检查）
     ms.apply_action(s.session_id, "final_train_test")
@@ -604,7 +604,7 @@ def test_propose_merges_same_action_params(sessions_root, reg_csv):
     deepen = [p for p in props if p.action == "run_hpo"]
     assert len(deepen) == 1  # 多条 fold_std 命中同一加深题（n_trials 同式）→ 一项
     assert "；" in deepen[0].rationale  # rationale 并集
-    assert len(deepen[0].evidence["co_hits"]) >= 2  # 命中溯源并列（不静默吸收）
+    assert len(dict(deepen[0].evidence or {})["co_hits"]) >= 2  # 命中溯源并列（不静默吸收）
     _floor_candidate(deepen[0])
 
 

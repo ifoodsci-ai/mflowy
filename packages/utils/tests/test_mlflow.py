@@ -214,8 +214,7 @@ class TestArtifactShellContract:
         """直写形态远程 artifact 根 fail-loud（直写只对本地工件树成立）。"""
         import mlflow
 
-        fake = type("R", (), {})()
-        fake.info = type("I", (), {"artifact_uri": "s3://bucket/root"})()
+        fake = type("R", (), {"info": type("I", (), {"artifact_uri": "s3://bucket/root"})()})()
         monkeypatch.setattr(mlflow, "active_run", lambda: fake)
         with pytest.raises(ValueError, match="非本地"):
             mlflow_util.log_pickle(object(), "x.pkl")
@@ -337,7 +336,7 @@ class TestTrackingSeam:
         """run_artifacts 查询面在 Protocol 声明内；FakeTracking 播种清单可断言，未知 run 不吞。"""
         from mflowy.utils.mlflow import FakeTracking, Tracking
 
-        assert "run_artifacts" in Tracking.__protocol_attrs__
+        assert "run_artifacts" in getattr(Tracking, "__protocol_attrs__")  # noqa: B009 — 协议运行期内部属性，经 getattr 访问
         fake = FakeTracking()
         with fake.node_run("n", "e1") as run:
             fake.artifacts[run.info.run_id] = ["t.json", "t.png"]
@@ -349,7 +348,7 @@ class TestTrackingSeam:
         """实验 tag 写入面：Protocol 声明 + FakeTracking 记录（未知实验不吞）。"""
         from mflowy.utils.mlflow import FakeTracking, Tracking
 
-        assert "set_experiment_tag" in Tracking.__protocol_attrs__
+        assert "set_experiment_tag" in getattr(Tracking, "__protocol_attrs__")  # noqa: B009 — 协议运行期内部属性，经 getattr 访问
         fake = FakeTracking()
         eid = fake.ensure_experiment("e", "d").experiment_id
         fake.set_experiment_tag(eid, "mflowy.graph", "```mermaid\n```")
@@ -361,7 +360,7 @@ class TestTrackingSeam:
         """run 描述写入面（mlflow.note.content tag 的 account 期通道）：Protocol 声明 + Fake 记录。"""
         from mflowy.utils.mlflow import FakeTracking, Tracking
 
-        assert "describe_run" in Tracking.__protocol_attrs__
+        assert "describe_run" in getattr(Tracking, "__protocol_attrs__")  # noqa: B009 — 协议运行期内部属性，经 getattr 访问
         fake = FakeTracking()
         with fake.node_run("n", "e1") as run:
             fake.describe_run(run.info.run_id, "业务输出\nValueError('boom')")

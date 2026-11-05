@@ -741,6 +741,7 @@ def _run_hpo(ss, o, m, board, log, params: dict) -> None:
     prev_u = entry.get("u_inner")
     new_u = u_inner_of(study, scoring)
     best = study.best_trial
+    assert best.value is not None  # best_trial 必为完成态（optuna 保证 value 非空）——收窄 float | None 注解
     scores = best.user_attrs.get("scores", [])
     import numpy as np
 

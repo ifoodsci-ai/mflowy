@@ -116,12 +116,11 @@ def test_diagnose_oof_aggregates():
 def test_trivial_baseline_regression_and_classification():
     """平凡基线：回归 = 中位数常数的 MAE；分类 = 多数类的 accuracy（同尺同方向归一 u）。"""
     y = pd.DataFrame({"t": [1.0, 2.0, 3.0, 4.0, 10.0]})  # median=3 → mae=(2+1+0+1+7)/5=2.2
-    assert (
-        trivial_baseline_u("regressor", y, "mae") == round(-2.2, 10)
-        or abs(trivial_baseline_u("regressor", y, "mae") + 2.2) < 1e-6
-    )
+    u_reg = trivial_baseline_u("regressor", y, "mae")
+    assert u_reg is not None and (u_reg == round(-2.2, 10) or abs(u_reg + 2.2) < 1e-6)
     yc = pd.DataFrame({"t": ["a", "a", "a", "b"]})  # 多数类 a → accuracy=0.75
-    assert abs(trivial_baseline_u("classifier", yc, "accuracy") - 0.75) < 1e-9
+    u_cls = trivial_baseline_u("classifier", yc, "accuracy")
+    assert u_cls is not None and abs(u_cls - 0.75) < 1e-9
     assert trivial_baseline_u("classifier", yc, "auc_roc") is None  # proba 指标降级 → None
 
 

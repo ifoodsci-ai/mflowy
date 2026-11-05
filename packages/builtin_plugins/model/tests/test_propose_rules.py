@@ -199,7 +199,7 @@ def test_fold_std_gates_deeper_search(searched):
     props2 = ms.propose_actions(s.session_id)
     deeper2 = [p for p in props2 if p.action == "run_hpo"]
     assert deeper2 and deeper2[0].params["n_trials"] >= 6  # max(8, 3×2)
-    assert deeper2[0].evidence["_rule"]["kind"] == "fold_std"  # 溯源可审计
+    assert dict(deeper2[0].evidence or {})["_rule"]["kind"] == "fold_std"  # 溯源可审计
     assert props2[0].salience > 0  # findings 驱动层浮于菜单顶部（记分牌序——基座 -1 垫底；段1 真实体征证据可位次更前）
 
 
@@ -276,7 +276,7 @@ def test_findings_driven_menu_deterministic_order(searched):
     assert [json.dumps(p, sort_keys=True, default=str) for p in a] == [
         json.dumps(p, sort_keys=True, default=str) for p in b
     ]
-    driven = [p for p in a if "_rule" in p.evidence]
+    driven = [p for p in a if "_rule" in (p.evidence or {})]
     assert driven, "findings 驱动层在场"
 
 
@@ -286,7 +286,7 @@ def test_rule_candidates_carry_salience_audit_face(searched):
     key = _K_RF
     ms.report_findings(s.session_id, key, [{"kind": "fold_std", "severity": 0.5}])
     props = ms.propose_actions(s.session_id)
-    scored = [p for p in props if "_rule" in p.evidence]
+    scored = [p for p in props if "_rule" in (p.evidence or {})]
     assert scored and all(set(dict(p.evidence or {})["_rule"]) == {"rule_key", "kind", "salience"} for p in scored)
 
 
@@ -356,7 +356,7 @@ def test_candidate_rule_curation_order():
     acts = rule.propose(o)
     assert [a.params["family"] for a in acts] == ["XGB", "LGBM", "RF", "CAT"]  # baseline 第一、未跑字典序、已训末位
     assert acts[0].rationale.startswith("baseline 锚点候选")
-    assert acts[-1].evidence["tried"] is True  # 重选降级档
+    assert dict(acts[-1].evidence or {})["tried"] is True  # 重选降级档
     assert all(a.rule_key == "candidates" and a.salience == -1 for a in acts)
     assert "NOPE" not in {a.params["family"] for a in acts}
 
@@ -394,7 +394,7 @@ def test_first_search_and_final_train_state_gates():
     }
     assert propose_rules.FirstSearchRule().propose(obs(searched)) == []  # 已有条目不首搜
     a2 = propose_rules.FinalTrainRule().propose(obs(searched))
-    assert [x.action for x in a2] == ["final_train_test"] and a2[0].evidence["u_inner"] == 0.7
+    assert [x.action for x in a2] == ["final_train_test"] and dict(a2[0].evidence or {})["u_inner"] == 0.7
 
     frozen = {key: {**searched[key], "frozen": True}}
     assert propose_rules.FinalTrainRule().propose(obs(frozen)) == []
@@ -417,7 +417,11 @@ def test_config_edit_rule_three_faces():
     )
     acts = propose_rules.ConfigEditRule().propose(o)
     assert [a.action for a in acts] == ["set_hp", "set_hp_space", "set_seed"]
-    assert "face" in acts[0].evidence and "face" in acts[1].evidence and acts[2].evidence["current"] == 7
+    assert (
+        "face" in (acts[0].evidence or {})
+        and "face" in (acts[1].evidence or {})
+        and dict(acts[2].evidence or {})["current"] == 7
+    )
     from mflowy.driver.pomdp import Observation as _Obs
 
     empty = _Obs(

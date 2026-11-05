@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### 类型门回归清零：dev 0.2.0 收拢后 pyright 126 errors（#107）
+
+- **清零 126→0**（#42 压制纪律：真修为主，带码 ignore 5 处带理由——pandas-stubs ×3、
+  mlflow 注解 ×1、负例调用 ×1；零规则关闭/降档）。源码面：`Headers` 协议值类型
+  str→object（SDK `_meta` 是 TypedDict，原 `Mapping[str, str]` 注解与「原样透传」
+  契约不符）；清洗会话卡形参 dict→Mapping（对齐 `Observation.prior` 类型）；
+  `clean_finish` FinishVerdict isinstance 收窄；optuna `best.value` 断言收窄；
+  `mlflow.sklearn` 别名导入；`route_task_dir` 双 wrapper 重命名消 redeclaration。
+  测试面 100 处：FinishVerdict/dict 分支 isinstance 收窄、Optional 先断言后访问、
+  替身缝位 cast（test double 惯用法）。
+- **防再犯**：dev 进 CI push 触发面——本地直合 dev 绕过 PR CI 是本次回归的盲区
+  （债务直通 release PR #105 才暴露），push 即跑门把暴露点提前到集成时点；
+  Makefile 发布前人肉门序列补 `make lint && make typecheck`（#98 发布门五项缺
+  typecheck 的教训）。
+
 ## [0.2.0] - 2026-11-04
 
 ### BREAKING：工件系统收口（#95）——落盘壳全覆盖 + task_dir 双路由锚定 + OOF/study 归位父 run

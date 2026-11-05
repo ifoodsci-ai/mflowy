@@ -109,6 +109,7 @@ def test_cv_card_default_candidates_first_is_baseline(reg_csv):
 def test_start_default_candidates_open_all_families(sessions_root, reg_csv):
     """开局不带 candidates（无 research-review 先验）走缺省全族开放面。"""
     s = ms.start_session(reg_csv, CV_CARD, card={"domain": "t", "target": "target"}, task="regression", metric="mae")
+    assert s.prior is not None
     assert [c["family"] for c in s.prior["candidates"]] == sorted([c["family"] for c in s.prior["candidates"]]) and [
         c["family"] for c in s.prior["candidates"]
     ]
@@ -204,8 +205,8 @@ def test_propose_baseline_first(sessions_root, reg_csv):
     s = _start(sessions_root, reg_csv)
     props = ms.propose_actions(s.session_id)
     sel = [p for p in props if p.action == "select_model"]
-    assert dict(sel[0].params)["family"] == "RF" and sel[0].evidence["baseline"] is True
-    assert sel[1].params["family"] == "XGB" and sel[1].evidence["baseline"] is False
+    assert dict(sel[0].params)["family"] == "RF" and dict(sel[0].evidence or {})["baseline"] is True
+    assert sel[1].params["family"] == "XGB" and dict(sel[1].evidence or {})["baseline"] is False
 
 
 def test_defaults_held_only_by_build_signature():

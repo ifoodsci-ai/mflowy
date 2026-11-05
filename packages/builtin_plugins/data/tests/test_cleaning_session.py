@@ -114,6 +114,7 @@ def test_session_lifecycle_stdout_pure(sessions_root, dirty_csv, capsys):
     assert capsys.readouterr().out == ""
 
     r = cs.finish_session(sid)
+    assert isinstance(r, FinishVerdict)
     assert capsys.readouterr().out == ""
     assert "plan_yaml" in r.deliverables  # 纯净之外，业务交付物照常
 
@@ -129,6 +130,7 @@ def test_start_session_snapshots_and_scores(sessions_root, dirty_csv):
     assert s.state_digest["defects"].get("duplicate", 0) >= 1
     assert 0.0 <= s.state_digest["quality"]["score"] < 1.0
     assert s.state_digest["quality"]["info_loss"] is None  # 初始无基线损失
+    assert s.prior is not None  # 冻结卡必在
     assert s.prior["target"] == "target"  # 冻结卡进 prior
     assert s.reward is None and s.steps == 0
 
@@ -517,6 +519,7 @@ def test_finish_reentry_recovers_deliverables(sessions_root, dirty_csv):
 
     first = cs.finish_session(s.session_id)
     again = cs.finish_session(s.session_id)  # 响应丢失后的重试
+    assert isinstance(first, FinishVerdict) and isinstance(again, FinishVerdict)
 
     assert again.accepted is True
     assert again.deliverables == first.deliverables  # 幂等：同一 plan 与终态路径
@@ -562,7 +565,7 @@ def test_rollback_reward_is_recovery_delta(sessions_root, dirty_csv):
     s = cs.start_session(dirty_csv, card=CARD)
     cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]})
     r = cs.rollback(s.session_id, to_version=0)
-    assert r.reward < 0  # 撤掉一次质量改进
+    assert r.reward is not None and r.reward < 0  # 撤掉一次质量改进
     assert r.state_digest["digest"] == s.state_digest["digest"]  # 回到 v0 状态
 
     cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]})  # 回到 v1
@@ -604,6 +607,7 @@ def test_finish_preview_zero_side_effects(sessions_root, dirty_csv):
     obs_before = _obs(sessions_root, s.session_id)
 
     r = cs.finish_session(s.session_id, preview=True, min_quality=0.999)
+    assert isinstance(r, dict)  # preview 只读探针走 dict 面
 
     assert r["preview"] is True and "accepted" not in r  # 探针非裁决（θ 门不生效）
     assert isinstance(r["terminal_utility"], dict) and "skill" in r["terminal_utility"]
@@ -618,10 +622,12 @@ def test_finish_terminal_utility_top_level(sessions_root, dirty_csv):
     """#30 升顶：terminal_utility 顶层键，拒收/accepted 两路一致（值域域定 payload）。"""
     s = cs.start_session(dirty_csv, card=CARD)
     rej = cs.finish_session(s.session_id, min_quality=0.999)
+    assert isinstance(rej, FinishVerdict)
     assert rej.accepted is False and rej.reason
     assert set(rej.terminal_utility) >= {"task", "metric", "skill", "final_quality", "final_report", "steps"}
 
     acc = cs.finish_session(s.session_id)  # 拒收后无门重收
+    assert isinstance(acc, FinishVerdict)
     assert acc.accepted is True
     assert acc.terminal_utility == rej.terminal_utility  # 同终态同 U（seed 固定）
 
@@ -637,6 +643,7 @@ def test_finish_exports_plan_and_final(sessions_root, dirty_csv):
     cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]})
 
     r = cs.finish_session(s.session_id)
+    assert isinstance(r, FinishVerdict)
 
     assert "- load__file:" in r.deliverables["plan_yaml"]
     assert "- clean__drop_duplicate:" in r.deliverables["plan_yaml"]
@@ -660,6 +667,7 @@ def test_finish_plan_replays(sessions_root, dirty_csv, tmp_path, monkeypatch):
     cs.apply_action(s.session_id, "drop_duplicate", {})
     cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]})
     r = cs.finish_session(s.session_id)
+    assert isinstance(r, FinishVerdict)
     assert r.accepted and "- load__file:" in r.deliverables["plan_yaml"]
 
     from mflowy.driver.builder import Builder
@@ -729,7 +737,7 @@ def test_expected_ranges_observable_repairable_rewarded(sessions_root, ranged_cs
 
     # ③ 转移：修越界得正奖励（求和口径——消除缺陷不减分）
     r = cs.apply_action(sid, "range_clip", {"ranges": {"temp": [0.0, 100.0]}})
-    assert r.reward > 0
+    assert r.reward is not None and r.reward > 0
     assert r.state_digest["defects"].get("range_violation", 0) == 0
 
 

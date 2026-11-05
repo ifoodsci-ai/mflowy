@@ -5,6 +5,9 @@
 ``.mdp_family`` 声明者（强制完整声明——未声明 = 对会话不可见）。
 """
 
+from importlib.metadata import EntryPoint
+from typing import cast
+
 import pytest
 from mflowy.model import registry
 
@@ -102,7 +105,7 @@ def _patch_family(monkeypatch, name: str, mdp_family):
 
     def fake(ns):
         table = dict(real(ns))
-        table[name] = _Ep()
+        table[name] = cast("EntryPoint", _Ep())  # 结构替身：假族 entry point 注入（仅 .value/.load 面）
         return table
 
     monkeypatch.setattr(discover, "namespace_nodes", fake)

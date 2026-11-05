@@ -29,6 +29,7 @@ def reg_split():
     x = rng.normal(size=n)
     df = pd.DataFrame({"x": x, "target": 2.0 * x + 0.1 * rng.normal(size=n)})
     X, y = df[["x"]], df[["target"]]
+    assert isinstance(X, pd.DataFrame) and isinstance(y, pd.DataFrame)  # 列清单索引恒 DataFrame（联合噪声）
     xy = XySpec(X, y, TASKTYPE.REGRESSION)
     return materialize_split(split_fn(x_y=xy, cv=3), xy)
 

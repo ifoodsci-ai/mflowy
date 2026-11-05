@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # dev 进 push 面（#107 防再犯）：本地直合 dev 绕过 PR CI，类型门债务曾在
+    # 此盲区直通 release PR 才暴露——push 即跑门，把暴露点提前到集成时点
+    branches: [main, dev]
     tags:
       - "v*" # 推送标签时触发
   pull_request:

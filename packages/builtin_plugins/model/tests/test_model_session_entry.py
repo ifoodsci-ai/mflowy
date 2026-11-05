@@ -60,6 +60,7 @@ def test_start_with_protocol_enters_run_plane(sessions_root, reg_csv):
     s = _start(sessions_root, reg_csv)
 
     assert s.steps == 0 and s.max_steps == 4
+    assert s.prior is not None
     assert [c["family"] for c in s.prior["candidates"]] == ["RF"]
     assert (sessions_root / s.session_id / "split.pkl").exists()
 

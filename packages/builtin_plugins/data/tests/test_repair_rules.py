@@ -5,6 +5,8 @@ current_file）——规则零 df 引用；params 自含 load 引用；候选动
 fail-loud。停止规则 = compose_should_stop（缺陷清零 → finish 提议）。
 """
 
+from typing import Any
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -48,7 +50,7 @@ def _obs(
     )
 
 
-def _problem(column="x", severity=0.6, **evidence) -> dict:
+def _problem(column: str | None = "x", severity: float = 0.6, **evidence: Any) -> dict:
     return {"column": column, "severity": severity, "evidence": evidence}
 
 
@@ -124,6 +126,7 @@ def test_rule_emits_with_salience_and_self_contained_load():
     assert len(acts) == 1
     a = acts[0]
     assert a.action == "drop_duplicate" and a.params == {"load": "/s/v1.parquet"}
+    assert a.evidence is not None
     assert a.evidence["kind"] == "duplicate" and a.evidence["severity_max"] == 0.8
     assert a.salience == repair_rules.salience(repair_rules.kind_weight("duplicate"), 0.8)
 
@@ -140,7 +143,9 @@ def test_missing_solutions_partition_by_column_profile():
     by_action = {a.action: a for a in acts}
     assert by_action["fill_median"].params["cols"] == ["num_hole"]
     assert by_action["fill_mode"].params["cols"] == ["cat_hole"]
-    shape = by_action["fill_median"].evidence["col_shape"]
+    ev = by_action["fill_median"].evidence
+    assert ev is not None
+    shape = ev["col_shape"]
     assert set(shape) == {"num_hole"} and set(shape["num_hole"]) == {"skew", "q1", "q2", "q3"}
 
 
@@ -156,7 +161,8 @@ def test_missing_claimed_columns_protected():
 def test_collinear_keeps_higher_variance_from_profile():
     """共线逐对留方差大者——方差读数来自列画像（零 df），认领端保护。"""
     cols = {"x1": {"family": "numeric", "var": 0.1}, "x2": {"family": "numeric", "var": 4.0}}
-    problems = {"collinear": [_problem("x1", **{"with": "x2"})]}
+    with_ev: dict[str, Any] = {"with": "x2"}  # "with" 是关键字，只能 ** 展开传入
+    problems = {"collinear": [_problem("x1", **with_ev)]}
     acts = repair_rules.ProblemRule(kind="collinear").propose(_obs(problems, cols))
     assert acts[0].action == "drop_cols" and acts[0].params["cols"] == ["x1"]  # 留方差大的 x2
 
