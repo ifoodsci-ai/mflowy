@@ -18,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 本票①半边（Upstream.expect 只写字段退役）**已由 #131 随票收编落地**
   （PR #135）——票面与雾行以 #131 记录为准。
 
+### 注册表归居契约模块（#132）
+
+- `NODE_REGISTRY` → node.py、`EDGE_REGISTRY` → edge.py——注册状态随契约 + 唯一写者
+  （装饰器）同居，与 `_NODE_OF`/`_EDGE_OF` 同所；**装饰期零 import discover**（含传递边——`context.get_node` 降惰性；直接边已删，
+  导入期图无环：discover 对 node/edge 仅函数体取桥）。
+- discover 纯消费面（entry points 元数据 + 装饰性校验）；钉测：新鲜进程 import
+  node/edge 不拉起 discover。
+
 ### 编译期 DAG 参数校验：Builder 消费 Node.param_schema（#131，契约扩展）
 
 - `Node` Protocol 增 `validate_params(params, nid)`（编译期校验面）；装饰期派生

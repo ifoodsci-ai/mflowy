@@ -210,7 +210,7 @@ class TestHandlerNamespaceDecl:
         """@node(namespace=...) 声明归组（#126 零属性挂载）：注册表键 = node_key，ns 入条目。"""
         import mflowy.driver.node as n_mod
         from mflowy.driver.config import NodeConf
-        from mflowy.driver.discover import NODE_REGISTRY
+        from mflowy.driver.node import NODE_REGISTRY
 
         @n_mod.node(namespace="load")
         def _ns_plugin(**kwargs):
@@ -317,3 +317,25 @@ class TestCollisionWarnDedup:
             discover()
         hits = [r for r in caplog.records if "同名" in r.getMessage()]
         assert len(hits) == 1, [r.getMessage() for r in caplog.records]
+
+
+class TestRegistryHome:
+    def test_node_edge_import_zero_discover(self):
+        """#132：注册表归居契约模块——新鲜进程 import node/edge 不拉起 discover
+        （装饰路径零 discover import，环被结构性消除而非惰性推迟）。"""
+        import subprocess
+        import sys
+
+        # 含装饰：@node 生效（注册表写入 + 织链）后 discover 仍不在进程内——
+        # 直接边（已删）与传递边（builtin_middleware→context 的 get_node 已惰性）双断
+        code = (
+            "import sys\n"
+            "import mflowy.driver.node as n, mflowy.driver.edge as e\n"
+            "@n.node(namespace='load')\n"
+            "def _probe(**kw): return 1\n"
+            "@e.edge\n"
+            "def _edge_probe(x): return x\n"
+            "assert n.NODE_REGISTRY['load___probe'].fn is _probe and e.EDGE_REGISTRY['edges___edge_probe'].fn is _edge_probe\n"
+            "sys.exit(0 if 'mflowy.driver.discover' not in sys.modules else 1)\n"
+        )
+        subprocess.run([sys.executable, "-c", code], check=True)  # 非零退出即败

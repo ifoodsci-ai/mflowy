@@ -29,7 +29,6 @@ from mflowy.utils.mlflow import active_tracking
 
 from .binding import _NOT_RUN, MISSING, Upstream
 from .config import NodeConf
-from .discover import get_node
 
 if TYPE_CHECKING:
     from .node import Node
@@ -155,6 +154,8 @@ class Context:
 
                 self._handler = node_of(self._injected_fn)  # 编译期种子必然已装饰（builder 不变式）
             else:
+                from .discover import get_node  # 惰性：词表兜底首查才拉目录（装饰路径零 discover，#132）
+
                 self._handler = get_node(self.conf.node_key)
         return self._handler
 

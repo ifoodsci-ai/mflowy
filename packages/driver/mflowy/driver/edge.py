@@ -42,6 +42,9 @@ class _EdgeEntry:
 # fn 本尊 → Edge 的身份弱键映射（edge_of 真源，#126 桥）
 _EDGE_OF: WeakKeyDictionary[Callable, Edge] = WeakKeyDictionary()
 
+# 名字键注册表（#132 归居契约模块——与 node.NODE_REGISTRY 同构）：<edges__name, Edge>
+EDGE_REGISTRY: dict[str, Edge] = {}
+
 
 def edge_of(fn: Callable) -> Edge:
     """fn → Edge（fn↔entry 桥，身份弱键映射——同名不撞）：未装饰 = miss fail-loud。"""
@@ -52,9 +55,7 @@ def edge_of(fn: Callable) -> Edge:
 
 
 def edge[R](fn: Callable[..., R]) -> Callable[..., R]:
-    """@edge 装饰器：注册 ``Edge``（词表校验面名字键 + 身份桥），原样返回 fn。"""
-    from .discover import EDGE_REGISTRY
-
+    """@edge 装饰器：注册 ``Edge``（名字键索引 + 身份桥），原样返回 fn。"""
     entry = _EdgeEntry(fn)
     EDGE_REGISTRY[node_key("edges", fn.__name__)] = entry
     _EDGE_OF[fn] = entry
