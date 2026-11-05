@@ -12,14 +12,14 @@ import pandas as pd
 from mflowy.data.detect.rules import iqr_fences, zscore_bounds
 from mflowy.data.middlewares import df_diff
 from mflowy.data.types import as_series
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 from ._atom import require_cols, require_family
 
 logger = logging.getLogger(__name__)
 
 
-@handler(df_diff, namespace="clean")
+@node(df_diff, namespace="clean")
 def cap_iqr(
     load: pd.DataFrame,
     clean: pd.DataFrame | None = None,
@@ -40,7 +40,7 @@ def cap_iqr(
     return out
 
 
-@handler(df_diff, namespace="clean")
+@node(df_diff, namespace="clean")
 def cap_z(
     load: pd.DataFrame,
     clean: pd.DataFrame | None = None,
@@ -59,7 +59,7 @@ def cap_z(
     return out
 
 
-@handler(df_diff, namespace="clean")
+@node(df_diff, namespace="clean")
 def range_clip(
     load: pd.DataFrame,
     clean: pd.DataFrame | None = None,

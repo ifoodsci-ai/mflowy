@@ -7,7 +7,7 @@ import logging
 from typing import Annotated, NamedTuple
 
 import pandas as pd
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.model.middlewares import log_task_evidence
 from mflowy.model.model.types import TASKTYPE
 
@@ -29,7 +29,7 @@ class XySpec(NamedTuple):
     task_evidence: pd.DataFrame | None = None
 
 
-@handler(log_task_evidence)
+@node(log_task_evidence)
 def x_y(
     load: pd.DataFrame,
     target: Annotated[str, "目标列（单目标任务——多目标在会话外分层循环，KISS）"],

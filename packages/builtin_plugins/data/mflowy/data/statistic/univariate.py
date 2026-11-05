@@ -11,7 +11,7 @@ import pandas as pd
 from mflowy.data.detect.rules import iqr_fences, is_id_like
 from mflowy.data.middlewares import log_statistic, type_family
 from mflowy.data.types import as_series
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 # findings 规则档位（schema 即文档）
 _SKEW_T = 1.0  # |skew| 超此值提示需变换
@@ -67,7 +67,7 @@ def univariate_facts(df: pd.DataFrame, category_top_k: int = 10) -> tuple[list[d
     return rows, hits
 
 
-@handler(log_statistic, namespace="statistic")
+@node(log_statistic, namespace="statistic")
 def univariate(
     load: pd.DataFrame,
     *,

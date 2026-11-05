@@ -1,11 +1,11 @@
-"""数据集画像 step handler——df.info 薄封装"""
+"""数据集画像 step node——df.info 薄封装"""
 
 import pandas as pd
 from mflowy.data.middlewares import log_statistic
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 
-@handler(log_statistic, namespace="statistic")
+@node(log_statistic, namespace="statistic")
 def profile(load: pd.DataFrame) -> None:
     """打印 df.info（形状 / 逐列 dtype / non-null 计数）——print-only 观测节点。
 

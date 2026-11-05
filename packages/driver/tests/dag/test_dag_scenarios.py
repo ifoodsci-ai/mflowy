@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 from mflowy.driver.builder import Builder
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 
 def _yaml(tmp_path, *nodes: str) -> Path:
@@ -23,23 +23,23 @@ def _n(name: str, ns: str, node: str) -> str:
 
 @pytest.fixture(autouse=True)
 def _stubs(fake_plugins):
-    @handler()
+    @node()
     def producer(**kw) -> int:
         return 1
 
-    @handler()
+    @node()
     def consume_load(load: int, **_) -> int:
         return load
 
-    @handler()
+    @node()
     def consume_clean(clean: int, **_) -> int:
         return clean
 
-    @handler()
+    @node()
     def collect_load(load: Iterator[int], **_) -> list[int]:
         return list(load)
 
-    @handler()
+    @node()
     def independent(**kw) -> int:
         return 42
 
@@ -104,17 +104,17 @@ class TestExecutionOrderLIFO:
         """LIFO：前驱完成即解锁下游压栈顶——链 a→b 的 b 紧随 a 执行（独立节点不插队）。"""
         order = []
 
-        @handler()
+        @node()
         def rec_a(**kw) -> int:
             order.append("a")
             return 1
 
-        @handler()
+        @node()
         def rec_x(**kw) -> int:
             order.append("x")
             return 2
 
-        @handler()
+        @node()
         def rec_b(load: int, **_) -> int:
             order.append("b")
             return load

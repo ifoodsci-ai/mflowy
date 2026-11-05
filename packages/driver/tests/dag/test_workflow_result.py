@@ -3,7 +3,7 @@
 from mflowy.driver.config import Conf, NodeConf
 from mflowy.driver.context import Context
 from mflowy.driver.dag import DAG, DAGResult
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 
 def _conf(name: str, node_name: str) -> NodeConf:
@@ -28,13 +28,13 @@ class TestDAGResult:
     def test_success_result_fields(self, fake_plugins, fake_tracking):
         executed: list[str] = []
 
-        @handler()
+        @node()
         def ok_a(**kwargs):
             print("hello from A")
             executed.append("A")
             return "a"
 
-        @handler()
+        @node()
         def ok_b(**kwargs):
             print("hello from B")
             executed.append("B")
@@ -69,7 +69,7 @@ class TestDAGResult:
         """NodeResult.artifacts = account 时刻 run 工件树清单快照（主键化工件索引）。"""
         from mflowy.utils.mlflow import FakeTracking, active_tracking
 
-        @handler()
+        @node()
         def makes_artifact(**kwargs):
             t = active_tracking()
             assert isinstance(t, FakeTracking)  # fake_tracking fixture 绑定的内存 adapter——artifacts 播种面在 Fake
@@ -87,7 +87,7 @@ class TestDAGResult:
         """工件清单查询失败降级空表（与 status 降级同尺）——不得掩盖业务结果。"""
         from mflowy.utils.mlflow import FakeTracking
 
-        @handler()
+        @node()
         def ok(**kwargs):
             return "x"
 
@@ -106,7 +106,7 @@ class TestDAGResult:
         """图持久化：mflowy.graph 实验 tag（本实验最新结构）——经 get_experiment 随 tags 外流。"""
         from mflowy.driver.dag import DAG
 
-        @handler()
+        @node()
         def solo(**kwargs):
             return "x"
 
@@ -120,7 +120,7 @@ class TestDAGResult:
     def test_description_equals_output(self, fake_plugins, fake_tracking):
         """run 描述 ≡ NodeResult.output（单源合成,account 期经 seam 写 mlflow.note.content）。"""
 
-        @handler()
+        @node()
         def talky(**kwargs):
             print("排名表: XGB=0.91")
             return "x"
@@ -135,12 +135,12 @@ class TestDAGResult:
     def test_failure_output_is_partial_plus_exception(self, fake_plugins, fake_tracking):
         """失败 output = 崩溃前 partial stdout + repr(e)（追加非替换）——崩溃前证据不丢,描述同构。"""
 
-        @handler()
+        @node()
         def prints_then_booms(**kwargs):
             print("已加载 60 行")
             raise ValueError("boom")
 
-        @handler()
+        @node()
         def after(**kwargs):
             return "ok"
 
@@ -157,7 +157,7 @@ class TestDAGResult:
     def test_mermaid_is_view_not_idl(self, fake_plugins, fake_tracking):
         """mermaid 降为视图函数：DAG.mermaid()（__repr__ 委托）——展示形态按需派生。"""
 
-        @handler()
+        @node()
         def solo(**kwargs):
             return "x"
 
@@ -171,11 +171,11 @@ class TestDAGResult:
         """失败 = 剪枝血缘后代（#59）：下游 skipped 计入 runs，无完成节点 → failed。"""
         executed: list[str] = []
 
-        @handler()
+        @node()
         def boom(**kwargs):
             raise ValueError("boom")
 
-        @handler()
+        @node()
         def after_boom(**kwargs):
             executed.append("after")
             return "ok"

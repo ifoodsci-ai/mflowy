@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import shap as shap_lib  # 模块别名：参数名 shap（组边寻址名）不遮蔽模块
 from mflowy.data.middlewares import log_plot
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.utils.constants import RANDOM_STATE
 
 from ...utils import shap_values_to_df
@@ -22,7 +22,7 @@ from .contract import iter_output_blocks
 logger = logging.getLogger(__name__)
 
 
-@handler(log_plot, namespace="plot")
+@node(log_plot, namespace="plot")
 def sample_waterfall(
     shap: shap_lib.Explanation,
     sample_idx: Annotated[int, "指定样本索引"] = 0,

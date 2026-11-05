@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 from mflowy.data.middlewares import log_plot
 from mflowy.data.middlewares.log_plot import SkipPlotError
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 N_BINS: int = 10
 
@@ -65,7 +65,7 @@ def _group_proba_matrix(g: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.nda
     return y_true, wide.to_numpy(dtype=float), classes
 
 
-@handler(log_plot, namespace="plot")
+@node(log_plot, namespace="plot")
 def calibration_curve(
     model_test_probabilities: pd.DataFrame | None,
     title: Annotated[str, "图表标题"] = "Calibration Curve (Reliability Diagram)",

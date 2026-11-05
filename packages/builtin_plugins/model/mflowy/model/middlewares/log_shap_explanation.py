@@ -6,7 +6,7 @@
 """
 
 from mflowy.driver.context import Context
-from mflowy.driver.handler import Chain
+from mflowy.driver.node import Chain
 from mflowy.model.plot.model_interpretability.shap.contract import (
     LEDGER_SAMPLE_IDX,
     explanation_to_frame,

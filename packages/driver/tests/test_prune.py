@@ -17,7 +17,7 @@ from mflowy.driver.builder import Builder
 from mflowy.driver.config import NodeConf
 from mflowy.driver.context import Context
 from mflowy.driver.dag import lineage_closure
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 
 def _yaml(tmp_path, name: str, *nodes: str) -> Path:
@@ -36,7 +36,7 @@ def _build_run(fake_plugins, tmp_path, nodes, failure_ns=None):
     calls: list[str] = []
 
     def make(fn_name, ret, boom=False):
-        @handler()
+        @node()
         def stub(**kwargs):
             calls.append(fn_name)
             if boom:
@@ -55,22 +55,22 @@ class TestFailurePrunesLineage:
         """b 失败 → 后代 c 剪枝；无血缘的 p 照常执行（不陪葬）。"""
         calls = []
 
-        @handler()
+        @node()
         def a_val(**kw):
             calls.append("a")
             return 1
 
-        @handler()
+        @node()
         def b_val(load: int) -> int:
             calls.append("b")
             raise RuntimeError("b 炸了")
 
-        @handler()
+        @node()
         def c_val(statistic: int) -> int:
             calls.append("c")
             return statistic
 
-        @handler()
+        @node()
         def p_val(**kw):
             calls.append("p")
             return 42
@@ -107,22 +107,22 @@ class TestFailurePrunesLineage:
         """传递闭包：b 失败 → c（直接）与 d（经 c）都被剪。"""
         calls = []
 
-        @handler()
+        @node()
         def a_val(**kw):
             calls.append("a")
             return 1
 
-        @handler()
+        @node()
         def b_val(load: int) -> int:
             calls.append("b")
             raise RuntimeError("b")
 
-        @handler()
+        @node()
         def c_val(statistic: int) -> int:
             calls.append("c")
             return statistic
 
-        @handler()
+        @node()
         def d_val(model: int) -> int:
             calls.append("d")
             return model
@@ -153,7 +153,7 @@ class TestFailurePrunesLineage:
     def test_all_fail_is_failed(self, fake_plugins, tmp_path, fake_tracking):
         """全灭（首节点即失败、无任何完成）→ status=failed。"""
 
-        @handler()
+        @node()
         def boom(**kw):
             raise RuntimeError("首炸")
 
@@ -165,11 +165,11 @@ class TestFailurePrunesLineage:
     def test_failure_error_aggregated(self, fake_plugins, tmp_path, fake_tracking):
         """多路失败：错误全量聚合进 DAGResult.error。"""
 
-        @handler()
+        @node()
         def boom1(**kw):
             raise RuntimeError("炸1")
 
-        @handler()
+        @node()
         def boom2(**kw):
             raise RuntimeError("炸2")
 
@@ -182,11 +182,11 @@ class TestFailurePrunesLineage:
     def test_infra_exception_prunes_alike(self, fake_plugins, tmp_path, fake_tracking):
         """基础设施异常与业务异常一视同仁（无类别区分）。"""
 
-        @handler()
+        @node()
         def conn_error(load: int) -> int:
             raise ConnectionError("mlflow 断连")
 
-        @handler()
+        @node()
         def a_val(**kw):
             return 1
 
@@ -194,7 +194,7 @@ class TestFailurePrunesLineage:
         fake_plugins.setdefault("statistic", {})["b"] = conn_error
         fake_plugins.setdefault("model", {})["c"] = a_val  # c 消费 statistic → 被剪
 
-        @handler()
+        @node()
         def c_val(statistic: int) -> int:
             return statistic
 
@@ -274,22 +274,22 @@ class TestDisabledPruneRunBehavior:
         """被剪上游从收集边就地消失，幸存者保序；被剪节点零执行。"""
         calls: list[str] = []
 
-        @handler()
+        @node()
         def p1(**kw) -> int:
             calls.append("p1")
             return 1
 
-        @handler()
+        @node()
         def p2(**kw) -> int:
             calls.append("p2")
             return 2
 
-        @handler()
+        @node()
         def b(**kw) -> int:
             calls.append("b")
             return 10
 
-        @handler()
+        @node()
         def agg(base: int, feat: Iterator[int] | None = None, **_):
             calls.append("agg")
             return {"feats": list(feat) if feat is not None else None, "base": base}
@@ -318,12 +318,12 @@ class TestDisabledPruneRunBehavior:
         """可选边成员全灭 → MISSING 省略注入，签名默认值生效。"""
         calls: list[str] = []
 
-        @handler()
+        @node()
         def p2(**kw) -> int:
             calls.append("p2")
             return 2
 
-        @handler()
+        @node()
         def solo(feat__p2: int | None = None, **_):
             calls.append("solo")
             return feat__p2

@@ -29,7 +29,7 @@ class DiscreteSpace[T: int | float | str | bool](list[T]):
         super().__init__(iterable)
 
     @classmethod
-    def __get_pydantic_core_schema__(cls, source_type, handler):
+    def __get_pydantic_core_schema__(cls, source_type, node):
         """yaml list 值 → DiscreteSpace 实例。
 
         pydantic 对 list 子类只做 is-instance 不构造（LIST_TYPES 精确匹配不含子类），
@@ -37,7 +37,7 @@ class DiscreteSpace[T: int | float | str | bool](list[T]):
         会被内层 list schema 重新摊平成 plain list。
         """
         args = get_args(source_type)
-        return core_schema.no_info_after_validator_function(cls, handler(list[args[0]] if args else list))
+        return core_schema.no_info_after_validator_function(cls, node(list[args[0]] if args else list))
 
 
 type ParameterSearchSpace = ContinuousSpace | DiscreteSpace

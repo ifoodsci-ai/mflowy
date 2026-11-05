@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### BREAKING：SDK 契约名对齐——handler.py→node.py、Handler→Node（#128）
+
+- 文件与契约名对齐：`driver/handler.py` → `driver/node.py`，`Handler` → `Node`；
+  **装饰器名不变**（`@handler`/`@edge` 是动作，`Node`/`Edge` 是契约）。连带件随改：
+  `handler_of`→`node_of`、`HANDLER_REGISTRY`→`NODE_REGISTRY`、`_HandlerEntry`→`_NodeEntry`、
+  `_HANDLER_OF`→`_NODE_OF`（99 文件 sweep，三方名如 StreamHandler/HandlerResult 词边界天然免疫）。
+- `node.py` 的 `Context` 导入移 TYPE_CHECKING（future-annotations 下纯注解面）——模块级
+  依赖链收窄为 `node → binding, config`；防环双向（装饰体↔discover、_checked↔身份桥）
+  全在函数体。as-built 导入链叙述落 node.py 模块 docstring。
+- **BREAKING 面**：`from mflowy.driver.handler import ...` 的 SDK 导入需改
+  `mflowy.driver.node`（仓内零残留；运行语义零变更——纯改名）。
+
 ### BREAKING：Handler/edge 契约升级 Protocol + 注册表，装饰器零属性挂载（#126）
 
 - `@handler` 构造 `Handler`（fn / middlewares / param_schema / ns + `run` 调度链）注册进

@@ -1,4 +1,4 @@
-"""predict handler 单元测试 —— 上游 model 门面消费（组寻址注入，无 run_id 耦合）"""
+"""predict node 单元测试 —— 上游 model 门面消费（组寻址注入，无 run_id 耦合）"""
 
 from typing import cast
 from unittest.mock import MagicMock

@@ -17,13 +17,13 @@ from mflowy.data.middlewares import (
     log_plot,
     validate_targets,
 )
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 from ._grid import band_grid
 from ._kde import kde_groups_cell
 
 
-@handler(log_plot, namespace="plot")
+@node(log_plot, namespace="plot")
 def target_effect_by_category(
     load: pd.DataFrame,
     targets: Annotated[str | list[str] | set[str], "数值目标列（必填）"],

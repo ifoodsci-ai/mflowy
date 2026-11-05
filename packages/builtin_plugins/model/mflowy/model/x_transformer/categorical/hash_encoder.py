@@ -1,7 +1,7 @@
 from typing import Annotated
 
 import pandas as pd
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.model.x_y import XySpec
 from pydantic import Field
 from sklearn.feature_extraction import FeatureHasher
@@ -10,7 +10,7 @@ from sklearn.pipeline import FunctionTransformer, Pipeline
 from ..utils import resolve_cols
 
 
-@handler(namespace="x_transformer")
+@node(namespace="x_transformer")
 def hash_encoder(
     x_y: XySpec,
     categorical_cols: Annotated[str | list[str] | None, "高基数分类列，None 自动检测"] = None,

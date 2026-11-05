@@ -1,6 +1,6 @@
 """共享规则实现：zscore/iqr 栅栏——detect 与 clean 修复侧同源的唯一居所。
 
-非词表模块（无 @handler，不产 entry point）。全部纯函数、零判断：
+非词表模块（无 @node，不产 entry point）。全部纯函数、零判断：
 不产 severity/ErrorReport（判断在 detect 算子），只做"从声明式参数确定性推导
 掩码/栅栏"。修复原子（cap_iqr / drop_outlier_iqr / …）与本模块的 detect 算子
 必须 import 同一函数——口径分歧（如 std 自由度）从结构上根除。

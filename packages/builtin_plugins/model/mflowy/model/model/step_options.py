@@ -108,8 +108,8 @@ def resume_model_step(experiment_id: str) -> BuilderOption:
     option 闭包内仅做 dict 查表，无 MLflow 调用。
 
     - 命中：module 改写为 loader，注入 {run_id}（model_evaluation_plots 等
-        后续步骤由模型 handler 的 _pipeline 自动执行）
-    - 未命中（无 FINISHED run）：返回原 step 不动，由后续 handler 正常训练
+        后续步骤由模型 node 的 _pipeline 自动执行）
+    - 未命中（无 FINISHED run）：返回原 step 不动，由后续 node 正常训练
     - 已是 loader（module == 'loader'）：跳过不动
     """
     run_id_map = search_experiment_model_run_ids(experiment_id)

@@ -8,12 +8,12 @@ YAML 显式传 ranges；会话路径由引擎从冻结卡注入（先验全程�
 from typing import Annotated
 
 import pandas as pd
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 from .errors import DataError, ErrorReport
 
 
-@handler(namespace="detect")
+@node(namespace="detect")
 def range_violation(
     load: pd.DataFrame,
     *,

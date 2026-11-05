@@ -5,13 +5,13 @@ from typing import Annotated, Literal
 import numpy as np
 import pandas as pd
 from mflowy.data.types import as_series
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 from .errors import DataError, ErrorReport
 from .rules import RULE_DEFAULT_K, iqr_fences, iqr_mask, zscore_mask
 
 
-@handler(namespace="detect")
+@node(namespace="detect")
 def outliers(
     load: pd.DataFrame,
     rule: Annotated[

@@ -1,12 +1,12 @@
 """Statistic 模块 mlflow 跟踪中间件
 
-记录统计结果 parquet artifact，处理 handler 的两种返回形态：
+记录统计结果 parquet artifact，处理 node 的两种返回形态：
 - pd.DataFrame：记录 row_count/column_count metric + ``statistics{suffix}.parquet``
-- None：handler 主动跳过（如 bivariate 无可配对列），不记录任何产物
+- None：node 主动跳过（如 bivariate 无可配对列），不记录任何产物
 """
 
 from mflowy.driver.context import Context
-from mflowy.driver.handler import Chain
+from mflowy.driver.node import Chain
 from mflowy.utils import mlflow as mlflow_util
 
 

@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from mflowy.driver.builder import Builder
 from mflowy.driver.edge import edge
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 
 def _yaml(tmp_path, *nodes: str) -> Path:
@@ -32,7 +32,7 @@ class TestEdgeBinding:
     def test_edge_transforms_upstream_output(self, fake_plugins, tmp_path, fake_tracking):
         """b(edge1)：edge1 的自身参数对节点表解析 a，变换输出注入 b.edge1 形参。"""
 
-        @handler()
+        @node()
         def a(**kw) -> int:
             return 10
 
@@ -40,7 +40,7 @@ class TestEdgeBinding:
         def edge1(load: int) -> int:
             return load * 2
 
-        @handler()
+        @node()
         def b(edge1: int, **_) -> int:
             return edge1
 
@@ -54,7 +54,7 @@ class TestEdgeBinding:
     def test_edge_optional_union_return_none_is_legal(self, fake_plugins, tmp_path, fake_tracking):
         """X | None 契约：边返回 None（无对应上游形态）合法注入，不误报撒谎。"""
 
-        @handler()
+        @node()
         def a(**kw) -> int:
             return 1
 
@@ -62,7 +62,7 @@ class TestEdgeBinding:
         def edge1(load: int = 0) -> int | None:
             return None
 
-        @handler()
+        @node()
         def b(edge1: int | None = -1, **_) -> int | None:
             return edge1
 
@@ -75,11 +75,11 @@ class TestEdgeBinding:
     def test_edge_param_iterator_collects_multiple_upstreams(self, fake_plugins, tmp_path, fake_tracking):
         """边参数收集形态：聚合多上游（边参数可收集、边返回恒单值）。"""
 
-        @handler()
+        @node()
         def v1(**kw) -> int:
             return 1
 
-        @handler()
+        @node()
         def v2(**kw) -> int:
             return 2
 
@@ -87,7 +87,7 @@ class TestEdgeBinding:
         def edge1(load: Iterator[int]) -> int:
             return sum(load)
 
-        @handler()
+        @node()
         def b(edge1: int, **_) -> int:
             return edge1
 
@@ -107,7 +107,7 @@ class TestEdgeBinding:
         def edge1(load: int) -> int:
             return load
 
-        @handler()
+        @node()
         def b(edge1: int, **_) -> int:
             return edge1
 
@@ -119,11 +119,11 @@ class TestEdgeBinding:
     def test_edge_name_outranks_group(self, fake_plugins, tmp_path, fake_tracking):
         """解析优先级①：边名命中即绑边，同名组不再看。"""
 
-        @handler()
+        @node()
         def edge1_node(**kw) -> int:  # 同名组的节点（不被使用）
             return 99
 
-        @handler()
+        @node()
         def a(**kw) -> int:
             return 5
 
@@ -131,7 +131,7 @@ class TestEdgeBinding:
         def edge1(load: int) -> int:
             return load + 1
 
-        @handler()
+        @node()
         def b(edge1: int, **_) -> int:
             return edge1
 
@@ -149,15 +149,15 @@ class TestEdgeBinding:
     def test_group_outranks_same_named_node(self, fake_plugins, tmp_path, fake_tracking):
         """解析优先级②：组名索引命中则只认组——表1先于表2（node_key）。"""
 
-        @handler()
+        @node()
         def group_member(**kw) -> int:
             return 7
 
-        @handler()
+        @node()
         def bare_group_node(**kw) -> int:  # node_key 撞组名的裸节点
             return 99
 
-        @handler()
+        @node()
         def b(load: int, **_) -> int:
             return load
 
@@ -174,11 +174,11 @@ class TestEdgeBinding:
     def test_same_edge_binds_per_consumer_position(self, fake_plugins, tmp_path, fake_tracking):
         """晚绑定 = 声明序：同一条边在不同消费方位置各自绑定其声明序上游（单值取最后）。"""
 
-        @handler()
+        @node()
         def v1(**kw) -> int:
             return 1
 
-        @handler()
+        @node()
         def v2(**kw) -> int:
             return 2
 
@@ -186,7 +186,7 @@ class TestEdgeBinding:
         def edge1(load: int) -> int:
             return load * 10
 
-        @handler()
+        @node()
         def b(edge1: int, **_) -> int:
             return edge1
 
@@ -215,7 +215,7 @@ class TestEdgeBinding:
     def test_lineage_records_upstream_node_not_edge(self, fake_plugins, tmp_path, fake_tracking):
         """血缘透明：边消费记上游节点 a 的 run_id，无 edge1 条目。"""
 
-        @handler()
+        @node()
         def a(**kw) -> int:
             return 1
 
@@ -223,7 +223,7 @@ class TestEdgeBinding:
         def edge1(load: int) -> int:
             return load
 
-        @handler()
+        @node()
         def b(edge1: int, **_) -> int:
             return edge1
 
@@ -239,7 +239,7 @@ class TestEdgeBinding:
 
 class TestGraphEmission:
     def _build(self, fake_plugins, tmp_path):
-        @handler()
+        @node()
         def a(**kw) -> int:
             return 1
 
@@ -247,11 +247,11 @@ class TestGraphEmission:
         def edge1(load: int) -> int:
             return load
 
-        @handler()
+        @node()
         def b(edge1: int, **_) -> int:
             return edge1
 
-        @handler()
+        @node()
         def c(load: int, **_) -> int:
             return load
 
@@ -280,11 +280,11 @@ class TestGraphEmission:
 
 class TestCompileTimeHintConsistency:
     def test_direct_type_mismatch_fails_build(self, fake_plugins, tmp_path):
-        @handler()
+        @node()
         def a(**kw) -> str:
             return "s"
 
-        @handler()
+        @node()
         def b(load: int, **_) -> int:
             return load
 
@@ -294,7 +294,7 @@ class TestCompileTimeHintConsistency:
             Builder(_yaml(tmp_path, _n("a", "load", "a"), _n("b", "model", "b"))).build()
 
     def test_consumer_hint_vs_edge_return_mismatch_fails_build(self, fake_plugins, tmp_path):
-        @handler()
+        @node()
         def a(**kw) -> int:
             return 1
 
@@ -302,7 +302,7 @@ class TestCompileTimeHintConsistency:
         def edge1(load: int) -> str:
             return "s"
 
-        @handler()
+        @node()
         def b(edge1: int, **_) -> int:
             return edge1
 
@@ -313,7 +313,7 @@ class TestCompileTimeHintConsistency:
             Builder(_yaml(tmp_path, _n("a", "load", "a"), _n("b", "model", "b"))).build()
 
     def test_edge_param_hint_vs_upstream_mismatch_fails_build(self, fake_plugins, tmp_path):
-        @handler()
+        @node()
         def a(**kw) -> str:
             return "s"
 
@@ -321,7 +321,7 @@ class TestCompileTimeHintConsistency:
         def edge1(load: int) -> int:
             return load
 
-        @handler()
+        @node()
         def b(edge1: int, **_) -> int:
             return edge1
 
@@ -334,11 +334,11 @@ class TestCompileTimeHintConsistency:
     def test_optional_edge_mismatch_fails_build(self, fake_plugins, tmp_path):
         """可选边不匹配同样编译期 raise——optionality 只影响空边省略。"""
 
-        @handler()
+        @node()
         def a(**kw) -> str:
             return "s"
 
-        @handler()
+        @node()
         def b(load: int = 3, **_) -> int:
             return load
 
@@ -352,7 +352,7 @@ class TestNameAddressedBinding:
     def test_optional_bare_type_edge_falls_back_to_default(self, fake_plugins, tmp_path, fake_tracking):
         """可选单值边零命中 → 签名默认值。"""
 
-        @handler()
+        @node()
         def b(missing: int = 9, **_) -> int:
             return missing
 
@@ -363,11 +363,11 @@ class TestNameAddressedBinding:
     def test_matched_none_is_injected_not_default(self, fake_plugins, tmp_path, fake_tracking):
         """命中且返回 None 显式注入 None——省略只发生在零命中。"""
 
-        @handler()
+        @node()
         def a(**kw) -> int | None:
             return None
 
-        @handler()
+        @node()
         def b(load: int | None = 5, **_) -> int | None:
             return load
 
@@ -379,15 +379,15 @@ class TestNameAddressedBinding:
     def test_unannotated_edge_keeps_collect_semantics(self, fake_plugins, tmp_path, fake_tracking):
         """无注解参数 = 收集形态：组名寻址命中注入迭代器。"""
 
-        @handler()
+        @node()
         def v1(**kw) -> int:
             return 1
 
-        @handler()
+        @node()
         def v2(**kw) -> int:
             return 2
 
-        @handler()
+        @node()
         def b(load) -> list:
             return list(load)
 
@@ -405,15 +405,15 @@ class TestEdgePruneInteraction:
         """必选边绑定 × 无关剪枝：edge 自指条目 nodes 恒空（依赖由 via 内层承载），
         rewire 守卫不得误报为必选悬挂（回归：合法图曾被内部断言拒绝）。"""
 
-        @handler()
+        @node()
         def a(**kw) -> int:
             return 1
 
-        @handler()
+        @node()
         def dead(**kw) -> int:
             return 2
 
-        @handler()
+        @node()
         def b(edge1: int) -> int:  # 必选边参数（无默认值）
             return edge1
 

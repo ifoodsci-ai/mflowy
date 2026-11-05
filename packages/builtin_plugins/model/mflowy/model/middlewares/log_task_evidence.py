@@ -7,7 +7,7 @@
 import logging
 
 from mflowy.driver.context import Context
-from mflowy.driver.handler import Chain
+from mflowy.driver.node import Chain
 from mflowy.utils import mlflow as mlflow_util
 
 logger = logging.getLogger(__name__)

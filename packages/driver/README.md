@@ -2,11 +2,11 @@
 
 **一个轻量的、能力全部以插件存在的、由 YAML 编排的 DAG 编译与调度内核。**
 
-职责一句话：构建期把 YAML 图（多为模板或 LLM 生成）编译成 Context DAG，运行期串行调度插件目录中的 handler——计算发生在插件内，内核只组合与调度，并把每次运行装配成可追溯的实验记录（DAGResult + MLflow runs）。远程执行由 JobProvider（mcp 包）把整个工具抬到远端，driver 本体始终进程内。
+职责一句话：构建期把 YAML 图（多为模板或 LLM 生成）编译成 Context DAG，运行期串行调度插件目录中的 node——计算发生在插件内，内核只组合与调度，并把每次运行装配成可追溯的实验记录（DAGResult + MLflow runs）。远程执行由 JobProvider（mcp 包）把整个工具抬到远端，driver 本体始终进程内。
 
 本内核由三件制品构成，本文即按此组织：
 
-1. **[函数声明节点](#函数声明节点)**——能力以 `@handler` pyfunc 声明、变换以 `@edge` 边函数声明，身份是 entry point name，安装即注册；
+1. **[函数声明节点](#函数声明节点)**——能力以 `@node` pyfunc 声明、变换以 `@edge` 边函数声明，身份是 entry point name，安装即注册；
 2. **[YAML 引导编排](#yaml-引导编排)**——组合是数据不是代码：Builder 把 YAML 树（含 Jinja2 模板、options 改写）编译成 DAG；
 3. **[编译、执行与血缘](#编译执行与血缘plan-execute)**——编译即校验：数据边按名字三层解析（边 > 组名索引 > node_key 索引）在增量编译中产出血缘图，执行消费编译产物，血缘是运行期实录。
 
@@ -36,7 +36,7 @@
 | 1. 内核冻结，能力皆插件 | 内核不实现任何业务能力（内置能力也在独立包——`packages/builtin_plugins/` 的 mflowy-data / mflowy-model，entry points 组 `mflowy.builtin_plugins`，与第三方同构）；定制全部走构建期变换（BuilderOption、Jinja2 渲染），调度内核保持纯调度 | 内核可独立测试、独立演进；内置能力即第三方插件的活参考实现（持续吃狗粮） |
 | 2. 身份即声明 | 节点地址是 entry point name `namespace.node_name`，不是函数名或全局 ID；声明住在包元数据（pyproject），不住在代码 | 词表可枚举、可校验、可审计、可被外部扩展；LLM 与人共享同一图语言 |
 | 3. 安装即注册 | uv/pip 装上即进入目录，卸载即退出；无 register CLI、无本地状态文件 | 环境可复现（K8s Job 容器与本地天然一致），插件分发零额外机制 |
-| 4. 目录与解析分离 | 目录查询（`discover`/`list_all`/`entry`）纯元数据零 import，且现算（无 `@cache`——新装插件与外部 reload 即时可见）；import 惰性发生在 `get_node`/`get_edge`，以 `.handler`/`.edge` 属性校验声明一致性 | 缺依赖的模块照常列出（而非静默消失）；坏声明（忘标装饰器、value 路径写错）fail-loud |
+| 4. 目录与解析分离 | 目录查询（`discover`/`list_all`/`entry`）纯元数据零 import，且现算（无 `@cache`——新装插件与外部 reload 即时可见）；import 惰性发生在 `get_node`/`get_edge`，以 `.node`/`.edge` 属性校验声明一致性 | 缺依赖的模块照常列出（而非静默消失）；坏声明（忘标装饰器、value 路径写错）fail-loud |
 | 5. 边名字三层寻址 | 参数边解析：**边名（`@edge` 变换，仅 `edges` ns）> 组名 > 节点名**，零命中构建期 fail-raise；命中后做输入/输出注解一致性检查（编译期类型校验，非寻址——返回注解不参与寻址）；类型适配经 `@edge` 边函数显式化（`a-\|edge1\|->b`） | 换 module 不改下游连线（组寻址，XGB→LGBM 只改一行）；类型适配是可复用词表项而非隐藏中间件；解析全静态——mermaid / nodes+edges JSON 构建期即出图 |
 | 6. 图住配置，代码住目录 | 能力（目录项）与图（YAML 工件）分离，派生两类角色：能力作者添目录项，图组装者（人、模板、LLM）拼 YAML | 两类演化互不阻塞，driver 本质是两个角色之间的编译器 |
 | 7. DAG 是实验计划书 | 串行调度、无增量跳过：每次运行必留痕，复用旧结果是显式 `run_id` 引用而非静默缓存；观测（mlflow 尾链）织入内核 | agent 的控制流永远可预测；实验即记录 |
@@ -48,7 +48,7 @@
 ```mermaid
 flowchart LR
     subgraph declare["① 函数声明节点（构建 / 安装期）"]
-        H["@handler 装饰器<br/>注册表 &lt;node_key, Handler&gt;<br/>+ 内嵌 validate_call（零属性挂载 #126）"] -- "同 PR 静态声明<br/>（CR 交叉检查）" --> EP1["entry points 组<br/>mflowy.builtin_plugins"]
+        H["@node 装饰器<br/>注册表 &lt;node_key, Node&gt;<br/>+ 内嵌 validate_call（零属性挂载 #126）"] -- "同 PR 静态声明<br/>（CR 交叉检查）" --> EP1["entry points 组<br/>mflowy.builtin_plugins"]
         E["@edge 装饰器<br/>注册表 Edge（#126 零属性挂载）"] --> EP1
         THIRD["第三方插件包<br/>（以 mflowy 为 base 依赖）"] --> EP2["entry points 组<br/>mflowy.plugins"]
         EP1 --> DISC["discover.py 插件目录<br/>dict[node_key: EntryPoint]（扁平身份键）<br/>后组覆盖前组；分组视图派生"]
@@ -70,7 +70,7 @@ flowchart LR
     DAG --> W
 ```
 
-- **①** 只发生在构建/安装时刻：能力作者写 pyfunc + `@handler`（节点）或 `@edge`（边函数），构建期 hook 扫描生成 entry points，身份随包元数据分发；目录查询现算（热更新——与 ③ 的计划快照是两层：目录随时可见，计划定格于所属 DAG 实例）。
+- **①** 只发生在构建/安装时刻：能力作者写 pyfunc + `@node`（节点）或 `@edge`（边函数），构建期 hook 扫描生成 entry points，身份随包元数据分发；目录查询现算（热更新——与 ③ 的计划快照是两层：目录随时可见，计划定格于所属 DAG 实例）。
 - **②** 是进程内编译：Builder 按 YAML 序增量编译——词表校验（零 import）、签名对节点表解析参数边、接线双向邻接表；**编译即校验**（拓扑序/撞名/类型门 fail-loud，`valid` 门已退役）。
 - **③** 是进程内执行：静态解析产出计划（`ctx.resolve()`），调度期按节点惰性加载并校验，绑定/拉起/血缘全部发生在这一层。
 - **覆盖语义**：`mflowy.plugins` 组按声明覆盖 `mflowy.builtin_plugins` 同名项（info 级日志），同组撞名 warning——定制内置行为不需 fork；跨层撞名（边名撞节点/组名）warning（边优先会改写既有绑定）。
@@ -97,7 +97,7 @@ sequenceDiagram
 | 阶段 | 代码 | 说明 |
 |------|------|------|
 | 模板渲染 | `builder.py: _load_yaml` | `{{ var }}` 注入 `env` 参数；生产入口多为模板而非手写 YAML（见「模板与片段组合」） |
-| 配置解析 | `config.parse_flow_item` | 单键映射列表 → NodeConf 元组（平铺；嵌套键/缺 node_name/stop_on_error fail-loud）；params 保持原始 dict（类型解析/校验在调用期，见 @handler） |
+| 配置解析 | `config.parse_flow_item` | 单键映射列表 → NodeConf 元组（平铺；嵌套键/缺 node_name/stop_on_error fail-loud）；params 保持原始 dict（类型解析/校验在调用期，见 @node） |
 | 配置变换 | `builder.py: _transform` | `BuilderOption` 逐节点应用（构造期，声明序） |
 | 增量编译 | `builder.py: _compile + NodeTable` | 逐节点入表（组名保序 / node_key 双索引）、签名解析参数边（词表 miss/M1 撞名/必选边不可达/类型门 fail-loud）、接线 prevs/nexts |
 | 配置剪枝 | `builder.py: _prune_disabled + _apply_structural_rules` | disabled 血缘闭包（本体+传递后代出局）+ `structural_rules`（看血缘 nexts，无消费者即剪） |
@@ -118,12 +118,12 @@ sequenceDiagram
 新插件 = 一个 pyfunc + 一行装饰器 + 一行 pyproject 声明，四处生效：
 
 ```python
-@handler(namespace="clean")   # 能力作者只写这几行（归组声明即身份）
+@node(namespace="clean")   # 能力作者只写这几行（归组声明即身份）
 def common_filter(...) -> pd.DataFrame: ...
 ```
 
 1. **身份声明**：`[project.entry-points."mflowy.builtin_plugins"]` 静态手写声明（0.2.0 起构建期 AST 扫描钩子退役，与第三方包同构）——name 即身份（节点 `namespace.node_name`，归组段与装饰器 `namespace=` 逐字一致由 CR 兜底；边函数注册于 `edges` ns；声明指向未装饰函数在加载期 fail-loud）
-2. **能力注册**：`handler.py: @handler` 内嵌 `validate_call`（签名即约束：`Annotated[T, "描述"]` 兼容旧约定、`Field(...)` 带约束、裸类型注入参数 is-instance 直通），构造 `Handler`（fn/middlewares/param_schema/ns + `run` 调度链）注册进 `<node_key, Handler>` 注册表（`discover.HANDLER_REGISTRY`，#126 零属性挂载——fn 原样返回，直调不受影响）；`mlflow_log` 强制尾链（`builtin_middleware.py`——stop_on_error 已随 #59 血缘剪枝退役），每个 handler 必在 mlflow run 内执行
+2. **能力注册**：`node.py: @node` 内嵌 `validate_call`（签名即约束：`Annotated[T, "描述"]` 兼容旧约定、`Field(...)` 带约束、裸类型注入参数 is-instance 直通），构造 `Node`（fn/middlewares/param_schema/ns + `run` 调度链）注册进 `<node_key, Node>` 注册表（`discover.NODE_REGISTRY`，#126 零属性挂载——fn 原样返回，直调不受影响）；`mlflow_log` 强制尾链（`builtin_middleware.py`——stop_on_error 已随 #59 血缘剪枝退役），每个 node 必在 mlflow run 内执行
 3. **目录与解析**：`discover.py` 按序读两组 entry points（`mflowy.builtin_plugins` 内置 + `mflowy.plugins` 第三方），`discover()/list_all()/entry()` 纯元数据零 import；`get_node`/`get_edge` 惰性 import 并经身份桥（`handler_of`/`edge_of`，#126 零属性挂载）校验装饰性，坏声明 fail-loud（名 vs 声明逐字一致是 CR 面）
 4. **用户文档**：`module.py: get_node_info` 内省 `Annotated[T, "描述"]` → JSON Schema（纯用户可配参数），参数边依赖经 `NodeInfo.upstream`（展平边函数的节点名，保序去重）独立下发——MCP schema 即 API 文档
 
@@ -131,18 +131,18 @@ def common_filter(...) -> pd.DataFrame: ...
 
 ### 类型注解单源
 
-`Annotated[T, "描述"]`（旧式字符串，兼容）与 `Annotated[T, Field(description=..., gt=...)]`（带约束）是全引擎的契约单一事实源：`@handler` 内嵌的 `validate_call` 在调用期解析/校验、`get_node_info` 直出 JSON Schema 文档——两者同一套 pydantic schema 机器，文档与校验永不漂移。签名约定：裸类型参数 = 参数边（is-instance 直通，收集形态需注迭代器），`Annotated` 参数 = 用户可配（文档据此过滤）；**`Annotated` 只用于参数，返回值保持裸注解**（返回注解参与构建期一致性校验与文档，不参与寻址；误写 `Annotated` 会在文档中产出幽灵参数，责任在插件作者）。**默认值的单一事实源是函数签名**——空可选边直接省略参数，默认值由 Python 调用期原生生效；Field 只带约束与描述。
+`Annotated[T, "描述"]`（旧式字符串，兼容）与 `Annotated[T, Field(description=..., gt=...)]`（带约束）是全引擎的契约单一事实源：`@node` 内嵌的 `validate_call` 在调用期解析/校验、`get_node_info` 直出 JSON Schema 文档——两者同一套 pydantic schema 机器，文档与校验永不漂移。签名约定：裸类型参数 = 参数边（is-instance 直通，收集形态需注迭代器），`Annotated` 参数 = 用户可配（文档据此过滤）；**`Annotated` 只用于参数，返回值保持裸注解**（返回注解参与构建期一致性校验与文档，不参与寻址；误写 `Annotated` 会在文档中产出幽灵参数，责任在插件作者）。**默认值的单一事实源是函数签名**——空可选边直接省略参数，默认值由 Python 调用期原生生效；Field 只带约束与描述。
 
 builtin 词汇的类型转换知识挂在类型上（词汇主人）：`DiscreteSpace.__get_pydantic_core_schema__`（yaml list → 实例）、`DualFormStrEnum`（枚举值/名双形式）；stdlib dataclass（如 `ContinuousSpace`）的 dict→实例 pydantic 原生支持。第三方数据结构的 YAML 值转换同样挂 `__get_pydantic_core_schema__` 钩子。
 
 ### 中间件链（单平面）与 @edge 数据边
 
-注册时一次性织入：`@handler(mw1, mw2)` → `mlflow_log → mw2 → mw1 → handler`。中间件全部为**遥测面**（log_* 领域日志，活跃 mlflow run 窗口内执行）；**数据面已参数边化**——绑定在链启动前完成（本节点 run 窗口外），取值闭包惰性拉起上游不撞同线程活跃 run。
+注册时一次性织入：`@node(mw1, mw2)` → `mlflow_log → mw2 → mw1 → node`。中间件全部为**遥测面**（log_* 领域日志，活跃 mlflow run 窗口内执行）；**数据面已参数边化**——绑定在链启动前完成（本节点 run 窗口外），取值闭包惰性拉起上游不撞同线程活跃 run。
 
 数据变换不再是中间件：**`@edge` 边函数**（`driver/edge.py`）是具名词表项——
 
 - 拓扑记法 `a-|edge1|->b`：`@edge def edge1(a: A) -> Edge1` + `b(edge1: Edge1, ...)`；边无图位置，组装在 builder 编译期——边函数自身参数对节点表解析（晚绑定=声明序：同边在不同位置各自绑其声明序上游，单值取末位）
-- **恒单值指边返回**：边函数返回值单值注入消费方同名参数（返回注解应与消费方参数注解一致，构建期校验）；边函数自身参数遵循与 handler 参数相同的注解规则——收集形态（`Iterator[X]`）合法，用于聚合多上游
+- **恒单值指边返回**：边函数返回值单值注入消费方同名参数（返回注解应与消费方参数注解一致，构建期校验）；边函数自身参数遵循与 node 参数相同的注解规则——收集形态（`Iterator[X]`）合法，用于聚合多上游
 - 边不进调度记账（无中间件/run/NodeResult），血缘对边透明（记上游节点）；参数只解析组/节点两层（**不吃边**——边链成环无从发生，YAML 嵌套无环性覆盖全部解析递归；跨边复用走函数体内直调）
 - 解析优先级：**边名（仅 `edges` ns）> 组名 > 节点名**，零命中构建期 fail-raise（报错路径 `edge1.a`）；消解命中后做输入注解 vs 上游/边返回注解的一致性检查（相等性比对，任一侧未注解即放行）
 
@@ -244,10 +244,10 @@ flow:
 from typing import Annotated
 
 import pandas as pd
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 
-@handler(namespace="clean")
+@node(namespace="clean")
 def feather_aware_filter(
     load: pd.DataFrame,  # 单值参数边·组寻址：绑 load 组末位实例，直注 result 免 next()
     top_k: Annotated[int, Field(ge=1)] = 20,  # 用户可配（YAML params）——默认值单一事实源是签名
@@ -275,8 +275,8 @@ uvx --from "mflowy[mcp,modeling]" --with mflowy-extra mflowy-mcp
 - 注入形态由注解决定：无类型签名（无注解 / 裸 `Iterator`，默认当 Iterator）或注解提及 `Iterator`（含 `Iterator[X] | None` 可选收集边）= 收集边（全量拉起 + 声明序迭代器，for/`list()` 消费）；裸类型 `X`（含 `X | None`）= 单值边（仅拉起末位命中直注 result，签名免 `next()`）；签名默认值 = 可选边（零命中省略参数，Python 默认值调用期原生生效）。撒谎 fail-loud：声明输出与实际值不符（节点输出/收集成员/边返回三处对称）运行期即报
 - 消费者以**组名**（`load`）或**节点名**（归组 `namespace__node`——`__` 连接符，如 `load__feather`；非归组裸节点名）寻址你的节点；返回注解不参与寻址（仅文档与构建期一致性校验）
 - 扩展单元 = namespace + 节点 + 边函数；`get_node_info` 的 `NodeInfo.upstream` 与 `list_nodes` 节点条目 `{name=node_key, upstream}` 均下发**结构化元数据**——`UpstreamMeta` 扁平投影（`via` 标注消费途经的边、`expect` 类型渲染、`required`/`default` 可选性；`name == via` 的边自指条目过滤，边信息由 edges 词表承载）；缺 extra 降级 `upstream=None`
-- 参考实现：`packages/builtin_plugins/`（mflowy-data / mflowy-model 两包；`@handler`/`@edge` 装饰器 + pyproject `[project.entry-points]` 静态声明，抄走改 group 为 `mflowy.plugins` 即可）
-- SDK 面 = `driver/handler.py` + `driver/edge.py` 装饰器 + `driver/rule.py` 规则引擎实例（Rule/Activation/RuleEngine + load/save_rule_engine/rule_engine_rwa 落盘） + `driver/builtin_middleware.py` 尾链 + 两域 `middlewares/` 遥测面；破坏性变更受 CHANGELOG 语义化版本约束
+- 参考实现：`packages/builtin_plugins/`（mflowy-data / mflowy-model 两包；`@node`/`@edge` 装饰器 + pyproject `[project.entry-points]` 静态声明，抄走改 group 为 `mflowy.plugins` 即可）
+- SDK 面 = `driver/node.py`（@node 装饰器，#128）+ `driver/edge.py` 装饰器 + `driver/rule.py` 规则引擎实例（Rule/Activation/RuleEngine + load/save_rule_engine/rule_engine_rwa 落盘） + `driver/builtin_middleware.py` 尾链 + 两域 `middlewares/` 遥测面；破坏性变更受 CHANGELOG 语义化版本约束
 
 ## 会话 SDK（POMDP 契约与生命周期基座）
 
@@ -286,7 +286,7 @@ uvx --from "mflowy[mcp,modeling]" --with mflowy-extra mflowy-mcp
 - **决策权地图**：引擎=事实（合法走法/转移/守卫/预算/信号），π=选择（选动作/回滚时机/收局时机/弃局）；守卫拦"事实不成立"不拦"程序下一步"，菜单与信号（`should_stop`）都是建议不是边界；结算可拒收且拒收后可续局
 - **`POMDPSessionHandle`**：业务接口的类型锚点（无状态 sid 寻址，"具名核心 + `*args` 域尾巴"——各域实现自己的 Handle，用同一套机制）；**`POMDPSession`**（`session.py`，#89 会话壳）：统一机制——六个操作上下文（`start_ctx`/`propose_ctx`/`apply_ctx(action)`/`rollback_ctx`/`finish_ctx` + `abandon` 方法）承载全部业务流程骨架：终态/预算门（步数口径 `counts_step` 域声明）、prior 冻结牙齿、append-only 决策日志（追加即 commit 点）、统一盘上写序（工件→日志→观测投影）、open 撕裂检测。盘上三件：`observation.json`（观测摘要，整读改写）/ `decision.log`（JSONL，接口无删除面）/ `rules.pkl`（引擎整读整写）；域状态文件域自定（model 的 `board.json`）。`SessionStore` 降为存量 manifest 面向的内部件（`gc` 锚 observation.json 回退 manifest.json）
 - **活参考**：mflowy-data / mflowy-model 两域的会话模块（Handle 的两个真 adapter——结构等价由「真实响应即契约模型」钉测；对称于两包之于插件 SDK 的地位）；回收面 = mcp 平台工具 `sessions_gc`（约定扫描 `~/.mflowy/*_sessions` + mtime TTL + dry-run 安全缺省——平台约定住 mcp，driver 对用户 home 零知识）
-- SDK 面受 CHANGELOG 语义化版本约束（对齐 handler 装饰器措辞）
+- SDK 面受 CHANGELOG 语义化版本约束（对齐 node 装饰器措辞）
 
 ## 相关文档
 

@@ -10,12 +10,12 @@ from typing import Annotated
 import pytest
 from mflowy.driver.binding import UpstreamMeta
 from mflowy.driver.discover import CatalogMiss
-from mflowy.driver.handler import handler
 from mflowy.driver.module import NodeEntry, get_node_info, list_nodes
+from mflowy.driver.node import node
 from pydantic import Field
 
 
-@handler()
+@node()
 def _annotated(
     payload,  # 裸类型：middleware 注入域，不进 schema
     label: Annotated[str, "标签"],
@@ -165,7 +165,7 @@ def test_list_nodes_degrades_bare_name_on_missing_extra(monkeypatch):
         def list_all(self):
             return {"load": ["ok", "plotly_thing"]}
 
-        def handler(self, key, raw=False):
+        def node(self, key, raw=False):
             if "plotly_thing" in key:
                 raise ImportError("No module named 'plotly'")
             return _ok_node
@@ -194,7 +194,7 @@ def test_list_nodes_degrades_on_edge_import_failure(monkeypatch):
         def list_all(self):
             return {"model": ["final_eval"]}
 
-        def handler(self, ns, node, raw=False):
+        def node(self, ns, node, raw=False):
             return _node_w_edge  # 节点本体可导入
 
         def find_edge(self, name, raw=False):
@@ -226,7 +226,7 @@ def test_list_nodes_miss_during_enumeration_propagates(monkeypatch):
         def list_all(self):
             return {"load": ["ok", "ghost"]}
 
-        def handler(self, key, raw=False):
+        def node(self, key, raw=False):
             if key == "load__ghost":
                 raise CatalogMiss("load", "ghost", ["ok"])  # 枚举期目录变更：表里有名、目录已 miss
             return _ok_node

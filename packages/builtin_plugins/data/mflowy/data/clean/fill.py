@@ -12,7 +12,7 @@ from typing import Annotated, cast
 import pandas as pd
 from mflowy.data.middlewares import df_diff
 from mflowy.data.types import as_series
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 from ._atom import require_cols, require_family
 
@@ -22,7 +22,7 @@ def _base(load, clean):
     return df.copy()
 
 
-@handler(df_diff, namespace="clean")
+@node(df_diff, namespace="clean")
 def fill_median(
     load: pd.DataFrame,
     clean: pd.DataFrame | None = None,
@@ -38,7 +38,7 @@ def fill_median(
     return df
 
 
-@handler(df_diff, namespace="clean")
+@node(df_diff, namespace="clean")
 def fill_mean(
     load: pd.DataFrame,
     clean: pd.DataFrame | None = None,
@@ -54,7 +54,7 @@ def fill_mean(
     return df
 
 
-@handler(df_diff, namespace="clean")
+@node(df_diff, namespace="clean")
 def fill_mode(
     load: pd.DataFrame,
     clean: pd.DataFrame | None = None,
@@ -82,7 +82,7 @@ def fill_mode(
     return df
 
 
-@handler(df_diff, namespace="clean")
+@node(df_diff, namespace="clean")
 def fill_const(
     load: pd.DataFrame,
     clean: pd.DataFrame | None = None,
@@ -98,7 +98,7 @@ def fill_const(
     return df
 
 
-@handler(df_diff, namespace="clean")
+@node(df_diff, namespace="clean")
 def fill_ffill(
     load: pd.DataFrame,
     clean: pd.DataFrame | None = None,
@@ -113,7 +113,7 @@ def fill_ffill(
     return df
 
 
-@handler(df_diff, namespace="clean")
+@node(df_diff, namespace="clean")
 def fill_bfill(
     load: pd.DataFrame,
     clean: pd.DataFrame | None = None,
@@ -128,7 +128,7 @@ def fill_bfill(
     return df
 
 
-@handler(df_diff, namespace="clean")
+@node(df_diff, namespace="clean")
 def fill_interpolate(
     load: pd.DataFrame,
     clean: pd.DataFrame | None = None,

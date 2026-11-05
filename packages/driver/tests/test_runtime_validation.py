@@ -1,4 +1,4 @@
-"""driver 内核契约：@handler 内嵌 validate_call 的运行时参数解析与校验。
+"""driver 内核契约：@node 内嵌 validate_call 的运行时参数解析与校验。
 
 - 时机：节点执行期（fail-late）——NodeConf.params 保持原始 dict，解析期不转换
 - 范围：全签名校验；裸类型/无注解的注入参数（第三方任意类型）按 Any/is-instance 直通
@@ -12,7 +12,7 @@ from typing import Annotated
 import pytest
 from mflowy.driver.config import NodeConf
 from mflowy.driver.context import Context
-from mflowy.driver.handler import handler, handler_of
+from mflowy.driver.node import node, node_of
 from pydantic import Field, ValidationError
 
 
@@ -25,17 +25,17 @@ def _ctx(**params):
     return Context(NodeConf(name="under_test", node_key="load__under_test", params=dict(params)))
 
 
-@handler()
+@node()
 def _plain(x: Annotated[int, "倍数"] = 1, **_):
     return x
 
 
-@handler()
+@node()
 def _constrained(x: Annotated[int, Field(ge=0, le=10, description="0~10 的整数")], **_):
     return x
 
 
-@handler()
+@node()
 def _takes_arbitrary(payload, x: Annotated[int, "倍数"] = 1, **_):
     """payload 无注解：模拟参数边绑定期注入的任意类型对象（迭代器/DataFrame）"""
     return type(payload).__name__, x
@@ -43,8 +43,8 @@ def _takes_arbitrary(payload, x: Annotated[int, "倍数"] = 1, **_):
 
 class TestRuntimeValidation:
     def test_dispatch_coerces_yaml_scalar(self, fake_tracking):
-        """调度链（.handler 路径）上 YAML 标量按签名类型转换（str→int，lax）"""
-        assert handler_of(_plain).run(_ctx(x="7")) == 7
+        """调度链（.node 路径）上 YAML 标量按签名类型转换（str→int，lax）"""
+        assert node_of(_plain).run(_ctx(x="7")) == 7
 
     def test_params_stay_raw_on_conf(self, fake_tracking):
         """解析期不转换：NodeConf.params 原样保留原始 YAML 值"""
@@ -53,36 +53,36 @@ class TestRuntimeValidation:
 
     def test_field_constraint_rejected_at_dispatch(self, fake_tracking):
         with pytest.raises(ValidationError, match="x"):
-            handler_of(_constrained).run(_ctx(x=11))
+            node_of(_constrained).run(_ctx(x=11))
 
     def test_string_annotated_convention_validates(self, fake_tracking):
         """旧式 Annotated[T, "描述"]：字符串 metadata 被忽略，按 T 校验"""
-        assert handler_of(_plain).run(_ctx(x="3")) == 3
+        assert node_of(_plain).run(_ctx(x="3")) == 3
 
     def test_enum_by_value_at_dispatch(self, fake_tracking):
-        @handler()
+        @node()
         def _colored(color: Annotated[Color | None, "颜色"] = None, **_):
             return color
 
-        assert handler_of(_colored).run(_ctx(color="red")) is Color.RED
+        assert node_of(_colored).run(_ctx(color="red")) is Color.RED
 
     def test_defaults_not_validated(self, fake_tracking):
         """未出现在 YAML params 的参数走函数签名默认值，不经校验"""
-        assert handler_of(_plain).run(_ctx()) == 1
+        assert node_of(_plain).run(_ctx()) == 1
 
 
 class TestInjectionPassthrough:
     def test_unannotated_injected_object_passthrough(self, fake_tracking):
         """无注解参数接收任意类型对象（参数边绑定.kwargs 投递，同 _bind 入口）按 is-instance 直通"""
-        kind, x = handler_of(_takes_arbitrary).run(_ctx(x="5"), payload=object())
+        kind, x = node_of(_takes_arbitrary).run(_ctx(x="5"), payload=object())
         assert kind == "object"
         assert x == 5
 
 
 class TestDispatchMarker:
     def test_handler_contract_via_registry(self, fake_tracking):
-        """#126：装饰器零属性挂载——契约居注册表 <node_key, Handler>，fn 原样返回"""
-        entry = handler_of(_plain)
+        """#126：装饰器零属性挂载——契约居注册表 <node_key, Node>，fn 原样返回"""
+        entry = node_of(_plain)
         assert entry.fn is _plain and callable(entry.run)
         assert entry.ns is None  # 非归组（空串归一 None）
-        assert not hasattr(_plain, "handler") and not hasattr(_plain, "node_key")  # 零属性挂载
+        assert not hasattr(_plain, "node") and not hasattr(_plain, "node_key")  # 零属性挂载

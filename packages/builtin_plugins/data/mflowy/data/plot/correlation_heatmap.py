@@ -12,7 +12,7 @@ import pandas as pd
 import seaborn as sns
 from matplotlib.patches import FancyBboxPatch
 from mflowy.data.middlewares import log_plot
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.utils.plot import CMAP_DIVERGING
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from scipy import stats
@@ -151,7 +151,7 @@ def _pval_marker(p: float) -> str:
     return ""
 
 
-@handler(log_plot, namespace="plot")
+@node(log_plot, namespace="plot")
 def correlation_heatmap(
     load: pd.DataFrame,
     clean: pd.DataFrame | None = None,

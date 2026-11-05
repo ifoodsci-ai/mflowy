@@ -1,11 +1,11 @@
-"""XGBoost 模型实现 - @handler 实体函数模式（#62 两行为派生）"""
+"""XGBoost 模型实现 - @node 实体函数模式（#62 两行为派生）"""
 
 from __future__ import annotations
 
 import logging
 from typing import Annotated
 
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.model.model._split import TrainSplit
 from mflowy.model.model.study import ContinuousSpace, DiscreteSpace
 from mflowy.utils.constants import RANDOM_STATE
@@ -25,7 +25,7 @@ def _model_cls():
     return model_cls
 
 
-@handler(namespace="model")
+@node(namespace="model")
 def XGB(
     train_split: TrainSplit,
     x_preprocessors: ColumnTransformer | None = None,

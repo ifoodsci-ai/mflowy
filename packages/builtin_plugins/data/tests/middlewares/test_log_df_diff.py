@@ -9,19 +9,19 @@ from unittest.mock import patch
 import pandas as pd
 from mflowy.data.middlewares.log_df_diff import df_diff
 from mflowy.driver.builder import Builder
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 
 def _dag(fake_plugins, tmp_path):
-    @handler(df_diff, namespace="load")
+    @node(df_diff, namespace="load")
     def _csv(**kw) -> pd.DataFrame:
         return pd.DataFrame({"x1": [1, 2], "x2": [3, 4], "y": [0, 1]})
 
-    @handler(df_diff, namespace="clean")
+    @node(df_diff, namespace="clean")
     def _step1(load: pd.DataFrame, clean: pd.DataFrame | None = None) -> pd.DataFrame:
         return load.drop(columns=["x2"])  # (2,3) → (2,2)
 
-    @handler(df_diff, namespace="clean")
+    @node(df_diff, namespace="clean")
     def _step2(load: pd.DataFrame, clean: pd.DataFrame | None = None) -> pd.DataFrame:
         assert clean is not None  # 链式第二步恒有上一步产物
         return clean  # 不再变换——diff 的 before/after 均应为 step1 输出
@@ -61,7 +61,7 @@ def test_first_clean_step_falls_back_to_load(fake_plugins, tmp_path, fake_tracki
 def test_no_upstream_skips_diff(fake_plugins, tmp_path, fake_tracking):
     """无编译上游（单节点直调形态）→ 跳过 diff，不报错。"""
 
-    @handler(df_diff, namespace="clean")
+    @node(df_diff, namespace="clean")
     def _solo(load: pd.DataFrame | None = None, clean: pd.DataFrame | None = None) -> pd.DataFrame:
         return pd.DataFrame({"a": [1]})
 

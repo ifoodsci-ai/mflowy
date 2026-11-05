@@ -7,7 +7,7 @@
 MFlowy 是 **MCP-native** 的 ML 能力层：把数据分析、模型训练与预测打包成可枚举、可自描述的 MCP 工具目录，供自主 agent（或人）组装成可追溯的实验工作流。agent 不需要读文档——能力发现、图组装预检、执行与结果读回全部经工具完成。
 
 ```text
-能力目录（@handler 节点 / @edge 边函数自注册） ──组装──▶ YAML 图（flow 工件） ──执行──▶ 实验记录（DAGResult + MLflow）
+能力目录（@node 节点 / @edge 边函数自注册） ──组装──▶ YAML 图（flow 工件） ──执行──▶ 实验记录（DAGResult + MLflow）
 ```
 
 ## Agent 自主回路
@@ -34,13 +34,13 @@ C4Container
 title MFlowy 组件架构（C4 Container）
 
 Person(agent, "自主 Agent", "数据分析 / 建模 / 预测 agent（Claude Code、Cursor 等）")
-Person(dev, "能力作者", "写 @handler 插件的开发者")
+Person(dev, "能力作者", "写 @node 插件的开发者")
 
 System_Boundary(sys, "MFlowy —— uv workspace · PEP 420 namespace · 五 distribution 锁步") {
     Container(mcp, "mflowy-mcp", "MCP 层", "全部工具定义（tools.py）· mflowy-mcp stdio server · mflowy JSON runner · JobProvider 执行策略 · 遥测")
     Container(data, "mflowy-data", "数据域", "清洗 POMDP 动作域：load/statistic/detect/clean + plot(data_analysis)；数据栈硬依赖，装包即得完整数据域")
     Container(model, "mflowy-model", "建模域", "建模 POMDP 动作域：x_y/cv/x_transformer/model + plot(evaluation/interpretability)；CPU 建模栈硬依赖，torch 栈隔离 [deep]")
-    Container(driver, "mflowy-driver", "DAG 内核", "Builder YAML 增量编译（平铺叙事·编译即校验）· Context 血缘 DAG · LIFO 拓扑调度 + 失败血缘剪枝 · discover 插件目录（零 import 查询/惰性加载）· @handler/@edge 插件 SDK + mlflow 默认尾链")
+    Container(driver, "mflowy-driver", "DAG 内核", "Builder YAML 增量编译（平铺叙事·编译即校验）· Context 血缘 DAG · LIFO 拓扑调度 + 失败血缘剪枝 · discover 插件目录（零 import 查询/惰性加载）· @node/@edge 插件 SDK + mlflow 默认尾链")
     Container(utils, "mflowy-utils", "共享工具", "mlflow 封装 · jinja 沙箱 · 日志与 stdout 捕获 · 文件指纹 · 脚本安全门")
 }
 
@@ -52,9 +52,9 @@ System(mlflowsys, "MLflow Tracking", "实验记录：runs · 参数 · 指标 ·
 System(remote, "远程执行环境", "K8s Job · 集群 · Serverless（自定义 JobProvider 实现接管）")
 
 Rel(agent, mcp, "MCP stdio（mflowy-mcp）/ subprocess（mflowy）", "tools/list · tools/call")
-Rel(dev, tpkg, "pyfunc + @handler + entry point 声明")
+Rel(dev, tpkg, "pyfunc + @node + entry point 声明")
 Rel(mcp, plugins, "依赖：工具编排内置能力")
-Rel(plugins, driver, "依赖：@handler/@edge SDK · 遥测契约")
+Rel(plugins, driver, "依赖：@node/@edge SDK · 遥测契约")
 Rel(driver, utils, "依赖")
 Rel(tpkg, driver, "base 依赖：SDK；安装即注册进 discover 目录（可覆盖内置同名项）")
 Rel(driver, mlflowsys, "每节点一个 run · 血缘 tag · LIFO 调度记录")

@@ -143,7 +143,7 @@ def test_xgboost_ctor_es_without_eval_set_raises(sample_data):
 
 
 def test_xgboost_handler_registered():
-    """测试 XGBoost handler 已注册"""
+    """测试 XGBoost node 已注册"""
     import mflowy.model.model.xgboost  # noqa: F401
     from mflowy.driver import discover
 

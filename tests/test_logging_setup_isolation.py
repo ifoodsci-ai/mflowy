@@ -1,8 +1,8 @@
 """根 conftest ``_reset_logging_setup_state`` 的契约钉（prior learning: 顺序依赖红）。
 
 入口用例（server/runner 的 ``main()`` → ``utils.logging.setup()``，以及
-utils 包测试的局部 teardown 重装）在 pytest 捕获流上装 root console handler；
-捕获流随用例关闭后，残留 handler 让后续任何日志触发 ``--- Logging error ---``
+utils 包测试的局部 teardown 重装）在 pytest 捕获流上装 root console node；
+捕获流随用例关闭后，残留 node 让后续任何日志触发 ``--- Logging error ---``
 写向当时的 ``sys.stderr``——在 ``capture_prints`` 窗口内即污染
 ``NodeResult.output``（``test_node_result_carries_structured_value`` 同进程
 顺序依赖红）。fixture 负责把 setup() 的进程级痕迹拦在用例边界内。
@@ -54,7 +54,7 @@ def _fire_setup_on_short_lived_stream() -> io.StringIO:
 
 
 def test_setup_residue_cleared_between_tests():
-    """用例内 setup() 装上的 handler/一次性门/级别，teardown 相全部复原。"""
+    """用例内 setup() 装上的 node/一次性门/级别，teardown 相全部复原。"""
     conftest = _root_conftest()
 
     phases = conftest._isolate_logging_setup()
@@ -66,12 +66,12 @@ def test_setup_residue_cleared_between_tests():
 
     assert mlog._console_handler is None  # 一次性门重建（后续用例 setup 语义等同冷进程）
     for h in logging.getLogger().handlers:
-        assert getattr(h, "stream", None) is not short  # 绑短命流的 handler 已摘除
+        assert getattr(h, "stream", None) is not short  # 绑短命流的 node 已摘除
         assert not getattr(getattr(h, "stream", None), "closed", False)
 
 
 def test_no_residue_noop():
-    """用例未触发 setup() 时 teardown 相零动作（不误伤既有 handler/级别）。"""
+    """用例未触发 setup() 时 teardown 相零动作（不误伤既有 node/级别）。"""
     import mflowy.utils.logging as mlog
 
     conftest = _root_conftest()
@@ -85,7 +85,7 @@ def test_no_residue_noop():
         next(phases)
         assert mlog._console_handler is None  # 无残留场景的前提
         next(phases, None)
-        assert marker in root.handlers  # 旁人装的 handler 不被拆
+        assert marker in root.handlers  # 旁人装的 node 不被拆
         assert root.level == logging.DEBUG
     finally:
         root.removeHandler(marker)

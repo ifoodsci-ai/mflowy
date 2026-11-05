@@ -1,4 +1,4 @@
-"""search_input handler —— Optuna 驱动的输入空间优化（inverse design）。
+"""search_input node —— Optuna 驱动的输入空间优化（inverse design）。
 
 给定训练好的 model + 搜索空间约束，找出能让预测输出最优的输入特征组合。
 核心抽象（``mflowy.model.model.study``）：``ParameterSearchSpace`` / ``search_inverse``（单目标 tpe / 多目标 NSGAII）。
@@ -17,7 +17,7 @@ from typing import Annotated, Any, Literal
 
 import numpy as np
 import pandas as pd
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.model.middlewares import log_search_input
 from mflowy.model.model.study import (
     ContinuousSpace,
@@ -99,7 +99,7 @@ def _load_rules_validator(cross_rules_source: str) -> Callable[[pd.DataFrame], b
     return validate_fn  # type: ignore
 
 
-@handler(log_search_input)
+@node(log_search_input)
 def search_input(
     model: ModelLoader,
     directions: Annotated[

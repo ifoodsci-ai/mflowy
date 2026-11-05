@@ -249,7 +249,7 @@ class Builder:
         if not chosen:
             return  # 可选零命中：省略注入，签名默认值原生生效
         for up in chosen:
-            verify_output_hint(name, expect, up.handler_raw)
+            verify_output_hint(name, expect, up.node_raw)
             pairs.append((up, None))
         by_param.setdefault(name, []).extend(chosen)
         direct.append(
@@ -278,7 +278,7 @@ class Builder:
             if not chosen:
                 continue  # 可选内层零命中：省略参数，边函数签名默认值原生生效
             for up in chosen:
-                verify_output_hint(f"{name}.{n}", h, up.handler_raw)
+                verify_output_hint(f"{name}.{n}", h, up.node_raw)
                 pairs.append((up, name))
             u = Upstream.node(UpstreamMeta(n, not opt, table.kind(n), name), h, chosen, collect=collect)
             via_inner.append(u)

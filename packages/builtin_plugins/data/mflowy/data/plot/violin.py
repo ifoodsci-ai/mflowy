@@ -15,11 +15,11 @@ import seaborn as sns
 from mflowy.data.detect.rules import iqr_fences
 from mflowy.data.middlewares import filter_numerical_cols, log_plot
 from mflowy.data.types import as_series
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.utils.plot import OKABE_ITO_PALETTE
 
 
-@handler(log_plot, namespace="plot")
+@node(log_plot, namespace="plot")
 def violin(
     load: pd.DataFrame,
     clean: pd.DataFrame | None = None,

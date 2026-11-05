@@ -8,14 +8,14 @@ from typing import Annotated, Any
 from urllib.parse import urlparse
 
 import pandas as pd
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 from . import report_loaded
 
 logger = logging.getLogger(__name__)
 
 
-@handler(namespace="load")
+@node(namespace="load")
 def http(
     url: Annotated[str, "网络地址"],
     method: Annotated[str, "请求方法"] = "GET",

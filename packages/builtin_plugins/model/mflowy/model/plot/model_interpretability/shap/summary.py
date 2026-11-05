@@ -16,7 +16,7 @@ import pandas as pd
 import shap as shap_lib  # 模块别名：参数名 shap（组边寻址名）不遮蔽模块
 from matplotlib.colors import Normalize
 from mflowy.data.middlewares import log_plot
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.utils.constants import RANDOM_STATE
 from mflowy.utils.plot import CMAP_DIVERGING
 
@@ -64,7 +64,7 @@ def _density_jitter(values: np.ndarray, width: float, rng: np.random.Generator) 
     return jitter
 
 
-@handler(log_plot, namespace="plot")
+@node(log_plot, namespace="plot")
 def shap_summary(
     shap: shap_lib.Explanation,
     max_display: Annotated[int, "最大显示特征数"] = SHAP_MAX_DISPLAY,

@@ -1,29 +1,29 @@
-"""测试 @handler 装饰器的中间件链"""
+"""测试 @node 装饰器的中间件链"""
 
 from mflowy.driver.config import NodeConf
 from mflowy.driver.context import Context
-from mflowy.driver.handler import handler, handler_of
+from mflowy.driver.node import node, node_of
 
 
 class TestMiddlewareUse:
-    """测试 @handler 装饰器注入中间件"""
+    """测试 @node 装饰器注入中间件"""
 
     def test_use_custom_middleware(self, fake_tracking):
-        """测试通过 @handler 注入自定义中间件"""
+        """测试通过 @node 注入自定义中间件"""
         execution_log = []
 
-        def custom_middleware(task, next_handler):
+        def custom_middleware(task, next):
             execution_log.append(f"before: {task.conf.name}")
-            result = next_handler(task)
+            result = next(task)
             execution_log.append(f"after: {task.conf.name}")
             return result
 
-        @handler(custom_middleware)
-        def dummy_handler(**kwargs):
+        @node(custom_middleware)
+        def dummy_node(**kwargs):
             return "test_result"
 
         task = Context(NodeConf(name="test_task", node_key="load__test"), [])
-        result = handler_of(dummy_handler).run(task)
+        result = node_of(dummy_node).run(task)
 
         assert "before: test_task" in execution_log
         assert "after: test_task" in execution_log
@@ -33,32 +33,32 @@ class TestMiddlewareUse:
         """测试注入多个中间件（洋葱模型）"""
         execution_order = []
 
-        def middleware_a(task, next_handler):
+        def middleware_a(task, next):
             execution_order.append("A_before")
-            result = next_handler(task)
+            result = next(task)
             execution_order.append("A_after")
             return result
 
-        def middleware_b(task, next_handler):
+        def middleware_b(task, next):
             execution_order.append("B_before")
-            result = next_handler(task)
+            result = next(task)
             execution_order.append("B_after")
             return result
 
-        @handler(middleware_a, middleware_b)
-        def dummy_handler(**kwargs):
-            execution_order.append("handler")
+        @node(middleware_a, middleware_b)
+        def dummy_node(**kwargs):
+            execution_order.append("node")
             return "result"
 
         task = Context(NodeConf(name="test_task", node_key="load__test"), [])
-        handler_of(dummy_handler).run(task)
+        node_of(dummy_node).run(task)
 
         # wrap 顺序: a→b→mlflow_log→stop_on_error，每层包在外面
-        # 可见顺序（系统中间件不写 log）: B → A → handler → A → B
+        # 可见顺序（系统中间件不写 log）: B → A → node → A → B
         assert execution_order == [
             "B_before",
             "A_before",
-            "handler",
+            "node",
             "A_after",
             "B_after",
         ]
@@ -67,21 +67,21 @@ class TestMiddlewareUse:
         """测试中间件短路执行"""
         execution_log = []
 
-        def cache_middleware(task, next_handler):
+        def cache_middleware(task, next):
             execution_log.append("cache_check")
             if task.conf.name == "cached_task":
                 execution_log.append("cache_hit")
                 return "cached_result"
             execution_log.append("cache_miss")
-            return next_handler(task)
+            return next(task)
 
-        @handler(cache_middleware)
-        def dummy_handler(**kwargs):
+        @node(cache_middleware)
+        def dummy_node(**kwargs):
             execution_log.append("handler_executed")
             return "handler_result"
 
         task = Context(NodeConf(name="cached_task", node_key="load__test"), [])
-        result = handler_of(dummy_handler).run(task)
+        result = node_of(dummy_node).run(task)
 
         assert "cache_check" in execution_log
         assert "cache_hit" in execution_log

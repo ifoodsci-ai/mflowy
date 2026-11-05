@@ -11,14 +11,14 @@ import pandas as pd
 from mflowy.data.detect.rules import iqr_mask, zscore_mask
 from mflowy.data.middlewares import df_diff
 from mflowy.data.types import as_series
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 from ._atom import require_cols, require_family
 
 logger = logging.getLogger(__name__)
 
 
-@handler(df_diff, namespace="clean")
+@node(df_diff, namespace="clean")
 def drop_duplicate(
     load: pd.DataFrame,
     clean: pd.DataFrame | None = None,
@@ -37,7 +37,7 @@ def drop_duplicate(
     return deduped
 
 
-@handler(df_diff, namespace="clean")
+@node(df_diff, namespace="clean")
 def drop_missing_rows(
     load: pd.DataFrame,
     clean: pd.DataFrame | None = None,
@@ -51,7 +51,7 @@ def drop_missing_rows(
     return df.dropna(subset=cols, how=how)
 
 
-@handler(df_diff, namespace="clean")
+@node(df_diff, namespace="clean")
 def drop_cols(
     load: pd.DataFrame,
     clean: pd.DataFrame | None = None,
@@ -63,7 +63,7 @@ def drop_cols(
     return df.drop(columns=require_cols(df, cols))
 
 
-@handler(df_diff, namespace="clean")
+@node(df_diff, namespace="clean")
 def drop_outside(
     load: pd.DataFrame,
     clean: pd.DataFrame | None = None,
@@ -86,7 +86,7 @@ def drop_outside(
     return out
 
 
-@handler(df_diff, namespace="clean")
+@node(df_diff, namespace="clean")
 def drop_outlier_iqr(
     load: pd.DataFrame,
     clean: pd.DataFrame | None = None,
@@ -106,7 +106,7 @@ def drop_outlier_iqr(
     return out
 
 
-@handler(df_diff, namespace="clean")
+@node(df_diff, namespace="clean")
 def drop_outlier_z(
     load: pd.DataFrame,
     clean: pd.DataFrame | None = None,

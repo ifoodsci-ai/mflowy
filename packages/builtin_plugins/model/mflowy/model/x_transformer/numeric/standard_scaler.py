@@ -2,14 +2,14 @@
 
 from typing import Annotated
 
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.model.x_y import XySpec
 from sklearn.preprocessing import StandardScaler
 
 from ..utils import resolve_cols
 
 
-@handler(namespace="x_transformer")
+@node(namespace="x_transformer")
 def standard_scaler(
     x_y: XySpec,
     numerical_cols: Annotated[str | list[str] | None, "待标准化的数值列，None 自动检测"] = None,

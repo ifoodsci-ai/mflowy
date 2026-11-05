@@ -8,12 +8,12 @@ from typing import Annotated
 
 import pandas as pd
 from mflowy.data.middlewares import df_diff
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 from ._atom import require_cols
 
 
-@handler(df_diff, namespace="clean")
+@node(df_diff, namespace="clean")
 def add_missing_flag(
     load: pd.DataFrame,
     clean: pd.DataFrame | None = None,

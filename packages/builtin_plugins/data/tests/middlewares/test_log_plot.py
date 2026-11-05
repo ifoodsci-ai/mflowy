@@ -1,6 +1,6 @@
 """log_plot 中间件测试
 
-验证 log_plot 兼容 handler 的 4 种返回形态，文件名统一用 ``ctx.conf.node_name`` + 序号：
+验证 log_plot 兼容 node 的 4 种返回形态，文件名统一用 ``ctx.conf.node_name`` + 序号：
 - 场景 1：普通函数 return (df, fig) → ``{module}.parquet`` + ``{module}.png``
 - 场景 2：普通函数 return ((df1, df2), fig) → ``{module}_0.parquet`` + ``{module}_1.parquet`` + ``{module}.png``
 - 场景 3：生成器 yield (df, fig) 多次 → ``{module}_{i}.parquet`` + ``{module}_{i}.png``
@@ -163,7 +163,7 @@ class TestLogPlotErrorHandling:
 
         assert not plt.fignum_exists(fig.number)
 
-    def test_closes_generator_on_handler_error(self):
+    def test_closes_generator_on_node_error(self):
         from mflowy.data.middlewares import log_plot
 
         gen_closed = []

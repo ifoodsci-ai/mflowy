@@ -2,14 +2,14 @@
 
 import pandas as pd
 from mflowy.data.types import as_series
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 from .errors import DataError, ErrorReport
 from .rules import is_id_like
 from .stringly import stringly_frac
 
 
-@handler(namespace="detect")
+@node(namespace="detect")
 def id_like(load: pd.DataFrame) -> ErrorReport:
     """标识列疑似(只读,advisory):全唯一且非 float 的文本列——建议经问卷确认后剔除/
     severe 降权。数值语义列(单位污染的字符串数值)不是标识列:stringly 占比 ≥0.8

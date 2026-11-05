@@ -1,6 +1,6 @@
 """Plot 日志中间件
 
-兼容 handler 的 4 种返回形态：
+兼容 node 的 4 种返回形态：
 - 场景 1：普通函数 return (df, fig)
 - 场景 2：普通函数 return ((df1, df2, ...), fig)
 - 场景 3：生成器 yield (df, fig) 多次
@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from matplotlib.figure import Figure
 from mflowy.driver.context import Context
-from mflowy.driver.handler import Chain
+from mflowy.driver.node import Chain
 from mflowy.utils import mlflow as mlflow_util
 from mflowy.utils.mlflow import log_figure
 from mflowy.utils.plot import DPI, FONT_GROUPS, SANS_SERIF
@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 
 class SkipPlotError(Exception):
-    """由 plot handler 抛出，表示当前条件不适用该图（如任务类型不匹配、target dtype 不符合），log_plot 捕获后静默跳过。"""
+    """由 plot node 抛出，表示当前条件不适用该图（如任务类型不匹配、target dtype 不符合），log_plot 捕获后静默跳过。"""
 
     pass
 

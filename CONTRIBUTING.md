@@ -39,7 +39,7 @@ make fmt                            # ruff format
    ([AGENTS.md](AGENTS.md) — 分层与词表):
    - Python 3.12, line length 120, ruff lint (`E4/E7/E9/F/I/UP035/UP037`).
    - User-facing configurable params are annotated `Annotated[T, "描述"]`.
-   - New compute entities register via the `@handler` decorator — no manual wiring.
+   - New compute entities register via the `@node` decorator — no manual wiring.
    - Keep new dependencies out of `base` unless truly needed; data-stack
      dependencies go in `[stats]` / `[modeling]` extras.
 3. **Test** — add tests mirroring the code path (`tests/` mirrors `mflowy/`).

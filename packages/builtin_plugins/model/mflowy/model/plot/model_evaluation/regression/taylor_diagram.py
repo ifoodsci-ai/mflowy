@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from mflowy.data.middlewares import SkipPlotError, log_plot
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.model.model.types import TASKTYPE
 from mflowy.utils.plot import OKABE_ITO_PALETTE
 
@@ -49,7 +49,7 @@ def _compute_taylor_stats(group: pd.DataFrame) -> tuple[float, float, float, flo
     return sigma_ratio, R, rmse_norm, bias_norm, rmse_total_norm
 
 
-@handler(log_plot, namespace="plot")
+@node(log_plot, namespace="plot")
 def taylor_diagram(
     model_test_predictions: tuple,
     title: Annotated[str | None, "图表标题"] = None,

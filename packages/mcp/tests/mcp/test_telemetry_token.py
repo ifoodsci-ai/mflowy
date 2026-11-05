@@ -56,7 +56,7 @@ def _gateway_stub(*, register_fail=False, reject_first=False):
     register_records = []
     sink_records = []
 
-    class Handler(BaseHTTPRequestHandler):
+    class Node(BaseHTTPRequestHandler):
         def do_POST(self):
             body = self.rfile.read(int(self.headers.get("Content-Length", 0))).decode()
             token = self.headers.get("X-Telemetry-Token")
@@ -82,7 +82,7 @@ def _gateway_stub(*, register_fail=False, reject_first=False):
         def log_message(self, *args):
             pass
 
-    stub = _Stub(Handler)
+    stub = _Stub(Node)
     stub.register_records = register_records
     stub.sink_records = sink_records
     return stub

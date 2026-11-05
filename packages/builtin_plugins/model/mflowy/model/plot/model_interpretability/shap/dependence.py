@@ -19,7 +19,7 @@ import seaborn as sns
 import shap as shap_lib  # 模块别名：参数名 shap（组边寻址名）不遮蔽模块
 from matplotlib.colors import Normalize
 from mflowy.data.middlewares import log_plot
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.utils.constants import RANDOM_STATE
 from mflowy.utils.plot import CMAP_DIVERGING
 
@@ -71,7 +71,7 @@ def _find_turn_point(x: np.ndarray, y: np.ndarray) -> tuple[float, float] | None
     return best[0], best[1]
 
 
-@handler(log_plot, namespace="plot")
+@node(log_plot, namespace="plot")
 def shap_dependence(
     shap: shap_lib.Explanation,
     feature: Annotated[str | None, "目标特征名"] = None,

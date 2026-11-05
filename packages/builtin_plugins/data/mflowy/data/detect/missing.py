@@ -4,12 +4,12 @@ from typing import Annotated
 
 import pandas as pd
 from mflowy.data.types import as_series
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 from .errors import DataError, ErrorReport
 
 
-@handler(namespace="detect")
+@node(namespace="detect")
 def missing(
     load: pd.DataFrame,
     threshold: Annotated[float, "报告门禁:缺失率 ≥ threshold 的列才入清单(0 全报)"] = 0.0,

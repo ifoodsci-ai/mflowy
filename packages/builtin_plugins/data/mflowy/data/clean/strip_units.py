@@ -5,12 +5,12 @@ from typing import Annotated
 
 import pandas as pd
 from mflowy.data.middlewares import df_diff
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 logger = logging.getLogger(__name__)
 
 
-@handler(df_diff, namespace="clean")
+@node(df_diff, namespace="clean")
 def strip_units(
     load: pd.DataFrame,
     clean: pd.DataFrame | None = None,

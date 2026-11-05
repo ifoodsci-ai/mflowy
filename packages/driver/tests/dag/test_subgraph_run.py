@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from mflowy.driver.binding import _NOT_RUN
 from mflowy.driver.builder import Builder
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 
 def _yaml(tmp_path, *nodes: str) -> Path:
@@ -26,12 +26,12 @@ class TestPushMode:
         """push 回归：调度已执行的前驱，绑定期不得再拉起重执行。"""
         calls = []
 
-        @handler()
+        @node()
         def a(**kw):
             calls.append("a")
             return "data_a"
 
-        @handler()
+        @node()
         def b(load, **_):
             calls.append("b")
             return next(load) if hasattr(load, "__next__") else load
@@ -46,17 +46,17 @@ class TestPushMode:
         """负载去重：多个消费者各自绑定，同一上游仍只执行一次。"""
         calls = []
 
-        @handler()
+        @node()
         def a(**kw):
             calls.append("a")
             return 1
 
-        @handler()
+        @node()
         def c1(load: int, **_):
             calls.append("c1")
             return load
 
-        @handler()
+        @node()
         def c2(load: int, **_):
             calls.append("c2")
             return load
@@ -76,12 +76,12 @@ class TestPullSubgraph:
         """pull 入口：仅 run(b)，绑定期惰性拉起 a（各自干净的顶层 run 窗口）。"""
         calls = []
 
-        @handler()
+        @node()
         def a(**kw):
             calls.append("a")
             return 7
 
-        @handler()
+        @node()
         def b(load: int, **_):
             calls.append("b")
             return load
@@ -98,12 +98,12 @@ class TestPullSubgraph:
         """执行不记忆：重复 run 即重复执行；绑定决议记忆：已执行的 a 不再拉起。"""
         calls = []
 
-        @handler()
+        @node()
         def a(**kw):
             calls.append("a")
             return 1
 
-        @handler()
+        @node()
         def b(load: int, **_):
             calls.append("b")
             return load
@@ -120,13 +120,13 @@ class TestPullSubgraph:
         """硬失败异常透传、上游 result 保持哨兵——后续可重试（非缓存失败）。"""
         state = {"fail": True}
 
-        @handler()
+        @node()
         def a(**kw):
             if state["fail"]:
                 raise RuntimeError("a 炸")
             return 1
 
-        @handler()
+        @node()
         def b(load: int, **_):
             return load
 
@@ -146,11 +146,11 @@ class TestLineageDerived:
     def test_prevs_derived_dedup_joined(self, fake_plugins, tmp_path, fake_tracking):
         """血缘 = _prevs 派生只读视图：同一上游经多参数绑定，点分去重（无缓冲可取空）。"""
 
-        @handler()
+        @node()
         def a(**kw) -> int:
             return 5
 
-        @handler()
+        @node()
         def b(load: int, load__a: int, **_) -> int:  # 两个参数（组名/整相）同绑 a
             return load + load__a
 
@@ -166,11 +166,11 @@ class TestLineageDerived:
     def test_derived_on_failure(self, fake_plugins, tmp_path, fake_tracking):
         """失败 run 也落盘血缘（finally 路径；派生视图=声明消费集超集，差集由异常指认）。"""
 
-        @handler()
+        @node()
         def a(**kw) -> int:
             return 1
 
-        @handler()
+        @node()
         def b(load: int, **_):
             raise RuntimeError("b 炸")
 

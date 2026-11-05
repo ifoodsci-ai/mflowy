@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.model.x_y import XySpec
 from mflowy.utils.constants import RANDOM_STATE
 from sklearn.decomposition import PCA
@@ -8,7 +8,7 @@ from sklearn.decomposition import PCA
 from ..utils import resolve_cols
 
 
-@handler(namespace="x_transformer")
+@node(namespace="x_transformer")
 def pca_reducer(
     x_y: XySpec,
     numerical_cols: Annotated[str | list[str] | None, "待降维的数值列，None 自动检测"] = None,

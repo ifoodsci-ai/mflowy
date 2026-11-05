@@ -109,8 +109,8 @@ def test_random_forest_task_class_attr_survives_clone(sample_data):
     assert set(cloned.predict(X)).issubset({0, 1})
 
 
-def test_random_forest_handler_registered():
-    # 触发实体注册（@handler 装饰器在导入时注册）
+def test_random_forest_node_registered():
+    # 触发实体注册（@node 装饰器在导入时注册）
     import mflowy.model.model.random_forest  # noqa: F401
     from mflowy.driver import discover
 

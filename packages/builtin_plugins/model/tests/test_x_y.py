@@ -2,12 +2,12 @@
 
 import pandas as pd
 from mflowy.driver.builder import Builder
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.model.x_y import x_y as x_y_fn
 
 
 def _dag(fake_plugins, tmp_path, with_clean: bool):
-    @handler(namespace="load")
+    @node(namespace="load")
     def _csv(**kwargs) -> pd.DataFrame:
         return pd.DataFrame({"x1": [1, 2], "x2": [3, 4], "y": [0, 1]})
 
@@ -16,7 +16,7 @@ def _dag(fake_plugins, tmp_path, with_clean: bool):
 
     if with_clean:
 
-        @handler(namespace="clean")
+        @node(namespace="clean")
         def _filter(load: pd.DataFrame, **_) -> pd.DataFrame:
             return load.drop(columns=["x2"])
 

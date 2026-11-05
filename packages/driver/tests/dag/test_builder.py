@@ -4,14 +4,14 @@ import pytest
 from mflowy.driver.builder import Builder
 
 
-def _dummy_handler(*args, **_):
+def _dummy_node(*args, **_):
     pass
 
 
 class TestBuilderEnv:
     @pytest.fixture(autouse=True)
     def _fill_dummy_plugins(self, fake_plugins):
-        fake_plugins.setdefault("load", {})["csv"] = _dummy_handler
+        fake_plugins.setdefault("load", {})["csv"] = _dummy_node
 
     def test_builder_injects_env_as_direct_template_variables(self, tmp_path):
         """Builder 将 env 字典展开为直接模板变量"""
@@ -52,7 +52,7 @@ flow:
 class TestFlatRejects:
     @pytest.fixture(autouse=True)
     def _fill_dummy_plugins(self, fake_plugins):
-        fake_plugins.setdefault("load", {})["csv"] = _dummy_handler
+        fake_plugins.setdefault("load", {})["csv"] = _dummy_node
 
     def test_legacy_identity_keys_fail_loud(self, tmp_path):
         """配置体含 namespace/node_name/enabled 退役键 fail-loud——身份已上移为列表项的键"""
@@ -99,7 +99,7 @@ flow:
 
 def test_options_apply_to_each_node(tmp_path, fake_plugins):
     """BuilderOption 逐节点应用（声明序）"""
-    fake_plugins.setdefault("clean", {})["drop_missing"] = _dummy_handler
+    fake_plugins.setdefault("clean", {})["drop_missing"] = _dummy_node
     yaml = tmp_path / "flat.yaml"
     yaml.write_text(
         """

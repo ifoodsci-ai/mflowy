@@ -32,7 +32,7 @@ from typing import Annotated
 
 import numpy as np
 import pandas as pd
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.model.middlewares import log_cv
 from mflowy.model.x_y import XySpec
 from mflowy.utils.constants import RANDOM_STATE
@@ -105,7 +105,7 @@ def _describe(cv: int, repeats: int, group_by) -> str:
     return " ".join(parts)
 
 
-@handler(log_cv, namespace="cv")
+@node(log_cv, namespace="cv")
 def split(
     x_y: XySpec,
     cv: Annotated[

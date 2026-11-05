@@ -9,7 +9,7 @@ from mflowy.data.load.excel_loader import excel
 from mflowy.data.load.parquet_loader import parquet
 from mflowy.data.load.python_loader import python
 from mflowy.data.middlewares import log_load_data_fingerprint
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 from mflowy.utils.path import split_path_to_py_with_target
 
 logger = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ LOADER_MAP = {
 }
 
 
-@handler(log_load_data_fingerprint, namespace="load")
+@node(log_load_data_fingerprint, namespace="load")
 def file(
     file_path: Annotated[str, "文件路径"],
     **kwargs,

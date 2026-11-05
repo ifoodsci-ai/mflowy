@@ -13,7 +13,7 @@ YAML 列表项键 / NodeEntry.name 同构——寻址单源贯穿）；分组视
 模块级门面（``get_node``/``get_edge``/``find_edge``/``list_all``/``entry``）委托唯一（节点查询键一律 node_key；边查询令牌=裸边名，内部组 ``edges__`` 键）
 adapter（``EntryPointCatalog``：entry points 现算零缓存——热更新，安装/卸载即时可见），
 是目录消费的唯一姿势。全部查询只读元数据零 import；import 惰性发生在加载，且以
-运行期注册表（``HANDLER_REGISTRY``/``EDGE_REGISTRY``——装饰器写入，#126 零属性
+运行期注册表（``NODE_REGISTRY``/``EDGE_REGISTRY``——装饰器写入，#126 零属性
 挂载）校验声明↔注册一致性，坏声明 fail-loud。
 
 词表 miss 类型化：``CatalogMiss`` ⊂ ModuleNotFoundError =「能力没装」，与 ``ep.load()``
@@ -32,13 +32,13 @@ from .config import node_key, split_node_key
 
 if TYPE_CHECKING:
     from .edge import Edge
-    from .handler import Handler
+    from .node import Node
 
-# 运行期注册表（#126）：装饰器写入（handler.py/edge.py 零属性挂载）——
-# <node_key, Handler> / <edges__name, Edge> 的名字键索引（诊断/词表投影面）；
-# 加载期一致性校验走身份桥（handler_of/edge_of，只查装饰性不比名）；词表枚举
+# 运行期注册表（#126）：装饰器写入（node.py/edge.py 零属性挂载）——
+# <node_key, Node> / <edges__name, Edge> 的名字键索引（诊断/词表投影面）；
+# 加载期一致性校验走身份桥（node_of/edge_of，只查装饰性不比名）；词表枚举
 # 仍以 entry points 为准（注册表条目不进 list_all，测试本地装饰不入词表）
-HANDLER_REGISTRY: dict[str, Handler] = {}
+NODE_REGISTRY: dict[str, Node] = {}
 EDGE_REGISTRY: dict[str, Edge] = {}
 
 logger = logging.getLogger(__name__)
@@ -182,7 +182,7 @@ def _resolve(key: str) -> EntryPoint:
     return ep
 
 
-def _checked(ep: EntryPoint, kind: str):
+def _checked(ep: EntryPoint, kind: str, bridge_mod: str, bridge_name: str):
     """加载 entry point 并校验装饰性（#126：身份桥代旧 hasattr——零属性挂载）。
 
     语义与旧 ``hasattr(fn, valid)`` 等价：**只查「声明指向的函数已装饰」，不比名**
@@ -192,7 +192,9 @@ def _checked(ep: EntryPoint, kind: str):
     from importlib import import_module
 
     fn = ep.load()
-    bridge = getattr(import_module(f"mflowy.driver.{kind}"), f"{kind}_of")  # handler_of / edge_of（延迟导入防环）
+    bridge = getattr(
+        import_module(bridge_mod), bridge_name
+    )  # node_of / edge_of（延迟导入防环；kind 仅装饰器名/#128 文件改名）
     try:
         return bridge(fn)
     except ValueError:
@@ -202,27 +204,27 @@ def _checked(ep: EntryPoint, kind: str):
         ) from None
 
 
-def _load_handler(key: str) -> Handler:
-    """解析节点 entry point → Handler（坏声明 fail-loud）。"""
-    return _checked(_resolve(key), "handler")
+def _load_node(key: str) -> Node:
+    """解析节点 entry point → Node（坏声明 fail-loud）。"""
+    return _checked(_resolve(key), "node", "mflowy.driver.node", "node_of")
 
 
 def _load_edge(key: str) -> Edge:
     """解析边 entry point → Edge（坏声明 fail-loud）。"""
-    return _checked(_resolve(key), "edge")
+    return _checked(_resolve(key), "edge", "mflowy.driver.edge", "edge_of")
 
 
 class EntryPointCatalog:
     """唯一 adapter：entry points 目录现算（零缓存，安装/卸载即时可见），miss 抛 CatalogMiss 带 Available 列表。"""
 
     @overload
-    def handler(self, key: str, raw: Literal[True]) -> Callable: ...
+    def node(self, key: str, raw: Literal[True]) -> Callable: ...
     @overload
-    def handler(self, key: str, raw: Literal[False] = ...) -> Handler: ...
+    def node(self, key: str, raw: Literal[False] = ...) -> Node: ...
 
-    def handler(self, key: str, raw: bool = False):
-        """节点目录访问：raw=原函数（签名内省），缺省=注册表 Handler（调度面）。"""
-        entry = _load_handler(key)
+    def node(self, key: str, raw: bool = False):
+        """节点目录访问：raw=原函数（签名内省），缺省=注册表 Node（调度面）。"""
+        entry = _load_node(key)
         return entry.fn if raw else entry
 
     @overload
@@ -276,12 +278,12 @@ def _grouped() -> dict[str, list[str]]:
 @overload
 def get_node(key: str, raw: Literal[True]) -> Callable: ...
 @overload
-def get_node(key: str, raw: Literal[False] = ...) -> Handler: ...
+def get_node(key: str, raw: Literal[False] = ...) -> Node: ...
 
 
 def get_node(key: str, raw=False):
-    """严格版：目录入口（查询键 = node_key）——raw=原函数 / 缺省=注册表 Handler。miss → CatalogMiss + available 列表"""
-    return _DEFAULT_CATALOG.handler(key, raw)
+    """严格版：目录入口（查询键 = node_key）——raw=原函数 / 缺省=注册表 Node。miss → CatalogMiss + available 列表"""
+    return _DEFAULT_CATALOG.node(key, raw)
 
 
 @overload

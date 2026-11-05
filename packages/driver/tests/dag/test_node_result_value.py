@@ -7,10 +7,10 @@ print(stdout)= 业务数据文本进 output;返回值(结构化对象)进 value�
 from mflowy.driver.config import Conf, NodeConf
 from mflowy.driver.context import Context
 from mflowy.driver.dag import DAG
-from mflowy.driver.handler import handler
+from mflowy.driver.node import node
 
 
-@handler()
+@node()
 def _structured(**kwargs):
     """返回结构化对象 + stdout 文本各走各道。"""
     print("stdout 概览")
@@ -37,7 +37,7 @@ def test_node_result_carries_structured_value(fake_plugins, fake_tracking):
 def test_node_result_value_defaults_none_on_error(fake_plugins, fake_tracking):
     """失败路径 value=None,不携带半成品。"""
 
-    @handler()
+    @node()
     def _boom(**kwargs):
         raise ValueError("炸")
 
