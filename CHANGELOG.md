@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### MLP hidden_dims B006 消解：Sequence 契约 + 不可变默认（#133）
+
+- `mlp.py` hidden_dims：`list[int] = [64, 32]` → `Sequence[int] = (64, 32)`
+  （注解写领域契约——只读、list/tuple 双收；默认值写安全形态——不可变防共享；
+  与 `_mlp.py` estimator 面既有选型对齐）。per-file-ignores 的 mlp.py B006
+  过渡条目删除，`ruff --select B006` 全仓零命中。YAML/list 调用面零影响
+  （signature_params 只读 default 值、hidden_dims 不进搜索空间）；get_node_info
+  default 展示串 `[64, 32]`→`(64, 32)`（纯展示）。
+- 本票①半边（Upstream.expect 只写字段退役）**已由 #131 随票收编落地**
+  （PR #135）——票面与雾行以 #131 记录为准。
+
 ### 注册表归居契约模块（#132）
 
 - `NODE_REGISTRY` → node.py、`EDGE_REGISTRY` → edge.py——注册状态随契约 + 唯一写者

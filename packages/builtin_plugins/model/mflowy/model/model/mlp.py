@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import Annotated
 
 from mflowy.driver.node import node
@@ -27,7 +28,8 @@ def _model_cls():
 def MLP(
     train_split: TrainSplit,
     x_preprocessors: ColumnTransformer | None = None,
-    hidden_dims: Annotated[list[int], "各隐藏层维度"] = [64, 32],
+    # 不可变默认防 B006 共享；Sequence=只读契约（list/tuple 双收，同 _mlp.py estimator 面）
+    hidden_dims: Annotated[Sequence[int], "各隐藏层维度"] = (64, 32),
     activation: Annotated[ACTIVATION, "激活函数 (relu/elu/gelu/tanh)"] = ACTIVATION.relu,
     dropout: Annotated[float, "Dropout 概率"] = 0.1,
     use_batch_norm: Annotated[bool, "是否在隐藏层后加 BatchNorm1d"] = True,
