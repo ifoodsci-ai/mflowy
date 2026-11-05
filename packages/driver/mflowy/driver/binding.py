@@ -162,7 +162,8 @@ if TYPE_CHECKING:
 
 @dataclass
 class Upstream:
-    """编译期上游：meta + 期望注解 + 取值闭包（call=惰性拉起+哨兵去重+整形）。
+    """编译期上游：meta + 取值闭包（call=惰性拉起+哨兵去重+整形）——期望注解不入条目
+    （编译期校验经 verify_output_hint 即时消费，运行期复核已随 #57 退役，#131 雾三收口）。
 
     构造走 ``node`` / ``edge`` 工厂（生产代码唯一构造点，测试手搭缝位可直构）——
     ``nodes`` 与 ``call`` 闭包捕获的**同一列表对象**只在工厂里结构焊死：剪枝期
@@ -172,7 +173,6 @@ class Upstream:
     """
 
     meta: UpstreamMeta
-    expect: object
     call: Callable[[], Any]
     nodes: list[Context] = field(default_factory=list)
 
@@ -180,7 +180,6 @@ class Upstream:
     def node(
         cls,
         meta: UpstreamMeta,
-        expect: object,
         chosen: list[Context],
         *,
         collect: bool,
@@ -203,14 +202,13 @@ class Upstream:
                 return MISSING
             return iter(values) if collect else values[0]
 
-        return cls(meta, expect, call, nodes)
+        return cls(meta, call, nodes)
 
     @classmethod
     def edge(
         cls,
         edge_raw: Callable,
         name: str,
-        expect: object,
         *,
         required: bool,
         inner: dict[str, Callable[[], Any]],
@@ -226,4 +224,4 @@ class Upstream:
                     params[n] = v
             return edge_raw(**params)
 
-        return cls(UpstreamMeta(name, required, "edge", via=name), expect, edge_call)
+        return cls(UpstreamMeta(name, required, "edge", via=name), edge_call)

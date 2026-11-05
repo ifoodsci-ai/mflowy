@@ -227,7 +227,7 @@ def _c(key: str) -> Context:
 
 def _bind(consumer: Context, *ups: Context, required: bool = True, inner: bool = False) -> None:
     """手工绑定：consumer 对 ups 的（必选/可选、直连/边内层）依赖 + 血缘边。"""
-    u = Upstream(UpstreamMeta(ups[0].conf.node_key, required, "node"), None, lambda: None, list(ups))
+    u = Upstream(UpstreamMeta(ups[0].conf.node_key, required, "node"), lambda: None, list(ups))
     (consumer._via_upstreams if inner else consumer.upstreams).append(u)
     consumer._prevs.extend(ups)
     for up in ups:

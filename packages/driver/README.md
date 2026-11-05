@@ -71,7 +71,7 @@ flowchart LR
 ```
 
 - **①** 只发生在构建/安装时刻：能力作者写 pyfunc + `@node`（节点）或 `@edge`（边函数），构建期 hook 扫描生成 entry points，身份随包元数据分发；目录查询现算（热更新——与 ③ 的计划快照是两层：目录随时可见，计划定格于所属 DAG 实例）。
-- **②** 是进程内编译：Builder 按 YAML 序增量编译——词表校验（零 import）、签名对节点表解析参数边、接线双向邻接表；**编译即校验**（拓扑序/撞名/类型门 fail-loud，`valid` 门已退役）。
+- **②** 是进程内编译：Builder 按 YAML 序增量编译——词表校验（零 import）、签名对节点表解析参数边、接线双向邻接表；**编译即校验**（拓扑序/撞名/类型门/参数 schema fail-loud——#131 参数面对装饰期模型校验、未知键放过；`valid` 门已退役）。
 - **③** 是进程内执行：静态解析产出计划（`ctx.resolve()`），调度期按节点惰性加载并校验，绑定/拉起/血缘全部发生在这一层。
 - **覆盖语义**：`mflowy.plugins` 组按声明覆盖 `mflowy.builtin_plugins` 同名项（info 级日志），同组撞名 warning——定制内置行为不需 fork；跨层撞名（边名撞节点/组名）warning（边优先会改写既有绑定）。
 
@@ -97,7 +97,7 @@ sequenceDiagram
 | 阶段 | 代码 | 说明 |
 |------|------|------|
 | 模板渲染 | `builder.py: _load_yaml` | `{{ var }}` 注入 `env` 参数；生产入口多为模板而非手写 YAML（见「模板与片段组合」） |
-| 配置解析 | `config.parse_flow_item` | 单键映射列表 → NodeConf 元组（平铺；嵌套键/缺 node_name/stop_on_error fail-loud）；params 保持原始 dict（类型解析/校验在调用期，见 @node） |
+| 配置解析 | `config.parse_flow_item` | 单键映射列表 → NodeConf 元组（平铺；嵌套键/缺 node_name/stop_on_error fail-loud）；params 保持原始 dict（编译期已知键过 Node.validate_params、类型解析/校验兜底在调用期 validate_call——双层同源，见 @node，#131） |
 | 配置变换 | `builder.py: _transform` | `BuilderOption` 逐节点应用（构造期，声明序） |
 | 增量编译 | `builder.py: _compile + NodeTable` | 逐节点入表（组名保序 / node_key 双索引）、签名解析参数边（词表 miss/M1 撞名/必选边不可达/类型门 fail-loud）、接线 prevs/nexts |
 | 配置剪枝 | `builder.py: _prune_disabled + _apply_structural_rules` | disabled 血缘闭包（本体+传递后代出局）+ `structural_rules`（看血缘 nexts，无消费者即剪） |
