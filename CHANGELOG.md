@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 身份桥退役：解析流注册表单源化（#140，BREAKING·SDK 面）
+
+- **BREAKING**（SDK 面）：`node_of`/`edge_of` 与身份弱键映射 `_NODE_OF`/`_EDGE_OF`
+  全删——#126 桥退役，注册表（`NODE_REGISTRY`/`EDGE_REGISTRY`）成为唯一身份面；
+  持 fn 取调度面的消费方（含测试桩）迁注册表键直查。
+- **BREAKING**（加载期语义，翻 #126「只查装饰不比名」裁定）：discover ③ 首载
+  `ep.load()` 后按**同一 node_key 二次查注册表**（与 ① 暖命中同一查表动作——
+  发现表键 = 注册表键），load 后 miss = 统一「声明与注册不一致」fail-loud（带
+  ep 与键上下文）：未装饰 / 错 namespace / 别名键合并一类，错 namespace 自 CR
+  静默面升格为加载期 fail-loud 门；与 #86 无别名政策对齐（别名 ep 用法退役）。
+- 连带迁移：`Context` 直注 Node（`fn=` 构造参数改 `node=`——builder 织入，
+  运行期结构性零目录查询不变）；conftest `_FnCatalog` 替身缝改注册表身份扫描
+  （`.fn is fn`），装饰桩注册键跨模块唯一成为替身缝顺序不变式。
+
 ### discover 三步解析流：注册表暖路径 + raw 形参退役（#137）
 
 - `get_node`/`get_edge`/`find_edge` 解析三步化：① `NODE_REGISTRY`/`EDGE_REGISTRY`
