@@ -460,7 +460,7 @@ def apply_action(session_id: str, node: str, params: dict | None = None) -> Obse
         raise ValueError("`finish` 是操作面不是 apply 动作——菜单出现 finish 提议时走 clean_finish")
     load_ref = params.pop("load", None)  # params 自含数据引用（#89）——寻址元数据，非节点参数
     try:
-        get_node(f"clean__{node}", raw=True)  # 词表预检（导入失败原音透传，不误诊）
+        get_node(f"clean__{node}")  # 词表预检（导入失败原音透传，不误诊）
     except CatalogMiss as e:
         raise ValueError(f"动作 `{node}` 不在 clean 词表中（词表 = 运行期 clean 目录）") from e
 

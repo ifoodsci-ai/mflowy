@@ -15,10 +15,10 @@ from mflowy.driver.discover import CatalogMiss
 class _FnCatalog:
     """测试伪目录：唯一 adapter 的最小替身（{namespace: {node: fn}} 直填）。
 
-    表值 = 原函数——非 raw 面与真目录同构返回注册表条目（#126：装饰者经
+    表值 = 原函数——返回面与真目录同构给注册表条目（#126：装饰者经
     ``node_of``/``edge_of`` 取本尊 Node/Edge；裸桩回退透传最小条目
-    ``run=fn``——测试替身不必装饰）；词表 miss 抛 CatalogMiss（对齐生产语义）；
-    entry 恒 None（无 entry point 元数据）。
+    ``run=fn``——测试替身不必装饰；原函数消费方走 ``entry.fn``，#137 raw 面退役）；
+    词表 miss 抛 CatalogMiss（对齐生产语义）；entry 恒 None（无 entry point 元数据）。
     """
 
     def __init__(self, table: dict[str, dict[str, object]]):
@@ -40,7 +40,7 @@ class _FnCatalog:
                 fn=fn, run=fn, middlewares=[], param_schema=schema, ns=None, validate_params=lambda *_: None
             )
 
-    def node(self, key: str, raw: bool = False):
+    def node(self, key: str):
         from mflowy.driver.config import split_node_key
         from mflowy.driver.node import node_of
 
@@ -48,19 +48,19 @@ class _FnCatalog:
         fn = self.table.get(ns, {}).get(node_name)
         if fn is None:
             raise CatalogMiss(ns, node_name, self.table.get(ns, {}))
-        return fn if raw else self._entry_of(fn, node_of)
+        return self._entry_of(fn, node_of)
 
-    def edge(self, edge_name: str, raw: bool = False):
+    def edge(self, edge_name: str):
         from mflowy.driver.edge import edge_of
 
         fn = self.table.get("edges", {}).get(edge_name)
         if fn is None:
             raise CatalogMiss("edges", edge_name, self.table.get("edges", {}))
-        return fn if raw else self._entry_of(fn, edge_of)
+        return self._entry_of(fn, edge_of)
 
-    def find_edge(self, edge_name: str, raw: bool = False):
+    def find_edge(self, edge_name: str):
         try:
-            return self.edge(edge_name, raw)
+            return self.edge(edge_name)
         except CatalogMiss:
             return None
 
@@ -75,7 +75,7 @@ class _FnCatalog:
 def fake_plugins(monkeypatch):
     """伪插件目录：{namespace: {node: fn}} 直填，patch discover 唯一 adapter 位。
 
-    表值 = @node/@edge 装饰后的函数（与真目录同构——discover._load_ep 的装饰
+    表值 = @node/@edge 装饰后的函数（与真目录同构——discover._checked 的装饰
     校验在此由直接访问等价保证，缺装饰即 AttributeError fail-loud）。用法：
 
         table.setdefault("load", {})["csv"] = my_fn

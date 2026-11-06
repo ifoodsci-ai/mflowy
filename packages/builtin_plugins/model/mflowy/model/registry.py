@@ -132,10 +132,10 @@ def build_ct(cat_encoder: str, num_scaler: str, spec: tuple[pd.DataFrame, pd.Dat
     kw = {"target": spec[1].columns[0]}
     triples = []
     if cat_encoder in FE_CAT_NODES:
-        fn = get_node(node_key("x_transformer", FE_CAT_NODES[cat_encoder]), raw=True)
+        fn = get_node(node_key("x_transformer", FE_CAT_NODES[cat_encoder])).fn
         triples.append(fn(x_y=spec, **kw))
     if num_scaler in FE_NUM_NODES:
-        fn = get_node(node_key("x_transformer", FE_NUM_NODES[num_scaler]), raw=True)
+        fn = get_node(node_key("x_transformer", FE_NUM_NODES[num_scaler])).fn
         triples.append(fn(x_y=spec, **kw))
     triples = [t for t in triples if len(t) == 3 and len(t[2]) > 0]
     return build_preprocessors(triples)

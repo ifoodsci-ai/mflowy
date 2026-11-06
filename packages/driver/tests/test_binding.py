@@ -153,10 +153,10 @@ class TestUpstreamEdge:
         """内层取值聚合：缺席内层省略参数，边函数签名默认值生效；meta 为边自指。"""
         a = _cell(1)
 
-        def edge_raw(x, y=99):
+        def edge_fn(x, y=99):
             return {"x": x, "y": y}
 
-        u = Upstream.edge(edge_raw, "via_edge", required=True, inner=_inner_x(a))
+        u = Upstream.edge(edge_fn, "via_edge", required=True, inner=_inner_x(a))
         assert u.meta.type == "edge" and u.meta.via == "via_edge" and u.nodes == []
         assert u.call() == {"x": 1, "y": 99}
 

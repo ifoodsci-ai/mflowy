@@ -57,7 +57,7 @@ def _ns_info(table: dict, ns: str) -> NamespaceNodesInfo:
     nodes = []
     for node in sorted(table[ns]):
         try:
-            fn = get_node(node_key(ns, node), raw=True)
+            fn = get_node(node_key(ns, node)).fn
             # _upstream_metas 同在守卫区：其边探针 find_edge 的 ep.load() 同样可能撞缺 extra
             metas = _upstream_metas(fn)
         except CatalogMiss:
@@ -124,17 +124,18 @@ def _upstream_metas(fn) -> list[UpstreamMeta]:
 
     metas: list[UpstreamMeta] = []
     for name, hint, optional in non_annotated_params(fn):
-        edge_raw = find_edge(name, raw=True)
-        if edge_raw is None:
+        edge_entry = find_edge(name)
+        if edge_entry is None:
             metas.append(
                 UpstreamMeta(
                     name, not optional, _kind(name), None, expect=_render_hint(hint), default=_binding_default(fn, name)
                 )
             )
         else:
+            edge_fn = edge_entry.fn
             metas += [
-                UpstreamMeta(n, not opt, _kind(n), name, expect=_render_hint(h), default=_binding_default(edge_raw, n))
-                for n, h, opt in non_annotated_params(edge_raw)
+                UpstreamMeta(n, not opt, _kind(n), name, expect=_render_hint(h), default=_binding_default(edge_fn, n))
+                for n, h, opt in non_annotated_params(edge_fn)
             ]
     return metas
 

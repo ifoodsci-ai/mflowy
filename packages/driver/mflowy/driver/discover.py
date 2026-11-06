@@ -29,7 +29,6 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from importlib.metadata import EntryPoint, entry_points
-from typing import TYPE_CHECKING, Literal, overload
 
 from .config import node_key, split_node_key
 from .edge import EDGE_REGISTRY, Edge, edge_of
@@ -176,7 +175,7 @@ def _resolve(key: str) -> EntryPoint:
     return ep
 
 
-def _checked(ep: EntryPoint, kind: str, bridge):
+def _checked[T](ep: EntryPoint, kind: str, bridge: Callable[[Callable], T]) -> T:
     """加载 entry point 并校验装饰性（#126：身份桥代旧 hasattr——零属性挂载）。
 
     语义与旧 ``hasattr(fn, valid)`` 等价：**只查「声明指向的函数已装饰」，不比名**
@@ -214,39 +213,22 @@ class EntryPointCatalog:
     CatalogMiss 带 Available 列表；目录面保持现算（安装即时可见），卸载/后组覆盖
     即时可见让渡于暖驻留。"""
 
-    @overload
-    def node(self, key: str, raw: Literal[True]) -> Callable: ...
-    @overload
-    def node(self, key: str, raw: Literal[False] = ...) -> Node: ...
+    def node(self, key: str) -> Node:
+        """节点目录访问：返回注册表 Node（调度面；原函数 = ``entry.fn``，#137 raw 面退役）。"""
+        return _load_node(key)
 
-    def node(self, key: str, raw: bool = False):
-        """节点目录访问：raw=原函数（签名内省），缺省=注册表 Node（调度面）。"""
-        entry = _load_node(key)
-        return entry.fn if raw else entry
+    def edge(self, edge_name: str) -> Edge:
+        """边目录访问（边寻址令牌=裸名，内部组 ``edges__`` 键）；原函数 = ``entry.fn``。"""
+        return _load_edge(node_key("edges", edge_name))
 
-    @overload
-    def edge(self, edge_name: str, raw: Literal[True]) -> Callable: ...
-    @overload
-    def edge(self, edge_name: str, raw: Literal[False] = ...) -> Edge: ...
-
-    def edge(self, edge_name: str, raw: bool = False):
-        """边目录访问（边寻址令牌=裸名，内部组 ``edges__`` 键）。"""
-        entry = _load_edge(node_key("edges", edge_name))
-        return entry.fn if raw else entry
-
-    @overload
-    def find_edge(self, edge_name: str, raw: Literal[True]) -> Callable | None: ...
-    @overload
-    def find_edge(self, edge_name: str, raw: Literal[False] = ...) -> Edge | None: ...
-
-    def find_edge(self, edge_name: str, raw: bool = False):
+    def find_edge(self, edge_name: str) -> Edge | None:
         """探针：词表 miss（CatalogMiss）返 None——异常控制流不出 adapter。
 
         坏声明（注册表不一致）与导入失败（ep.load 抛非 CatalogMiss 的 ModuleNotFoundError）
         在加载期 fail-loud 透传，不与 miss 混淆——类型正交，miss 判定不吞导入失败。
         """
         try:
-            return self.edge(edge_name, raw)
+            return self.edge(edge_name)
         except CatalogMiss:
             return None
 
@@ -272,37 +254,19 @@ def _grouped() -> dict[str, list[str]]:
 # ========== 门面（唯一 adapter 的便捷委托，目录消费的唯一姿势） ==========
 
 
-@overload
-def get_node(key: str, raw: Literal[True]) -> Callable: ...
-@overload
-def get_node(key: str, raw: Literal[False] = ...) -> Node: ...
+def get_node(key: str) -> Node:
+    """严格版：目录入口（查询键 = node_key）→ 注册表 Node。miss → CatalogMiss + available 列表"""
+    return _DEFAULT_CATALOG.node(key)
 
 
-def get_node(key: str, raw=False):
-    """严格版：目录入口（查询键 = node_key）——raw=原函数 / 缺省=注册表 Node。miss → CatalogMiss + available 列表"""
-    return _DEFAULT_CATALOG.node(key, raw)
-
-
-@overload
-def get_edge(edge_name: str, raw: Literal[True]) -> Callable: ...
-@overload
-def get_edge(edge_name: str, raw: Literal[False] = ...) -> Edge: ...
-
-
-def get_edge(edge_name: str, raw=False):
+def get_edge(edge_name: str) -> Edge:
     """边函数约定注册在 edges ns 下；miss → CatalogMiss（探针消费方改用 find_edge）。"""
-    return _DEFAULT_CATALOG.edge(edge_name, raw)
+    return _DEFAULT_CATALOG.edge(edge_name)
 
 
-@overload
-def find_edge(edge_name: str, raw: Literal[True]) -> Callable | None: ...
-@overload
-def find_edge(edge_name: str, raw: Literal[False] = ...) -> Edge | None: ...
-
-
-def find_edge(edge_name: str, raw=False):
+def find_edge(edge_name: str) -> Edge | None:
     """探针：miss 返 None；坏声明与导入失败照常透传（类型正交保证不吞）。"""
-    return _DEFAULT_CATALOG.find_edge(edge_name, raw)
+    return _DEFAULT_CATALOG.find_edge(edge_name)
 
 
 def list_all() -> dict[str, list[str]]:

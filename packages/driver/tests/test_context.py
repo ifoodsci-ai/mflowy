@@ -54,9 +54,9 @@ def _count_handler_calls(monkeypatch) -> list[str]:
     calls: list[str] = []
     orig = d._DEFAULT_CATALOG.node
 
-    def counting(key, raw=False):
+    def counting(key):
         calls.append(key)
-        return orig(key, raw)
+        return orig(key)
 
     monkeypatch.setattr(d._DEFAULT_CATALOG, "node", counting)
     return calls

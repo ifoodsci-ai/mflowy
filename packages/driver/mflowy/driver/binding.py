@@ -207,7 +207,7 @@ class Upstream:
     @classmethod
     def edge(
         cls,
-        edge_raw: Callable,
+        edge_fn: Callable,
         name: str,
         *,
         required: bool,
@@ -222,6 +222,6 @@ class Upstream:
                 v = fetch()
                 if v is not MISSING:
                     params[n] = v
-            return edge_raw(**params)
+            return edge_fn(**params)
 
         return cls(UpstreamMeta(name, required, "edge", via=name), edge_call)
