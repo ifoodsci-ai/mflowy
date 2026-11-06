@@ -18,7 +18,7 @@ from typing import Literal
 
 from .config import address_kind, node_key
 from .context import UpstreamMeta
-from .discover import CatalogMiss, find_edge, get_node, list_all
+from .discover import CatalogMiss, DeclarationMismatch, find_edge, get_node, list_all
 from .node import Node
 from .reflect import ParamEdge, render_hint
 
@@ -53,20 +53,21 @@ def list_nodes(namespace: str | None = None) -> list[NamespaceNodesInfo]:
 def _ns_info(table: dict, ns: str) -> NamespaceNodesInfo:
     """节点条目结构化（参数边绑定投影）——需 import 插件内省签名。
 
-    缺 extra 依赖的节点降级 upstream=None：词表完整列出而非崩掉（命题4——不静默
-    消失）。与 get_node_info 的 fail-loud 不对称是有意的：枚举求全（坏节点不拖垮
-    词表），内省求真（单点查询撞坏声明直接暴露）。
+    缺 extra 依赖或声明与注册不一致（DeclarationMismatch）的节点降级
+    upstream=None：词表完整列出而非崩掉（命题4——不静默消失）。与 get_node_info
+    的 fail-loud 不对称是有意的：枚举求全（坏节点不拖垮词表），内省求真（单点
+    查询撞坏声明直接暴露）。
     """
     nodes = []
     for node in sorted(table[ns]):
         try:
             entry = get_node(node_key(ns, node))
-            # _upstream_metas 同在守卫区：其边探针 find_edge 的 ep.load() 同样可能撞缺 extra
+            # _upstream_metas 同在守卫区：其边探针 find_edge 的 ep.load() 同样可能撞缺 extra / 声明不一致
             metas = _upstream_metas(entry)
         except CatalogMiss:
             raise  # 词表 miss 不是「坏节点降级」——枚举期目录变更 fail-loud
-        except ImportError as e:
-            logger.warning("节点 %s.%s 富化降级（import 失败：%s）", ns, node, e)
+        except (ImportError, DeclarationMismatch) as e:
+            logger.warning("节点 %s.%s 富化降级（%s）", ns, node, e)
             nodes.append(NodeEntry(node_key(ns, node), None))
             continue
         nodes.append(NodeEntry(node_key(ns, node), metas))

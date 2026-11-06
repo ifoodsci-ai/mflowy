@@ -2,7 +2,7 @@
 
 词表来源（按序合并，后组覆盖前组）：
 
-- ``mflowy.builtin_plugins``：本包内置能力，pyproject ``[project.entry-points]`` 静态声明（声明即词表；与装饰器一致性由 CR 兜底）
+- ``mflowy.builtin_plugins``：本包内置能力，pyproject ``[project.entry-points]`` 静态声明（声明即词表；加载期拦「注册表不自洽」，名段与装饰器逐字一致由 CR 兜底）
 - ``mflowy.plugins``：第三方插件包，声明即注册（随 uv/pip 安装进入环境）
 
 目录表形为**扁平身份键**：``dict[node_key, EntryPoint]``（``组名__节点名``，与
@@ -22,7 +22,9 @@ adapter（``EntryPointCatalog``），是目录消费的唯一姿势。解析三�
 
 词表 miss 类型化：``CatalogMiss`` ⊂ ModuleNotFoundError =「能力没装」，与 ``ep.load()``
 的导入失败（裸 ModuleNotFoundError =「装了但导不进」）按类型二分——探针
-（``find_edge``）据此 miss 返 None 而不吞导入失败。
+（``find_edge``）据此 miss 返 None 而不吞导入失败。``DeclarationMismatch`` ⊂
+ValueError =「声明与注册不自洽」（③ load 后按键 miss）——词表枚举消费方据此降级
+（键歧义等其它 ValueError 不受影响，照常 fail-loud）。
 """
 
 from __future__ import annotations
@@ -166,6 +168,12 @@ class CatalogMiss(ModuleNotFoundError):
         return cls("", namespace, available, msg=f"Namespace '{namespace}' not found. Available: {sorted(available)}")
 
 
+class DeclarationMismatch(ValueError):
+    """声明与注册不自洽（#140 ③）：ep.load() 后注册表无声明键——未装饰 / 装饰
+    namespace 或函数名与声明错位 / 别名键统一一类。继承 ValueError 保既有捕获姿势；
+    词表枚举消费方（module._ns_info）按本类降级而非击穿整表。"""
+
+
 def _resolve(key: str) -> EntryPoint:
     """扁平目录按键查表，miss 抛 CatalogMiss（Available = 同 namespace 裸名清单）。"""
     ep = discover().get(key)
@@ -175,7 +183,7 @@ def _resolve(key: str) -> EntryPoint:
     return ep
 
 
-def _checked[T](ep: EntryPoint, key: str, kind: str, registry: dict[str, T]) -> T:
+def _checked[T: (Node, Edge)](ep: EntryPoint, key: str, kind: str, registry: dict[str, T]) -> T:
     """加载 entry point 并按注册表键查表（#140 注册表单源：发现表键 = 注册表键）。
 
     ``ep.load()`` 的模块导入触发装饰器写入注册表；load 后按**同一 node_key 二次
@@ -183,11 +191,15 @@ def _checked[T](ep: EntryPoint, key: str, kind: str, registry: dict[str, T]) -> 
     namespace 或函数名与声明错位 / 别名键统一一类（细分税不付），fail-loud 带
     ep 与键上下文（#140 翻 #126「只查装饰不比名」：错 namespace 升格加载期门）。
     """
-    ep.load()
+    fn = ep.load()
     if (entry := registry.get(key)) is None:
-        raise ValueError(
+        # 错误路径扫注册表给「实际注册键」候选（红线 1 带候选清单）；fn 仅用于此处
+        # 诊断，成功路径零消费（暖路径③同①——纪律保证键一致，机器不做宽容）
+        actual = sorted(k for k, e in registry.items() if e.fn is fn)
+        hint = f"；实际注册键：{actual}" if actual else ""
+        raise DeclarationMismatch(
             f"entry point {ep.group}:{ep.name} = {ep.value} 声明与注册不一致："
-            f"加载后注册表无 {kind} 键 {key!r}（未装饰 @{kind} 或装饰 namespace/函数名与声明错位）"
+            f"加载后注册表无 {kind} 键 {key!r}（未装饰 @{kind} 或装饰 namespace/函数名与声明错位）{hint}"
         )
     return entry
 

@@ -43,6 +43,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 同频：AGENTS.md「添加能力」① 签名纪律句入册、红线 2 反射单源句；driver README
   能力注册/签名约定/类型门叙述。
 
+### #140 重审收尾：词表降级收编声明不一致 + 错误候选清单（#140）
+
+- 声明与注册不一致改抛专类 `DeclarationMismatch`（⊂ ValueError，既有捕获姿势
+  不破）——`module._ns_info` 词表枚举守卫区收编该类降级：坏声明不再击穿整表
+  `list_nodes`（键歧义等其它 ValueError 不受影响，照常 fail-loud）。
+- 错误文案补「实际注册键」候选（错误路径注册表身份扫描——红线 1 带候选清单；
+  未装饰目标无候选零附加；`fn` 仅错误路径诊断消费，成功路径零消费）。
+- 文档同频：discover.py 词表来源句（CR 兜底范围澄清——加载期拦注册表不自洽，
+  名段逐字一致仍 CR 面）；data/model pyproject 注册注释 `@handler` 旧词 → `@node`。
+
 ### 身份桥退役：解析流注册表单源化（#140，BREAKING·SDK 面）
 
 - **BREAKING**（SDK 面）：`node_of`/`edge_of` 与身份弱键映射 `_NODE_OF`/`_EDGE_OF`

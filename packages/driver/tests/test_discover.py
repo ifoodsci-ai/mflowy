@@ -7,6 +7,7 @@ import pytest
 from mflowy.driver import discover as discover_mod
 from mflowy.driver.discover import (
     CatalogMiss,
+    DeclarationMismatch,
     EntryPointCatalog,
     discover,
     entry,
@@ -157,10 +158,15 @@ class TestLoadContract:
         """坏声明三类（未装饰/错 namespace/别名键）统一「声明与注册不一致」fail-loud
         （#140 翻 #126「只查装饰不比名」——错 namespace 升格加载期门），文案带 ep 与键上下文。"""
         fake_entry_points.append(_ep(ep_name, target))
-        with pytest.raises(ValueError) as ei:
+        with pytest.raises(DeclarationMismatch) as ei:
             get_node(key)
+        assert isinstance(ei.value, ValueError)  # 专类 ⊂ ValueError：既有捕获姿势不破
         assert "声明与注册不一致" in str(ei.value)
         assert key in str(ei.value) and target in str(ei.value)  # 键 + ep 上下文双带
+        if ep_name == "load.plain":
+            assert "实际注册键" not in str(ei.value)  # 未装饰：无候选可给（宁缺毋滥）
+        else:
+            assert "实际注册键：['x_y']" in str(ei.value)  # 错 namespace/别名：目标本尊实际注册键
 
     def test_get_miss_lists_available(self, fake_entry_points):
         fake_entry_points.append(_ep("load.csv", "mflowy.data.load.csv_loader:csv"))

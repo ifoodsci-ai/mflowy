@@ -239,6 +239,39 @@ def test_list_nodes_degrades_on_edge_import_failure(monkeypatch):
     assert info.nodes == [NodeEntry(name="model__final_eval", upstream=None)]  # 降级而非 ImportError 穿透整查询
 
 
+def test_list_nodes_degrades_on_declaration_mismatch(monkeypatch):
+    """声明与注册不一致（DeclarationMismatch）同守卫区降级——坏声明不拖垮词表（键歧义等其它 ValueError 照常穿透）。"""
+    import mflowy.driver.discover as discover_mod
+    import mflowy.driver.module as module
+    from mflowy.driver.discover import DeclarationMismatch
+
+    def _ok_node(payload, **_):
+        """富化正常。"""
+
+    class _DeclBroken:
+        def list_all(self):
+            return {"load": ["ok", "bad_decl"]}
+
+        def node(self, key):
+            if key == "load__bad_decl":
+                raise DeclarationMismatch(
+                    "entry point mflowy.builtin_plugins:load.bad_decl 声明与注册不一致：加载后注册表无 node 键 'load__bad_decl'"
+                )
+            return SimpleNamespace(
+                fn=_ok_node, upstreams_schema=upstream_params(_ok_node)
+            )  # 条目替身：冻结核面同源派生
+
+        def find_edge(self, name):
+            return None
+
+    monkeypatch.setattr(discover_mod, "_DEFAULT_CATALOG", _DeclBroken())
+    load = next(i for i in module.list_nodes() if i.namespace == "load")
+    assert load.nodes == [
+        NodeEntry(name="load__bad_decl", upstream=None),  # 降级而非击穿整表
+        NodeEntry(name="load__ok", upstream=[UpstreamMeta(name="payload", required=True)]),
+    ]
+
+
 def test_list_nodes_unknown_namespace_raises_catalog_miss():
     """namespace miss → CatalogMiss（类型化）——与节点 miss 同族，可用 Available 自纠。"""
     with pytest.raises(CatalogMiss, match="Available") as ei:
