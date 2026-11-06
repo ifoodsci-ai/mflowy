@@ -228,11 +228,11 @@ class Builder:
         pairs: list[tuple[Context, str | None]] = []
         by_param: dict[str, list[Context]] = {}
         for name, expect, optional in non_annotated_params(fn):
-            edge_raw = find_edge(name, raw=True)
-            if edge_raw is None:
+            edge_entry = find_edge(name)
+            if edge_entry is None:
                 self._bind_direct(nid, name, expect, optional, table, direct, pairs, by_param)
             else:
-                self._bind_via(nid, name, expect, optional, edge_raw, table, direct, via_inner, pairs)
+                self._bind_via(nid, name, expect, optional, edge_entry.fn, table, direct, via_inner, pairs)
         return direct, via_inner, pairs, by_param
 
     def _bind_direct(
@@ -262,7 +262,7 @@ class Builder:
         name: str,
         expect: object,
         optional: bool,
-        edge_raw: Callable,
+        edge_fn: Callable,
         table: NodeTable,
         direct: list[Upstream],
         via_inner: list[Upstream],
@@ -271,9 +271,9 @@ class Builder:
         """变换参数边（param 名命中 edges 词表）：边函数自身参数对节点表解析（传递血缘，
         边不吃边），消费方 expect 对边返回注解声明校验。内层依赖记入 via_inner
         （builder 私有）——闭包传导与剪枝剥除的消费面。"""
-        verify_output_hint(name, expect, edge_raw)
+        verify_output_hint(name, expect, edge_fn)
         inner: dict[str, Callable] = {}
-        for n, h, opt in non_annotated_params(edge_raw):
+        for n, h, opt in non_annotated_params(edge_fn):
             chosen, collect = _match_upstream(nid, f"{name}.{n}", n, h, opt, table)
             if not chosen:
                 continue  # 可选内层零命中：省略参数，边函数签名默认值原生生效
@@ -284,7 +284,7 @@ class Builder:
             via_inner.append(u)
             inner[n] = u.call
 
-        direct.append(Upstream.edge(edge_raw, name, required=not optional, inner=inner))
+        direct.append(Upstream.edge(edge_fn, name, required=not optional, inner=inner))
 
     def _prune_disabled(self, nodes: list[Context]) -> list[Context]:
         """disabled = 必选依赖闭包剪枝（``lineage_closure(required_only=True)`` 单源）：

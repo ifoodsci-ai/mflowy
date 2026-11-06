@@ -74,7 +74,7 @@ def test_operators_emit_only_registered_kinds(op_name):
     """
     from mflowy.driver.discover import get_node
 
-    op = get_node(f"detect__{op_name}", raw=True)
+    op = get_node(f"detect__{op_name}").fn
     df = _dirty_df()
     if op_name == "id_like":
         df = df.drop_duplicates().reset_index(drop=True)

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### discover 三步解析流：注册表暖路径 + raw 形参退役（#137）
+
+- `get_node`/`get_edge`/`find_edge` 解析三步化：① `NODE_REGISTRY`/`EDGE_REGISTRY`
+  暖命中直返（进程内已加载节点 dict 量级——实测暖查询 0.1µs vs 目录现算
+  6.8ms）→ ② miss 才现算目录表（纯元数据、安装即时可见保留）→ ③ 首载
+  `ep.load()` 触发装饰注册，身份桥（`node_of`/`edge_of`）校验装饰性，坏声明
+  fail-loud 语义不变。热更新赌注收窄一行：卸载/后组覆盖的即时可见让渡
+  （暖命中驻留——进程内中途卸载或覆盖包比安装更罕见）。discover 对注册表/
+  身份桥改模块级导入（#132 后 node/edge 零 discover 依赖，导入期无环）。
+- **BREAKING**（目录访问面）：`raw=True` 双返回面退役——`get_node`/`get_edge`/
+  `find_edge`（及 `EntryPointCatalog` 同名方法）只返 `Node`/`Edge`，overload
+  双面收单面；原函数消费方迁 `.fn`（生产位：model/registry、builder、module、
+  cleaning_session）。
+
 ### MLP hidden_dims B006 消解：Sequence 契约 + 不可变默认（#133）
 
 - `mlp.py` hidden_dims：`list[int] = [64, 32]` → `Sequence[int] = (64, 32)`

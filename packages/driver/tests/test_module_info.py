@@ -5,6 +5,7 @@
 UpstreamMeta（via 标注边途经消费；name==via 的边自指条目过滤——#59）。
 """
 
+from types import SimpleNamespace
 from typing import Annotated
 
 import pytest
@@ -165,12 +166,12 @@ def test_list_nodes_degrades_bare_name_on_missing_extra(monkeypatch):
         def list_all(self):
             return {"load": ["ok", "plotly_thing"]}
 
-        def node(self, key, raw=False):
+        def node(self, key):
             if "plotly_thing" in key:
                 raise ImportError("No module named 'plotly'")
-            return _ok_node
+            return SimpleNamespace(fn=_ok_node)  # 单面契约：条目对象（#137 raw 面退役）
 
-        def find_edge(self, name, raw=False):
+        def find_edge(self, name):
             return None  # 无边函数——直连形态
 
     import mflowy.driver.discover as discover_mod
@@ -194,10 +195,10 @@ def test_list_nodes_degrades_on_edge_import_failure(monkeypatch):
         def list_all(self):
             return {"model": ["final_eval"]}
 
-        def node(self, ns, node, raw=False):
-            return _node_w_edge  # 节点本体可导入
+        def node(self, key):
+            return SimpleNamespace(fn=_node_w_edge)  # 节点本体可导入
 
-        def find_edge(self, name, raw=False):
+        def find_edge(self, name):
             raise ImportError("No module named 'sklearn'")  # 边函数住缺依赖模块
 
     import mflowy.driver.discover as discover_mod
@@ -226,12 +227,12 @@ def test_list_nodes_miss_during_enumeration_propagates(monkeypatch):
         def list_all(self):
             return {"load": ["ok", "ghost"]}
 
-        def node(self, key, raw=False):
+        def node(self, key):
             if key == "load__ghost":
                 raise CatalogMiss("load", "ghost", ["ok"])  # 枚举期目录变更：表里有名、目录已 miss
-            return _ok_node
+            return SimpleNamespace(fn=_ok_node)
 
-        def find_edge(self, name, raw=False):
+        def find_edge(self, name):
             return None
 
     monkeypatch.setattr(discover_mod, "_DEFAULT_CATALOG", _MidMiss())

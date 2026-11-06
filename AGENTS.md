@@ -118,4 +118,4 @@ repo 从 `git remote -v` 推断。issue/PR 共号段：`#42` 先 `gh pr view 42`
 
 ## 词表
 
-两层：**引擎元词汇**（节点/边/组/Context 的定义与禁用别名）见 [CONTEXT.md](CONTEXT.md)；**节点名唯一词表 = 运行期插件目录**（`driver/discover.py` 读两组 entry points；边注册于 `edges` ns 但不进 `list_nodes`）。**编译即校验**：Builder 增量编译（平铺有序列表 + 节点表）对参数边全量 fail-loud——拓扑序/词表 miss/撞名/类型门/参数 schema 校验（#131：已知键子集对装饰期模型，与运行期 validate_call 同源、未知键放过）。issue 标题 / 提案 / 测试名一律用 node/namespace 术语；目录里没有的概念 = 语言超纲信号。插件 SDK = `driver/node.py`（@node 装饰器）+ `edge.py` + `builtin_middleware.py` 尾链，破坏性变更受 CHANGELOG 语义化版本约束。
+两层：**引擎元词汇**（节点/边/组/Context 的定义与禁用别名）见 [CONTEXT.md](CONTEXT.md)；**节点名唯一词表 = 运行期插件目录**（`driver/discover.py` 读两组 entry points；边注册于 `edges` ns 但不进 `list_nodes`）。解析三步（#137）：注册表暖命中 → 目录查表 → 首载经身份桥——解析面 ⊇ 词表（已导入的装饰节点可暖命中，生产不可达：一文件一节点下忘声明即无人 import）；暖驻留让渡卸载/后组覆盖的即时可见。**编译即校验**：Builder 增量编译（平铺有序列表 + 节点表）对参数边全量 fail-loud——拓扑序/词表 miss/撞名/类型门/参数 schema 校验（#131：已知键子集对装饰期模型，与运行期 validate_call 同源、未知键放过）。issue 标题 / 提案 / 测试名一律用 node/namespace 术语；目录里没有的概念 = 语言超纲信号。插件 SDK = `driver/node.py`（@node 装饰器）+ `edge.py` + `builtin_middleware.py` 尾链，破坏性变更受 CHANGELOG 语义化版本约束。
