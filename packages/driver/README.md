@@ -123,15 +123,15 @@ def common_filter(...) -> pd.DataFrame: ...
 ```
 
 1. **身份声明**：`[project.entry-points."mflowy.builtin_plugins"]` 静态手写声明（0.2.0 起构建期 AST 扫描钩子退役，与第三方包同构）——name 即身份（节点 `namespace.node_name`，归组段与装饰器 `namespace=` 逐字一致在加载期按键比对 fail-loud，#140；边函数注册于 `edges` ns；忘声明是 CR 面——目录无名即不可达）
-2. **能力注册**：`node.py: @node` 内嵌 `validate_call`（签名即约束：`Annotated[T, "描述"]` 兼容旧约定、`Field(...)` 带约束、裸类型注入参数 is-instance 直通），构造 `Node`（fn/middlewares/param_schema/ns + `run` 调度链）注册进 `<node_key, Node>` 注册表（`node.NODE_REGISTRY`——#132 归居契约模块，装饰期零 import discover（含传递边）——fn 原样返回，直调不受影响）；`mlflow_log` 强制尾链（`builtin_middleware.py`——stop_on_error 已随 #59 血缘剪枝退役），每个 node 必在 mlflow run 内执行
+2. **能力注册**：`node.py: @node` 内嵌 `validate_call`（签名即约束：`Annotated[T, "描述"]` 兼容旧约定、`Field(...)` 带约束、裸类型注入参数 is-instance 直通），构造 `Node`（fn/middlewares/param_schema/ns + 装饰期冻结反射核 upstreams_schema/param_fields/return_hint——`reflect.py` 工具包单源派生，编译/投影零活反射，#138 + `run` 调度链）注册进 `<node_key, Node>` 注册表（`node.NODE_REGISTRY`——#132 归居契约模块，装饰期零 import discover（含传递边）——fn 原样返回，直调不受影响）；`mlflow_log` 强制尾链（`builtin_middleware.py`——stop_on_error 已随 #59 血缘剪枝退役），每个 node 必在 mlflow run 内执行
 3. **目录与解析**：`discover.py` 按序读两组 entry points（`mflowy.builtin_plugins` 内置 + `mflowy.plugins` 第三方），`discover()/list_all()/entry()` 纯元数据零 import；`get_node`/`get_edge` 三步解析——注册表暖命中 → 目录查表 → 首载 `ep.load()` 后按同一键查注册表（发现表键 = 注册表键，#140 身份桥退役），load 后 miss = 「声明与注册不一致」fail-loud（未装饰/错 namespace/别名键统一一类，带 ep 与键上下文）
-4. **用户文档**：`module.py: get_node_info` 内省 `Annotated[T, "描述"]` → JSON Schema（纯用户可配参数），参数边依赖经 `NodeInfo.upstream`（展平边函数的节点名，保序去重）独立下发——MCP schema 即 API 文档
+4. **用户文档**：`module.py: get_node_info` 读装饰期冻结面——`param_schema`（`Annotated[T, "描述"]` → JSON Schema，纯用户可配参数）；参数边依赖经 `NodeInfo.upstream`（自 upstreams_schema 查询期派生：展平边函数的节点名，逐参数保留）独立下发——MCP schema 即 API 文档
 
 **editable 陷阱**：entry points 元数据在 `uv sync` 时生效，新增插件模块或注册条目后必须重跑 `uv sync` 才会出现在 `list-nodes`。
 
 ### 类型注解单源
 
-`Annotated[T, "描述"]`（旧式字符串，兼容）与 `Annotated[T, Field(description=..., gt=...)]`（带约束）是全引擎的契约单一事实源：`@node` 内嵌的 `validate_call` 在调用期解析/校验、`get_node_info` 直出 JSON Schema 文档——两者同一套 pydantic schema 机器，文档与校验永不漂移。签名约定：裸类型参数 = 参数边（is-instance 直通，收集形态需注迭代器），`Annotated` 参数 = 用户可配（文档据此过滤）；**`Annotated` 只用于参数，返回值保持裸注解**（返回注解参与构建期一致性校验与文档，不参与寻址；误写 `Annotated` 会在文档中产出幽灵参数，责任在插件作者）。**默认值的单一事实源是函数签名**——空可选边直接省略参数，默认值由 Python 调用期原生生效；Field 只带约束与描述。
+`Annotated[T, "描述"]`（旧式字符串，兼容）与 `Annotated[T, Field(description=..., gt=...)]`（带约束）是全引擎的契约单一事实源：`@node` 内嵌的 `validate_call` 在调用期解析/校验、`get_node_info` 直出 JSON Schema 文档——两者同一套 pydantic schema 机器，文档与校验永不漂移。签名约定：裸类型参数 = 参数边（is-instance 直通，收集形态需注迭代器），`Annotated` 参数 = 用户可配（文档据此过滤）；边函数参数全为参数边（无 Annotated 面——`@edge` 带 Annotated 参数装饰期 fail-loud，用户可配参数属消费节点，#138）；**`Annotated` 只用于参数，返回值保持裸注解**（返回注解参与构建期一致性校验与文档，不参与寻址；误写 `Annotated` 会在文档中产出幽灵参数，责任在插件作者）。**默认值的单一事实源是函数签名**——空可选边直接省略参数，默认值由 Python 调用期原生生效；Field 只带约束与描述。
 
 builtin 词汇的类型转换知识挂在类型上（词汇主人）：`DiscreteSpace.__get_pydantic_core_schema__`（yaml list → 实例）、`DualFormStrEnum`（枚举值/名双形式）；stdlib dataclass（如 `ContinuousSpace`）的 dict→实例 pydantic 原生支持。第三方数据结构的 YAML 值转换同样挂 `__get_pydantic_core_schema__` 钩子。
 
@@ -217,7 +217,7 @@ flow:
 | **execute** | `run()`/调度器——消费编译产物（direct 列取值闭包：拉起、整形） |
 | **EXPLAIN ANALYZE** | 血缘 tag（`_prevs` 派生声明集）↔ 静态边表对账——不等即失败 run |
 
-- **解析核心是纯函数**（`resolve_upstream` + 模块层谓词/整形）：零副作用；dry 消费者只读检查，wet 消费者拉起 + 整形。撒谎防线单层居构建期（`verify_output_hint` 声明比对）——静态安全哲学（Protocol 代 ABC），运行期保证仅业务需要时做（#57 裁定，运行期值级复核退役）。
+- **解析核心是纯函数**（`resolve_upstream` + 模块层谓词/整形）：零副作用；dry 消费者只读检查，wet 消费者拉起 + 整形。撒谎防线单层居构建期（`verify_output_hint` 声明比对——两侧读装饰期冻结 hint，#138）——静态安全哲学（Protocol 代 ABC），运行期保证仅业务需要时做（#57 裁定，运行期值级复核退役）。
 - **快照语义**：编译产物（upstreams 两列 + 接线）定格于所属 DAG 实例，run 期零目录查询；目录变了走显式重建 DAG。`ContextVar` 计数器保证并发 `Builder.build()` 编号隔离。
 
 ### 惰性拉起与按需子图执行

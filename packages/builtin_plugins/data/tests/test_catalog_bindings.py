@@ -4,7 +4,7 @@
 直连 = UpstreamNode；顺序 = 函数签名序——死参数边（永不解析的裸名）是词表污染。
 """
 
-from mflowy.driver.binding import UpstreamMeta
+from mflowy.driver.context import UpstreamMeta
 from mflowy.driver.module import list_nodes
 
 

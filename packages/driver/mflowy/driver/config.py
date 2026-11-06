@@ -1,8 +1,9 @@
 """DAG 配置模型（平铺键控叙事）。namespace 词表无枚举——身份即 entry point name 前缀，词表 = 运行期注册表。"""
 
+from collections.abc import Container
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 
 def parse_enum[E: Enum](cls: type[E], raw: str) -> E:
@@ -35,6 +36,13 @@ def split_node_key(key: str) -> tuple[str, str]:
     且是唯一的逆（rpartition 取最后一个 ``__``；两侧皆可含 ``_`` 单下划线）。"""
     ns, _, node = key.rpartition("__")
     return (ns, node) if ns else ("", key)
+
+
+def address_kind(name: str, namespaces: Container[str]) -> Literal["namespace", "node"]:
+    """寻址命中层判定（UpstreamMeta.type 的语义单源，#138 拆居——与寻址名
+    编解码同所）：``name`` 命中组名 → ``"namespace"``（组寻址），否则 ``"node"``
+    （node_key 整相）。词表投影（module）与编译期索引（builder NodeTable）共用同一语义。"""
+    return "namespace" if name in namespaces else "node"
 
 
 @dataclass

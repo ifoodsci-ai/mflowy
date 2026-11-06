@@ -1,6 +1,6 @@
 """pomdp 契约：pydantic 投影类型（封闭模型）/ POMDPSessionHandle 服务面。
 
-seam 即 interface，测试即消费方（先例：test_binding.py）——只测外部行为。
+seam 即 interface，测试即消费方（先例：test_reflect.py）——只测外部行为。
 样本即独立真源：issue #29 类型表 + #89 会话基座设计（七键封闭/终态双旗/
 action-params 平铺/拒收必附 reason），非实现回填。
 """

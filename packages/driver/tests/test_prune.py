@@ -12,10 +12,9 @@ from __future__ import annotations
 from collections.abc import Iterator
 from pathlib import Path
 
-from mflowy.driver.binding import Upstream, UpstreamMeta
 from mflowy.driver.builder import Builder
 from mflowy.driver.config import NodeConf
-from mflowy.driver.context import Context
+from mflowy.driver.context import Context, Upstream, UpstreamMeta
 from mflowy.driver.dag import lineage_closure
 from mflowy.driver.node import node
 

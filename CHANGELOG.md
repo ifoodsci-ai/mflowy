@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### BREAKING：Node/Edge 装饰期反射核冻结 + fn 反射单源工具包（#138）
+
+- **BREAKING**（导入面）：`driver/binding.py` → **`driver/reflect.py`**（fn 反射工具包——
+  职责 = 反射处理 fn 拿到 param 面与 upstream 面；对被装饰 fn 的 typing/inspect 逻辑
+  全仓单源）。非反射件拆居：`Upstream`/`UpstreamMeta`/`MISSING`/`_NOT_RUN` →
+  `driver.context`（取值闭包执行面随唯一运行期消费者）、`raise_if_params_collide` →
+  `driver.node`（M1 守卫随 Node 参数面）、`address_kind` → `driver.config`（与寻址名
+  编解码同所）；`node._params_contract` → `reflect.params_contract`（返回三面：校验
+  模型 / JSON Schema / fields）、`module._render_hint` → `reflect.render_hint`。
+  `from mflowy.driver.binding import ...` 需改（仓内零残留）。
+- **契约扩展**（`Node`/`Edge` Protocol）：装饰期一次冻结反射核——`upstreams_schema`
+  （参数边四元组 `ParamEdge(name, hint, optional, default)`，必选 default 为 `...`）+
+  `return_hint`；Node 另增 `param_fields`（Annotated 参数的 create_model 字段定义，
+  只读映射——第四面 Python 形态，服务漏④后续票）。注册期解析模型：节点参数按
+  Annotated 二分（参数边 → `upstreams_schema`，DAG 图校验面；节点自身参数 →
+  `param_schema`，YAML 模板面）；边参数全为参数边。投影（via 展开/寻址 kind）依赖
+  词表，查询期自冻结核派生（装饰期算投影 = import 顺序脆弱性，不做）。
+- **生产活反射退役**：builder 直连绑定 / via 内层 / M1 名集读冻结核；module 词表投影
+  （via 展开、default repr、expect 渲染）读冻结核；`Context.output_hint` ← `Node.return_hint`。
+  **BREAKING**（签名）：`verify_output_hint(name, expect, output_hint)` 第三参由上游 fn
+  改收预计算返回注解（节点/边两侧直传，内部零反射）；`param_edge_names` 入参由 fn
+  改收冻结面（`upstreams_schema` / `upstream_params` 产物）——纯投影零反射，node 运行期
+  防线与 builder 编译期共用同一 helper（名集投影单源）。
+- **BREAKING**（装饰期语义）：`@edge` 守卫（红线 1）——边函数参数带 Annotated = 契约
+  违例，装饰期 `TypeError` fail-loud（点名参数、不入注册表；现基线零命中）；边注解
+  改为装饰期解析（与 `@node` 同构——@node 自装饰期派生 param_schema 起即如此）：
+  注解须在装饰点可解析，模块内后置定义的前向引用此前可在编译期解析，现装饰期即
+  `NameError` fail-loud（内置 5 边零命中）。
+- 钉测：`tests/test_reflection_core.py`——反射原语单源收敛（AST 扫描 + 工具包外存量
+  台账双向棘轮：mcp runner 工具面 1 + 漏④ model 域 3 反射调用点）、冻结点钉测（活反射
+  成员只许 node/edge 装饰期冻结点导入——与收敛钉测合取 = 消费路径零活反射，静态判定
+  零替身）、全目录对账（内置节点/边：冻结核 ≡ 查询期活反射；fields ↔
+  `signature_params` 过滤公式显式断言）。
+- 同频：AGENTS.md「添加能力」① 签名纪律句入册、红线 2 反射单源句；driver README
+  能力注册/签名约定/类型门叙述。
+
 ### #140 重审收尾：词表降级收编声明不一致 + 错误候选清单（#140）
 
 - 声明与注册不一致改抛专类 `DeclarationMismatch`（⊂ ValueError，既有捕获姿势

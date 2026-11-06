@@ -5,10 +5,12 @@ fail-loud）；边完全由签名机器对节点表解析（``edges`` 词表① 
 声明。**编译即校验**：词表 miss / M1 撞名 / 必选边不可达 / 类型不兼容全部在编译期 fail-loud
 （disabled 节点同样全解析——停用即"完整图的配置"，随时可开）。
 
-- 增量编译：按 YAML 序逐节点构造 Context → 从节点函数解析 direct 列 Upstream（边内层
-  依赖随播种进 ``ctx._via_upstreams``）→ 查表校验 → 接线 prevs/nexts → 入表（组名保序 /
-  node_key 整相双索引）；取值闭包经 ``binding.Upstream.node``/``Upstream.edge`` 工厂
-  构造——本模块只编译，零运行期代码
+- 增量编译：按 YAML 序逐节点构造 Context → 从节点冻结核（``Node.upstreams_schema``，
+  #138 装饰期冻结——编译期零活反射）解析 direct 列 Upstream（边内层依赖读
+  ``Edge.upstreams_schema``，随播种进 ``ctx._via_upstreams``）→ 查表校验（类型门两侧读
+  冻结 ``return_hint``）→ 接线 prevs/nexts → 入表（组名保序 / node_key 整相双索引）；
+  取值闭包经 ``context.Upstream.node``/``Upstream.edge`` 工厂构造——本模块只编译，
+  零运行期代码
 - ``disabled`` = 编译期**必选依赖闭包**剪枝：可选依赖剥除（MISSING 落回签名默认值），
   collect 部分出局只收幸存成员
 - ``structural_rules``：编译后钩子（``Context → Context | None``），从叶子反向
@@ -27,20 +29,13 @@ import yaml
 from mflowy.utils.file import read_text
 from mflowy.utils.jinja import get_yaml_template_env
 
-from .binding import (
-    Upstream,
-    UpstreamMeta,
-    address_kind,
-    edge_hint,
-    non_annotated_params,
-    param_edge_names,
-    raise_if_params_collide,
-    verify_output_hint,
-)
-from .config import Conf, NodeConf, parse_flow_item, split_node_key
-from .context import Context
+from .config import Conf, NodeConf, address_kind, parse_flow_item, split_node_key
+from .context import Context, Upstream, UpstreamMeta
 from .dag import DAG, lineage_closure
 from .discover import find_edge, get_node
+from .edge import Edge
+from .node import Node, raise_if_params_collide
+from .reflect import edge_hint, param_edge_names, verify_output_hint
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +71,7 @@ class NodeTable:
 
     def kind(self, name: str) -> Literal["namespace", "node"]:
         """寻址命中的索引层（先组名后 node_key）——编译产物 type 分类的依据
-        （语义单源 ``binding.address_kind``，对本编译期表投影）。"""
+        （语义单源 ``config.address_kind``，对本编译期表投影）。"""
         return address_kind(name, self._by_ns)
 
 
@@ -190,14 +185,14 @@ class Builder:
         for item in items:
             ((key, conf),) = item.items()
             entry = get_node(key)  # 词表 miss fail-loud（查询键=node_key，零拆装；每节点恰一次）
-            fn = entry.fn
             nid = f"[{key}]"
             if conf.params:
-                raise_if_params_collide(param_edge_names(fn), conf.params, nid)
+                # M1 名集 = 冻结核投影（#138：编译期零活反射，与 node 运行期防线同一 helper）
+                raise_if_params_collide(param_edge_names(entry.upstreams_schema), conf.params, nid)
                 entry.validate_params(conf.params, nid)  # 编译期 schema 校验（#131）——运行期 validate_call 防线不变
             try:
-                direct, via_inner, pairs, by_param = self._resolve_upstreams(fn, table, nid)
-            except TypeError as e:  # 声明不一致（binding.verify_output_hint）
+                direct, via_inner, pairs, by_param = self._resolve_upstreams(entry, table, nid)
+            except TypeError as e:  # 声明不一致（reflect.verify_output_hint）
                 raise ValueError(f"节点 {nid} 参数边类型不一致：{e}") from e
             prevs = list(dict.fromkeys(c for c, _ in pairs))
             ctx = Context(
@@ -214,25 +209,28 @@ class Builder:
         return nodes
 
     def _resolve_upstreams(
-        self, fn: Callable, table: NodeTable, nid: str
+        self, entry: Node, table: NodeTable, nid: str
     ) -> tuple[
         list[Upstream],
         list[Upstream],
         list[tuple[Context, str | None]],
         dict[str, list[Context]],
     ]:
-        """签名 → (direct, via_inner, pairs, by_param)：direct 列 Upstream（Context 播种面）+
-        边内层依赖（builder 私有 via 表）+ 绑定序 (ctx, 边名|None) + 直连参数名 → 上游。"""
+        """冻结核 → (direct, via_inner, pairs, by_param)：direct 列 Upstream（Context 播种面）+
+        边内层依赖（builder 私有 via 表）+ 绑定序 (ctx, 边名|None) + 直连参数名 → 上游。
+
+        参数边读 ``entry.upstreams_schema``（装饰期冻结四元组，#138）——default 位不参与
+        绑定（零命中省略注入，签名默认值调用期原生生效）。"""
         direct: list[Upstream] = []
         via_inner: list[Upstream] = []
         pairs: list[tuple[Context, str | None]] = []
         by_param: dict[str, list[Context]] = {}
-        for name, expect, optional in non_annotated_params(fn):
+        for name, expect, optional, _ in entry.upstreams_schema:
             edge_entry = find_edge(name)
             if edge_entry is None:
                 self._bind_direct(nid, name, expect, optional, table, direct, pairs, by_param)
             else:
-                self._bind_via(nid, name, expect, optional, edge_entry.fn, table, direct, via_inner, pairs)
+                self._bind_via(nid, name, expect, optional, edge_entry, table, direct, via_inner, pairs)
         return direct, via_inner, pairs, by_param
 
     def _bind_direct(
@@ -251,7 +249,7 @@ class Builder:
         if not chosen:
             return  # 可选零命中：省略注入，签名默认值原生生效
         for up in chosen:
-            verify_output_hint(name, expect, up.node_raw)
+            verify_output_hint(name, expect, up.output_hint)
             pairs.append((up, None))
         by_param.setdefault(name, []).extend(chosen)
         direct.append(Upstream.node(UpstreamMeta(name, not optional, table.kind(name)), chosen, collect=collect))
@@ -262,29 +260,30 @@ class Builder:
         name: str,
         expect: object,
         optional: bool,
-        edge_fn: Callable,
+        edge_entry: Edge,
         table: NodeTable,
         direct: list[Upstream],
         via_inner: list[Upstream],
         pairs: list[tuple[Context, str | None]],
     ) -> None:
-        """变换参数边（param 名命中 edges 词表）：边函数自身参数对节点表解析（传递血缘，
-        边不吃边），消费方 expect 对边返回注解声明校验。内层依赖记入 via_inner
-        （builder 私有）——闭包传导与剪枝剥除的消费面。"""
-        verify_output_hint(name, expect, edge_fn)
+        """变换参数边（param 名命中 edges 词表）：边函数自身参数（冻结核
+        ``Edge.upstreams_schema``）对节点表解析（传递血缘，边不吃边），消费方 expect 对边
+        冻结 ``return_hint`` 声明校验。内层依赖记入 via_inner（builder 私有）——闭包传导
+        与剪枝剥除的消费面。"""
+        verify_output_hint(name, expect, edge_entry.return_hint)
         inner: dict[str, Callable] = {}
-        for n, h, opt in non_annotated_params(edge_fn):
+        for n, h, opt, _ in edge_entry.upstreams_schema:
             chosen, collect = _match_upstream(nid, f"{name}.{n}", n, h, opt, table)
             if not chosen:
                 continue  # 可选内层零命中：省略参数，边函数签名默认值原生生效
             for up in chosen:
-                verify_output_hint(f"{name}.{n}", h, up.node_raw)
+                verify_output_hint(f"{name}.{n}", h, up.output_hint)
                 pairs.append((up, name))
             u = Upstream.node(UpstreamMeta(n, not opt, table.kind(n), name), chosen, collect=collect)
             via_inner.append(u)
             inner[n] = u.call
 
-        direct.append(Upstream.edge(edge_fn, name, required=not optional, inner=inner))
+        direct.append(Upstream.edge(edge_entry.fn, name, required=not optional, inner=inner))
 
     def _prune_disabled(self, nodes: list[Context]) -> list[Context]:
         """disabled = 必选依赖闭包剪枝（``lineage_closure(required_only=True)`` 单源）：
