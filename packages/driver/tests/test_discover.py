@@ -98,11 +98,12 @@ class TestDiscoverTable:
 
     def test_bare_name_lands_in_ungrouped_bucket(self, fake_entry_points):
         """非归组节点：裸节点名（无点号）合法，进空 namespace 桶。"""
-        fake_entry_points.append(_ep("x_y", "mflowy.model.x_y:x_y"))
+        # 伪键取词表外裸名（bare_probe）：真键（如 x_y）可能已被会话内暖驻，暖命中会绕开伪表（顺序依赖）
+        fake_entry_points.append(_ep("bare_probe", "mflowy.model.x_y:x_y"))
         table = discover()
-        assert table["x_y"].value == "mflowy.model.x_y:x_y"
-        assert entry("x_y") is not None
-        assert get_node("x_y") is not None
+        assert table["bare_probe"].value == "mflowy.model.x_y:x_y"
+        assert entry("bare_probe") is not None
+        assert get_node("bare_probe") is not None
 
     def test_plugins_group_overrides_builtin(self, fake_entry_points, caplog):
         caplog.set_level(logging.INFO)
@@ -150,6 +151,40 @@ class TestLoadContract:
             get_node("load__nope")
 
 
+class TestWarmPath:
+    """#137 三步解析流：注册表暖路径先于目录现算——结构钉测（非计时，掐断目录现算仍成功）。"""
+
+    def _kill_discovery(self, monkeypatch):
+        def _boom(*args, **kwargs):
+            raise AssertionError("暖路径不应现算目录（discover 被掐断）")
+
+        monkeypatch.setattr(discover_mod, "discover", _boom)
+
+    def test_node_warm_hit_survives_discovery_death(self, monkeypatch):
+        """priming（注册表有键）后掐断目录现算，get_node 仍成功——钉「先查注册表」的本构。"""
+        import mflowy.driver.edge as e_mod
+
+        @node(namespace="load")
+        def _warm_probe(**kw):
+            return "ok"
+
+        @e_mod.edge
+        def _warm_edge(x):
+            return x
+
+        self._kill_discovery(monkeypatch)
+        assert get_node("load___warm_probe").fn is _warm_probe
+        assert get_edge("_warm_edge").fn is _warm_edge  # 边同构（EDGE_REGISTRY 暖路径）
+
+    def test_cold_then_warm_identity_roundtrip(self, monkeypatch):
+        """冷路径③（ep.load 触发装饰注册）为暖路径①上膛：二次查询零目录现算、同一条目。"""
+        if "x_y" not in discover():
+            pytest.skip("无插件安装（driver-only 环境），真插件冷暖往返不适用")
+        first = get_node("x_y")  # priming：冷解析（目录现算 + 加载 + 身份桥）
+        self._kill_discovery(monkeypatch)
+        assert get_node("x_y") is first  # 暖命中 = 首载条目（dict 直取，不再现算）
+
+
 class TestCatalogMiss:
     """词表 miss 类型化：CatalogMiss ⊂ ModuleNotFoundError，与导入失败类型正交。"""
 
@@ -186,12 +221,13 @@ class TestEdgesNamespace:
     def test_find_edge_probe_semantics(self, fake_entry_points):
         """find_edge 探针：miss/非 edges 桶返 None，坏声明（未标 @edge）ValueError 照常 fail-loud。"""
         fake_entry_points.append(_ep("load.as_df", "mflowy.model.x_y:x_y"))
-        fake_entry_points.append(_ep("edges.train_split", "mflowy.utils.file:read_text"))
+        # 伪键避开真实装插件键（#137 暖路径先查注册表——同名真边已暖驻时不走伪表）
+        fake_entry_points.append(_ep("edges.read_text", "mflowy.utils.file:read_text"))
         cat = EntryPointCatalog()
         assert cat.find_edge("as_df") is None  # 非 edges 桶不可见（纯元数据判定，不 load）
         assert cat.find_edge("nope") is None  # miss
         with pytest.raises(ValueError, match="未注册 @edge"):
-            cat.find_edge("train_split")  # 坏声明不吞——比 None 更响
+            cat.find_edge("read_text")  # 坏声明不吞——比 None 更响
 
     def test_find_edge_import_failure_propagates(self, fake_entry_points):
         """导入失败的边 entry point 不当 miss 吞：真 miss 只认目录无名，load 期异常透传。"""

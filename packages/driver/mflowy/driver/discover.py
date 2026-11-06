@@ -11,10 +11,13 @@ YAML 列表项键 / NodeEntry.name 同构——寻址单源贯穿）；分组视
 （节点名含 ``__`` 的病理）在装配期 warning——扁平表将其暴露为可见冲突而非静默并存。
 
 模块级门面（``get_node``/``get_edge``/``find_edge``/``list_all``/``entry``）委托唯一（节点查询键一律 node_key；边查询令牌=裸边名，内部组 ``edges__`` 键）
-adapter（``EntryPointCatalog``：entry points 现算零缓存——热更新，安装/卸载即时可见），
-是目录消费的唯一姿势。全部查询只读元数据零 import；import 惰性发生在加载，且经
-身份桥（``node_of``/``edge_of``——注册表随契约居 node.py/edge.py，#132 归居）校验
-装饰性（只查装饰、不比名），坏声明 fail-loud。
+adapter（``EntryPointCatalog``），是目录消费的唯一姿势。解析三步（#137）：
+①注册表暖命中（``NODE_REGISTRY``/``EDGE_REGISTRY``——进程内已加载节点 dict 量级，
+零目录现算）→ ②miss 才现算目录表（纯元数据零 import，安装即时可见保留）→ ③首载
+``ep.load()`` 触发装饰注册，经身份桥（``node_of``/``edge_of``——随注册表居
+node.py/edge.py，#132 归居）校验装饰性（只查装饰、不比名），坏声明 fail-loud。
+热更新赌注收窄：卸载/后组覆盖的即时可见让渡（暖命中驻留——进程内中途卸载或
+覆盖包比安装更罕见）。
 
 词表 miss 类型化：``CatalogMiss`` ⊂ ModuleNotFoundError =「能力没装」，与 ``ep.load()``
 的导入失败（裸 ModuleNotFoundError =「装了但导不进」）按类型二分——探针
@@ -29,10 +32,8 @@ from importlib.metadata import EntryPoint, entry_points
 from typing import TYPE_CHECKING, Literal, overload
 
 from .config import node_key, split_node_key
-
-if TYPE_CHECKING:
-    from .edge import Edge
-    from .node import Node
+from .edge import EDGE_REGISTRY, Edge, edge_of
+from .node import NODE_REGISTRY, Node, node_of
 
 logger = logging.getLogger(__name__)
 
@@ -175,19 +176,16 @@ def _resolve(key: str) -> EntryPoint:
     return ep
 
 
-def _checked(ep: EntryPoint, kind: str, bridge_mod: str, bridge_name: str):
+def _checked(ep: EntryPoint, kind: str, bridge):
     """加载 entry point 并校验装饰性（#126：身份桥代旧 hasattr——零属性挂载）。
 
     语义与旧 ``hasattr(fn, valid)`` 等价：**只查「声明指向的函数已装饰」，不比名**
     ——entry point 名与装饰器 namespace 的逐字一致是 CR 交叉检查面（AGENTS：
     错 namespace 属静默面，加载期不拦）。ep.load() 的模块导入触发装饰器注册。
+    bridge（node_of/edge_of）模块级直取——#132 后 node/edge 零 discover 依赖，
+    导入期无环（旧「延迟导入防环」注释随改）。
     """
-    from importlib import import_module
-
     fn = ep.load()
-    bridge = getattr(
-        import_module(bridge_mod), bridge_name
-    )  # node_of / edge_of（延迟导入防环；kind 仅装饰器名/#128 文件改名）
     try:
         return bridge(fn)
     except ValueError:
@@ -198,17 +196,23 @@ def _checked(ep: EntryPoint, kind: str, bridge_mod: str, bridge_name: str):
 
 
 def _load_node(key: str) -> Node:
-    """解析节点 entry point → Node（坏声明 fail-loud）。"""
-    return _checked(_resolve(key), "node", "mflowy.driver.node", "node_of")
+    """三步解析（#137）：①注册表暖命中 → ②目录查表（miss 语义不变）→ ③加载+身份桥。"""
+    if (warm := NODE_REGISTRY.get(key)) is not None:
+        return warm
+    return _checked(_resolve(key), "node", node_of)
 
 
 def _load_edge(key: str) -> Edge:
-    """解析边 entry point → Edge（坏声明 fail-loud）。"""
-    return _checked(_resolve(key), "edge", "mflowy.driver.edge", "edge_of")
+    """边版三步解析（与节点同构，注册表 = EDGE_REGISTRY）。"""
+    if (warm := EDGE_REGISTRY.get(key)) is not None:
+        return warm
+    return _checked(_resolve(key), "edge", edge_of)
 
 
 class EntryPointCatalog:
-    """唯一 adapter：entry points 目录现算（零缓存，安装/卸载即时可见），miss 抛 CatalogMiss 带 Available 列表。"""
+    """唯一 adapter：三步解析（注册表暖路径 → 目录现算查表 → 加载+身份桥），miss 抛
+    CatalogMiss 带 Available 列表；目录面保持现算（安装即时可见），卸载/后组覆盖
+    即时可见让渡于暖驻留。"""
 
     @overload
     def node(self, key: str, raw: Literal[True]) -> Callable: ...
