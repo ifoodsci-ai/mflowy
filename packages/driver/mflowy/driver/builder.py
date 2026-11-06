@@ -7,7 +7,7 @@ fail-loud）；边完全由签名机器对节点表解析（``edges`` 词表① 
 
 - 增量编译：按 YAML 序逐节点构造 Context → 从节点函数解析 direct 列 Upstream（边内层
   依赖随播种进 ``ctx._via_upstreams``）→ 查表校验 → 接线 prevs/nexts → 入表（组名保序 /
-  node_key 整相双索引）；取值闭包经 ``binding.Upstream.node``/``Upstream.edge`` 工厂
+  node_key 整相双索引）；取值闭包经 ``context.Upstream.node``/``Upstream.edge`` 工厂
   构造——本模块只编译，零运行期代码
 - ``disabled`` = 编译期**必选依赖闭包**剪枝：可选依赖剥除（MISSING 落回签名默认值），
   collect 部分出局只收幸存成员
@@ -27,20 +27,12 @@ import yaml
 from mflowy.utils.file import read_text
 from mflowy.utils.jinja import get_yaml_template_env
 
-from .binding import (
-    Upstream,
-    UpstreamMeta,
-    address_kind,
-    edge_hint,
-    non_annotated_params,
-    param_edge_names,
-    raise_if_params_collide,
-    verify_output_hint,
-)
-from .config import Conf, NodeConf, parse_flow_item, split_node_key
-from .context import Context
+from .config import Conf, NodeConf, address_kind, parse_flow_item, split_node_key
+from .context import Context, Upstream, UpstreamMeta
 from .dag import DAG, lineage_closure
 from .discover import find_edge, get_node
+from .node import raise_if_params_collide
+from .reflect import edge_hint, non_annotated_params, param_edge_names, verify_output_hint
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +68,7 @@ class NodeTable:
 
     def kind(self, name: str) -> Literal["namespace", "node"]:
         """寻址命中的索引层（先组名后 node_key）——编译产物 type 分类的依据
-        （语义单源 ``binding.address_kind``，对本编译期表投影）。"""
+        （语义单源 ``config.address_kind``，对本编译期表投影）。"""
         return address_kind(name, self._by_ns)
 
 
@@ -197,7 +189,7 @@ class Builder:
                 entry.validate_params(conf.params, nid)  # 编译期 schema 校验（#131）——运行期 validate_call 防线不变
             try:
                 direct, via_inner, pairs, by_param = self._resolve_upstreams(fn, table, nid)
-            except TypeError as e:  # 声明不一致（binding.verify_output_hint）
+            except TypeError as e:  # 声明不一致（reflect.verify_output_hint）
                 raise ValueError(f"节点 {nid} 参数边类型不一致：{e}") from e
             prevs = list(dict.fromkeys(c for c, _ in pairs))
             ctx = Context(

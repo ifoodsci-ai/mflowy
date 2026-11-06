@@ -3,8 +3,8 @@
 直连 = via None；经边消费 = via 边名（边自指条目过滤——#59）；顺序 = 函数签名序。
 """
 
-from mflowy.driver.binding import UpstreamMeta
 from mflowy.driver.config import node_key
+from mflowy.driver.context import UpstreamMeta
 from mflowy.driver.module import list_nodes
 
 

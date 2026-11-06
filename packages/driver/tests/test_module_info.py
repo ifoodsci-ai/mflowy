@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from typing import Annotated
 
 import pytest
-from mflowy.driver.binding import UpstreamMeta
+from mflowy.driver.context import UpstreamMeta
 from mflowy.driver.discover import CatalogMiss
 from mflowy.driver.module import NodeEntry, get_node_info, list_nodes
 from mflowy.driver.node import node

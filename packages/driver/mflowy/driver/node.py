@@ -27,8 +27,8 @@ from typing import TYPE_CHECKING, Annotated, Concatenate, Protocol, get_args, ge
 
 from pydantic import ConfigDict, Field, ValidationError, create_model, validate_call
 
-from .binding import param_edge_names, raise_if_params_collide
 from .config import node_key
+from .reflect import param_edge_names
 
 if TYPE_CHECKING:
     from .context import Context
@@ -41,6 +41,20 @@ type Middleware[R] = Callable[[Context, Chain[R]], R]
 # 名字键注册表（#132 归居契约模块——注册状态随契约 + 唯一写者同居；装饰期零
 # import discover——直接边已删、传递边经 context.get_node 惰性，导入期图无环）：<node_key, Node>
 NODE_REGISTRY: dict[str, Node] = {}
+
+
+def raise_if_params_collide(edge_names: frozenset[str], params: dict[str, object], node_id: str) -> None:
+    """YAML params 键 ∩ 参数边名 → raise（M1）：同名键会静默覆盖参数边绑定值，宁可拒绝。
+
+    判定与报错文案的单源（#138 拆居：Node 参数面守卫与运行期防线同所）：
+    编译期（builder）消费——直跑路径经 handler_wrapper 运行期防线。
+    """
+    clash = params.keys() & edge_names
+    if clash:
+        raise ValueError(
+            f"节点 {node_id} YAML params 撞参数边名：{sorted(clash)}——"
+            "同名键将覆盖参数边绑定值；请改用其他键名（用户可配参数走 Annotated 声明）"
+        )
 
 
 class Node[R](Protocol):
@@ -154,7 +168,7 @@ def node[R](*middlewares: Middleware, namespace: str = ""):
         edge_names = param_edge_names(fn)  # M1 撞名判定装饰期一次（运行期零反射开销）
 
         def handler_wrapper(ctx: Context, **kwargs) -> R:
-            # 运行期防线（M1）：护住绕过编译的直跑路径；判定/文案单源在 binding
+            # 运行期防线（M1）：护住绕过编译的直跑路径；判定/文案单源 raise_if_params_collide（本模块）
             if ctx.conf.params:
                 raise_if_params_collide(edge_names, ctx.conf.params, f"[{ctx.conf.node_key}]")
             return valid_fn(**{**kwargs, **ctx.conf.params})

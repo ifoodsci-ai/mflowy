@@ -3,30 +3,39 @@
 - **编译期**（builder）：签名对节点表解析，产出 ``(direct, via)`` 两列 ``Upstream``
   挂到 ``ctx.upstreams``；``ctx._upstream_pairs`` 为 (上游 ctx, 边名|None) 绑定序记录，
   供图物化与中间件侧信道（``upstream_contexts``）消费。
-- **运行期**：``_bind`` 逐 direct 项惰性取值——取值闭包（``binding.Upstream.node``/
-  ``Upstream.edge`` 构造，拉起/哨兵去重/整形居 binding）完成拉起未执行
+- **运行期**：``_bind`` 逐 direct 项惰性取值——取值闭包（``Upstream.node``/
+  ``Upstream.edge`` 工厂构造，拉起/哨兵去重/整形与本模块执行面同居）完成拉起未执行
   上游与整形（血缘 = ``prevs`` 血缘视图派生）；``MISSING``（零命中）省略参数，
   Python 签名默认值原生生效。
 
-注入契约（注解驱动，判定源在 ``binding.edge_hint``）：
+注入契约（注解驱动，判定源在 ``reflect.edge_hint``）：
 
 - 收集形态 → 声明序迭代器；单值形态 → 最近命中直注；
 - 可选边零命中 → 编译期即省略（无 Upstream 条目），签名默认值调用期生效。
+
+绑定期数据结构（#138 拆居——反射面归 ``reflect`` 工具包，执行面随唯一运行期消费者
+居此：取值闭包的定义与执行同所）：
+
+- ``UpstreamMeta`` / ``Upstream``：词表投影与编译产物共用的上游数据结构；构造走
+  ``Upstream.node`` / ``Upstream.edge``（生产唯一构造点，nodes 与取值闭包的列表同源
+  在工厂结构焊死）
+- ``MISSING`` / ``_NOT_RUN``：两大协议哨兵——空边（零命中省略注入，与命中且值为 None
+  区分）/ 未执行（拉起判定，与已执行返回 None 区分）
 """
 
 from __future__ import annotations
 
 import itertools
 import logging
+from collections.abc import Callable
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, get_type_hints
+from typing import TYPE_CHECKING, Any, Literal, get_type_hints
 
 from mflowy.utils.capture import capture_prints
 from mflowy.utils.mlflow import active_tracking
 
-from .binding import _NOT_RUN, MISSING, Upstream
 from .config import NodeConf
 
 if TYPE_CHECKING:
@@ -34,9 +43,101 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# 空边哨兵：区分"零命中（省略参数）"与"命中且值为 None"；_bind 据此省略注入
+MISSING = object()
+# 执行哨兵：区分"未执行"与"已执行返回 None"；恒等（is）判定，== 遇 DataFrame 会崩。
+# 拉起闭包（Upstream.node）据此判定前驱未执行
+_NOT_RUN = object()
+
 # 分组计数 map：{node_key: count(0)}——同 key 多实例序号独立于其他类型（跨配置
 # 编辑的图 diff 稳定：插入他类型节点不动本组序号）
 _counter_map: ContextVar[dict[str, itertools.count] | None] = ContextVar("node_counter_map", default=None)
+
+
+@dataclass
+class UpstreamMeta:
+    """上游元数据：词表投影（NodeEntry.upstream / NodeInfo.upstream）与编译产物共用。
+
+    词表投影是**编写 YAML 的索引**（list_nodes=节点索引、get_node_info=单节点模板）：
+    ``type`` 标明 ``name`` 的寻址性质——``namespace``（组名寻址：YAML 更早位置需有
+    该组节点）、``node``（node_key 整相寻址）、``edge``（编译产物的边自指条目；
+    词表投影过滤 ``name == via`` 的边自指，边信息由 edges 词表承载）；``via`` 为
+    消费途经的边名（None=直连）。namespace/node 二分的语义单源 = ``config.address_kind``。
+    """
+
+    name: str
+    required: bool
+    type: Literal["node", "edge", "namespace"] = "node"
+    via: str | None = None
+    expect: str | None = None
+    default: str | None = None
+
+
+@dataclass
+class Upstream:
+    """编译期上游：meta + 取值闭包（call=惰性拉起+哨兵去重+整形）——期望注解不入条目
+    （编译期校验经 verify_output_hint 即时消费，运行期复核已随 #57 退役，#131 雾三收口）。
+
+    构造走 ``node`` / ``edge`` 工厂（生产代码唯一构造点，测试手搭缝位可直构）——
+    ``nodes`` 与 ``call`` 闭包捕获的**同一列表对象**只在工厂里结构焊死：剪枝期
+    就地过滤（``Context.rewire`` 的 ``nodes[:] = ...``）两边天然同步，被剥除的
+    可选依赖经 MISSING 省略注入落回签名默认值。边自指条目（type="edge"）
+    nodes 恒空——其依赖由 via 列的内层条目承载。
+    """
+
+    meta: UpstreamMeta
+    call: Callable[[], Any]
+    nodes: list[Context] = field(default_factory=list)
+
+    @classmethod
+    def node(
+        cls,
+        meta: UpstreamMeta,
+        chosen: list[Context],
+        *,
+        collect: bool,
+    ) -> Upstream:
+        """直连取值条目工厂（meta.type="node"）：惰性拉起（哨兵去重）+
+        collect/single 整形。
+
+        上游按鸭子协议消费（``result`` 哨兵 + ``run``）——拉起是绑定期行为
+        （CONTEXT.md「拉起」词条），非图拓扑知识。"""
+
+        nodes = chosen  # 与 call 闭包焊死同一列表——全仓唯一同源点
+
+        def call():
+            values = []
+            for c in nodes:
+                if c.result is _NOT_RUN:
+                    c.run()  # 惰性拉起：绑定/子图入口发现前驱未执行
+                values.append(c.result)
+            if not values:
+                return MISSING
+            return iter(values) if collect else values[0]
+
+        return cls(meta, call, nodes)
+
+    @classmethod
+    def edge(
+        cls,
+        edge_fn: Callable,
+        name: str,
+        *,
+        required: bool,
+        inner: dict[str, Callable[[], Any]],
+    ) -> Upstream:
+        """边自指条目工厂（meta.type="edge"，nodes 恒空）：内层取值闭包聚合（MISSING
+        省略参数，边函数签名默认值原生生效）→ 边函数调用。"""
+
+        def edge_call():
+            params = {}
+            for n, fetch in inner.items():
+                v = fetch()
+                if v is not MISSING:
+                    params[n] = v
+            return edge_fn(**params)
+
+        return cls(UpstreamMeta(name, required, "edge", via=name), edge_call)
 
 
 @dataclass

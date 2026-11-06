@@ -15,9 +15,10 @@ from inspect import Parameter
 from types import UnionType
 from typing import Literal, TypeAliasType, Union, get_args, get_origin
 
-from .binding import UpstreamMeta, address_kind, non_annotated_params
-from .config import node_key
+from .config import address_kind, node_key
+from .context import UpstreamMeta
 from .discover import CatalogMiss, find_edge, get_node, list_all
+from .reflect import non_annotated_params
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +121,7 @@ def _upstream_metas(fn) -> list[UpstreamMeta]:
     namespaces = {ns for ns in list_all() if ns and ns != "edges"}
 
     def _kind(name: str) -> Literal["namespace", "node"]:
-        return address_kind(name, namespaces)  # 语义单源在 binding（编译期 NodeTable 同源）
+        return address_kind(name, namespaces)  # 语义单源在 config（编译期 NodeTable 同源）
 
     metas: list[UpstreamMeta] = []
     for name, hint, optional in non_annotated_params(fn):
