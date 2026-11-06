@@ -31,7 +31,7 @@ from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, Literal, get_type_hints
+from typing import TYPE_CHECKING, Any, Literal
 
 from mflowy.utils.capture import capture_prints
 from mflowy.utils.mlflow import active_tracking
@@ -260,7 +260,8 @@ class Context:
 
     @property
     def output_hint(self):
-        return get_type_hints(self.node_raw).get("return")
+        """返回注解（编译期类型门的上游侧）：装饰期冻结核 ``Node.return_hint``（#138——活反射退役）。"""
+        return self.node.return_hint
 
     def upstream_contexts(self) -> list[Context]:
         """绑定序上游 ctx（含经由边消费的传递上游）——中间件侧信道（如 df_diff 前值回看）。"""

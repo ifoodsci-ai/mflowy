@@ -11,8 +11,10 @@ from typing import Annotated
 import pytest
 from mflowy.driver.context import UpstreamMeta
 from mflowy.driver.discover import CatalogMiss
+from mflowy.driver.edge import edge
 from mflowy.driver.module import NodeEntry, get_node_info, list_nodes
 from mflowy.driver.node import node
+from mflowy.driver.reflect import upstream_params
 from pydantic import Field
 
 
@@ -127,6 +129,33 @@ def test_optional_binding_carries_default(fake_plugins):
     ]
 
 
+def test_projection_from_decorated_frozen_core(fake_plugins):
+    """词表投影读装饰条目冻结核（#138）：节点四元组 + 边四元组查询期派生 via 展开 / default
+    repr / expect 渲染（消费路径零活反射由根级静态钉测锁定）。"""
+
+    # 注册键跨模块唯一（#140 替身缝顺序不变式）：桩名带本模块前缀
+    @edge
+    def _tmi_edge(b: int, x_transformer: str | None = None) -> int:
+        return b
+
+    @node()
+    def _tmi_node(payload, _tmi_edge: int, top_k=5, label: Annotated[str, "标签"] = "x", **_):
+        """替身：直连 + 冻结边展开 + 用户参数混排。"""
+
+    fake_plugins.setdefault("edges", {})["_tmi_edge"] = _tmi_edge
+    fake_plugins.setdefault("load", {})["frozen"] = _tmi_node
+    info = get_node_info("load", "frozen")
+    assert info.upstream == [
+        UpstreamMeta(name="payload", required=True),
+        UpstreamMeta(name="b", required=True, via="_tmi_edge", expect="int"),
+        UpstreamMeta(name="x_transformer", required=False, via="_tmi_edge", expect="str | None", default="None"),
+        UpstreamMeta(name="top_k", required=False, default="5"),
+    ]
+    assert "label" in info.parameters_schema["properties"]
+    load = next(i for i in list_nodes() if i.namespace == "load")
+    assert load.nodes == [NodeEntry(name="load__frozen", upstream=info.upstream)]
+
+
 def test_list_nodes_filters_edges_and_structures(fake_plugins):
     """edges 桶不对外（Q10）；节点条目结构化 {name, bindings}——依赖可见且类型可判别。"""
     from mflowy.driver.module import list_nodes
@@ -169,7 +198,9 @@ def test_list_nodes_degrades_bare_name_on_missing_extra(monkeypatch):
         def node(self, key):
             if "plotly_thing" in key:
                 raise ImportError("No module named 'plotly'")
-            return SimpleNamespace(fn=_ok_node)  # 单面契约：条目对象（#137 raw 面退役）
+            return SimpleNamespace(
+                fn=_ok_node, upstreams_schema=upstream_params(_ok_node)
+            )  # 条目替身：冻结核面同源派生
 
         def find_edge(self, name):
             return None  # 无边函数——直连形态
@@ -196,7 +227,7 @@ def test_list_nodes_degrades_on_edge_import_failure(monkeypatch):
             return {"model": ["final_eval"]}
 
         def node(self, key):
-            return SimpleNamespace(fn=_node_w_edge)  # 节点本体可导入
+            return SimpleNamespace(fn=_node_w_edge, upstreams_schema=upstream_params(_node_w_edge))  # 节点本体可导入
 
         def find_edge(self, name):
             raise ImportError("No module named 'sklearn'")  # 边函数住缺依赖模块
@@ -230,7 +261,7 @@ def test_list_nodes_miss_during_enumeration_propagates(monkeypatch):
         def node(self, key):
             if key == "load__ghost":
                 raise CatalogMiss("load", "ghost", ["ok"])  # 枚举期目录变更：表里有名、目录已 miss
-            return SimpleNamespace(fn=_ok_node)
+            return SimpleNamespace(fn=_ok_node, upstreams_schema=upstream_params(_ok_node))
 
         def find_edge(self, name):
             return None

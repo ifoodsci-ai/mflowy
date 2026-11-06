@@ -34,10 +34,13 @@ class TestNonAnnotatedParams:
         params = non_annotated_params(fn)
         assert [(n, o) for n, _, o in params] == [("a", False)]  # Annotated=用户可配，非参数边
 
-    def test_param_edge_names_projection(self):
-        def fn(load: int, target: Annotated[str, "x"] = "y"): ...
+    def test_param_edge_names_is_frozen_face_projection(self):
+        """名集 = 冻结面纯投影（#138：输入 upstreams_schema，零反射——node/builder 共用）。"""
 
-        assert param_edge_names(fn) == frozenset({"load"})
+        def fn(load: int, clean: str | None = None, target: Annotated[str, "x"] = "y"): ...
+
+        assert param_edge_names(upstream_params(fn)) == frozenset({"load", "clean"})
+        assert param_edge_names(()) == frozenset()
 
     def test_three_tuple_is_projection_of_four_tuple(self):
         """单源：三元组 = 四元组去 default 位（同一反射单遍，第二份拷贝即分叉债）。"""
@@ -187,18 +190,18 @@ class TestEdgeHint:
 
 
 class TestVerifyOutputHint:
-    def test_compatible_passes(self):
-        def up() -> int: ...
+    """签名收预计算 hint（#138）：节点/边两侧直传冻结核 return_hint，内部零反射。"""
 
-        verify_output_hint("a", int, up)
+    def test_compatible_passes(self):
+        verify_output_hint("a", int, int)
 
     def test_incompatible_raises(self):
-        def up() -> str: ...
-
         with pytest.raises(TypeError, match="不兼容"):
-            verify_output_hint("a", int, up)
+            verify_output_hint("a", int, str)
 
     def test_upstream_no_return_hint_skips(self):
-        def up(): ...
+        verify_output_hint("a", int, None)  # 上游无返回注解：跳过
 
-        verify_output_hint("a", int, up)  # 上游无返回注解：跳过
+    def test_collect_and_optional_unwrapped(self):
+        verify_output_hint("a", Iterator[int] | None, int)  # 收集边取元素型、可选取 X
+        verify_output_hint("a", tuple, tuple[int, str])  # origin 相等即兼容

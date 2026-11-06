@@ -10,7 +10,9 @@ Annotated = **节点自身参数**（``params_contract`` → ``param_schema``，
 读冻结核、零活反射；本模块函数本体留作工具包本体与测试替身缝。
 
 - ``upstream_params`` / ``ParamEdge``：参数边四元组 (name, hint, optional, default)
-- ``non_annotated_params`` / ``param_edge_names``：四元组的三元组 / 名集投影
+- ``non_annotated_params``：四元组的三元组投影（fn 级活反射——全目录对账的活反射 oracle）
+- ``param_edge_names``：冻结面 ``upstreams_schema`` → 参数边名集（M1 撞名判定的名集单源；
+  纯投影零反射——node 运行期防线与 builder 编译期共用）
 - ``annotated_param_names``：Annotated 命名参数名（@edge 守卫的判定源）
 - ``params_contract``：Annotated 参数 → (校验模型, JSON Schema, fields)——一次派生三面
 - ``return_hint``：返回注解（裸注解语义——Annotated 剥除）
@@ -27,7 +29,7 @@ Annotated = **节点自身参数**（``params_contract`` → ``param_schema``，
 from __future__ import annotations
 
 import inspect
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from types import UnionType
 from typing import Annotated, NamedTuple, TypeAliasType, Union, get_args, get_origin, get_type_hints
 
@@ -82,9 +84,11 @@ def non_annotated_params(fn: Callable) -> list[tuple[str, object, bool]]:
     return [(e.name, e.hint, e.optional) for e in upstream_params(fn)]
 
 
-def param_edge_names(fn: Callable) -> frozenset[str]:
-    """参数边候选名（``upstream_params`` 的名字投影）——M1 撞名判定的名集。"""
-    return frozenset(e.name for e in upstream_params(fn))
+def param_edge_names(upstreams: Iterable[ParamEdge]) -> frozenset[str]:
+    """冻结面 → 参数边名集（M1 撞名判定的名集单源，#138）：输入为装饰期冻结核
+    ``upstreams_schema``（或 ``upstream_params`` 产物）——纯投影零反射，node 运行期防线
+    与 builder 编译期共用（名集投影一处定义）。"""
+    return frozenset(e.name for e in upstreams)
 
 
 def annotated_param_names(fn: Callable) -> list[str]:
@@ -177,15 +181,16 @@ def _unwrap(expect: object) -> object:
     return expect
 
 
-def verify_output_hint(name: str, expect: object, fn: Callable):
+def verify_output_hint(name: str, expect: object, output_hint: object) -> None:
     """编译期校验：消费方参数注解 vs 上游/边函数返回注解，不兼容 raise TypeError。
 
-    ``_unwrap`` 归一（别名解包、``X | None`` 取 X、收集边取元素型）后比对——
-    相等或 origin 相等（``tuple`` vs ``tuple[A, B]``）即兼容；多成员并集无单一
-    比对域，跳过（静态哲学下不做运行期兜底，#57）。optionality 只影响空边省略
-    注入，不参与兼容性判定（可选边不匹配同样编译期 fail-raise）。
+    两侧皆收预计算 hint（#138：节点侧 ``Context.output_hint`` ← ``Node.return_hint``、
+    边侧 ``Edge.return_hint``、消费方 ``upstreams_schema`` 四元组 hint——装饰期冻结核
+    直传，本函数零反射）。``_unwrap`` 归一（别名解包、``X | None`` 取 X、收集边取
+    元素型）后比对——相等或 origin 相等（``tuple`` vs ``tuple[A, B]``）即兼容；多成员
+    并集无单一比对域，跳过（静态哲学下不做运行期兜底，#57）。optionality 只影响空边
+    省略注入，不参与兼容性判定（可选边不匹配同样编译期 fail-raise）。
     """
-    output_hint = get_type_hints(fn).get("return")
     if expect is None or output_hint is None:
         return
     lhs, rhs = _unwrap(expect), _unwrap(output_hint)

@@ -12,12 +12,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from mflowy.driver.builder import Builder
 from mflowy.driver.context import _NOT_RUN, MISSING, Context, Upstream, UpstreamMeta
 from mflowy.driver.node import node
+
+if TYPE_CHECKING:
+    from mflowy.driver.node import Node
 
 
 def _yaml(tmp_path, name: str, *nodes: str) -> Path:
@@ -120,6 +123,17 @@ class TestLineageViews:
             dag.nodes[0].nexts = ()  # type: ignore[reportAttributeAccessIssue]  # 只读负例：断言 AttributeError
         with pytest.raises(AttributeError):
             dag.nodes[1].prevs = ()  # type: ignore[reportAttributeAccessIssue]  # 只读负例：断言 AttributeError
+
+
+def test_output_hint_reads_frozen_return_hint():
+    """output_hint ← Node.return_hint（#138 装饰期冻结核；编译期类型门上游侧零活反射）。"""
+    from types import SimpleNamespace
+
+    from mflowy.driver.config import NodeConf
+
+    marker = object()
+    ctx = Context(NodeConf(name="n", node_key="load__x"), node=cast("Node", SimpleNamespace(return_hint=marker)))
+    assert ctx.output_hint is marker
 
 
 # ---------- 取值闭包工厂与协议哨兵（#138 拆居：执行面随运行期消费者）----------

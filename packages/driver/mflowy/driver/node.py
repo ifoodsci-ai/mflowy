@@ -163,7 +163,7 @@ def node[R](*middlewares: Middleware, namespace: str = ""):
             fn
         )  # 工厂形态（位置参形态与泛型签名不匹配）
         upstreams = reflect.upstream_params(fn)  # 反射核冻结（#138）：参数边四元组装饰期一次
-        edge_names = frozenset(e.name for e in upstreams)  # M1 名集 = 冻结核投影（运行期零反射）
+        edge_names = reflect.param_edge_names(upstreams)  # M1 名集 = 冻结核投影（与 builder 编译期同源）
 
         def handler_wrapper(ctx: Context, **kwargs) -> R:
             # 运行期防线（M1）：护住绕过编译的直跑路径；判定/文案单源 raise_if_params_collide（本模块）

@@ -6,18 +6,21 @@
 参数边经 ``NodeEntry.upstream`` 独立下发，投影为类型化的 ``UpstreamMeta``
 （``type`` 判别节点/边，``via`` 标注消费途经的边名；``name == via`` 的边自指
 条目不进词表投影——边信息由 edges 词表承载）——词表投影与校验/注入通道分离。
+
+投影读装饰期冻结核（#138）：节点/边 ``upstreams_schema`` 四元组 → via 展开 / 寻址
+kind / default repr / expect 渲染，**查询期派生、零活反射**（投影依赖词表，装饰期
+不算——import 顺序脆弱性红线）。
 """
 
-import inspect
 import logging
 from dataclasses import dataclass
-from inspect import Parameter
 from typing import Literal
 
 from .config import address_kind, node_key
 from .context import UpstreamMeta
 from .discover import CatalogMiss, find_edge, get_node, list_all
-from .reflect import non_annotated_params, render_hint
+from .node import Node
+from .reflect import ParamEdge, render_hint
 
 logger = logging.getLogger(__name__)
 
@@ -57,9 +60,9 @@ def _ns_info(table: dict, ns: str) -> NamespaceNodesInfo:
     nodes = []
     for node in sorted(table[ns]):
         try:
-            fn = get_node(node_key(ns, node)).fn
+            entry = get_node(node_key(ns, node))
             # _upstream_metas 同在守卫区：其边探针 find_edge 的 ep.load() 同样可能撞缺 extra
-            metas = _upstream_metas(fn)
+            metas = _upstream_metas(entry)
         except CatalogMiss:
             raise  # 词表 miss 不是「坏节点降级」——枚举期目录变更 fail-loud
         except ImportError as e:
@@ -90,7 +93,7 @@ def get_node_info(namespace: str, node_name: str) -> NodeInfo:
 
     对式 (namespace, node_name) 是 MCP 工具面的外部契约（用户分开填两组）；
     内部组 node_key 查目录——词表边界翻译。schema 取注册表 ``Node.param_schema``
-    （装饰期自签名派生，#126——派生逻辑单源居 node.py）。
+    （装饰期自签名派生，#126——派生逻辑单源居 reflect 工具包，#138）。
     """
     entry = get_node(node_key(namespace, node_name))
     fn = entry.fn
@@ -100,41 +103,37 @@ def get_node_info(namespace: str, node_name: str) -> NodeInfo:
         namespace,
         node_name,
         (doc or "").strip().splitlines()[0] if doc and doc.strip() else "",
-        _upstream_metas(fn),
+        _upstream_metas(entry),
         entry.param_schema,
     )
 
 
-def _binding_default(fn, name: str) -> str | None:
-    """参数默认值渲染（repr 字符串；必选无默认为 None）——零命中省略注入时的落点值。"""
-    default = inspect.signature(fn).parameters[name].default
-    return None if default is Parameter.empty else repr(default)
+def _binding_default(e: ParamEdge) -> str | None:
+    """参数默认值渲染（四元组 default 位的 repr；必选无默认为 None）——零命中省略注入时的落点值。"""
+    return repr(e.default) if e.optional else None
 
 
-def _upstream_metas(fn) -> list[UpstreamMeta]:
+def _upstream_metas(entry: Node) -> list[UpstreamMeta]:
     """参数边依赖投影（单一真相，YAML 索引）：直连参数 → via=None；命中边目录 →
     边函数自身参数展开为传递上游（via=边名）——``name == via`` 的边自指条目不进
     投影（边信息由 edges 词表承载）。同名跨参数各保留条目（不去重）。``type`` 按
     活目录分类：name 是已注册命名空间 → ``namespace``（组寻址，与编译期查表次序
-    一致），否则 ``node``（node_key 整相）。"""
+    一致），否则 ``node``（node_key 整相）。读节点/边冻结核（#138）——零活反射。"""
     namespaces = {ns for ns in list_all() if ns and ns != "edges"}
 
     def _kind(name: str) -> Literal["namespace", "node"]:
         return address_kind(name, namespaces)  # 语义单源在 config（编译期 NodeTable 同源）
 
+    def _meta(e: ParamEdge, via: str | None) -> UpstreamMeta:
+        return UpstreamMeta(
+            e.name, not e.optional, _kind(e.name), via, expect=render_hint(e.hint), default=_binding_default(e)
+        )
+
     metas: list[UpstreamMeta] = []
-    for name, hint, optional in non_annotated_params(fn):
-        edge_entry = find_edge(name)
+    for e in entry.upstreams_schema:
+        edge_entry = find_edge(e.name)
         if edge_entry is None:
-            metas.append(
-                UpstreamMeta(
-                    name, not optional, _kind(name), None, expect=render_hint(hint), default=_binding_default(fn, name)
-                )
-            )
+            metas.append(_meta(e, None))
         else:
-            edge_fn = edge_entry.fn
-            metas += [
-                UpstreamMeta(n, not opt, _kind(n), name, expect=render_hint(h), default=_binding_default(edge_fn, n))
-                for n, h, opt in non_annotated_params(edge_fn)
-            ]
+            metas += [_meta(inner, e.name) for inner in edge_entry.upstreams_schema]
     return metas
