@@ -20,15 +20,14 @@ M1 撞名运行期防线内嵌）。
 
 from __future__ import annotations
 
-import inspect
 import logging
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Annotated, Concatenate, Protocol, get_args, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Concatenate, Protocol
 
-from pydantic import ConfigDict, Field, ValidationError, create_model, validate_call
+from pydantic import ConfigDict, ValidationError, validate_call
 
 from .config import node_key
-from .reflect import param_edge_names
+from .reflect import param_edge_names, params_contract
 
 if TYPE_CHECKING:
     from .context import Context
@@ -74,38 +73,6 @@ class Node[R](Protocol):
         """编译期参数校验面（#131 契约扩展）：已知键子集对装饰期模型 validate——
         与运行期 validate_call 防线同源（lax 一致、未知键放过）。"""
         ...
-
-
-def _bridge_metadata(m):
-    """旧式 Annotated[T, "描述"] 的字符串 metadata 桥接为 Field(description=...)。
-
-    pydantic 忽略无法识别的 Annotated metadata，不桥接则描述进不了 JSON Schema。
-    """
-    return Field(description=m) if isinstance(m, str) else m
-
-
-def _params_contract(fn: Callable) -> tuple[type, dict]:
-    """Annotated 参数 → (校验模型, JSON Schema 投影)——装饰期一次派生两面（#131）。
-
-    裸类型参数（middleware 注入域）排除；默认值取自函数签名——默认值的单一事实源
-    是签名，Field 只带约束与描述。无 Annotated 参数时空模型 + 空 schema 字面量。
-    """
-    hints = get_type_hints(fn, include_extras=True)
-    sig = inspect.signature(fn)
-    fields: dict = {}
-    for name, hint in hints.items():
-        if get_origin(hint) is not Annotated:
-            continue
-        args = get_args(hint)
-        if not args:
-            continue
-        typ = Annotated[args[0], *map(_bridge_metadata, args[1:])]
-        p = sig.parameters.get(name)
-        fields[name] = (typ, ...) if p is None or p.default is inspect.Parameter.empty else (typ, p.default)
-    if not fields:
-        return create_model("_Params"), {"type": "object", "properties": {}}
-    model = create_model("_Params", **fields)
-    return model, model.model_json_schema()
 
 
 class _NodeEntry[R]:
@@ -188,7 +155,7 @@ def node[R](*middlewares: Middleware, namespace: str = ""):
         for mw in (*middlewares, mlflow_log):
             chain = wrap(chain, mw)
 
-        params_model, schema = _params_contract(fn)
+        params_model, schema, _ = params_contract(fn)
         entry = _NodeEntry(fn, list(middlewares), schema, params_model, namespace or None, chain)
         NODE_REGISTRY[node_key(namespace, fn.__name__)] = entry  # 注册表单源（#140：身份桥退役，发现流同一查表）
         return fn

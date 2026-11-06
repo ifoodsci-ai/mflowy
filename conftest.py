@@ -35,11 +35,11 @@ class _FnCatalog:
                 return entry
         from types import SimpleNamespace
 
-        from mflowy.driver.node import _params_contract
+        from mflowy.driver.reflect import params_contract
 
         # 裸桩透传（未装饰替身）：schema 复用装饰期同一派生器（单源），ns 视为非归组；
         # validate_params 无操作——编译期校验面只对装饰节点生效（生产不变式）
-        _, schema = _params_contract(fn)
+        _, schema, _ = params_contract(fn)
         return SimpleNamespace(
             fn=fn, run=fn, middlewares=[], param_schema=schema, ns=None, validate_params=lambda *_: None
         )

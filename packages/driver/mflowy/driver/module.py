@@ -12,13 +12,12 @@ import inspect
 import logging
 from dataclasses import dataclass
 from inspect import Parameter
-from types import UnionType
-from typing import Literal, TypeAliasType, Union, get_args, get_origin
+from typing import Literal
 
 from .config import address_kind, node_key
 from .context import UpstreamMeta
 from .discover import CatalogMiss, find_edge, get_node, list_all
-from .reflect import non_annotated_params
+from .reflect import non_annotated_params, render_hint
 
 logger = logging.getLogger(__name__)
 
@@ -129,28 +128,13 @@ def _upstream_metas(fn) -> list[UpstreamMeta]:
         if edge_entry is None:
             metas.append(
                 UpstreamMeta(
-                    name, not optional, _kind(name), None, expect=_render_hint(hint), default=_binding_default(fn, name)
+                    name, not optional, _kind(name), None, expect=render_hint(hint), default=_binding_default(fn, name)
                 )
             )
         else:
             edge_fn = edge_entry.fn
             metas += [
-                UpstreamMeta(n, not opt, _kind(n), name, expect=_render_hint(h), default=_binding_default(edge_fn, n))
+                UpstreamMeta(n, not opt, _kind(n), name, expect=render_hint(h), default=_binding_default(edge_fn, n))
                 for n, h, opt in non_annotated_params(edge_fn)
             ]
     return metas
-
-
-def _render_hint(hint) -> str | None:
-    """注解 → 词表渲染串（别名解包；``X | None`` 保并集形；参数化泛型 ``Origin[Args]``）。"""
-    if hint is None:
-        return None
-    if isinstance(hint, TypeAliasType):
-        return _render_hint(hint.__value__)
-    origin = get_origin(hint)
-    if origin is None:
-        return getattr(hint, "__name__", None) or str(hint)
-    args = ["None" if a is type(None) else (_render_hint(a) or "?") for a in get_args(hint)]
-    if origin is Union or origin is UnionType:
-        return " | ".join(args)
-    return f"{getattr(origin, '__name__', None) or origin}[{', '.join(args)}]"

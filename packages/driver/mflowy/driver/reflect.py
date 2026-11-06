@@ -1,12 +1,23 @@
-"""fn 反射工具包（#138）：对被装饰函数 fn 的 typing/inspect
-逻辑单源居所——职责 = 利用反射处理 fn 拿到 param 面与 upstream 面（纯函数，零词表
-依赖、零 driver 内部依赖）。
+"""fn 反射工具包（#138）：对被装饰函数 fn 的 typing/inspect 逻辑单源居所——职责 =
+利用反射处理 fn 拿到 param 面（``params_contract``）与 upstream 面（``upstream_params``）
++ 返回注解（``return_hint``）。纯函数，零词表依赖、零 driver 内部依赖。
 
-- ``non_annotated_params``：raw 函数的非 Annotated 命名参数（= 参数边候选）
-- ``param_edge_names``：参数边名投影（M1 撞名判定的名集单源）
+注册期解析模型（#138 v3）：节点参数按 Annotated 二分——非 Annotated = **参数边**
+（``upstream_params`` 四元组，装饰期冻结为契约面 ``upstreams_schema``，DAG 图校验面）、
+Annotated = **节点自身参数**（``params_contract`` → ``param_schema``，YAML 模板面 +
+编译期 validate_params）；边函数参数全为参数边（无 Annotated 面——@edge 装饰期守卫）。
+装饰期一次冻结（Node/Edge 契约面），生产消费方（builder 编译 / module 投影 / context）
+读冻结核、零活反射；本模块函数本体留作工具包本体与测试替身缝。
+
+- ``upstream_params`` / ``ParamEdge``：参数边四元组 (name, hint, optional, default)
+- ``non_annotated_params`` / ``param_edge_names``：四元组的三元组 / 名集投影
+- ``annotated_param_names``：Annotated 命名参数名（@edge 守卫的判定源）
+- ``params_contract``：Annotated 参数 → (校验模型, JSON Schema, fields)——一次派生三面
+- ``return_hint``：返回注解（裸注解语义——Annotated 剥除）
 - ``edge_hint``：注解 → (元素类型, 是否收集形态)——注入形态的单一判定源
 - ``verify_output_hint``（编译期，agent 校验反馈面）：撒谎 fail-loud——静态安全
   哲学（Protocol 代 ABC）：运行期保证仅业务需要时做（#57 裁定，运行期值级复核已退役）
+- ``render_hint``：注解 → 词表渲染串（UpstreamMeta.expect 单源）
 
 非反射件（#138 拆居）：取值闭包工厂 ``Upstream`` / 上游元数据 ``UpstreamMeta`` /
 协议哨兵 ``MISSING``·``_NOT_RUN`` 随运行期消费者居 context；M1 守卫
@@ -18,26 +29,107 @@ from __future__ import annotations
 import inspect
 from collections.abc import Callable, Iterator
 from types import UnionType
-from typing import Annotated, TypeAliasType, Union, get_args, get_origin, get_type_hints
+from typing import Annotated, NamedTuple, TypeAliasType, Union, get_args, get_origin, get_type_hints
+
+from pydantic import Field, create_model
 
 
-def non_annotated_params(fn: Callable) -> list[tuple[str, object, bool]]:
-    """raw 函数的非 Annotated 命名参数（= 参数边候选）→ (name, hint, optional)。"""
-    upstreams: list[tuple[str, object, bool]] = []
+class ParamEdge(NamedTuple):
+    """参数边四元组（冻结核 ``upstreams_schema`` 的条目形状）。
+
+    ``default`` 位 = 可选边（``optional``）的签名默认值本尊；必选边为 ``...``——与
+    ``params_contract`` 的 fields 面同约定（「无默认」单一表达，红线 2）。
+    """
+
+    name: str
+    hint: object
+    optional: bool
+    default: object
+
+
+def _named_params(fn: Callable) -> Iterator[tuple[inspect.Parameter, object]]:
+    """命名参数（*args/**kwargs 除外）逐个 (Parameter, hint)——参数面二分的反射单遍。"""
     hints = get_type_hints(fn, include_extras=True)
     for p in inspect.signature(fn).parameters.values():
         if p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD):
             continue
-        hint = hints.get(p.name)
-        if hint is not None and get_origin(hint) is Annotated:
-            continue  # Annotated = 用户可配参数，非参数边
-        upstreams.append((p.name, hint, p.default is not inspect.Parameter.empty))
-    return upstreams
+        yield p, hints.get(p.name)
+
+
+def _is_annotated(hint: object) -> bool:
+    """Annotated = 节点自身参数（用户可配，param 面）；否则参数边——二分的单一判定源。"""
+    return hint is not None and get_origin(hint) is Annotated
+
+
+def upstream_params(fn: Callable) -> tuple[ParamEdge, ...]:
+    """参数边四元组（签名序）：非 Annotated 命名参数 → (name, hint, optional, default)。
+
+    装饰期冻结为 Node/Edge 契约面 ``upstreams_schema``（#138）——编译绑定、词表投影、
+    M1 名集共用同一份；本函数是冻结核的唯一派生器。
+    """
+    edges: list[ParamEdge] = []
+    for p, hint in _named_params(fn):
+        if _is_annotated(hint):
+            continue  # Annotated = 用户可配参数（param 面），非参数边
+        optional = p.default is not inspect.Parameter.empty
+        edges.append(ParamEdge(p.name, hint, optional, p.default if optional else ...))
+    return tuple(edges)
+
+
+def non_annotated_params(fn: Callable) -> list[tuple[str, object, bool]]:
+    """raw 函数的非 Annotated 命名参数（= 参数边候选）→ (name, hint, optional)——
+    ``upstream_params`` 去 default 位的投影（同一反射单遍，不另起拷贝）。"""
+    return [(e.name, e.hint, e.optional) for e in upstream_params(fn)]
 
 
 def param_edge_names(fn: Callable) -> frozenset[str]:
-    """参数边候选名（``non_annotated_params`` 的名字投影）——M1 撞名判定的单源。"""
-    return frozenset(name for name, _, _ in non_annotated_params(fn))
+    """参数边候选名（``upstream_params`` 的名字投影）——M1 撞名判定的名集。"""
+    return frozenset(e.name for e in upstream_params(fn))
+
+
+def annotated_param_names(fn: Callable) -> list[str]:
+    """Annotated 命名参数名（签名序）——@edge 装饰期守卫的判定源（边无用户可配参数面）。"""
+    return [p.name for p, hint in _named_params(fn) if _is_annotated(hint)]
+
+
+def return_hint(fn: Callable) -> object:
+    """返回注解（无注解为 None）：裸注解语义——``get_type_hints`` 缺省剥除 Annotated
+    （返回值保持裸注解，误写 Annotated 不改变编译期类型门的比对域）。"""
+    return get_type_hints(fn).get("return")
+
+
+def _bridge_metadata(m):
+    """旧式 Annotated[T, "描述"] 的字符串 metadata 桥接为 Field(description=...)。
+
+    pydantic 忽略无法识别的 Annotated metadata，不桥接则描述进不了 JSON Schema。
+    """
+    return Field(description=m) if isinstance(m, str) else m
+
+
+def params_contract(fn: Callable) -> tuple[type, dict, dict]:
+    """Annotated 参数 → (校验模型, JSON Schema 投影, fields)——装饰期一次派生三面（#131/#138）。
+
+    裸类型参数（参数边）排除；默认值取自函数签名——默认值的单一事实源是签名，Field
+    只带约束与描述。fields = ``create_model`` 的字段定义（``{name: (Annotated 类型,
+    默认值 | ...)}``，``...`` = 必填）——第四面 Python 形态，在手即冻、零额外反射。
+    无 Annotated 参数时空模型 + 空 schema 字面量 + 空 fields。
+    """
+    hints = get_type_hints(fn, include_extras=True)
+    sig = inspect.signature(fn)
+    fields: dict = {}
+    for name, hint in hints.items():
+        if not _is_annotated(hint):
+            continue  # 参数边（upstream 面）——二分判定与 upstream_params 同源
+        args = get_args(hint)
+        if not args:
+            continue
+        typ = Annotated[args[0], *map(_bridge_metadata, args[1:])]
+        p = sig.parameters.get(name)
+        fields[name] = (typ, ...) if p is None or p.default is inspect.Parameter.empty else (typ, p.default)
+    if not fields:
+        return create_model("_Params"), {"type": "object", "properties": {}}, fields
+    model = create_model("_Params", **fields)
+    return model, model.model_json_schema(), fields
 
 
 def edge_hint(hint: object) -> tuple[type | None, bool]:
@@ -102,3 +194,19 @@ def verify_output_hint(name: str, expect: object, fn: Callable):
     if lhs == rhs or lhs is get_origin(rhs) or get_origin(lhs) is rhs:
         return
     raise TypeError(f"{name}: 期望 {expect} 与上游输出 {output_hint} 不兼容")
+
+
+def render_hint(hint: object) -> str | None:
+    """注解 → 词表渲染串（UpstreamMeta.expect 单源；别名解包；``X | None`` 保并集形；
+    参数化泛型 ``Origin[Args]``）。"""
+    if hint is None:
+        return None
+    if isinstance(hint, TypeAliasType):
+        return render_hint(hint.__value__)
+    origin = get_origin(hint)
+    if origin is None:
+        return getattr(hint, "__name__", None) or str(hint)
+    args = ["None" if a is type(None) else (render_hint(a) or "?") for a in get_args(hint)]
+    if origin is Union or origin is UnionType:
+        return " | ".join(args)
+    return f"{getattr(origin, '__name__', None) or origin}[{', '.join(args)}]"
