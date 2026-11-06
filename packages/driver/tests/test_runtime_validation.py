@@ -12,7 +12,7 @@ from typing import Annotated
 import pytest
 from mflowy.driver.config import NodeConf
 from mflowy.driver.context import Context
-from mflowy.driver.node import node, node_of
+from mflowy.driver.node import NODE_REGISTRY, node
 from pydantic import Field, ValidationError
 
 
@@ -44,7 +44,7 @@ def _takes_arbitrary(payload, x: Annotated[int, "倍数"] = 1, **_):
 class TestRuntimeValidation:
     def test_dispatch_coerces_yaml_scalar(self, fake_tracking):
         """调度链（.node 路径）上 YAML 标量按签名类型转换（str→int，lax）"""
-        assert node_of(_plain).run(_ctx(x="7")) == 7
+        assert NODE_REGISTRY["_plain"].run(_ctx(x="7")) == 7
 
     def test_params_stay_raw_on_conf(self, fake_tracking):
         """解析期不转换：NodeConf.params 原样保留原始 YAML 值"""
@@ -53,28 +53,28 @@ class TestRuntimeValidation:
 
     def test_field_constraint_rejected_at_dispatch(self, fake_tracking):
         with pytest.raises(ValidationError, match="x"):
-            node_of(_constrained).run(_ctx(x=11))
+            NODE_REGISTRY["_constrained"].run(_ctx(x=11))
 
     def test_string_annotated_convention_validates(self, fake_tracking):
         """旧式 Annotated[T, "描述"]：字符串 metadata 被忽略，按 T 校验"""
-        assert node_of(_plain).run(_ctx(x="3")) == 3
+        assert NODE_REGISTRY["_plain"].run(_ctx(x="3")) == 3
 
     def test_enum_by_value_at_dispatch(self, fake_tracking):
         @node()
         def _colored(color: Annotated[Color | None, "颜色"] = None, **_):
             return color
 
-        assert node_of(_colored).run(_ctx(color="red")) is Color.RED
+        assert NODE_REGISTRY["_colored"].run(_ctx(color="red")) is Color.RED
 
     def test_defaults_not_validated(self, fake_tracking):
         """未出现在 YAML params 的参数走函数签名默认值，不经校验"""
-        assert node_of(_plain).run(_ctx()) == 1
+        assert NODE_REGISTRY["_plain"].run(_ctx()) == 1
 
 
 class TestInjectionPassthrough:
     def test_unannotated_injected_object_passthrough(self, fake_tracking):
         """无注解参数接收任意类型对象（参数边绑定.kwargs 投递，同 _bind 入口）按 is-instance 直通"""
-        kind, x = node_of(_takes_arbitrary).run(_ctx(x="5"), payload=object())
+        kind, x = NODE_REGISTRY["_takes_arbitrary"].run(_ctx(x="5"), payload=object())
         assert kind == "object"
         assert x == 5
 
@@ -82,7 +82,7 @@ class TestInjectionPassthrough:
 class TestDispatchMarker:
     def test_handler_contract_via_registry(self, fake_tracking):
         """#126：装饰器零属性挂载——契约居注册表 <node_key, Node>，fn 原样返回"""
-        entry = node_of(_plain)
+        entry = NODE_REGISTRY["_plain"]  # 持 fn 消费方经注册表键取条目（#140 桥退役）
         assert entry.fn is _plain and callable(entry.run)
         assert entry.ns is None  # 非归组（空串归一 None）
         assert not hasattr(_plain, "node") and not hasattr(_plain, "node_key")  # 零属性挂载

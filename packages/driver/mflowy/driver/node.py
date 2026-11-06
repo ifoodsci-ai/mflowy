@@ -1,8 +1,8 @@
 """@node 装饰器：把插件函数装配为可调度节点（``Node`` 契约，文件/契约名对齐 #128）。
 
-插件身份三面（#126）：静态声明在 entry point name（``namespace.node_name``，见
-discover.py）；运行期真源在 Node 实例（身份弱键映射 ``_NODE_OF``——加载期装饰性校验
-经此桥；名字键注册表 ``NODE_REGISTRY``（本模块）为诊断/词表投影索引）；**装饰器零属性
+插件身份两面（#126/#140）：静态声明在 entry point name（``namespace.node_name``，见
+discover.py）；运行期真源在 Node 实例居名字键注册表 ``NODE_REGISTRY``（本模块——
+发现表键 = 注册表键，加载期一致性校验按键比对，#140 身份桥退役）；**装饰器零属性
 挂载、原样返回 fn**——直接 import/直调不受影响（直调保持原函数语义，调度入口
 ``Node.run`` 才织入中间件与 ``validate_call`` 校验）。
 
@@ -24,7 +24,6 @@ import inspect
 import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Annotated, Concatenate, Protocol, get_args, get_origin, get_type_hints
-from weakref import WeakKeyDictionary
 
 from pydantic import ConfigDict, Field, ValidationError, create_model, validate_call
 
@@ -38,10 +37,6 @@ logger = logging.getLogger(__name__)
 
 type Chain[R] = Callable[Concatenate[Context, ...], R]
 type Middleware[R] = Callable[[Context, Chain[R]], R]
-
-# fn 本尊 → Node 的身份弱键映射（#126 桥）——node_of 的真源；名字键注册表
-# 只服务诊断/词表投影面，同名遮蔽不影响本桥
-_NODE_OF: WeakKeyDictionary[Callable, Node] = WeakKeyDictionary()
 
 # 名字键注册表（#132 归居契约模块——注册状态随契约 + 唯一写者同居；装饰期零
 # import discover——直接边已删、传递边经 context.get_node 惰性，导入期图无环）：<node_key, Node>
@@ -139,18 +134,6 @@ class _NodeEntry[R]:
             raise ValueError(f"节点 {nid} params 编译期校验失败：{detail}") from e
 
 
-def node_of[R](fn: Callable[..., R]) -> Node[R]:
-    """fn → Node（fn↔entry 桥）：测试与持 fn 的消费方取调度面的唯一姿势。
-
-    身份弱键映射（``_NODE_OF``）——同名不撞（跨模块同名 fn 各取本尊）、
-    随 fn 回收；未装饰 fn = miss fail-loud。
-    """
-    entry = _NODE_OF.get(fn)
-    if entry is None:
-        raise ValueError(f"函数 {fn.__name__} 未注册 @node（身份映射无本尊条目）——装饰后才可取 Node")
-    return entry
-
-
 def node[R](*middlewares: Middleware, namespace: str = ""):
     """零属性挂载（#126）：构造 Node 注册进 ``<node_key, Node>``，原样返回 fn。
 
@@ -160,7 +143,8 @@ def node[R](*middlewares: Middleware, namespace: str = ""):
 
     ``namespace`` 声明归组（能力族，空串=非归组→``ns=None``）；注册键 = node_key，
     与 pyproject 静态声明的 entry point 名（``namespace.node_name`` / 裸名）的
-    一致性在目录加载期 fail-loud 校验（discover）。
+    逐字一致（含 namespace 段）在目录加载期按键比对 fail-loud 校验（discover，
+    #140——未装饰/错 namespace/别名键统一「声明与注册不一致」）。
     """
 
     def decorator(fn: Callable[..., R]) -> Callable[..., R]:
@@ -192,8 +176,7 @@ def node[R](*middlewares: Middleware, namespace: str = ""):
 
         params_model, schema = _params_contract(fn)
         entry = _NodeEntry(fn, list(middlewares), schema, params_model, namespace or None, chain)
-        NODE_REGISTRY[node_key(namespace, fn.__name__)] = entry  # 名字键索引（诊断/词表投影面）
-        _NODE_OF[fn] = entry  # fn↔entry 桥（身份键——同名不撞）
+        NODE_REGISTRY[node_key(namespace, fn.__name__)] = entry  # 注册表单源（#140：身份桥退役，发现流同一查表）
         return fn
 
     return decorator

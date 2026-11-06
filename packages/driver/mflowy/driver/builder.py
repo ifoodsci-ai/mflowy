@@ -179,7 +179,7 @@ class Builder:
     def _compile(self, items: tuple[dict[str, NodeConf], ...]) -> list[Context]:
         """增量编译：按声明序逐节点入表——签名对节点表解析血缘，播种式构造 Context。
 
-        词表查询单点（``get_node`` 每节点恰一次），fn 与解析产物（direct/via/pairs/
+        词表查询单点（``get_node`` 每节点恰一次），Node 与解析产物（direct/via/pairs/
         by_param）织入构造器——Context 运行期结构性零目录查询；prevs→nexts 接线
         唯一居所在构造器。
 
@@ -203,7 +203,7 @@ class Builder:
             ctx = Context(
                 conf,
                 prevs,
-                fn=fn,
+                node=entry,  # 直注 Node（#140：fn 种子经身份桥反查退役）
                 upstreams=direct,
                 via_upstreams=via_inner,
                 upstream_pairs=pairs,

@@ -11,11 +11,12 @@ YAML 列表项键 / NodeEntry.name 同构——寻址单源贯穿）；分组视
 （节点名含 ``__`` 的病理）在装配期 warning——扁平表将其暴露为可见冲突而非静默并存。
 
 模块级门面（``get_node``/``get_edge``/``find_edge``/``list_all``/``entry``）委托唯一（节点查询键一律 node_key；边查询令牌=裸边名，内部组 ``edges__`` 键）
-adapter（``EntryPointCatalog``），是目录消费的唯一姿势。解析三步（#137）：
+adapter（``EntryPointCatalog``），是目录消费的唯一姿势。解析三步（#137/#140）：
 ①注册表暖命中（``NODE_REGISTRY``/``EDGE_REGISTRY``——进程内已加载节点 dict 量级，
 零目录现算）→ ②miss 才现算目录表（纯元数据零 import，安装即时可见保留）→ ③首载
-``ep.load()`` 触发装饰注册，经身份桥（``node_of``/``edge_of``——随注册表居
-node.py/edge.py，#132 归居）校验装饰性（只查装饰、不比名），坏声明 fail-loud。
+``ep.load()`` 触发装饰注册，按**同一 node_key 二次查注册表**（发现表键 = 注册表
+键，身份桥退役）——load 后 miss = 声明与注册不一致（未装饰/错 namespace/别名键
+统一一类）fail-loud，与 #86 无别名政策对齐。
 热更新赌注收窄：卸载/后组覆盖的即时可见让渡（暖命中驻留——进程内中途卸载或
 覆盖包比安装更罕见）。
 
@@ -27,12 +28,11 @@ node.py/edge.py，#132 归居）校验装饰性（只查装饰、不比名），
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from importlib.metadata import EntryPoint, entry_points
 
 from .config import node_key, split_node_key
-from .edge import EDGE_REGISTRY, Edge, edge_of
-from .node import NODE_REGISTRY, Node, node_of
+from .edge import EDGE_REGISTRY, Edge
+from .node import NODE_REGISTRY, Node
 
 logger = logging.getLogger(__name__)
 
@@ -175,43 +175,41 @@ def _resolve(key: str) -> EntryPoint:
     return ep
 
 
-def _checked[T](ep: EntryPoint, kind: str, bridge: Callable[[Callable], T]) -> T:
-    """加载 entry point 并校验装饰性（#126：身份桥代旧 hasattr——零属性挂载）。
+def _checked[T](ep: EntryPoint, key: str, kind: str, registry: dict[str, T]) -> T:
+    """加载 entry point 并按注册表键查表（#140 注册表单源：发现表键 = 注册表键）。
 
-    语义与旧 ``hasattr(fn, valid)`` 等价：**只查「声明指向的函数已装饰」，不比名**
-    ——entry point 名与装饰器 namespace 的逐字一致是 CR 交叉检查面（AGENTS：
-    错 namespace 属静默面，加载期不拦）。ep.load() 的模块导入触发装饰器注册。
-    bridge（node_of/edge_of）模块级直取——#132 后 node/edge 零 discover 依赖，
-    导入期无环（旧「延迟导入防环」注释随改）。
+    ``ep.load()`` 的模块导入触发装饰器写入注册表；load 后按**同一 node_key 二次
+    查表**（与 ① 暖命中同一查表动作），miss = 声明与注册不一致——未装饰 / 装饰
+    namespace 或函数名与声明错位 / 别名键统一一类（细分税不付），fail-loud 带
+    ep 与键上下文（#140 翻 #126「只查装饰不比名」：错 namespace 升格加载期门）。
     """
-    fn = ep.load()
-    try:
-        return bridge(fn)
-    except ValueError:
+    ep.load()
+    if (entry := registry.get(key)) is None:
         raise ValueError(
-            f"entry point {ep.group}:{ep.name} = {ep.value} 未注册 @{kind}（身份映射无本尊条目）——"
-            "pyproject 静态声明指向未装饰函数"
-        ) from None
+            f"entry point {ep.group}:{ep.name} = {ep.value} 声明与注册不一致："
+            f"加载后注册表无 {kind} 键 {key!r}（未装饰 @{kind} 或装饰 namespace/函数名与声明错位）"
+        )
+    return entry
 
 
 def _load_node(key: str) -> Node:
-    """三步解析（#137）：①注册表暖命中 → ②目录查表（miss 语义不变）→ ③加载+身份桥。"""
+    """三步解析（#137/#140）：①注册表暖命中 → ②目录查表（miss 语义不变）→ ③加载后按同一键查注册表。"""
     if (warm := NODE_REGISTRY.get(key)) is not None:
         return warm
-    return _checked(_resolve(key), "node", node_of)
+    return _checked(_resolve(key), key, "node", NODE_REGISTRY)
 
 
 def _load_edge(key: str) -> Edge:
     """边版三步解析（与节点同构，注册表 = EDGE_REGISTRY）。"""
     if (warm := EDGE_REGISTRY.get(key)) is not None:
         return warm
-    return _checked(_resolve(key), "edge", edge_of)
+    return _checked(_resolve(key), key, "edge", EDGE_REGISTRY)
 
 
 class EntryPointCatalog:
-    """唯一 adapter：三步解析（注册表暖路径 → 目录现算查表 → 加载+身份桥），miss 抛
-    CatalogMiss 带 Available 列表；目录面保持现算（安装即时可见），卸载/后组覆盖
-    即时可见让渡于暖驻留。"""
+    """唯一 adapter：三步解析（注册表暖路径 → 目录现算查表 → 加载后按同一键查注册表），
+    miss 抛 CatalogMiss 带 Available 列表；目录面保持现算（安装即时可见），卸载/后组
+    覆盖即时可见让渡于暖驻留。"""
 
     def node(self, key: str) -> Node:
         """节点目录访问：返回注册表 Node（调度面；原函数 = ``entry.fn``，#137 raw 面退役）。"""

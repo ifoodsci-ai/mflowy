@@ -7,7 +7,7 @@ from mflowy.driver.node import node
 
 
 @node()
-def _node(**kwargs):
+def _tag_node(**kwargs):
     return "ok"
 
 
@@ -17,7 +17,7 @@ def _wf(name: str) -> DAG:
 
 
 def test_run_tags_applied_to_node_run(fake_plugins, fake_tracking):
-    fake_plugins.setdefault("load", {})["node"] = _node
+    fake_plugins.setdefault("load", {})["node"] = _tag_node
     tags = {"mflowy.data_sha256": "deadbeef", "mflowy.data_file": "/tmp/x.csv"}
     flow = _wf("tags_test").run(tags=tags)
     assert flow.status == "finished"
@@ -29,7 +29,7 @@ def test_run_tags_applied_to_node_run(fake_plugins, fake_tracking):
 
 
 def test_run_without_tags_no_extra_tags(fake_plugins, fake_tracking):
-    fake_plugins.setdefault("load", {})["node"] = _node
+    fake_plugins.setdefault("load", {})["node"] = _tag_node
     flow = _wf("tags_test2").run()
     assert flow.status == "finished"
     assert "mflowy.data_sha256" not in fake_tracking.tags  # 无 tags 注入即无指纹写入

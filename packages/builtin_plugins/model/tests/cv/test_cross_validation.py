@@ -60,9 +60,9 @@ def _run_chain(X, y, **params) -> SplitSpec:
     from mflowy.driver.context import Context
 
     ctx = Context(NodeConf(name="split_t", node_key="cv__split"))
-    from mflowy.driver.node import node_of
+    from mflowy.driver.node import NODE_REGISTRY
 
-    return node_of(split).run(ctx, x_y=_xy(X, y), **params)
+    return NODE_REGISTRY["cv__split"].run(ctx, x_y=_xy(X, y), **params)  # 持 fn 消费方经注册表键（#140 桥退役）
 
 
 class TestSpecContract:

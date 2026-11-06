@@ -282,13 +282,14 @@ class TestHandlerNamespaceDecl:
         assert NodeConf(name="feat", node_key="plot__feat").node_key == "plot__feat"
 
         @n_mod.node()  # 缺省 = 非归组（ns=None 归一）
-        def _plain(**kwargs):
+        def _ungrouped(**kwargs):
             return "ok"
 
-        assert NODE_REGISTRY["_plain"].fn is _plain  # 裸名只剥空组连接符——私有前导保留
-        assert NODE_REGISTRY["_plain"].ns is None
+        # 注册表键全局唯一（#140 桥退役）：桩名避开他模块同名装饰（test_runtime_validation._plain）
+        assert NODE_REGISTRY["_ungrouped"].fn is _ungrouped  # 裸名只剥空组连接符——私有前导保留
+        assert NODE_REGISTRY["_ungrouped"].ns is None
         # 零属性挂载：fn 原样
-        assert not hasattr(_plain, "node_key") and not hasattr(_plain, "namespace")
+        assert not hasattr(_ungrouped, "node_key") and not hasattr(_ungrouped, "namespace")
 
 
 class TestRenameHint:

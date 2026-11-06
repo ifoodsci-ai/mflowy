@@ -11,15 +11,14 @@
 - **边只吃节点**：参数仅按组名/node_key 两层寻址（不吃边——边链成环无从发生）。
 
 ``Edge`` 契约（``fn`` 单面）居注册表 ``<edges__name, Edge>``（对齐 ``Node``
-注册表真源——声明↔注册一致性在目录加载期校验）；边的组装（上游解析/惰性取值）
-在 builder 编译期完成。
+注册表真源——发现表键 = 注册表键，声明↔注册一致性在目录加载期按键比对，#140
+身份桥退役）；边的组装（上游解析/惰性取值）在 builder 编译期完成。
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Protocol
-from weakref import WeakKeyDictionary
 
 from .config import node_key
 
@@ -39,24 +38,12 @@ class _EdgeEntry:
         self.fn = fn
 
 
-# fn 本尊 → Edge 的身份弱键映射（edge_of 真源，#126 桥）
-_EDGE_OF: WeakKeyDictionary[Callable, Edge] = WeakKeyDictionary()
-
 # 名字键注册表（#132 归居契约模块——与 node.NODE_REGISTRY 同构）：<edges__name, Edge>
 EDGE_REGISTRY: dict[str, Edge] = {}
 
 
-def edge_of(fn: Callable) -> Edge:
-    """fn → Edge（fn↔entry 桥，身份弱键映射——同名不撞）：未装饰 = miss fail-loud。"""
-    entry = _EDGE_OF.get(fn)
-    if entry is None:
-        raise ValueError(f"函数 {fn.__name__} 未注册 @edge（身份映射无本尊条目）——装饰后才可取 Edge")
-    return entry
-
-
 def edge[R](fn: Callable[..., R]) -> Callable[..., R]:
-    """@edge 装饰器：注册 ``Edge``（名字键索引 + 身份桥），原样返回 fn。"""
+    """@edge 装饰器：注册 ``Edge``（注册表单源），原样返回 fn。"""
     entry = _EdgeEntry(fn)
     EDGE_REGISTRY[node_key("edges", fn.__name__)] = entry
-    _EDGE_OF[fn] = entry
     return fn

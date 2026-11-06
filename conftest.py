@@ -15,48 +15,52 @@ from mflowy.driver.discover import CatalogMiss
 class _FnCatalog:
     """测试伪目录：唯一 adapter 的最小替身（{namespace: {node: fn}} 直填）。
 
-    表值 = 原函数——返回面与真目录同构给注册表条目（#126：装饰者经
-    ``node_of``/``edge_of`` 取本尊 Node/Edge；裸桩回退透传最小条目
-    ``run=fn``——测试替身不必装饰；原函数消费方走 ``entry.fn``，#137 raw 面退役）；
-    词表 miss 抛 CatalogMiss（对齐生产语义）；entry 恒 None（无 entry point 元数据）。
+    表值 = 原函数——已装饰者经**注册表身份扫描**（``.fn is fn``——#140 身份桥
+    退役后的替身缝）取本尊 Node/Edge；裸桩回退透传最小条目 ``run=fn``
+    （测试替身不必装饰；原函数消费方走 ``entry.fn``）；词表 miss 抛 CatalogMiss
+    （对齐生产语义）；entry 恒 None（无 entry point 元数据）。
+
+    注册表按名键全局唯一、后装饰覆盖先装饰——**装饰桩的键跨模块唯一**是替身缝
+    的顺序不变式（同键他装饰插入在本桩装饰与查表之间会让扫描 miss 而降级裸桩）；
+    查表紧随本桩装饰的局部署名（Builder 用例形态）天然满足。
     """
 
     def __init__(self, table: dict[str, dict[str, object]]):
         self.table = table
 
     @staticmethod
-    def _entry_of(fn, lookup):
-        try:
-            return lookup(fn)
-        except ValueError:
-            from types import SimpleNamespace
+    def _entry_of(fn, registry):
+        for entry in registry.values():  # 身份扫描：装饰键与伪表键可错位（测试桩自由度）
+            if entry.fn is fn:
+                return entry
+        from types import SimpleNamespace
 
-            from mflowy.driver.node import _params_contract
+        from mflowy.driver.node import _params_contract
 
-            # 裸桩透传（未装饰替身）：schema 复用装饰期同一派生器（单源），ns 视为非归组；
-            # validate_params 无操作——编译期校验面只对装饰节点生效（生产不变式）
-            _, schema = _params_contract(fn)
-            return SimpleNamespace(
-                fn=fn, run=fn, middlewares=[], param_schema=schema, ns=None, validate_params=lambda *_: None
-            )
+        # 裸桩透传（未装饰替身）：schema 复用装饰期同一派生器（单源），ns 视为非归组；
+        # validate_params 无操作——编译期校验面只对装饰节点生效（生产不变式）
+        _, schema = _params_contract(fn)
+        return SimpleNamespace(
+            fn=fn, run=fn, middlewares=[], param_schema=schema, ns=None, validate_params=lambda *_: None
+        )
 
     def node(self, key: str):
         from mflowy.driver.config import split_node_key
-        from mflowy.driver.node import node_of
+        from mflowy.driver.node import NODE_REGISTRY
 
         ns, node_name = split_node_key(key)
         fn = self.table.get(ns, {}).get(node_name)
         if fn is None:
             raise CatalogMiss(ns, node_name, self.table.get(ns, {}))
-        return self._entry_of(fn, node_of)
+        return self._entry_of(fn, NODE_REGISTRY)
 
     def edge(self, edge_name: str):
-        from mflowy.driver.edge import edge_of
+        from mflowy.driver.edge import EDGE_REGISTRY
 
         fn = self.table.get("edges", {}).get(edge_name)
         if fn is None:
             raise CatalogMiss("edges", edge_name, self.table.get("edges", {}))
-        return self._entry_of(fn, edge_of)
+        return self._entry_of(fn, EDGE_REGISTRY)
 
     def find_edge(self, edge_name: str):
         try:
@@ -75,8 +79,8 @@ class _FnCatalog:
 def fake_plugins(monkeypatch):
     """伪插件目录：{namespace: {node: fn}} 直填，patch discover 唯一 adapter 位。
 
-    表值 = @node/@edge 装饰后的函数（与真目录同构——discover._checked 的装饰
-    校验在此由直接访问等价保证，缺装饰即 AttributeError fail-loud）。用法：
+    表值 = @node/@edge 装饰后的函数（与真目录同构——装饰者经注册表身份扫描取
+    本尊；裸桩透传最小条目，测试替身不必装饰）。用法：
 
         table.setdefault("load", {})["csv"] = my_fn
     """
