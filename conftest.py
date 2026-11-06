@@ -16,9 +16,10 @@ class _FnCatalog:
     """测试伪目录：唯一 adapter 的最小替身（{namespace: {node: fn}} 直填）。
 
     表值 = 原函数——已装饰者经**注册表身份扫描**（``.fn is fn``——#140 身份桥
-    退役后的替身缝）取本尊 Node/Edge；裸桩回退透传最小条目 ``run=fn``
-    （测试替身不必装饰；原函数消费方走 ``entry.fn``）；词表 miss 抛 CatalogMiss
-    （对齐生产语义）；entry 恒 None（无 entry point 元数据）。
+    退役后的替身缝）取本尊 Node/Edge；裸桩回退透传最小条目 ``run=fn``（测试替身
+    不必装饰；冻结核面 upstreams_schema/return_hint 经 reflect 同一派生器现算，#138；
+    原函数消费方走 ``entry.fn``）；词表 miss 抛 CatalogMiss（对齐生产语义）；entry
+    恒 None（无 entry point 元数据）。
 
     注册表按名键全局唯一、后装饰覆盖先装饰——**装饰桩的键跨模块唯一**是替身缝
     的顺序不变式（同键他装饰插入在本桩装饰与查表之间会让扫描 miss 而降级裸桩）；
@@ -33,15 +34,24 @@ class _FnCatalog:
         for entry in registry.values():  # 身份扫描：装饰键与伪表键可错位（测试桩自由度）
             if entry.fn is fn:
                 return entry
-        from types import SimpleNamespace
+        from types import MappingProxyType, SimpleNamespace
 
-        from mflowy.driver.reflect import params_contract
+        from mflowy.driver.reflect import params_contract, return_hint, upstream_params
 
-        # 裸桩透传（未装饰替身）：schema 复用装饰期同一派生器（单源），ns 视为非归组；
-        # validate_params 无操作——编译期校验面只对装饰节点生效（生产不变式）
-        _, schema, _ = params_contract(fn)
+        # 裸桩透传（未装饰替身）：契约面复用装饰期同一派生器（reflect 单源——schema/fields/
+        # 反射核与装饰条目同形，#138），ns 视为非归组；validate_params 无操作——编译期
+        # 校验面只对装饰节点生效（生产不变式）
+        _, schema, fields = params_contract(fn)
         return SimpleNamespace(
-            fn=fn, run=fn, middlewares=[], param_schema=schema, ns=None, validate_params=lambda *_: None
+            fn=fn,
+            run=fn,
+            middlewares=[],
+            param_schema=schema,
+            param_fields=MappingProxyType(fields),
+            ns=None,
+            validate_params=lambda *_: None,
+            upstreams_schema=upstream_params(fn),
+            return_hint=return_hint(fn),
         )
 
     def node(self, key: str):

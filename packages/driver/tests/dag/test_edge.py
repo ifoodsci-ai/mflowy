@@ -4,17 +4,21 @@
 - 晚绑定 = 声明序：同一条边在不同消费方位置各自绑定其声明序上游
 - 血缘透明：边消费记上游节点 run_id，无边条目
 - 撒谎 fail-loud：消费方/边参数/边返回的注解不兼容编译期 raise
+- 注册期解析（#138）：边参数全为参数边——装饰期冻结 upstreams_schema + return_hint；
+  带 Annotated 参数 = 契约违例，装饰期 fail-loud（边无用户可配参数面）
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Annotated
 
 import pytest
 from mflowy.driver.builder import Builder
-from mflowy.driver.edge import edge
+from mflowy.driver.edge import EDGE_REGISTRY, edge
 from mflowy.driver.node import node
+from mflowy.driver.reflect import ParamEdge, return_hint, upstream_params
 
 
 def _yaml(tmp_path, *nodes: str) -> Path:
@@ -435,3 +439,34 @@ class TestEdgePruneInteraction:
             )
         ).build()
         assert [c.conf.name for c in dag.nodes] == ["a", "b"]  # dead 出局，边绑定幸存
+
+
+class TestEdgeRegistrationCore:
+    """注册期解析（#138 v3）：边同构解析参数与返回签名——参数全为参数边（upstreams_schema），
+    与 return_hint 一起用于 DAG 图校验；Annotated 参数装饰期即拒（红线 1）。"""
+
+    def test_reflection_core_frozen_at_decoration(self):
+        # 注册键跨模块唯一（#140 替身缝顺序不变式）：桩名带本模块前缀
+        @edge
+        def _tedge_frozen(load: int, extra: str | None = None) -> int:
+            return load
+
+        entry = EDGE_REGISTRY["edges___tedge_frozen"]
+        assert entry.upstreams_schema == (
+            ParamEdge("load", int, False, ...),
+            ParamEdge("extra", str | None, True, None),
+        )
+        assert entry.return_hint is int
+        assert entry.upstreams_schema == upstream_params(_tedge_frozen)  # 工具包同一派生器
+        assert entry.return_hint == return_hint(_tedge_frozen)
+        assert isinstance(entry.upstreams_schema, tuple)  # 冻结即只读
+
+    def test_annotated_param_fails_loud_at_decoration(self):
+        """边无 Annotated 面：带用户可配参数的边函数装饰期 fail-loud（点名参数），且不入注册表。"""
+        with pytest.raises(TypeError, match=r"\['top_k'\].*Annotated"):
+
+            @edge
+            def _tedge_annotated(load: int, top_k: Annotated[int, "用户可配"] = 5) -> int:
+                return load
+
+        assert "edges___tedge_annotated" not in EDGE_REGISTRY

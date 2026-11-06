@@ -12,6 +12,14 @@ Schema——装饰期自签名派生，与 validate_call 同一套 pydantic 机�
 永不漂移）、``ns``（归组声明，None=非归组）、``run(ctx, **kwargs)``（调度链，
 M1 撞名运行期防线内嵌）。
 
+反射核冻结（#138）：参数按 Annotated 二分——非 Annotated = 参数边
+``upstreams_schema``（四元组，DAG 图校验面：builder 绑定 / 词表投影 / M1 名集）、
+Annotated = 节点自身参数 ``param_schema`` + ``param_fields``（YAML 模板面 + 编译期
+validate_params；fields 为 create_model 字段定义的 Python 形态）；返回注解
+``return_hint``（编译期类型门的上游侧）。全部经 ``reflect`` 工具包同一派生器装饰期
+一次求得、只读冻结——消费方零活反射；投影（via 展开/寻址 kind）依赖词表，查询期
+自冻结核派生（装饰期算投影 = import 顺序脆弱性，禁止）。
+
 执行序（单平面）：``*middlewares → mlflow_log → fn``——数据面已参数边化
 （编译期 builder 解析，见 context.py），中间件全部为遥测面。
 
@@ -21,13 +29,14 @@ M1 撞名运行期防线内嵌）。
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Concatenate, Protocol
 
 from pydantic import ConfigDict, ValidationError, validate_call
 
+from . import reflect  # 冻结点模块限定调用：活反射位点显式（契约面 return_hint 与派生器同名，限定即不遮蔽）
 from .config import node_key
-from .reflect import param_edge_names, params_contract
 
 if TYPE_CHECKING:
     from .context import Context
@@ -66,6 +75,10 @@ class Node[R](Protocol):
     middlewares: list[Middleware]
     param_schema: dict
     ns: str | None
+    # 反射核冻结面（#138）：装饰期一次派生、只读——消费方零活反射
+    upstreams_schema: tuple[reflect.ParamEdge, ...]
+    param_fields: Mapping[str, tuple[object, object]]
+    return_hint: object
 
     def run(self, ctx: Context, **kwargs) -> R: ...
 
@@ -76,9 +89,19 @@ class Node[R](Protocol):
 
 
 class _NodeEntry[R]:
-    """``Node`` Protocol 的构造实现（装饰器私有）：调度链在装饰期织入一次。"""
+    """``Node`` Protocol 的构造实现（装饰器私有）：调度链与反射核在装饰期织入/冻结一次。"""
 
-    __slots__ = ("_chain", "_params_model", "fn", "middlewares", "ns", "param_schema")
+    __slots__ = (
+        "_chain",
+        "_params_model",
+        "fn",
+        "middlewares",
+        "ns",
+        "param_fields",
+        "param_schema",
+        "return_hint",
+        "upstreams_schema",
+    )
 
     def __init__(
         self,
@@ -88,6 +111,10 @@ class _NodeEntry[R]:
         params_model: type,
         ns: str | None,
         chain: Chain[R],
+        *,
+        upstreams_schema: tuple[reflect.ParamEdge, ...],
+        param_fields: Mapping[str, tuple[object, object]],
+        return_hint: object,
     ):
         self.fn = fn
         self.middlewares = middlewares
@@ -95,6 +122,9 @@ class _NodeEntry[R]:
         self._params_model = params_model  # 校验面（与 validate_call 同一套机器）
         self.ns = ns
         self._chain = chain
+        self.upstreams_schema = upstreams_schema  # 参数边四元组（DAG 图校验面）
+        self.param_fields = param_fields  # 节点自身参数的 Python 形态（create_model 字段定义）
+        self.return_hint = return_hint  # 返回注解（编译期类型门上游侧）
 
     def run(self, ctx: Context, **kwargs) -> R:
         return self._chain(ctx, **kwargs)
@@ -132,7 +162,8 @@ def node[R](*middlewares: Middleware, namespace: str = ""):
         valid_fn = validate_call(config=ConfigDict(arbitrary_types_allowed=True))(
             fn
         )  # 工厂形态（位置参形态与泛型签名不匹配）
-        edge_names = param_edge_names(fn)  # M1 撞名判定装饰期一次（运行期零反射开销）
+        upstreams = reflect.upstream_params(fn)  # 反射核冻结（#138）：参数边四元组装饰期一次
+        edge_names = frozenset(e.name for e in upstreams)  # M1 名集 = 冻结核投影（运行期零反射）
 
         def handler_wrapper(ctx: Context, **kwargs) -> R:
             # 运行期防线（M1）：护住绕过编译的直跑路径；判定/文案单源 raise_if_params_collide（本模块）
@@ -155,8 +186,18 @@ def node[R](*middlewares: Middleware, namespace: str = ""):
         for mw in (*middlewares, mlflow_log):
             chain = wrap(chain, mw)
 
-        params_model, schema, _ = params_contract(fn)
-        entry = _NodeEntry(fn, list(middlewares), schema, params_model, namespace or None, chain)
+        params_model, schema, fields = reflect.params_contract(fn)
+        entry = _NodeEntry(
+            fn,
+            list(middlewares),
+            schema,
+            params_model,
+            namespace or None,
+            chain,
+            upstreams_schema=upstreams,
+            param_fields=MappingProxyType(fields),  # 只读冻结：注册表条目全体消费方共享
+            return_hint=reflect.return_hint(fn),
+        )
         NODE_REGISTRY[node_key(namespace, fn.__name__)] = entry  # 注册表单源（#140：身份桥退役，发现流同一查表）
         return fn
 
