@@ -122,9 +122,9 @@ sequenceDiagram
 def common_filter(...) -> pd.DataFrame: ...
 ```
 
-1. **身份声明**：`[project.entry-points."mflowy.builtin_plugins"]` 静态手写声明（0.2.0 起构建期 AST 扫描钩子退役，与第三方包同构）——name 即身份（节点 `namespace.node_name`，归组段与装饰器 `namespace=` 逐字一致由 CR 兜底；边函数注册于 `edges` ns；声明指向未装饰函数在加载期 fail-loud）
+1. **身份声明**：`[project.entry-points."mflowy.builtin_plugins"]` 静态手写声明（0.2.0 起构建期 AST 扫描钩子退役，与第三方包同构）——name 即身份（节点 `namespace.node_name`，归组段与装饰器 `namespace=` 逐字一致在加载期按键比对 fail-loud，#140；边函数注册于 `edges` ns；忘声明是 CR 面——目录无名即不可达）
 2. **能力注册**：`node.py: @node` 内嵌 `validate_call`（签名即约束：`Annotated[T, "描述"]` 兼容旧约定、`Field(...)` 带约束、裸类型注入参数 is-instance 直通），构造 `Node`（fn/middlewares/param_schema/ns + `run` 调度链）注册进 `<node_key, Node>` 注册表（`node.NODE_REGISTRY`——#132 归居契约模块，装饰期零 import discover（含传递边）——fn 原样返回，直调不受影响）；`mlflow_log` 强制尾链（`builtin_middleware.py`——stop_on_error 已随 #59 血缘剪枝退役），每个 node 必在 mlflow run 内执行
-3. **目录与解析**：`discover.py` 按序读两组 entry points（`mflowy.builtin_plugins` 内置 + `mflowy.plugins` 第三方），`discover()/list_all()/entry()` 纯元数据零 import；`get_node`/`get_edge` 惰性 import 并经身份桥（`handler_of`/`edge_of`，#126 零属性挂载）校验装饰性，坏声明 fail-loud（名 vs 声明逐字一致是 CR 面）
+3. **目录与解析**：`discover.py` 按序读两组 entry points（`mflowy.builtin_plugins` 内置 + `mflowy.plugins` 第三方），`discover()/list_all()/entry()` 纯元数据零 import；`get_node`/`get_edge` 三步解析——注册表暖命中 → 目录查表 → 首载 `ep.load()` 后按同一键查注册表（发现表键 = 注册表键，#140 身份桥退役），load 后 miss = 「声明与注册不一致」fail-loud（未装饰/错 namespace/别名键统一一类，带 ep 与键上下文）
 4. **用户文档**：`module.py: get_node_info` 内省 `Annotated[T, "描述"]` → JSON Schema（纯用户可配参数），参数边依赖经 `NodeInfo.upstream`（展平边函数的节点名，保序去重）独立下发——MCP schema 即 API 文档
 
 **editable 陷阱**：entry points 元数据在 `uv sync` 时生效，新增插件模块或注册条目后必须重跑 `uv sync` 才会出现在 `list-nodes`。

@@ -80,10 +80,15 @@ def fake_entry_points(monkeypatch):
 
 class TestDiscoverTable:
     def test_new_plugin_visible_without_cache_reset(self, fake_entry_points):
-        """目录热更新：进程内新出现的 entry point 即时可见（无 @cache，无需重置）。"""
+        """目录热更新：进程内新出现的 entry point 即时可见（无 @cache，无需重置）。
+
+        元数据面（entry/discover）即时可见；解析面别名键 fail-loud（#140：别名 ep
+        用法退役——load.hot 指向的 x_y 注册键是裸名 x_y，非 load__hot）。
+        """
         fake_entry_points.append(_ep("load.hot", "mflowy.model.x_y:x_y"))
         assert entry("load__hot") is not None
-        assert get_node("load__hot") is not None
+        with pytest.raises(ValueError, match="声明与注册不一致"):
+            get_node("load__hot")
 
     def test_name_is_identity(self, fake_entry_points):
         fake_entry_points.append(_ep("load.csv", "mflowy.data.load.csv_loader:csv"))
@@ -97,13 +102,14 @@ class TestDiscoverTable:
         assert len(caplog.messages) == 2
 
     def test_bare_name_lands_in_ungrouped_bucket(self, fake_entry_points):
-        """非归组节点：裸节点名（无点号）合法，进空 namespace 桶。"""
+        """非归组节点：裸节点名（无点号）合法，进空 namespace 桶；别名裸键解析 fail-loud（#140）。"""
         # 伪键取词表外裸名（bare_probe）：真键（如 x_y）可能已被会话内暖驻，暖命中会绕开伪表（顺序依赖）
         fake_entry_points.append(_ep("bare_probe", "mflowy.model.x_y:x_y"))
         table = discover()
         assert table["bare_probe"].value == "mflowy.model.x_y:x_y"
         assert entry("bare_probe") is not None
-        assert get_node("bare_probe") is not None
+        with pytest.raises(ValueError, match="声明与注册不一致"):
+            get_node("bare_probe")  # 别名裸键（x_y 注册键 ≠ bare_probe）不再经身份桥兜底
 
     def test_plugins_group_overrides_builtin(self, fake_entry_points, caplog):
         caplog.set_level(logging.INFO)
@@ -139,11 +145,22 @@ class TestDiscoverTable:
 
 
 class TestLoadContract:
-    def test_missing_marker_raises(self, fake_entry_points):
-        """entry point 指向未标注 @node 的函数 → fail-loud（声明与注册一致性）"""
-        fake_entry_points.append(_ep("load.plain", "mflowy.utils.file:read_text"))
-        with pytest.raises(ValueError, match="未注册 @node"):
-            get_node("load__plain")
+    @pytest.mark.parametrize(
+        ("ep_name", "target", "key"),
+        [
+            ("load.plain", "mflowy.utils.file:read_text", "load__plain"),  # 未装饰
+            ("wrongns.x_y", "mflowy.model.x_y:x_y", "wrongns__x_y"),  # 错 namespace（x_y 装饰为裸名）
+            ("alias_probe", "mflowy.model.x_y:x_y", "alias_probe"),  # 别名裸键（#86 无别名政策对齐）
+        ],
+    )
+    def test_bad_declaration_unified_error(self, fake_entry_points, ep_name, target, key):
+        """坏声明三类（未装饰/错 namespace/别名键）统一「声明与注册不一致」fail-loud
+        （#140 翻 #126「只查装饰不比名」——错 namespace 升格加载期门），文案带 ep 与键上下文。"""
+        fake_entry_points.append(_ep(ep_name, target))
+        with pytest.raises(ValueError) as ei:
+            get_node(key)
+        assert "声明与注册不一致" in str(ei.value)
+        assert key in str(ei.value) and target in str(ei.value)  # 键 + ep 上下文双带
 
     def test_get_miss_lists_available(self, fake_entry_points):
         fake_entry_points.append(_ep("load.csv", "mflowy.data.load.csv_loader:csv"))
@@ -180,7 +197,7 @@ class TestWarmPath:
         """冷路径③（ep.load 触发装饰注册）为暖路径①上膛：二次查询零目录现算、同一条目。"""
         if "x_y" not in discover():
             pytest.skip("无插件安装（driver-only 环境），真插件冷暖往返不适用")
-        first = get_node("x_y")  # priming：冷解析（目录现算 + 加载 + 身份桥）
+        first = get_node("x_y")  # priming：冷解析（目录现算 + 加载 + 注册表查表）
         self._kill_discovery(monkeypatch)
         assert get_node("x_y") is first  # 暖命中 = 首载条目（dict 直取，不再现算）
 
@@ -219,14 +236,14 @@ class TestEdgesNamespace:
             get_edge("as_df")  # 非 edges 桶的边函数不可见
 
     def test_find_edge_probe_semantics(self, fake_entry_points):
-        """find_edge 探针：miss/非 edges 桶返 None，坏声明（未标 @edge）ValueError 照常 fail-loud。"""
+        """find_edge 探针：miss/非 edges 桶返 None，坏声明（未标 @edge）统一文案 fail-loud。"""
         fake_entry_points.append(_ep("load.as_df", "mflowy.model.x_y:x_y"))
         # 伪键避开真实装插件键（#137 暖路径先查注册表——同名真边已暖驻时不走伪表）
         fake_entry_points.append(_ep("edges.read_text", "mflowy.utils.file:read_text"))
         cat = EntryPointCatalog()
         assert cat.find_edge("as_df") is None  # 非 edges 桶不可见（纯元数据判定，不 load）
         assert cat.find_edge("nope") is None  # miss
-        with pytest.raises(ValueError, match="未注册 @edge"):
+        with pytest.raises(ValueError, match="声明与注册不一致"):
             cat.find_edge("read_text")  # 坏声明不吞——比 None 更响
 
     def test_find_edge_import_failure_propagates(self, fake_entry_points):
@@ -254,7 +271,7 @@ class TestHandlerNamespaceDecl:
 
         # 桩自带前导下划线：load__ + _ns_plugin = load___ns_plugin（连接符是 __）
         assert NODE_REGISTRY["load___ns_plugin"].fn is _ns_plugin
-        assert n_mod.node_of(_ns_plugin).ns == "load"
+        assert NODE_REGISTRY["load___ns_plugin"].ns == "load"
 
         @n_mod.node(namespace="plot")  # 无前导下划线的干净桩——锚定连接符本身
         def feat(**kwargs):
@@ -265,13 +282,14 @@ class TestHandlerNamespaceDecl:
         assert NodeConf(name="feat", node_key="plot__feat").node_key == "plot__feat"
 
         @n_mod.node()  # 缺省 = 非归组（ns=None 归一）
-        def _plain(**kwargs):
+        def _ungrouped(**kwargs):
             return "ok"
 
-        assert NODE_REGISTRY["_plain"].fn is _plain  # 裸名只剥空组连接符——私有前导保留
-        assert n_mod.node_of(_plain).ns is None
+        # 注册表键全局唯一（#140 桥退役）：桩名避开他模块同名装饰（test_runtime_validation._plain）
+        assert NODE_REGISTRY["_ungrouped"].fn is _ungrouped  # 裸名只剥空组连接符——私有前导保留
+        assert NODE_REGISTRY["_ungrouped"].ns is None
         # 零属性挂载：fn 原样
-        assert not hasattr(_plain, "node_key") and not hasattr(_plain, "namespace")
+        assert not hasattr(_ungrouped, "node_key") and not hasattr(_ungrouped, "namespace")
 
 
 class TestRenameHint:

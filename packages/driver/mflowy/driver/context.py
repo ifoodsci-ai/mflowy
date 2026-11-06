@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import itertools
 import logging
-from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import cached_property
@@ -71,7 +70,7 @@ class Context:
         conf: NodeConf,
         prevs: list[Context] | None = None,
         *,
-        fn: Callable | None = None,
+        node: Node | None = None,
         upstreams: list[Upstream] | None = None,
         via_upstreams: list[Upstream] | None = None,
         upstream_pairs: list[tuple[Context, str | None]] | None = None,
@@ -96,10 +95,9 @@ class Context:
             prev._nexts.append(self)  # prevs→nexts 接线唯一居所（builder 经构造器播种）
 
         self.result: Any = _NOT_RUN
-        # 词表条目：编译期由 builder 播种（get_node 单点，每节点恰一次）；
-        # None → 惰性词表兜底（直接构造/测试路径零破坏）
-        self._injected_fn: Callable | None = fn  # 测试直注缝（裸 fn——签名内省直用）
-        self._handler: Node | None = None
+        # 调度契约条目：编译期由 builder 直注（get_node 单点解析，每节点恰一次——
+        # #140 身份桥退役后不再由 fn 反查）；None → 惰性词表兜底（直接构造/测试路径零破坏）
+        self._handler: Node | None = node
         # 编译产物（builder 播种）：direct 列 Upstream + 边内层依赖列（via）+
         # 绑定序 (ctx, 边名|None) + 直连参数名 → 绑定上游（中间件侧信道）
         self.upstreams: list[Upstream] = upstreams if upstreams is not None else []
@@ -146,23 +144,18 @@ class Context:
 
     @property
     def node(self) -> Node:
-        """调度契约（#126）：``run`` 即调度链。解析序——fn 种子经身份桥（编译期已织入，
-        运行期零目录查询）；无种子走词表惰性兜底（直接构造/嵌入式用法）。"""
+        """调度契约（#126）：``run`` 即调度链。编译期直注（builder 织入——运行期结构性
+        零目录查询）；无种子走词表惰性兜底（直接构造/嵌入式用法）。"""
         if self._handler is None:
-            if self._injected_fn is not None:
-                from .node import node_of
+            from .discover import get_node  # 惰性：词表兜底首查才拉目录（装饰路径零 discover，#132）
 
-                self._handler = node_of(self._injected_fn)  # 编译期种子必然已装饰（builder 不变式）
-            else:
-                from .discover import get_node  # 惰性：词表兜底首查才拉目录（装饰路径零 discover，#132）
-
-                self._handler = get_node(self.conf.node_key)
+            self._handler = get_node(self.conf.node_key)
         return self._handler
 
     @property
     def node_raw(self):
-        """原函数（签名即约束）：测试直注优先，否则注册表条目的 fn。"""
-        return self._injected_fn if self._injected_fn is not None else self.node.fn
+        """原函数（签名即约束）：调度契约条目的 fn。"""
+        return self.node.fn
 
     @property
     def output_hint(self):
