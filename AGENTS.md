@@ -50,7 +50,7 @@ uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 ## 质量红线（每个变更遵守）
 
 1. **fail-loud**：未知键、撞名、缺依赖一律 raise 并带候选清单。凡是"静默覆盖 / 静默丢弃 / 白名单过滤后继续"的写法都是缺陷。参数来源冲突（YAML params 撞参数边名、用户 pin 撞引擎管理轴）显式报错——宁可拒绝一次合法输入，绝不静默改写语义。
-2. **单源**：一个事实一处定义。签名=约束=文档=校验（同一台 pydantic 机器）；词表=运行期目录；默认值=函数签名。第二份拷贝出现即收敛（提共享件），任其分叉即债。
+2. **单源**：一个事实一处定义。签名=约束=文档=校验（同一台 pydantic 机器）；fn 反射（typing/inspect）只居 `driver/reflect.py`，装饰期冻结进 Node/Edge 契约面、消费方读冻结核（#138，工具包外存量台账由 `tests/test_reflection_core.py` 锁定）；词表=运行期目录；默认值=函数签名。第二份拷贝出现即收敛（提共享件），任其分叉即债。
 3. **原子提交**：manifest/版本工件落盘走 tmp+rename；保持"先写工件、后写 manifest"的 commit 顺序；回滚把内存态与盘上工件一起回退——只回退一半 = 不一致交付。
 4. **通道纪律**：`print`（stdout）= 业务数据，只出现在捕获窗口内（`capture_prints`/redirect——MCP stdio 下裸 print 毁掉 JSON-RPC 通道）；`logger`（stderr）= 过程诊断。同一信息只走一条通道。
 5. **缺依赖=优雅降级**：extra 缺失时词表/会话对相关节点降级标注（`bindings=None`/跳过+warning），其余能力照常；词表 miss 与 import 失败按类型二分（`CatalogMiss` vs 裸 `ModuleNotFoundError`）。
@@ -73,7 +73,7 @@ uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 
 ## 添加能力
 
-**新插件节点**（三站，缺一即断）：① 按域建模块（`packages/<data|model>/mflowy/<pkg>/<能力族>/`），入口加 `@node(namespace=...)`（归组）或 `@node()`（非归组）、纯变换边加 `@edge`（edges ns）；② 同 PR 在域包 pyproject `[project.entry-points."mflowy.builtin_plugins"]` 手写声明——节点 `namespace.node_name`（非归组裸名）、边 `edges.node_name`，值 `模块路径:函数名`；③ `uv sync` 后 `list-nodes` 可见。判据：镜像路径有测试 + `list-nodes` 可见。
+**新插件节点**（三站，缺一即断）：① 按域建模块（`packages/<data|model>/mflowy/<pkg>/<能力族>/`），入口加 `@node(namespace=...)`（归组）或 `@node()`（非归组）、纯变换边加 `@edge`（edges ns）；签名纪律：节点函数参数 **Annotated=节点自身参数**（`param_schema`——get_node/MCP info → YAML 模板面）；**非 Annotated=参数边**（`upstreams_schema`——接线上游**节点或边**函数的输出）；**边函数参数只能指向节点**（不吃边——边链成环无从发生），无 Annotated 面。② 同 PR 在域包 pyproject `[project.entry-points."mflowy.builtin_plugins"]` 手写声明——节点 `namespace.node_name`（非归组裸名）、边 `edges.node_name`，值 `模块路径:函数名`；③ `uv sync` 后 `list-nodes` 可见。判据：镜像路径有测试 + `list-nodes` 可见。
 
 注册漂移不设镜像测试（2026-10 决策，限 `mflowy.builtin_plugins` 节点/边声明面——`mflowy.tools` 工具面两侧均沿用镜像测试）——CR 必查三项：**新 `@node`/`@edge` 必有声明、声明必有函数、entry point 名 namespace 段与装饰器 `namespace=` 逐字一致**；机器门在加载期按键查表（#140：未装饰/错 namespace/别名键统一「声明与注册不一致」fail-loud，翻 #126「只查装饰不比名」裁定），忘声明仍是静默面（目录无名即不可达），靠 CR + `list-nodes` 交叉检查。
 
