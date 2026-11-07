@@ -41,10 +41,10 @@ _TASK_METRICS: dict[str, set[str]] = {
 def _validate_hints(family: str, hints) -> dict:
     """hints ⊆ 签名声明空间（fail-loud 带可用面清单）：标量 pin / 区间收窄 → JSON 形态。"""
     from mflowy.model.model.study import ContinuousSpace, DiscreteSpace
-    from mflowy.model.model.utils import normalize_space, signature_params, space_to_json
-    from mflowy.model.registry import families
+    from mflowy.model.model.utils import normalize_space, space_to_json
+    from mflowy.model.registry import family_face
 
-    face = signature_params(families()[family]["pyfunc"])
+    face = family_face(family)  # 词表派生面单源（#141 起冻结面，零活反射）
     out: dict = {}
     for param, value in (hints or {}).items():
         if param not in face:
