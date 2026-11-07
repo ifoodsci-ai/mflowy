@@ -70,8 +70,9 @@ def test_start_validates_card_fail_loud(sessions_root, dirty_csv):
         cs.start_session(dirty_csv, card={"domain": "t", "target": "nope"})
 
     s = cs.start_session(
-        dirty_csv, card={"domain": "t", "target": "target", "id_columns": ["sid"], "defect_priority": {"missing": 0.5}}
+        dirty_csv,
+        card={"domain": "t", "target": "target", "id_columns": ["sid"], "defect_priority": {"high_null": 0.5}},
     )
     assert s.prior is not None  # 冻结卡必在（start 即校验富化）
     assert s.prior["never_drop"] == ["target", "sid"]  # 校验后富化的 never_drop 就位
-    assert s.prior["defect_priority"] == {"missing": 0.5}  # 记分牌等扩展字段随卡透传
+    assert s.prior["defect_priority"] == {"high_null": 0.5}  # 记分牌等扩展字段随卡透传

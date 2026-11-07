@@ -1,11 +1,15 @@
-"""标识列检测算子（只读，advisory）：全唯一且非 float 的标识列疑似。"""
+"""标识列检测算子（只读，advisory）：全唯一且非 float 的标识列疑似（suspected_id）。
+
+#115 打分表升级前的过渡形态：判据保持（全唯一 + 非 float + stringly 否决），
+语义随打分检测器（suspected_id.py）落地升级。
+"""
 
 import pandas as pd
 from mflowy.data.types import as_series
 from mflowy.driver.node import node
 
-from .errors import DataError, ErrorReport
-from .rules import is_id_like
+from .errors import DefectType, ErrorReport, Finding, Severity, rationale
+from .rules import is_id_like, mask_text
 from .stringly import stringly_frac
 
 
@@ -21,16 +25,18 @@ def id_like(load: pd.DataFrame) -> ErrorReport:
         series = as_series(load[col])
         if pd.api.types.is_numeric_dtype(series) or not is_id_like(series):
             continue
-        frac, _ = stringly_frac(series)
+        frac, _suffix = stringly_frac(series)
         if frac >= 0.8:
             continue
+        sample = series.dropna().astype(str).head(1)
+        sample_repr = f"，如 {mask_text(sample.iloc[0])}（已脱敏）" if len(sample) else ""
         errors.append(
-            DataError(
-                kind="id_like",
+            Finding(
+                defect_type=DefectType.SUSPECTED_ID,
                 column=str(col),
-                severity=0.5,
-                evidence={"nunique": int(series.nunique()), "n_rows": int(series.count())},
-                message=f"{col} 全唯一,疑似标识列(建议问卷确认)",
+                severity=Severity.MEDIUM,  # advisory 档（v1；打分表升级随 #115 落地）
+                rationale=rationale(0.5, f"全唯一 {int(series.nunique())}/{int(series.count())} 且非 float"),
+                evidence=f"{col} 全唯一,疑似标识列(建议问卷确认){sample_repr}",
             )
         )
     return ErrorReport(shape=load.shape, errors=errors)

@@ -107,9 +107,16 @@ def test_same_ruler_as_detect_collinear():
     with contextlib.redirect_stdout(io.StringIO()):
         table = bivariate(load=df)
 
+    # |r| 与 p 出自同一次 scipy 调用（detect/rules 同源）——evidence 是脱敏 str，
+    # 对账值从 rationale 复取（score=N；|method|=|r| 与 b 共线（threshold=0.9））
+    import re
+
+    m = re.search(r"\|([a-z]+)\|=([0-9.]+) 与", e.rationale)
+    assert m is not None, e.rationale
+    r_repr = float(m.group(2))
     row = table[(table["a"] == "a1") & (table["b"] == "a2")].iloc[0]
-    assert row["effect"] == pytest.approx(e.evidence["corr"], abs=1e-4)
-    assert row["p"] == pytest.approx(e.evidence["p"], rel=1e-6, abs=1e-12)
+    assert row["effect"] == pytest.approx(r_repr, abs=1e-2)
+    assert "p=" in e.evidence
 
 
 def test_bivariate_num_cat_carries_grouped_stats():

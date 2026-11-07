@@ -65,6 +65,6 @@ def test_summary_remains_the_token_friendly_carrier(dirty_df, capsys):
     """print 退役，摘要载体仍在——需要人读回显的调用方调 summary()。"""
     report = missing(load=dirty_df)
 
-    assert "missing" in report.summary()
+    assert "high_null" in report.summary()
     assert "ErrorReport" in report.summary()
     assert capsys.readouterr().out == ""

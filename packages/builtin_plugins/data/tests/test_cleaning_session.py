@@ -104,7 +104,7 @@ def test_start_session_snapshots_and_scores(sessions_root, dirty_csv):
     assert s.session_id
     assert (sessions_root / s.session_id / "v0.parquet").exists()
     assert s.state_digest["v"] == 0
-    assert s.state_digest["defects"].get("missing", 0) >= 1
+    assert s.state_digest["defects"].get("high_null", 0) >= 1
     assert s.state_digest["defects"].get("duplicate", 0) >= 1
     assert 0.0 <= s.state_digest["quality"]["score"] < 1.0
     assert s.state_digest["quality"]["info_loss"] is None  # 初始无基线损失
@@ -121,7 +121,7 @@ def test_apply_action_improves_quality_and_logs(sessions_root, dirty_csv):
 
     assert r.state_digest["v"] == 1
     assert r.state_digest["quality"]["score"] > s.state_digest["quality"]["score"]
-    assert r.state_digest["defects"].get("missing", 0) == 0
+    assert r.state_digest["defects"].get("high_null", 0) == 0
     # 决策日志 (s,a,r,s')——单记录版本树（v/file/sha 与走法同条）
     log = _log(sessions_root, s.session_id)
     assert len(log) == 1
@@ -220,7 +220,7 @@ def test_rollback_restores_version(sessions_root, dirty_csv):
 
     assert r.state_digest["v"] == 0
     assert r.state_digest["quality"]["score"] == pytest.approx(s.state_digest["quality"]["score"])
-    assert r.state_digest["defects"].get("missing", 0) >= 1
+    assert r.state_digest["defects"].get("high_null", 0) >= 1
     assert after.state_digest["v"] == 1
     # append-only：rollback 是记录不是删行
     log = _log(sessions_root, s.session_id)
@@ -282,7 +282,7 @@ def test_freshness_stats_evaluated_at_apply(sessions_root, tmp_path):
     df2 = cs.current_df(s.session_id)
     assert df2["x"].iloc[4] == pytest.approx(17.875)
     assert df2["x"].iloc[4] != pytest.approx(26.5)  # 若参数在观测期烙定均值则会得到污染值
-    assert r.state_digest["defects"].get("missing", 0) == 0
+    assert r.state_digest["defects"].get("high_null", 0) == 0
 
 
 def test_whitebox_loop_covers_load_hygiene(sessions_root, tmp_path):
@@ -307,12 +307,12 @@ def test_whitebox_loop_covers_load_hygiene(sessions_root, tmp_path):
 
     s = cs.start_session(str(path), card={"domain": "t", "id_columns": ["sid"]})
     problems = s.state_digest["problems"]
-    assert problems.get("empty_row")
-    assert "dead" in {p["column"] for p in problems["missing"]}
-    assert "const" not in {p["column"] for p in problems.get("constant", [])}  # 空行未删,常量未浮现
+    assert {p["defect_type"] for p in problems} >= {"empty_row", "high_null"}  # 同屏可见
+    assert "dead" in {p["column"] for p in problems if p["defect_type"] == "high_null"}
+    assert "const" not in {p["column"] for p in problems if p["defect_type"] == "constant_col"}  # 空行未删,常量未浮现
 
     r = cs.apply_action(s.session_id, "drop_missing_rows", {"how": "all"})
-    assert "const" in {p["column"] for p in r.state_digest["problems"]["constant"]}
+    assert "const" in {p["column"] for p in r.state_digest["problems"] if p["defect_type"] == "constant_col"}
 
 
 def test_budget_stops_apply(sessions_root, dirty_csv):
@@ -580,7 +580,7 @@ def test_expected_ranges_observable_repairable_rewarded(sessions_root, ranged_cs
 
     # ① 观测：物理越界进缺陷清单（defect × count + 证据）
     assert s.state_digest["defects"].get("range_violation") == 1
-    assert [p["column"] for p in s.state_digest["problems"]["range_violation"]] == ["temp"]
+    assert [p["column"] for p in s.state_digest["problems"] if p["defect_type"] == "range_violation"] == ["temp"]
 
     # ② 转移：修越界得正奖励（求和口径——消除缺陷不减分）
     r = cs.apply_action(sid, "range_clip", {"ranges": {"temp": [0.0, 100.0]}})
@@ -599,3 +599,43 @@ def test_clean_state_has_no_stop_suggestion_channel(sessions_root, tmp_path):
     o = cs.observe_session(s.session_id)
     assert not o.state_digest["defects"]  # 干净起点（无缺陷可修）——收局判据在观测
     assert "should_stop" not in o.state_digest and "finish" not in json.dumps(dict(o.state_digest))
+
+
+def test_problems_projection_passes_findings_through(sessions_root, dirty_csv):
+    """#117 Q4：problems = Finding 六字段全量透传（投影只透传不组装）——每条携带
+    finding_id/defect_type/定位键/severity/rationale(带 score 前缀)/evidence。"""
+    s = cs.start_session(dirty_csv, card=CARD)
+    problems = s.state_digest["problems"]
+
+    assert problems
+    p0 = next(p for p in problems if p["defect_type"] == "high_null")
+    assert set(p0) == {"finding_id", "defect_type", "column", "severity", "rationale", "evidence"}
+    assert p0["finding_id"].startswith("high_null::")
+    assert p0["rationale"].startswith("score=")
+    assert isinstance(p0["evidence"], str)  # 脱敏 str（INV-2）
+    assert all(("column" in p) != ("rows" in p) for p in problems)  # 定位键互斥投影
+
+
+def test_routing_hints_resident_in_digest(sessions_root, dirty_csv):
+    """#117 Q1：routing_hints 常驻观测——枚举键控全键投影（提示非约束，词表全集另经
+    list_nodes）；prior_conflict 处置 = keep（空推荐集）。"""
+    from mflowy.data.detect.errors import DefectType
+
+    s = cs.start_session(dirty_csv, card=CARD)
+    hints = s.state_digest["routing_hints"]
+
+    assert set(hints) == {m.value for m in DefectType}  # 键 = 枚举全集（闭包测试钉值 ⊆ 词表）
+    assert hints["empty_row"] == ["drop_missing_rows"]  # #125 F4 扩展值提示
+    assert hints["duplicate"] == ["drop_duplicate"]
+    assert hints["collinear"] == ["drop_cols"]
+    assert hints["range_violation"] == ["range_clip"]
+    assert hints["prior_conflict"] == []  # 处置收敛为 keep（#116）
+
+
+def test_column_profile_carries_missing_rate(sessions_root, dirty_csv):
+    """#125 F1：列画像 missing_rate 常驻——低空值列不产缺陷，π 无需缺陷标签即可动手。"""
+    s = cs.start_session(dirty_csv, card=CARD)
+    cols = s.state_digest["columns"]
+
+    assert 0.2 < cols["hole"]["missing_rate"] <= 0.4  # 夹具 hole ~30%（high_null 也在场）
+    assert cols["x1"]["missing_rate"] == 0.0

@@ -54,11 +54,7 @@ def propose_questions(file_path: str, card_partial: dict | None = None, eda_find
 
     with contextlib.redirect_stdout(io.StringIO()):
         rows, hits = univariate_facts(df)
-        stringly = [
-            f"{e.column} 疑似单位后缀({e.evidence.get('suffix')})"
-            for e in detect_stringly(load=df).errors
-            if e.kind == "stringly_numeric"
-        ]
+        stringly = [f"{e.column}: {e.evidence}" for e in detect_stringly(load=df).errors]
     schema = {r["name"]: r for r in rows}
     id_cols = hits.get("id", [])
     dt_cols = [n for n, r in schema.items() if r["family"] == "datetime"]

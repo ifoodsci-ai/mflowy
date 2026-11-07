@@ -44,13 +44,14 @@ from mflowy.data.detect.range_violation import range_violation as detect_range_v
 from mflowy.data.detect.scoring import quality_score as _qs_raw
 from mflowy.data.detect.stringly import stringly as detect_stringly
 from mflowy.data.fingerprint import fingerprint
+from mflowy.data.routing import routing_hints
 from mflowy.driver.pomdp import FinishVerdict, Observation
 from mflowy.driver.session import POMDPSession
 from mflowy.utils.file import sha256_of, write_text_atomic
 
 
 def _quality_score(report, baseline=None, card: Mapping[str, Any] | None = None):
-    """Φ 计分：卡携带的 defect_priority（kind→权重覆盖）随开局生效。"""
+    """Φ 计分：卡携带的 defect_priority（defect_type→权重覆盖）随开局生效。"""
     prio = (card or {}).get("defect_priority") or {}
     return _qs_raw(report, baseline=baseline, weights=prio or None)
 
@@ -143,7 +144,8 @@ def _column_profile(df: pd.DataFrame) -> dict:
     var = df.select_dtypes(include="number").var().to_dict()  # type: ignore[reportAttributeAccessIssue]  # pandas-stubs var 重载联合含标量（DataFrame 轴 0 恒 Series）
     profile = {}
     for r in rows:
-        col: dict = {"family": r["family"]}
+        # missing_rate 常驻（#125 F1）：低空值列不产缺陷但画像可见——π 无需缺陷标签即可动手
+        col: dict = {"family": r["family"], "missing_rate": r["missing_rate"]}
         if r["family"] == "numeric":
             col |= {k: _num(r.get(k)) for k in ("skew", "q1", "q2", "q3")}
             col["var"] = _num(var.get(r["name"]))
@@ -312,20 +314,16 @@ def _refresh_state_digest(
     """检测证据写进 state_digest（s′ 免费自带的落点，#89 ③片富化面）：
     problems 问题投影 + columns 列画像 + current_file 当前版本工件——π 的全部
     决策证据（π 纯消费观测，零 df 接触；apply 可选新鲜度引用源 = current_file）。"""
-    problems: dict[str, list] = {}
-    for e in report.errors:
-        problems.setdefault(e.kind, []).append(
-            {"column": e.column, "severity": e.severity, "evidence": dict(e.evidence or {})}
-        )
     o.state_digest = {
         **o.state_digest,
         "v": v,
         "digest": _digest(report),
-        "defects": report.counts(),
+        "defects": report.counts(),  # defect×count 派生快读键（事实源 = problems）
         "summary": report.summary(),
         "shape": list(report.shape),
         "quality": quality,
-        "problems": problems,
+        "problems": [e.as_dict() for e in report.errors],  # Finding 六字段全量透传（投影只透传不组装）
+        "routing_hints": routing_hints(),  # 常驻提示（形状稳定；提示非约束——词表全集另经 list_nodes）
         "columns": _column_profile(df),
         "current_file": file,
     }

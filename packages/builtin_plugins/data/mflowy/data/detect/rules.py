@@ -1,9 +1,10 @@
-"""共享规则实现：zscore/iqr 栅栏——detect 与 clean 修复侧同源的唯一居所。
+"""共享规则实现：zscore/iqr 栅栏 + 脱敏——detect 与 clean 修复侧同源的唯一居所。
 
 非词表模块（无 @node，不产 entry point）。全部纯函数、零判断：
-不产 severity/ErrorReport（判断在 detect 算子），只做"从声明式参数确定性推导
+不产 severity/Finding（判断在 detect 算子），只做"从声明式参数确定性推导
 掩码/栅栏"。修复原子（cap_iqr / drop_outlier_iqr / …）与本模块的 detect 算子
-必须 import 同一函数——口径分歧（如 std 自由度）从结构上根除。
+必须 import 同一函数——口径分歧（如 std 自由度）从结构上根除；``mask_text``
+是 INV-2 脱敏单源（evidence 样本与 clean.mask_cols 共用）。
 """
 
 from __future__ import annotations
@@ -14,6 +15,15 @@ from mflowy.data.types import as_series
 
 # rule 与默认档位的配对（detect.outliers / 修复原子的默认参数共用）
 RULE_DEFAULT_K = {"zscore": 3.0, "iqr": 1.5}
+
+
+def mask_text(value: str, *, keep_head: int = 2, keep_tail: int = 2, mask_char: str = "*") -> str:
+    """文本脱敏（INV-2 单源）：首尾各留 keep_head/keep_tail 字符，中间以 mask_char 遮蔽；
+    长度不足以保留时不因短而泄漏（全遮）。样本进 Finding.evidence 前必须过本函数。"""
+    s = str(value)
+    if len(s) <= keep_head + keep_tail:
+        return mask_char * len(s)
+    return s[:keep_head] + mask_char * (len(s) - keep_head - keep_tail) + s[len(s) - keep_tail :]
 
 
 def zscore_mask(series: pd.Series, k: float = 3.0) -> pd.Series:
