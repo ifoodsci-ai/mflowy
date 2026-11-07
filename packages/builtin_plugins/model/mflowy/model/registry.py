@@ -86,10 +86,13 @@ def _admit_family(node: str, meta: object) -> dict:
 
 def family_face(family: str) -> dict:
     """族签名用户超参面（plumbing 除外；random_state 走 set_seed 专用动作）——
-    词表派生面单源：session 校验面与出题规则现查共用（防第二份拷贝漂移）。"""
-    from mflowy.model.model.utils import signature_params
+    词表派生面单源：session 校验面与出题规则现查共用（防第二份拷贝漂移）。#141 起
+    取装饰期冻结面（family_param_defaults，经正规门面按 node_key）——零活反射。"""
+    from mflowy.driver.config import node_key
+    from mflowy.driver.discover import get_node
+    from mflowy.model.model.utils import family_param_defaults
 
-    return signature_params(families()[family]["pyfunc"])
+    return family_param_defaults(get_node(node_key("model", family)))
 
 
 def families() -> dict[str, dict]:

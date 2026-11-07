@@ -93,28 +93,33 @@ def extract_search_spaces(
 MACHINERY_SKIP = frozenset({"train_split", "x_preprocessors", "n_trials", "scoring", "random_state"})
 
 
-def signature_params(fn) -> dict[str, Any]:
-    """族节点签名的用户超参缺省值（单一真源 = 签名；plumbing 除外）。"""
-    import inspect
-
-    return {
-        k: v.default
-        for k, v in inspect.signature(fn).parameters.items()
-        if k not in MACHINERY_SKIP and v.default is not inspect.Signature.empty
-    }
+def family_param_defaults(entry) -> dict[str, Any]:
+    """族节点用户超参缺省值 = 冻结面过滤派生（#141——#62 时代活反射提取器的等价重述）：
+    (``param_fields`` 带默认 ∪ ``upstreams_schema`` 可选边默认) − ``MACHINERY_SKIP``
+    ——五族键集与默认值本尊实测全等（对账钉测以活签名为独立 oracle 锁定）。"""
+    out = {k: d for k, (_, d) in entry.param_fields.items() if d is not ... and k not in MACHINERY_SKIP}
+    out.update({e.name: e.default for e in entry.upstreams_schema if e.optional and e.name not in MACHINERY_SKIP})
+    return out
 
 
 def make_machinery(fn, model_cls_of, fixed: dict | None = None, seed_key: str = "random_state", skip=()):
     """族节点 → 会话可直调的 estimator 机器（#62 两行为的共享底座）。
 
-    缺省超参 = ``fn`` 签名默认值（单一真源）∪ ``fixed``（oob_score/verbose 等
-    非签名机器参数）；``skip`` = 不进 params 的签名参数（如 LGBM 的
-    early_stopping_rounds 走 fit_params）；调用面 ``(task, x_preprocessors,
-    seed=None, **overrides) -> (make_pipe, base_params, param_space)``——
-    overrides 标量 = pin、Space = 收窄。
+    缺省超参 = 装饰期冻结面默认（``family_param_defaults``——条目经正规门面
+    ``get_node`` 按 node_key 取，键 = node_key("model", fn.__name__)——依赖
+    @node 装饰以 fn.__name__ 注册的既定不变式；#141 化石退役零活反射）∪ ``fixed``
+    （oob_score/verbose 等非签名机器参数）；``skip`` = 不进 params 的签名参数
+    （如 LGBM 的 early_stopping_rounds 走 fit_params）；调用面 ``(task,
+    x_preprocessors, seed=None, **overrides) -> (make_pipe, base_params,
+    param_space)``——overrides 标量 = pin、Space = 收窄。
     """
+    from mflowy.driver.config import node_key
+    from mflowy.driver.discover import get_node
+
     fixed = dict(fixed or {})
-    sig_defaults = {k: v for k, v in signature_params(fn).items() if k not in set(skip)}
+    sig_defaults = {
+        k: v for k, v in family_param_defaults(get_node(node_key("model", fn.__name__))).items() if k not in set(skip)
+    }
 
     def machinery(task, x_preprocessors=None, seed=None, **overrides):
         from ._model import build_pipeline

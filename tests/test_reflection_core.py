@@ -7,7 +7,7 @@
   导入——生产消费方只读冻结核；与收敛钉测合取 = 消费路径零活反射（静态判定，零替身）
 - **全目录对账**：parametrize 全部内置节点/边——装饰期冻结核（``upstreams_schema`` /
   ``return_hint`` / ``param_fields``）≡ 查询期活反射；第四面 fields 与 model 域
-  ``signature_params`` 化石的过滤面差异显式断言（漏④后续票的迁移公式）
+  第四面（param_fields）消费面 family_param_defaults 的等价断言（#141 已落地）
 
 测试侧反射是观察者（钉签名契约），不在收敛面内；缺 extra 的目录项降级跳过（M6 语义）。
 """
@@ -32,9 +32,7 @@ _PRIMITIVES = frozenset({"signature", "get_type_hints", "get_annotations", "getf
 _LEDGER = {
     # MCP 工具面分发（族外：工具函数非 @node/@edge 目标，#138 票面豁免）
     "packages/mcp/mflowy/mcp/runner.py": 1,
-    # 漏④（后续票）：model 域第四面消费——signature_params 化石族（5 消费位点 / 3 反射
-    # 调用点），迁 param_fields / upstreams_schema 冻结核后清零
-    "packages/builtin_plugins/model/mflowy/model/model/utils.py": 1,
+    # model 域第四面外存量（#141 后余量；触碰时收敛，棘轮只紧不松）
     "packages/builtin_plugins/model/mflowy/model/propose_rules.py": 1,
     "packages/builtin_plugins/model/mflowy/model/session.py": 1,
 }
@@ -211,29 +209,32 @@ def test_edge_core_matches_live_reflection(key):
 
 
 @pytest.mark.parametrize("key", _builtin_keys(edges=False))
-def test_param_fields_reconcile_signature_params(key):
-    """第四面对账（漏④迁移公式）：``signature_params`` ≡ 冻结面的过滤派生——
+def test_family_param_defaults_reconcile_live_signature(key):
+    """第四面对账（#141 化石退役后形态）：``family_param_defaults`` ≡ 活签名公式——
 
-    signature_params = (fields 带默认 − MACHINERY_SKIP) ∪ (可选参数边 − MACHINERY_SKIP)；
+    family_param_defaults = (fields 带默认 ∪ 可选参数边默认) − MACHINERY_SKIP
+    （#62 时代活反射提取器的公式逐字等价——迁移时五族键集与默认值本尊实测全等，
+    五族可选边项空集、union 取全目录公式一般性——79 节点 28 例可选边非空）；
+    对账以活签名为独立 oracle（typing/inspect 直取，不经 reflect 与冻结面——非自证）。
     过滤面差异显式：MACHINERY_SKIP ∩ fields（plumbing 不透传）、无默认 Annotated 集
-    （必填用户参数无缺省值）——两集在 fields、不在 signature_params（排除关系由公式式
-    expected 构造承载）；两集本身对照活签名独立推导核对（typing/inspect 直取，不经
-    reflect 与 param_fields——非自证）。
+    （必填用户参数无缺省值）——两集对照活签名直推核对。
     """
-    from mflowy.model.model.utils import MACHINERY_SKIP, signature_params
+    from mflowy.model.model.utils import MACHINERY_SKIP, family_param_defaults
 
     entry = _load(get_node, key)
     fields = {k: d for k, (_, d) in entry.param_fields.items()}
     skip_in_fields = fields.keys() & MACHINERY_SKIP
     no_default_annotated = {k for k, d in fields.items() if d is ...}
-    optional_edges = {e.name: e.default for e in entry.upstreams_schema if e.optional and e.name not in MACHINERY_SKIP}
-    expected = {k: d for k, d in fields.items() if k not in skip_in_fields | no_default_annotated} | optional_edges
-    live = signature_params(entry.fn)
-    assert live.keys() == expected.keys()
-    assert all(live[k] is expected[k] for k in live), key  # 默认值本尊（签名单源）
-    # 过滤面差异两集的独立来源：活签名直推（Annotated 判定 + 签名默认值），与冻结 fields 推得者对照
-    hints = get_type_hints(entry.fn, include_extras=True)
+    frozen = family_param_defaults(entry)
+    # 活签名独立推导（oracle）：全参数带默认 − MACHINERY_SKIP（不经 reflect/冻结面）
     sig = inspect.signature(entry.fn).parameters
+    live = {
+        k: p.default for k, p in sig.items() if p.default is not inspect.Parameter.empty and k not in MACHINERY_SKIP
+    }
+    assert frozen.keys() == live.keys(), key
+    assert all(frozen[k] is live[k] for k in frozen), key  # 默认值本尊（签名单源）
+    # 过滤面差异两集的独立来源：活签名直推 Annotated 判定，与冻结 fields 推得者对照
+    hints = get_type_hints(entry.fn, include_extras=True)
     annotated = {n for n in sig if get_origin(hints.get(n)) is Annotated}
     assert skip_in_fields == annotated & MACHINERY_SKIP, key
     assert no_default_annotated == {n for n in annotated if sig[n].default is inspect.Parameter.empty}, key

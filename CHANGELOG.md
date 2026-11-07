@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### model 域化石退役：用户超参缺省迁冻结第四面（#141，#126 目标收官·BREAKING·model 域导入面）
+
+- `model/utils.py` 活反射提取器（每次调用 `inspect.signature` 取超参默认值）删除；
+  等价面 `family_param_defaults(entry)` = (`param_fields` 带默认 ∪ `upstreams_schema`
+  可选边默认) − `MACHINERY_SKIP`——#138 冻结面过滤派生，五族键集与默认值本尊实测
+  全等（对账钉测以活签名为独立 oracle 锁定等价；五族可选边项实测空集——union
+  取全目录公式一般性：79 内置节点 28 例带非 skip 可选边默认）。**BREAKING**：
+  ``mflowy.model.model.utils`` 化石函数删除（原跨模块导入面）。
+- 消费位迁移：`make_machinery`（签名不变，内部经正规门面 `get_node` 按 node_key 取
+  条目）；`family_face` 同改；`protocol._validate_hints` 改调 `family_face`（消除其
+  绕过单源直查签名的重复）。反射台账（`tests/test_reflection_core.py`）model 域
+  utils.py 位点清零——棘轮收窄。
+- #126「签名解析单源收敛到注册时」目标就此收官（kernel 侧 #138 + model 域本票）。
+
 ### BREAKING：Node/Edge 装饰期反射核冻结 + fn 反射单源工具包（#138）
 
 - **BREAKING**（导入面）：`driver/binding.py` → **`driver/reflect.py`**（fn 反射工具包——
