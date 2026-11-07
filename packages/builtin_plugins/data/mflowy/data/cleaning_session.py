@@ -37,12 +37,13 @@ from mflowy.data.detect.collinear import collinear as detect_collinear
 from mflowy.data.detect.constant import constant as detect_constant
 from mflowy.data.detect.duplicates import duplicates as detect_duplicates
 from mflowy.data.detect.errors import ErrorReport
-from mflowy.data.detect.id_like import id_like as detect_id_like
 from mflowy.data.detect.missing import missing as detect_missing
 from mflowy.data.detect.outliers import outliers as detect_outliers
 from mflowy.data.detect.range_violation import range_violation as detect_range_violation
 from mflowy.data.detect.scoring import quality_score as _qs_raw
 from mflowy.data.detect.stringly import stringly as detect_stringly
+from mflowy.data.detect.suspected_id import PRIOR_KEYS
+from mflowy.data.detect.suspected_id import suspected_id as detect_suspected_id
 from mflowy.data.fingerprint import fingerprint
 from mflowy.data.routing import routing_hints
 from mflowy.driver.pomdp import FinishVerdict, Observation
@@ -77,6 +78,20 @@ def never_drop(card: Mapping[str, Any] | None) -> list[str]:
     return list(card["never_drop"])
 
 
+# 影响检测产出的卡先验键（memo 键组成 + suspected_id 注入面，#115）：ID 分级七键
+# 单源 = suspected_id.PRIOR_KEYS，另加 expected_ranges（range_violation 注入面）
+_PRIOR_MEMO_KEYS = ("expected_ranges", *PRIOR_KEYS)
+
+
+def _prior_card(card: Mapping[str, Any] | None) -> dict | None:
+    """冻结卡 → 检测器先验投影：只取 ID 分级键（富化键 never_drop/defect_priority 等
+    不进检测面——算子侧键集校验严格收口）。"""
+    if not card:
+        return None
+    prior = {k: card[k] for k in _PRIOR_MEMO_KEYS if k != "expected_ranges" and card.get(k) is not None}
+    return prior or None
+
+
 def _detect_all(df: pd.DataFrame, card: Mapping[str, Any] | None = None) -> ErrorReport:
     """观测通道：检测算子合并（正交拆分后七算子 + 卡先验的 range_violation）。
 
@@ -89,8 +104,13 @@ def _detect_all(df: pd.DataFrame, card: Mapping[str, Any] | None = None) -> Erro
     （多会话进程内防膨胀；清空只损失命中率，语义不变）。
     """
     ranges = (card or {}).get("expected_ranges") or {}
-    ranges_key = json.dumps(ranges, sort_keys=True, ensure_ascii=False) if ranges else ""
-    memo_key = (_fingerprint(df), ranges_key)
+    prior_key = json.dumps(
+        {k: (card or {}).get(k) for k in _PRIOR_MEMO_KEYS if (card or {}).get(k) is not None},
+        sort_keys=True,
+        ensure_ascii=False,
+        default=str,
+    )
+    memo_key = (_fingerprint(df), prior_key)
     hit = _REPORT_MEMO.get(memo_key)
     if hit is not None:
         return hit
@@ -102,10 +122,10 @@ def _detect_all(df: pd.DataFrame, card: Mapping[str, Any] | None = None) -> Erro
             detect_outliers,
             detect_constant,
             detect_stringly,
-            detect_id_like,
-            detect_collinear,
         )
     ]
+    reports.append(detect_suspected_id(load=df, card=_prior_card(card)))
+    reports.append(detect_collinear(load=df))
     if ranges:
         reports.append(detect_range_violation(load=df, ranges=ranges))
     report = ErrorReport(shape=df.shape, errors=[e for r in reports for e in r.errors])

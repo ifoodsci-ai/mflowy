@@ -287,7 +287,10 @@ def excluded_from_features(card: dict | None) -> list[str]:
     card = card or {}
     return sorted(
         set(
-            [*(card.get("primary_key_columns") or []), *(card.get("id_columns") or []),
-             *(c for g in (card.get("composite_keys") or []) for c in g)]
+            [
+                *(card.get("primary_key_columns") or []),
+                *(card.get("id_columns") or []),
+                *(c for g in (card.get("composite_keys") or []) for c in g),
+            ]
         )
     )

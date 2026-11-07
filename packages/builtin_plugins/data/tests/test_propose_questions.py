@@ -58,3 +58,24 @@ def test_internal_substrate_prints_nothing(q_csv, capsys):
     propose_questions(q_csv, {})
 
     assert capsys.readouterr().out == ""
+
+
+def test_id_question_carries_two_tier_evidence(tmp_path):
+    """#115：id 问题两档证据——全唯一疑似（单列档）+ 组合唯一疑似（组合档）。"""
+    n = 60
+    df = pd.DataFrame(
+        {
+            "batch": [f"b{i // 6}" for i in range(n)],
+            "sample": [f"s{i % 6}" for i in range(n)],
+            "v": list(range(n)),
+        }
+    )
+    path = tmp_path / "tiers.csv"
+    df.to_csv(path, index=False)
+
+    out = propose_questions(str(path), {"domain": "t", "target": "v"})
+
+    id_q = next(q for q in out["questions"] if q["field"] == "id_columns")
+    ev = " ".join(id_q["evidence"])
+    assert "全唯一疑似" in ev and "组合唯一疑似" in ev
+    assert "batch+sample" in ev

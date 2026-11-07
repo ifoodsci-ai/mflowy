@@ -72,12 +72,12 @@ def propose_questions(file_path: str, card_partial: dict | None = None, eda_find
     if "target" not in card_partial:
         ask("target", "监督目标列是哪一列？（必须有——无 target 的探索性流程不支持）", target_candidates[:12])
     _id_tiers = ("id_columns", "primary_key_columns", "foreign_key_columns", "composite_keys", "known_non_id_columns")
-    if not any(k in card_partial for k in _id_tiers) and hits.get("id"):
+    if not any(k in card_partial for k in _id_tiers) and (hits.get("id") or hits.get("composite")):
         ask(
             "id_columns",
             "哪些列是标识列？（主键/外键/普通标识/组合键，如 batch+sample——作为 ID 先验，"
             "决策时评估 join/特征角色，不再自动免删）",
-            [f"全唯一疑似: {hits['id']}"],
+            [f"全唯一疑似: {hits['id']}", f"组合唯一疑似: {hits['composite']}"],
         )
     if "time_column" not in card_partial and dt_cols:
         ask("time_column", "时间列是哪一列？", [f"时间类型列: {dt_cols}"])

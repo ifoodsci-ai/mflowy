@@ -11,10 +11,10 @@ from mflowy.data.detect.collinear import collinear
 from mflowy.data.detect.constant import constant
 from mflowy.data.detect.duplicates import duplicates
 from mflowy.data.detect.errors import DefectType, ErrorReport, Finding, Severity, rationale
-from mflowy.data.detect.id_like import id_like
 from mflowy.data.detect.missing import missing
 from mflowy.data.detect.outliers import outliers
 from mflowy.data.detect.stringly import stringly
+from mflowy.data.detect.suspected_id import suspected_id
 
 
 def _dirty_df() -> pd.DataFrame:
@@ -28,7 +28,7 @@ def _dirty_df() -> pd.DataFrame:
             "x_na": np.where(rng.random(n) < 0.3, np.nan, 1.0),  # 缺失 ~30%
             "const": [2.0] * n,
             "pct": [f"{v:.1f}%" for v in rng.uniform(0, 100, n)],  # 单位污染
-            "sid": [f"s{i:03d}" for i in range(n)],  # ID-like
+            "sample_id": [f"s{i:03d}" for i in range(n)],  # ID-like
         }
     )
     return pd.concat([df, df.head(10)]).reset_index(drop=True)  # 10 条重复行
@@ -122,14 +122,14 @@ def test_detect_stringly_full_scan_no_sampling():
     assert [e.column for e in report.errors] == ["s"]
 
 
-def test_detect_id_like_flags_unique_text_columns():
-    """身份检测：全唯一文本列入报；单位污染列（全唯一来自连续取值）被 stringly 否决。"""
-    report = id_like(load=_dirty_df().drop_duplicates().reset_index(drop=True))
+def test_detect_suspected_id_flags_unique_text_columns():
+    """身份检测：全唯一文本列入报；单位污染列（全唯一来自连续取值）不进常规打分。"""
+    report = suspected_id(load=_dirty_df().drop_duplicates().reset_index(drop=True), card={"domain": "t"})
 
     cols = {e.column for e in report.errors}
-    assert "sid" in cols
+    assert "sample_id" in cols
     assert all(e.defect_type is DefectType.SUSPECTED_ID for e in report.errors)
-    assert "pct" not in cols  # 数值语义列不是标识列(旧 pattern 的 continue 互斥语义)
+    assert "pct" not in cols  # 数值语义列不是标识列（stringly 否决语义的打分继承）
 
 
 def test_detect_outliers_rule_switches_ruler():
@@ -247,16 +247,16 @@ def test_detect_on_clean_df_reports_clean():
     """干净数据各算子都产零缺陷报告。"""
     df = pd.DataFrame({"a": [1.0, 2.0, 3.0, 4.0], "b": ["x", "y", "x", "z"]})
 
-    for fn in (missing, duplicates, outliers, constant, stringly, id_like):
+    for fn in (missing, duplicates, outliers, constant, stringly):
         report = fn(load=df)
         assert report.errors == [], fn.__name__
 
 
 def test_evidence_samples_are_masked():
     """INV-2：evidence 中出现的样本值必须脱敏（首尾各留 2 字符、中间 *）。"""
-    df = pd.DataFrame({"sid": [f"sample_id_{i:03d}" for i in range(10)]})
+    df = pd.DataFrame({"sid": ["sample_id_000"] * 10})
 
-    (e,) = id_like(load=df).errors
+    (e,) = constant(load=df).errors  # 常量列携带脱敏样本
 
     assert "sample_id_" not in e.evidence  # 原文不泄漏
     assert "sa" in e.evidence and "00" in e.evidence  # 首尾各 2 字符保留

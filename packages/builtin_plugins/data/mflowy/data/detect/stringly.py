@@ -20,7 +20,7 @@ _HIGH_FRAC = 0.95
 
 
 def stringly_frac(series: pd.Series) -> tuple[float, str | None]:
-    """全列(数值形态占比, 众数后缀字符)——detect.stringly 判报与 id_like 否决共用。
+    """全列(数值形态占比, 众数后缀字符)——detect.stringly 判报与 suspected_id 出题共用。
 
     全量向量化（禁止采样裁定）：``str.extract`` 一次扫描全列，替代旧 ``head(50)``
     位置采样——前部干净后部污染的列不再漏报。后缀是 strip_units 参数的诚实来源。

@@ -639,3 +639,24 @@ def test_column_profile_carries_missing_rate(sessions_root, dirty_csv):
 
     assert 0.2 < cols["hole"]["missing_rate"] <= 0.4  # 夹具 hole ~30%（high_null 也在场）
     assert cols["x1"]["missing_rate"] == 0.0
+
+
+def test_card_id_priors_feed_detector(sessions_root, tmp_path):
+    """#115：卡先验分级字段喂 suspected_id 四出口——pk 列强先验直出（跳打分），
+    观测 problems 即见 suspected_id(high)；反先验列冲突产 prior_conflict。"""
+    n = 120
+    df = pd.DataFrame(
+        {
+            "pk": [f"p{i:04d}" for i in range(n)],
+            "loose": [f"x{i:05d}" for i in range(n - 9)] + ["x00000"] * 9,  # 唯一率 111/120 <0.95
+            "v": list(range(n)),
+        }
+    )
+    path = tmp_path / "prior.csv"
+    df.to_csv(path, index=False)
+
+    s = cs.start_session(str(path), card={"domain": "t", "primary_key_columns": ["pk"], "id_columns": ["loose"]})
+    problems = {(p["defect_type"], p["column"]): p for p in s.state_digest["problems"]}
+    assert problems[("suspected_id", "pk")]["severity"] == "high"  # 强先验直出
+    assert ("prior_conflict", "loose") in problems  # known_id 唯一率 <0.95 → 冲突
+    assert problems[("prior_conflict", "loose")]["severity"] == "medium"

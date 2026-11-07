@@ -18,7 +18,7 @@ OPERATORS = [
     "outliers",
     "constant",
     "stringly",
-    "id_like",
+    "suspected_id",
     "collinear",
     "range_violation",
 ]
@@ -29,7 +29,7 @@ _OP_KWARGS = {"range_violation": {"ranges": {"x1": [-3.0, 3.0]}}}
 
 def _dirty_df() -> pd.DataFrame:
     """七算子各至少一缺陷——防空跑假绿（闭合测试的空子集恒真）。"""
-    n = 60
+    n = 150
     import numpy as np
 
     rng = np.random.default_rng(11)
@@ -42,7 +42,7 @@ def _dirty_df() -> pd.DataFrame:
             "hole": np.where(rng.random(n) < 0.3, np.nan, 1.0),
             "const": [3.0] * n,
             "pct": [f"{v:.1f}%" for v in rng.uniform(0, 100, n)],
-            "sid": [f"s{i:03d}" for i in range(n)],
+            "sample_id": [f"s{i:03d}" for i in range(n)],
         }
     )
     return pd.concat([df, df.head(5)]).reset_index(drop=True)
@@ -56,7 +56,7 @@ def test_retired_kind_names_are_gone():
     retired = {"missing", "constant", "outlier", "stringly_numeric", "id_like"}
     produced = set()
     for op_name in OPERATORS:
-        op_df = df.drop_duplicates().reset_index(drop=True) if op_name == "id_like" else df
+        op_df = df.drop_duplicates().reset_index(drop=True) if op_name == "suspected_id" else df
         report = get_node(f"detect__{op_name}").fn(load=op_df, **_OP_KWARGS.get(op_name, {}))
         produced |= {e.defect_type.value for e in report.errors}
     assert retired & produced == set(), f"退役 kind 名仍被产出: {retired & produced}"
@@ -68,13 +68,13 @@ def test_retired_kind_names_are_gone():
 def test_operators_emit_only_enum_members(op_name):
     """检测算子产出的 defect_type ∈ DefectType——枚举外产出是契约违规。
 
-    id_like 判据是全唯一——含重复行的原始 df 上不满足，用去重视图喂它。
+    suspected_id 强先验/打分吃任意视图；含重复行的原始 df 上全唯一判据不满足——去重视图喂它。
     """
     from mflowy.driver.discover import get_node
 
     op = get_node(f"detect__{op_name}").fn
     df = _dirty_df()
-    if op_name == "id_like":
+    if op_name == "suspected_id":
         df = df.drop_duplicates().reset_index(drop=True)
     report = op(load=df, **_OP_KWARGS.get(op_name, {}))
 

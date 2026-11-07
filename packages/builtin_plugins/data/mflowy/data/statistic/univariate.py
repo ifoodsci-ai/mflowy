@@ -17,13 +17,14 @@ from mflowy.driver.node import node
 _SKEW_T = 1.0  # |skew| 超此值提示需变换
 _OUTLIER_K = 3.0  # 远界提示的 IQR 倍数（宽松档——detect.outliers 的 1.5 是判异档，两层天然分层）
 
-_SECTION_ORDER = ("missing", "empty", "constant", "id", "skew", "outlier")
+_SECTION_ORDER = ("missing", "empty", "constant", "id", "composite", "skew", "outlier")
 
 
 def univariate_facts(df: pd.DataFrame, category_top_k: int = 10) -> tuple[list[dict], dict[str, list[str]]]:
     """逐列 typed 统计（schema 行）+ 规则化 findings 命中（按固定段序）——零 print。"""
     rows: list[dict] = []
     hits: dict[str, list[str]] = {k: [] for k in _SECTION_ORDER}
+    near_unique: dict[str, pd.Series] = {}  # 近唯一列（组合候选的单列基座，#115）
 
     for col in df.columns:
         s = as_series(df[col])
@@ -63,7 +64,18 @@ def univariate_facts(df: pd.DataFrame, category_top_k: int = 10) -> tuple[list[d
                 hits["constant"].append(str(col))
             elif is_id_like(s):
                 hits["id"].append(str(col))
+            elif not pd.api.types.is_float_dtype(s) and 1 < int(s.nunique()) < count:
+                near_unique[str(col)] = s  # 单列不唯一而组合可能唯一（问卷组合键证据；float/常量/全唯一排除）
         rows.append(row)
+
+    # 组合键候选（#115）：单列不唯一的列两两组合，组合唯一率 ≥0.99 即命中（batch+sample
+    # 形态）；启发式枚举封顶防 O(n²)（列序前 100 对）
+    from itertools import combinations
+
+    for a, b in list(combinations(sorted(near_unique), 2))[:100]:
+        pair = pd.concat([near_unique[a], near_unique[b]], axis=1).dropna()
+        if len(pair) >= 10 and len(pair.drop_duplicates()) / len(pair) >= 0.99:
+            hits["composite"].append(f"{a}+{b}")
     return rows, hits
 
 

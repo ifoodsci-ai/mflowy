@@ -7,7 +7,7 @@ findings 溯源原则的落地面——列统计描述的规则命中随计算�
 import numpy as np
 import pandas as pd
 import pytest
-from mflowy.data.statistic.univariate import univariate
+from mflowy.data.statistic.univariate import univariate, univariate_facts
 
 
 @pytest.fixture
@@ -96,3 +96,20 @@ def test_univariate_clean_df_findings_none(capsys):
     univariate(load=df)
 
     assert "[findings] none" in capsys.readouterr().out
+
+
+def test_univariate_composite_hits_near_unique_pairs():
+    """#115 naive 层组合候选：单列不唯一而组合唯一的列组命中 hits["composite"]——
+    问卷 id 问题的两档证据之一。"""
+    n = 60
+    df = pd.DataFrame(
+        {
+            "batch": [f"b{i // 6}" for i in range(n)],  # 唯一率 0.1——近唯一不过
+            "sample": [f"s{i % 6}" for i in range(n)],
+            "x": list(range(n)),  # 全唯一（float 排除理据外的 int 列）
+        }
+    )
+
+    _rows, hits = univariate_facts(df)
+
+    assert "batch+sample" in hits["composite"]  # 组合唯一（36 组合 × 各恰一次? 6×6=36 行重复）
