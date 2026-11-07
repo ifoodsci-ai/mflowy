@@ -129,3 +129,28 @@ def test_absent_defaults_come_from_build_signature(sessions_root, reg_csv):
     # 物化折数取冻结协议值（非 cv.split 签名缺省二落）——inner 折数与协议逐位一致
     with open(sessions_root / s.session_id / "split.pkl", "rb") as f:
         assert _pickle.load(f).spec.inner.n_splits == m["protocol"]["cv"]
+
+
+def test_card_id_prior_tiers_feed_feature_exclusion(sessions_root, reg_csv):
+    """#112 涟漪：卡背景 id 剔除面 = known_id ∪ pk ∪ composite 成员（fk 不剔——join
+    需求可见且可作类别特征）；显式 id_columns 覆盖卡背景。"""
+    df = pd.read_csv(reg_csv)
+    df["batch"] = [f"b{i}" for i in range(len(df))]
+    df["uid"] = [f"u{i}" for i in range(len(df))]
+    path = str(reg_csv) + ".with_ids.csv"
+    df.to_csv(path, index=False)
+    card = {
+        "domain": "t",
+        "target": "target",
+        "id_columns": ["uid"],
+        "primary_key_columns": ["batch"],
+        "foreign_key_columns": [],
+        "composite_keys": [["batch", "uid"]],
+    }
+
+    s = ms.start_session(path, CV_CARD, card=card, task="regression", metric="mae")
+
+    assert sorted(s.prior["id_columns"]) == ["batch", "uid"]  # known_id ∪ pk ∪ composite 成员
+
+    s2 = ms.start_session(path, CV_CARD, card=card, task="regression", metric="mae", id_columns=["uid"])
+    assert s2.prior["id_columns"] == ["uid"]  # 显式参数覆盖

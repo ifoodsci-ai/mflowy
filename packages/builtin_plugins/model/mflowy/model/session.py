@@ -252,7 +252,14 @@ def start_session(
     task = task if task is not None else card.get("task")
     if not task:
         raise ValueError("task 必填（regression/classification）——显式参数或 card.task")
-    id_cols = list(id_columns) if id_columns is not None else list(card.get("id_columns") or ())
+    # id 剔除面（#112 涟漪）：单源委托 data.excluded_from_features（pk ∪ known_id ∪
+    # composite 成员；fk 不剔——join 需求可见且可作类别特征）；显式 id_columns 覆盖卡背景。
+    if id_columns is not None:
+        id_cols = list(id_columns)
+    else:
+        from mflowy.data.types import excluded_from_features
+
+        id_cols = excluded_from_features(card)
     df = pd.read_parquet(file_path) if file_path.endswith(".parquet") else pd.read_csv(file_path)
 
     # 四类相容校验门：task↔dtype/metric↔task/cv↔数据/预算与候选（含 hints ⊆ 签名空间、baseline 恰一）

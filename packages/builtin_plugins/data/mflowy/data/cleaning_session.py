@@ -69,16 +69,12 @@ def _open(session_id: str) -> POMDPSession:
 
 
 def never_drop(card: Mapping[str, Any] | None) -> list[str]:
-    """任何动作不得删除的列：目标/受保护/ID/时间（问卷先验）。"""
-    if not card:
-        return []
-    cols = [
-        card.get("target"),
-        *(card.get("protected_columns") or []),
-        *(card.get("id_columns") or []),
-        card.get("time_column"),
-    ]
-    return [c for c in dict.fromkeys(c for c in cols if c)]
+    """任何动作不得删除的列：目标/受保护/时间（#112 breaking——ID 各档不再自动免删，
+    drop/hash/mask 归 π 决策；误删兜底 = POMDP 回滚）。单源 = DomainCard.never_drop——
+    读冻结卡的富化键（_freeze_card 开局落位，恒在；缺键即卡未走开局校验，fail-loud）。"""
+    if not card or card.get("never_drop") is None:
+        raise ValueError("never_drop 缺失——卡未经 start_session 冻结富化（合法卡恒带该键）")
+    return list(card["never_drop"])
 
 
 def _detect_all(df: pd.DataFrame, card: Mapping[str, Any] | None = None) -> ErrorReport:
@@ -296,6 +292,13 @@ def _freeze_card(df: pd.DataFrame, card: dict) -> dict:
         "unit_hints",
         "protected_columns",
         "expected_ranges",
+        # 先验分级字段（#112——pk/fk/composite/known_non_id/hinted/source）
+        "primary_key_columns",
+        "foreign_key_columns",
+        "composite_keys",
+        "known_non_id_columns",
+        "hinted_id_patterns",
+        "source",
     )
     fields = {k: v for k, v in card.items() if k in known}
     built = DomainCard.build(df, **fields)
