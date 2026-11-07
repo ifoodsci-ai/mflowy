@@ -204,7 +204,7 @@ def test_scalar_hint_pins(sessions_root, reg_csv):
 def test_observe_exposes_baseline_flags(sessions_root, reg_csv):
     s = _start(sessions_root, reg_csv)
     o = ms.observe_session(s.session_id)
-    flags = {c["family"]: c["baseline"] for c in o.prior["candidates"]}
+    flags = {c["family"]: c["baseline"] for c in (o.prior or {}).get("candidates") or []}
     assert flags == {"RF": True, "XGB": False}
     assert set(o.state_digest["face"]) == {"RF", "XGB"}  # 候选族超参面全集可见
 

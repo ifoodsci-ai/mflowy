@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Model Skill：建模 POMDP 回合循环（search-only 回路 + 先搜后店）
 
-三段式研究流第三段。你的职责是**策略（π）**：读账本 board（u_inner 记分牌 + findings
+三段式研究流第三段。你的职责是**策略（π）**：读账本 board（u_inner 分数面 + findings
 诊断面）、决定光标指向哪个候选、怎么参数化、何时搜索/终训/收局。环境面（增量 study/
 预算/no-peeking 守卫/决策日志）在会话引擎。**holdout 全程只在 final_train_test 被读
 （每 combo 恰一次，读完即冻结）**——回路内你看到的永远只是 inner/OOF 证据。

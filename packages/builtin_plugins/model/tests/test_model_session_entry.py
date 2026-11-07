@@ -150,7 +150,8 @@ def test_card_id_prior_tiers_feed_feature_exclusion(sessions_root, reg_csv):
 
     s = ms.start_session(path, CV_CARD, card=card, task="regression", metric="mae")
 
-    assert sorted(s.prior["id_columns"]) == ["batch", "uid"]  # known_id ∪ pk ∪ composite 成员
+    prior = s.prior or {}
+    assert sorted(prior["id_columns"]) == ["batch", "uid"]  # known_id ∪ pk ∪ composite 成员
 
     s2 = ms.start_session(path, CV_CARD, card=card, task="regression", metric="mae", id_columns=["uid"])
-    assert s2.prior["id_columns"] == ["uid"]  # 显式参数覆盖
+    assert (s2.prior or {})["id_columns"] == ["uid"]  # 显式参数覆盖

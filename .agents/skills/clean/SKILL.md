@@ -29,10 +29,16 @@ clean_session_start(file_path, card=<DomainCard>, max_steps=15)   # 唯一主通
    在 `state_digest.problems`，列读数在 `state_digest.columns`。按下方决策指南
    选算子与参数——指南是起点不是边界，词表内的算子与参数可自由组合（词表外的
    动作会被拒）。
-2. `clean_apply(session_id, node, params)` 提交：守卫 → 转移 → 免费观测（失败即
-   免费异常——不耗预算、不落版本、不进决策日志；试探不确定动作就直接提交，
-   负 reward 即回滚，全量真值决策）+ 决策日志 (s,a,r,s′)。响应自带 **`reward`**
-   （本步 ΔΦ，舍入 4 位）与 **`state_digest`**——直接读数，不从日志做减法。
+2. `clean_apply(session_id, node, params, finding_ids, reason)` 提交：守卫 → 转移 →
+   免费观测（失败即免费异常——不耗预算、不落版本、不进决策日志；试探不确定动作
+   就直接提交，负 reward 即回滚，全量真值决策）+ 决策日志 (s,a,r,s′)。响应自带
+   **`reward`**（本步 ΔΦ，舍入 4 位）与 **`state_digest`**——直接读数，不从日志做减法。
+   - **`finding_ids`**（必填可空）：本步处理的 finding_id（`problems` 的
+     `finding_id`）——非空时校验 ⊆ 当前 findings，幻觉 id 免费失败；行级算子
+     （drop_duplicate 等）/逃生舱可传空；
+   - **`reason`**（必填非空）：本步决策理由——每步可审计；
+   - no-op 否决：不动 df 的提交被拒——保留不动 df 的处置走 `clean_finish` 的
+     keep 声明。
 3. 读 s′ 决策：
    - reward > 0、缺陷减 → 继续 ①；
    - reward < 0 / 引入新缺陷 / 误判 → `clean_rollback(session_id, to_version)`（版本树回退，
@@ -42,17 +48,22 @@ clean_session_start(file_path, card=<DomainCard>, max_steps=15)   # 唯一主通
 
 ## 决策指南（缺陷 → 算子 × 参数档位）
 
-| 缺陷（kind） | 温和档 | 激进档 / 备注 |
+| 缺陷（defect_type） | 温和档 | 激进档 / 备注 |
 | --- | --- | --- |
-| missing（列缺失） | 数值列：偏斜（`columns` 的 \|skew\| > 1）→ `fill_median`，近对称 → `fill_mean`，有序趋势 → `fill_interpolate`；类别列 → `fill_mode` 或 `fill_const`(value="Unknown"，保留缺失信号)；时间列 → `fill_ffill`/`fill_bfill`（`by=` 组内防泄漏） | 缺失率 ≥ 0.3 先 `add_missing_flag` 固化缺失信号（投资动作：Φ 不涨、回报在终局 U）；缺失率 ≥ 0.8 → `drop_cols`；低缺失列行级清理 → `drop_missing_rows`(cols) |
+| high_null（高空值列，报告线 5%） | 数值列：偏斜（`columns` 的 \|skew\| > 1）→ `fill_median`，近对称 → `fill_mean`，有序趋势 → `fill_interpolate`；类别列 → `fill_mode` 或 `fill_const`(value="Unknown"，保留缺失信号)；时间列 → `fill_ffill`/`fill_bfill`（`by=` 组内防泄漏） | 空值率 ≥ 0.3 先 `add_missing_flag` 固化缺失信号（投资动作：Φ 不涨、回报在终局 U）；≥ 0.8 → `drop_cols`；行级清理 → `drop_missing_rows`(cols)。低空值列不产缺陷但 `columns` 画像 missing_rate 常驻——可自行决策动手 |
 | empty_row（全空行） | `drop_missing_rows`(how="all")——文件噪声，零信息 | — |
 | duplicate（重复行） | `drop_duplicate`(keep="first") | 重复即不可信 → keep="none" |
-| outlier（统计离群） | `cap_iqr`(k=1.5，偏斜/重尾稳健)、`cap_z`(k=3，近正态) | `drop_outlier_iqr` / `drop_outlier_z`（行删除，看保留率） |
+| outlier_numeric（数值离群） | `cap_iqr`(k=1.5，偏斜/重尾稳健)、`cap_z`(k=3，近正态) | `drop_outlier_iqr` / `drop_outlier_z`（行删除，看保留率） |
 | collinear（共线对） | `drop_cols`：每对删方差小者（`columns` 的 var），卡认领列不删 | — |
-| constant（常量列） | `drop_cols`（零信息） | — |
-| stringly_numeric（单位污染） | `strip_units`(columns={列: 单位})——单位优先取卡 unit_hints，缺则读证据的众数后缀 | — |
-| id_like（疑似标识列） | 问卷确认后 `drop_cols` 出特征 | 卡已声明的 ID 列受 never_drop 保护 |
+| constant_col（常量列） | `drop_cols`（零信息） | — |
+| format_anomaly（格式异常） | `strip_units`(columns={列: 单位})——单位优先取卡 unit_hints，缺则读证据的众数后缀 | 纯数值字符串 `cast_cols`(target_dtype="float")；类别声明 `to_category` |
+| suspected_id（疑似标识列） | 确认后 `drop_cols` 出特征 | 需保留可连接性 → `hash_cols`（假名化，同值同哈希）/ `mask_cols`（脱敏） |
+| suspected_composite_id（疑似组合键） | 确认后 `drop_cols` 整组出特征 | join 语义保留原列，finish 时 keep 声明 |
+| prior_conflict（先验与数据矛盾） | 处置收敛为 **keep**——finish 时带理由声明（cite card.source 权威度；manual 源建议复核先验） | — |
 | range_violation（物理越界） | `range_clip`(ranges=卡 expected_ranges) | `drop_outside`(cols, lo, hi) 删越界行 |
+
+观测常驻 `routing_hints`（defect_type → 推荐算子清单，提示非约束）；残留缺陷可
+带理由 keep 声明收局（`clean_finish` 的 `keeps`，不动 df、不吃步数）。
 
 **反模式**：对目标列填充/截断（守卫拒——行删除允许）；一步删掉大量行（保留率下限拒）；
 reward ≤ 0 后同方向加码；只追 Φ 忽略可学性（见收局的 skill 警戒线）。
@@ -60,8 +71,12 @@ reward ≤ 0 后同方向加码；只追 Φ 忽略可学性（见收局的 skill
 ## 收局
 
 ```
-clean_finish(session_id, min_quality=<可选 θ 门>, preview=<可选只读探针>)
+clean_finish(session_id, keeps=<可选 keep 声明>, min_quality=<可选 θ 门>, preview=<可选只读探针>)
 ```
+
+- `keeps = [{finding_id, reason}]`：残留缺陷的保留理由（逐条声明——收局审计面
+  `residual` 附理由、`manifest` 汇总 ID 先验与 keep 面供下游建模参考）；幻觉
+  finding_id 会被拒。
 
 - **preview 流**（平台期标准动作）：先 `preview=true` 看 `terminal_utility.skill`
   ——零副作用（不收局、不导出、θ 门不生效），会话原样可继续；

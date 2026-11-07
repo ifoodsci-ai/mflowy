@@ -5,17 +5,17 @@ plot EDA 图族（族内扁平，直住 `plot/`）。数据栈为硬依赖，装
 
 ## 清洗会话 POMDP 元素表（O/S/A/P·T/R）
 
-契约下限与校验器住 `driver/pomdp.py`（Observation / FinishVerdict / Candidate）；本域语义如下（引擎 = `cleaning_session.py`。转移确定性——无概率
+契约下限与校验器住 `driver/pomdp.py`（Observation / FinishVerdict）；本域语义如下（引擎 = `cleaning_session.py`。转移确定性——无概率
 转移表；可观测性 = 检测算子覆盖面：O 是检测算子族的确定性多对一投影，覆盖外缺陷对 π 不可见
 （态混叠），终局 U（可学性）依赖观测未含的态——「干净但不可学」即其症状）：
 
 | 元素          | 本域定义                                                                                   | 居所                                   |
 | ------------- | ------------------------------------------------------------------------------------------ | -------------------------------------- |
-| O 观测        | 检测算子族即观测函数（确定、多对一）——簿记态全可见，真态可见性以算子覆盖面为界；s′ 随 apply 免费自带（错误清单 + Φ + diff）；同（指纹 × 卡先验）memo 防重算 | `_detect_all` / `_state_response`      |
-| S 状态        | 真态 = 数据本体（当前版本 parquet 内容）+ 冻结卡 + 预算 + 决策日志；`state_digest`（defects/quality/当前版本指针）是其检测面投影，非状态本体 | `_digest` / `decision.log` 单记录版本树        |
+| O 观测        | 检测算子族即观测函数（确定、多对一）——簿记态全可见，真态可见性以算子覆盖面为界；s′ 随 apply 免费自带（错误清单 + Φ + diff）；同（指纹 × 卡先验）memo 防重算 | `_detect_all` / `_refresh_state_digest` |
+| S 状态        | 真态 = 数据本体（当前版本 parquet 内容）+ 冻结卡 + 预算 + 决策日志；`state_digest`（defects/problems 全量透传/quality/列画像/routing_hints/当前版本指针）是其检测面投影，非状态本体 | `_digest` / `decision.log` 单记录版本树        |
 | A 动作        | 运行期 clean 词表（词表 = 已安装能力，见上文动作族）；终态动作面为空                       | `_allowed_actions` / `apply_action`    |
 | P·T 转移      | 守卫（never_drop 存活 / 目标列值禁改 / 保留率下限）→ 单步流编译执行（Conf→Builder→DAG，#89 ②片——apply 与导出计划同构）→ 新 parquet 版本 + 日志追加（commit 点）；rollback = 记录 + 指针回拨（append-only，弃分支盘上可回，#89 ④片） | `_guard` / `apply_action` / `rollback` |
-| R 奖励        | 过程奖励 = ΔΦ（前后同尺、卡权重双侧生效）；rollback 奖励 = 恢复的 ΔΦ；终局 U = train-fold 快速学习器 skill（只在 finish 出现，θ 验收门可拒收） | `apply_action` / `_terminal_utility` / `finish_session` |
+| R 奖励        | 过程奖励 = ΔΦ（前后同尺、卡权重双侧生效——severity 三档按档位罚分）；rollback 奖励 = 恢复的 ΔΦ；终局 U = train-fold 快速学习器 skill（只在 finish 出现，θ 验收门可拒收 + keep 声明/residual/manifest） | `apply_action` / `_terminal_utility` / `finish_session` |
 
 - 动作族：`load/`（6 节点）、`statistic/`（profile=info 薄封装 / univariate 单变量 typed 统计+规则化 findings / bivariate 双变量三路无 target 全对——效应量定档 p 把门）、`detect/`（8 缺陷算子 +
   DefectType/Severity 封闭枚举 + Finding 六字段契约 + quality_score + `detect/rules.py`
@@ -27,7 +27,11 @@ plot EDA 图族（族内扁平，直住 `plot/`）。数据栈为硬依赖，装
 - 共享件：主题门面上住 `mflowy-utils[plot]`（`mflowy.utils.plot`——Agg 后端 + seaborn
   主题就绪 + 色板/字体常量；本包 `plot/__init__` 薄 re-export，模型域评估图同源复用）、
   `middlewares/`（数据面遥测 + df_columns 诊断）
-- 类型：`types.py`（TASKTYPE 任务类型——target 列的数据事实；DomainCard 领域建档卡）
+- 类型：`types.py`（TASKTYPE 任务类型——target 列的数据事实；DomainCard 领域建档卡——
+  #112 先验分级字段 pk/fk/known_id/composite/known_non_id/hinted/source 并入，never_drop
+  收缩为 target/protected/time）
+- 路由：`routing.py`（ROUTING_HINTS——defect_type → 推荐 clean 算子集，state_digest
+  常驻投影；提示非约束，π 可见面 = clean 词表全集）
 - 观测面：`clean_observe` 幂等只读（续局锚点）——候选规则与菜单随 #113 退役，缺陷→算子的
   策略知识外置 clean skill（决策指南）
 - 判据：镜像路径有对应测试（`tests/`），`uv sync` 后 `list-nodes` 可见（新模块须重跑 `uv sync`）

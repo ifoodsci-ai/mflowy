@@ -122,10 +122,36 @@ prior（冻结卡）与 state_digest（结构化状态摘要）；`recent_decisi
 _Avoid_: Activation / 菜单 / 候选（#113/#120 退役——菜单是不完整过滤器，隐藏合法选项；π 可见面 = 动作词表全集）；should_stop 与停止建议（π 从观测自决收局，预算硬边界由守卫独立表达）；proposal 键与 Candidate（随 #89 拆分/退役）
 
 **先验卡（DomainCard）/ 协议卡（CVCard）**:
-两个 POMDP 的冻结输入：先验卡 = 数据域先验（target/id_columns/单位/范围/protected，survey
-问卷经 compile_survey 编译）；协议卡 = 建模域对局规则（task/metric/CV/预算/约束，
+两个 POMDP 的冻结输入：先验卡 = 数据域先验（target/ID 分级字段（pk/fk/known_id/
+composite/known_non_id/hinted）/单位/范围/protected + source 权威度——#112 PriorKnowledge
+并入卡；never_drop 收缩为 target/protected/time，ID 列处置归 π，survey 剧本编译）；
+协议卡 = 建模域对局规则（task/metric/CV/预算/约束，
 model-brief 问卷编译）。协议卡的引擎入参形态（#66）：cv_card = cv.split 配置 yaml
 明文（划分构建参数）+ start 显式参数（target/task/metric/candidates/max_steps/
 id_columns——显式 > card 背景分层缺省），CVCard.build 仍是四类校验的单一事实源。
 命名按内容不按过程；换协议 = board 作废 + test 重触，只能 abort 开新 episode。
 _Avoid_: ExperimentCard、ModelBrief、ModelingCard（协议卡禁用别名）
+
+### 缺陷与判定（0.2.x）
+
+**缺陷类型（defect_type）**:
+检测判断的**输出值域**——封闭 str-Enum（data 包单处定义），机器键控消费（记分牌
+权重 / 路由提示 / 闭包测试）按枚举成员取键；扩值 = 改枚举的 PR（0.x minor）。
+Finding（六字段：finding_id 结构键 `{defect_type}::{锚点}` / defect_type / 定位键
+（column 列级与 rows 行级互斥）/ severity 三档 / rationale（score 前缀）/ evidence
+脱敏 str）完整产自检测算子——投影层只透传不组装。
+_Avoid_: kind（#111 全面更名退役——DataError/KINDS 集中表同废）；float severity
+（三档唯一层，数值计分进 rationale 前缀）；`.repair` 声明与问题规则（菜单体系随
+#113/#120 退役）
+
+**值域封闭，身份开放**（#116 判据）:
+defect_type 封闭：错值 = 系统行为错（机器键控消费）；clean_op（动作身份）开放：
+entry point 寻址消费（安装即词表、第三方扩展 = 插件生态），正确性由 @node 契约 +
+validate_call 保证，不依赖值集封闭。文档算子清单 = 开放词表中的子集规范。
+_Avoid_: 给 clean 侧建封闭枚举 / 注册装饰器（#124 零机器消费方否决）
+
+**路由提示（ROUTING_HINTS）**:
+DefectType → 推荐 clean 算子集的静态表（data 包）：枚举键控、值 ⊆ clean 词表
+（闭包测试钉）、state_digest.routing_hints 常驻投影——**提示非约束、非过滤器**
+（π 可见面 = clean 词表全集）；策略知识（决策树/参数默认档）外置 clean skill。
+_Avoid_: 菜单/候选生成（#113 退役——菜单是不完整过滤器，隐藏合法选项）
