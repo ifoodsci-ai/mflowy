@@ -32,6 +32,10 @@ dependencies = [
 [project.entry-points."mflowy.builtin_plugins"]
 "clean.add_missing_flag" = "mflowy.data.clean.signal:add_missing_flag"
 "clean.cap_iqr" = "mflowy.data.clean.cap:cap_iqr"
+"clean.mask_cols" = "mflowy.data.clean.anonymize:mask_cols"
+"clean.hash_cols" = "mflowy.data.clean.anonymize:hash_cols"
+"clean.cast_cols" = "mflowy.data.clean.cast_cols:cast_cols"
+"clean.to_category" = "mflowy.data.clean.cast_cols:to_category"
 "clean.cap_z" = "mflowy.data.clean.cap:cap_z"
 "clean.drop_cols" = "mflowy.data.clean.drop:drop_cols"
 "clean.drop_duplicate" = "mflowy.data.clean.drop:drop_duplicate"

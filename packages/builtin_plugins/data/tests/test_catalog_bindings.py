@@ -40,7 +40,11 @@ def test_clean_ns_direct_load_upstream():
         "fill_ffill",
         "fill_bfill",
         "fill_interpolate",
-        # cap / 信号 / 域参数 / 逃生舱
+        # cap / 匿名化 / 类型转换 / 信号 / 域参数 / 逃生舱
+        "mask_cols",
+        "hash_cols",
+        "cast_cols",
+        "to_category",
         "cap_iqr",
         "cap_z",
         "add_missing_flag",

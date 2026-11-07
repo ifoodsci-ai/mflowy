@@ -31,8 +31,8 @@ ROUTING_HINTS: dict[DefectType, frozenset[str]] = {
     ),
     DefectType.CONSTANT_COL: frozenset({"drop_cols"}),
     DefectType.OUTLIER_NUMERIC: frozenset({"cap_iqr", "cap_z", "drop_outlier_iqr", "drop_outlier_z"}),
-    DefectType.FORMAT_ANOMALY: frozenset({"strip_units"}),
-    DefectType.SUSPECTED_ID: frozenset({"drop_cols"}),
+    DefectType.FORMAT_ANOMALY: frozenset({"strip_units", "cast_cols", "to_category"}),
+    DefectType.SUSPECTED_ID: frozenset({"drop_cols", "hash_cols", "mask_cols"}),
     DefectType.SUSPECTED_COMPOSITE_ID: frozenset({"drop_cols"}),
     DefectType.PRIOR_CONFLICT: frozenset(),  # 处置 = keep（cite card.source 权威度，#116）
     DefectType.EMPTY_ROW: frozenset({"drop_missing_rows"}),
