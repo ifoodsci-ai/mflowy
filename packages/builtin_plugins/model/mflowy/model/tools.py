@@ -19,7 +19,7 @@ from mflowy.utils.path import anchor_task_dir
 from pydantic import Field
 
 from .job_provider import get_job_provider as _get_job_provider
-from .propose_rules import KNOWN_FINDING_KINDS
+from .taxonomy import KNOWN_FINDING_KINDS
 from .templates import MODELING_TEMPLATE, count_model_steps, parse_steps_fragment
 
 try:  # SDK 仅 server 形态需要（[mcp] extra）——runner 路径零 SDK 可导入；
@@ -282,17 +282,21 @@ def modeling_session_start(
     ).model_dump()
 
 
-def modeling_propose(session_id: Annotated[str, Field(description="会话 ID")]) -> list[dict]:
-    """候选生成（单源谓词机器）：select_model 候选（未跑在前/已训降级末位带 θ*/u_inner/u）
-    + 计算动作（run_hpo/final_train_test）+ 配置编辑动作（set_hp/set_hp_space/set_seed/select_FE）。
+def modeling_observe(session_id: Annotated[str, Field(description="会话 ID")]) -> dict:
+    """观测建模会话（幂等只读零转移）：当前观测 + 读时决策面——本 combo 键 findings
+    （规则与 LLM 落诊同粒度）、光标/combo_key、账本摘要（θ*/u_inner/冻结旗）、has_cat、
+    候选族超参面（face：动态维可收窄、静态常量可 pin）。
 
-    何时使用 modeling_propose：
-    - 每步决策前看可选动作（你只做选择与参数化；空间摘要见 evidence——
-      动态维可收窄、静态常量可 pin，词表外动作会被拒）
+    选项面不设菜单：八动作面 + 观测证据自构 modeling_apply（词表外动作/未知参数会被拒）；
+    收局时机由你从观测（预算/账本）自决。
+
+    何时使用 modeling_observe：
+    - 每步决策前读决策面；续局 / 上下文丢失后重新定位（无副作用）
+    - 终态会话同样可观测（finished/abandoned 旗即收局事实）
     """
     from . import session
 
-    return [a.model_dump() for a in session.propose_actions(session_id)]
+    return session.observe_session(session_id).model_dump()
 
 
 def modeling_apply(
@@ -413,10 +417,10 @@ def modeling_report_findings(
     ],
 ) -> dict:
     """LLM findings 落诊（#36 控制面）：不可机械化诊断进 models[key]——schema 校验、
-    决策日志审计、与规则 findings 均匀聚合（modeling_propose 消费不区分来源）。
+    决策日志审计、与规则 findings 均匀聚合（modeling_observe 投影不区分来源）。
 
     何时使用 modeling_report_findings：
-    - 读 OOF 图集/产物清单后形成的人读诊断（规则算子覆盖不了的判断）落盘供出题与审计
+    - 读 OOF 图集/产物清单后形成的人读诊断（规则算子覆盖不了的判断）落盘供观测与审计
     """
     from . import session
 

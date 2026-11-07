@@ -33,7 +33,6 @@ _LEDGER = {
     # MCP 工具面分发（族外：工具函数非 @node/@edge 目标，#138 票面豁免）
     "packages/mcp/mflowy/mcp/runner.py": 1,
     # model 域第四面外存量（#141 后余量；触碰时收敛，棘轮只紧不松）
-    "packages/builtin_plugins/model/mflowy/model/propose_rules.py": 1,
     "packages/builtin_plugins/model/mflowy/model/session.py": 1,
 }
 

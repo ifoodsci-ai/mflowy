@@ -18,7 +18,7 @@ def add_missing_flag(
     load: pd.DataFrame,
     clean: pd.DataFrame | None = None,
     *,
-    cols: Annotated[list[str], "要追加缺失旗标的列（显式清单，无默认无筛选——值不值得加是候选生成器的事）"],
+    cols: Annotated[list[str], "要追加缺失旗标的列（显式清单，无默认无筛选——值不值得加是调用方的决策）"],
 ) -> pd.DataFrame:
     """为 cols 各追加 {col}_is_missing 旗标列；已存在即报错（fail-loud 幂等，重放安全）。"""
     df = clean if clean is not None else load

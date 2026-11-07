@@ -88,7 +88,7 @@ schema），host（server/runner）发现并包装。镜像测试断言 entry po
 POMDP 的环境面载体：转移/观测/奖励/预算的**转移语义**在域包（域实现各自的
 `POMDPSessionHandle` 业务接口），壳（终态/预算门、决策日志、观测投影、prior 冻结、
 盘上写序）在 driver 的 `POMDPSession` 统一机制——不同业务通过同一套壳实现不同的
-Handle。可观测性以域观测函数覆盖面为界（清洗 = 检测算子族、建模 = diagnose/规则面）
+Handle。可观测性以域观测函数覆盖面为界（清洗 = 检测算子族、建模 = diagnose 诊断面）
 ——引擎簿记态对 π 全可见，环境真态部分可见（态混叠；终局 U 依赖观测未含的态）。
 会话持版本树与决策日志 (s,a,r,s′)，终态导出可全量重放的计划（清洗域 apply 与导出
 计划同构——apply 即计划切片）。协议/先验在 episode 内冻结（观测写缝的牙齿）。
@@ -99,26 +99,27 @@ _Avoid_: 环境引擎（与 runner 混淆）；MDP（0.2.0 起的旧称——pro
 
 **会话基座（POMDPSession）/ 业务接口（POMDPSessionHandle）**:
 机制与策略的分层名：`POMDPSession`（`driver/session.py`）= 统一机制——六个操作
-上下文（start/propose/apply/rollback/finish + abandon 方法）承载业务流程骨架，
-三个底层读写原语（观测整读改写 / 日志读追加 / 引擎整读整写）为内部件；域六操作
+（start/observe/apply/rollback/finish 上下文 + abandon 方法）承载业务流程骨架，
+两个底层读写原语（观测整读改写 / 日志读追加）为内部件；observe = 水化 + 投影，
+只读零写、幂等零转移（终态会话照常可观测——续局/re-orientation 锚点）。域六操作
 函数 = `POMDPSessionHandle` 的薄门面实现（工具层零感知）。旧 `MDPSessionHandle`
-随 #89 改名并从零 adapter 变两域真 adapter；旧 `rule_engine_rwa` 门面随壳迁移退役。
+随 #89 改名并从零 adapter 变两域真 adapter。
+_Avoid_: propose 操作（#117 退役——引擎不出菜单，π 读观测 + 动作词表自构动作）；rule_engine_rwa（随壳迁移退役）
 
 **观测摘要（observation.json）/ 决策日志（decision.log）**:
-会话盘上壳三件之二（之三 = rules.pkl）。观测摘要 = `Observation` 封闭模型的投影
+会话盘上壳两件（rules.pkl 随规则引擎退役，#120）。观测摘要 = `Observation` 封闭模型的投影
 （七键 + 终态双旗），整读改写、原子落盘、最后写（投影）；决策日志 = append-only
 JSONL 事实流，一行一条 (s,a,r,s′)，rollback/finish/abandon 是记录不是删行——
 **追加即 commit 点**（工件先行、观测最后；崩溃窗口由 open 一致性牙齿捕获）；交付工件文件名带版本（data = 日志派生 v{n}.parquet；model = 冻结世代 loader/plan `_v{n}`——freeze-once ⇒ 恒 v1，世代位显式留名）。
 域状态文件域自定（如 model 的 board.json：光标/账本/verdict 缓存）。
 _Avoid_: manifest.json（0.2.0 随 #89 溶解——协议状态进观测摘要、历史进决策日志、域状态进域文件）
 
-**Observation / Activation（契约模型）**:
+**Observation（契约模型）**:
 `Observation`：七键封闭契约（session_id / prior / state_digest / reward / steps /
 max_steps / recent_decisions）+ 终态双旗，pydantic `extra="forbid"`——域尾巴归位
 prior（冻结卡）与 state_digest（结构化状态摘要）；`recent_decisions` = 决策日志尾
-部截断（TOP_K_DECISIONS=5，观测有界）。`Activation`：菜单候选（合法走法）——
-action/params 平铺两成员 + salience 记分牌 + rationale/evidence，frozen。
-_Avoid_: should_stop（停止建议 = 菜单中 action="finish" 的提议——出现时机由域停止规则设计，建议通道与硬预算门分离）；proposal 键与 Candidate（随 #89 拆分/退役）
+部截断（TOP_K_DECISIONS=5，观测有界）。
+_Avoid_: Activation / 菜单 / 候选（#113/#120 退役——菜单是不完整过滤器，隐藏合法选项；π 可见面 = 动作词表全集）；should_stop 与停止建议（π 从观测自决收局，预算硬边界由守卫独立表达）；proposal 键与 Candidate（随 #89 拆分/退役）
 
 **先验卡（DomainCard）/ 协议卡（CVCard）**:
 两个 POMDP 的冻结输入：先验卡 = 数据域先验（target/id_columns/单位/范围/protected，survey
@@ -128,30 +129,3 @@ model-brief 问卷编译）。协议卡的引擎入参形态（#66）：cv_card 
 id_columns——显式 > card 背景分层缺省），CVCard.build 仍是四类校验的单一事实源。
 命名按内容不按过程；换协议 = board 作废 + test 重触，只能 abort 开新 episode。
 _Avoid_: ExperimentCard、ModelBrief、ModelingCard（协议卡禁用别名）
-
-### 规则与出题（0.2.0）
-
-**规则（rule）**:
-实现 `driver.rule.Rule` 协议的出题知识对象（`key` 身份 + `propose(o) -> list[Activation]`）。
-通俗定义：**Rule 定义问题；`Rule.propose` 定义对 o 进行规则校验后输出的解题选项**。
-引擎是服务于 POMDP 的组件——触发上下文 = 观测 o（`fire(*keys, o)`；检测证据由域
-算子写进 `o.state_digest`——data 域 = problems 问题投影 + columns 列画像（dtype 族/
-分布读数/方差）+ current_file，model 域 = findings/菜单上下文——规则纯消费 o，
-零 df 引用；候选动作在 propose 内现查词表 fail-loud；data 域菜单 params 自含
-`load` 引用（当前版本工件——apply 侧新鲜度校验，过期菜单 fail-loud 指路重新
-propose）。
-停止建议是普通规则：`compose_should_stop(when)` 把域停止谓词组合成 action="finish"
-提议（salience=0 垫底；when 须模块级可 pickle）。词表知识源随词汇主人居住（clean
-`.repair` / model 族自声明），经域适配器（data `repair_rules` / model `propose_rules`）
-注册进会话引擎实例（rules.pkl 持载自定义规则；整读整写门面住 `POMDPSession.propose_ctx`）。
-_Avoid_: 以「规则引擎」裸指 RETE/DSL 类推理引擎（明确非需求——本仓自研件全称「规则引擎 SDK」）；R 触发上下文（随 #89 归位退役——上下文即观测）；rule_engine_rwa（随壳迁移退役）；rules. 前缀 entry point 注册桶（#37 旧稿已废弃）；节点属性挂载 `node.rule = {kind: fn}`（0.2.0 随实例门面重构退役）；clean 节点 `.repair` 声明（随 #89 ③片退役——问题知识随问题规则居住，节点回归纯变换）
-
-**资格门（gate）**:
-规则 propose 内的前置早退（读 o 的会话态，不满足即零产出）。未过则候选恒不出现——
-资格与 salience 互不代偿：S 无模型信息时 FE 候选恒零，不靠记分压序。
-_Avoid_: 用高 salience 实现阶段前置（记分只回答"多值得做"，不编码资格）
-
-**记分牌（salience）**:
-Activation 的 int 排序面：域先验权重 × 触发证据强度（severity），放大取整保序；
-poll_proposals 按 salience 降序聚合，同分按 (rule_key, action, params 序列化) 字典序
-保证菜单确定性。

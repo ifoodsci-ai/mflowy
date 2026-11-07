@@ -56,7 +56,7 @@ def drop_cols(
     load: pd.DataFrame,
     clean: pd.DataFrame | None = None,
     *,
-    cols: Annotated[list[str], "要删除的列（显式清单，删除集由候选生成器/调用方决定）"],
+    cols: Annotated[list[str], "要删除的列（显式清单，删除集由调用方决定）"],
 ) -> pd.DataFrame:
     """删除指定列。"""
     df = clean if clean is not None else load

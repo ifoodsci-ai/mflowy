@@ -91,15 +91,12 @@ def test_scoring_weights_stay_within_kinds():
     assert set(_WEIGHTS) <= KINDS
 
 
-def test_problem_rules_stay_within_kinds():
-    """clean 默认引擎的问题规则注册键 ⊆ KINDS——注册无人产出的 kind 是死候选；
-    且 .repair 声明面已退役（clean 词表零 .repair 残留——单源：问题知识只在规则面）。"""
-    from mflowy.data.repair_rules import _SOLUTIONS, default_engine
+def test_clean_vocab_has_no_repair_declarations():
+    """clean 节点回归纯变换：词表零 .repair 残留（#89 ③片退役；#113 菜单整体退役后
+    策略知识外置 SKILL，代码侧不留「当缺陷是 X 时执行 Y」）。"""
     from mflowy.driver.config import split_node_key
     from mflowy.driver.discover import discover
 
-    registered = set(default_engine().rules) - {"should_stop"}
-    assert registered == set(_SOLUTIONS) <= KINDS  # 注册面 = 解题知识面 = 分类学
     residual = [
         key
         for key, ep in discover().items()

@@ -13,8 +13,8 @@ select_FE}（配置编辑：零步费零奖励）∪ {run_hpo, final_train_test}
 （space_to_json 形态）= 空间收窄；set_hp/set_hp_space 同写 H，last-write-wins
 显式（decision_log note 记覆盖前后值）。
 
-盘上（#89 壳三件 + 域状态/工件）：
-- observation.json / decision.log / rules.pkl —— 壳三件（driver.session）；
+盘上（#89 壳两件 + 域状态/工件）：
+- observation.json / decision.log —— 壳两件（driver.session；rules.pkl 随规则引擎退役）；
   prior = 冻结协议（source_file/target/task/card/protocol/candidates/id_columns）
 - board.json —— 域状态（光标/快照栈/账本/verdict 缓存）；写序 = board 先行 →
   日志追加（commit）→ 观测投影
@@ -32,9 +32,9 @@ select_FE}（配置编辑：零步费零奖励）∪ {run_hpo, final_train_test}
   modeling_report_skeleton 两工具
 - **账本真源** = 盘上 sqlite study（append-only）；rollback 只回退光标——board
   永不与盘分叉（#58 P1 根治）
-- **propose**：pull-only 单源谓词机器（类型可用(s) ∧ 参数合法(s,a)）——findings
-  驱动层（规则引擎实例，salience 记分牌序）+ 基座谓词机层；findings 只对本 combo
-  键出题（#66）；词表外动作由 apply 边界 fail-loud 拒绝
+- **observe**（#117/#120 取代 propose——菜单退役）：幂等只读零转移，读时投影 π 的
+  决策面（本 combo 键 findings——#66、账本摘要、has_cat、候选族超参面）；π 自构
+  动作，词表外动作由 apply 边界 fail-loud 拒绝；收局时机 π 从观测自决
 - 划分身份 = cv.split 副产物 split.pkl 的 run_id 引用（开局走节点中间件链条
   物化——mlflow 窗口/log_cv 留痕/print 捕获；终训 plan 以 cv.load 按引用复用）
 """
@@ -48,10 +48,11 @@ import pickle
 from pathlib import Path
 
 import pandas as pd
-from mflowy.driver.pomdp import Activation, FinishVerdict, Observation
+from mflowy.driver.pomdp import FinishVerdict, Observation
 from mflowy.driver.session import POMDPSession
 from mflowy.model import registry
 from mflowy.model.model._pipeline import oof_predictions, u_inner_of
+from mflowy.model.model.study import ContinuousSpace, DiscreteSpace
 from mflowy.model.model.types import MetricName
 from mflowy.model.model.utils import MACHINERY_SKIP, infer_metric, normalize_space, space_from_json, space_to_json
 from mflowy.utils.file import write_bytes_atomic, write_text_atomic
@@ -61,6 +62,7 @@ logger = logging.getLogger(__name__)
 # 八动作面（done = finish_session 控制面独立入口）；compute = 吃步（counts_step 口径）
 ACTIONS = ("select_model", "set_hp", "set_hp_space", "set_seed", "select_FE", "run_hpo", "final_train_test")
 COMPUTE_ACTIONS = frozenset({"run_hpo", "final_train_test"})
+DEFAULT_N_TRIALS = 10  # run_hpo 缺省搜索档（执行面单源——出题规则侧随菜单退役，#120）
 BOARD_FILE = "board.json"
 
 
@@ -273,9 +275,7 @@ def start_session(
         **proto_extras,
     ).as_dict()
 
-    from mflowy.model import propose_rules
-
-    ss = POMDPSession(_root(), *propose_rules.default_engine().rules.values(), prefix="ms_")
+    ss = POMDPSession(_root(), prefix="ms_")
     cursor = {"m": None, "H": {}, "seed": None, "F": {"cat": "passthrough", "num": "passthrough"}}
     board = {
         "cursor": cursor,
@@ -672,7 +672,6 @@ def _run_hpo(ss, o, m, board, log, params: dict) -> None:
     """run_hpo：增量搜索（inner CV）→ θ* 上 OOF 观察面 → 账本更新（reward = Δu_inner）。"""
     import mlflow
     from mflowy.model.model._pipeline import hyperparameters_search, theta_probe
-    from mflowy.model.propose_rules import DEFAULT_N_TRIALS
 
     n_trials = params.get("n_trials", DEFAULT_N_TRIALS)
     unknown = set(params) - {"n_trials"}
@@ -951,7 +950,7 @@ def _new_entry(key: str, family: str, fe: dict) -> dict:
 
 def report_findings(session_id: str, key: str, findings: list[dict]) -> Observation:
     """LLM findings 落诊（#36 控制面）：不可机械化诊断进 models[key]——schema 校验、
-    决策日志审计、与规则 findings 均匀聚合（propose 消费面不区分来源）。
+    决策日志审计、与规则 findings 均匀聚合（observe 投影不区分来源）。
 
     schema = diagnose 族 ErrorReport 先例（kind/severity/evidence/message）+
     ``source`` 引擎保留键；kind ⊆ 已知词表（#35 定案——语言超纲即拒）。
@@ -982,7 +981,7 @@ def report_findings(session_id: str, key: str, findings: list[dict]) -> Observat
 
 def _validate_llm_finding(f: dict) -> dict:
     """schema 校验（fail-loud 带可用面）：kind ⊆ 已知词表；severity ∈ [0,1]；未知顶层键拒绝。"""
-    from mflowy.model.propose_rules import KNOWN_FINDING_KINDS
+    from mflowy.model.taxonomy import KNOWN_FINDING_KINDS
 
     if not isinstance(f, dict):
         raise TypeError(f"finding 须为 Mapping（ErrorReport 先例 schema），got {type(f).__name__}")
@@ -1295,38 +1294,29 @@ def _plan_yaml(m: dict, key: str, final_params: dict | None = None) -> str:
     return flow_to_yaml(tuple(flow))
 
 
-# ── 候选生成：单源谓词机器（类型可用(s) ∧ 参数合法(s,a)） ───────────────────
+# ── observe：读时投影（π 的决策面——菜单退役，#117/#120） ───────────────────
 
 
-def propose_actions(session_id: str) -> list[Activation]:
-    """菜单（pull-only，规则引擎实例统一入口）：状态投影 + fire + poll + 合并。
+def observe_session(session_id: str) -> Observation:
+    """观测（幂等只读零转移，#117 取代 propose）：盘上观测 + 读时决策面投影。
 
-    - 状态投影（观测函数本分——设计稿 §2）：findings（本 combo 键）、光标
-      （m/F/seed/H）、combo_key、models 账本摘要（family/frozen/u_inner/
-      best_params/n_trials）、has_cat——词表零预消化（menu_ctx 退役，规则在
-      propose 内以 registry 为环境常量现查）
-    - findings 驱动层（问题规则处方菜单：物理体征/代理切片/停止建议）浮于
-      基座状态谓词题（候选/首搜/终训/配置编辑/FE 换档，salience=-1）之上
-      ——poll 单源记分牌排序
-    - LLM findings（#36）与规则 findings 均匀聚合（同一 fire 入口，无来源区分）
-    - 终态（收局/弃局）返回 []；菜单合并（同 (action, params) 多命中浮出一项）
-      留域——引擎不去重
+    - 本 combo 键 findings（#66 作用域——规则与 LLM 落诊同粒度，证据不跨 FE 组合）
+    - 光标 combo_key、账本摘要（family/frozen/u_inner/θ*/n_trials）、has_cat（FE
+      cat 槽资格的数据面）
+    - face：候选族超参面（动态维 Space 可收窄 / 静态常量可 pin——原菜单的黑盒开箱
+      证据上浮；选项面 = 全候选，不截断）
+    投影只回调用方（壳 observe_ctx 零写）；终态会话照常可观测。
     """
     ss = _open(session_id)
-    if ss.is_terminal:
-        return []
-    with ss.propose_ctx() as (o, engine):
+    with ss.observe_ctx() as o:
         m = _mview(o, _board_load(ss))
         cursor = m["cursor"]
         key = _structure_key(cursor["m"], cursor["F"]) if cursor["m"] else None
-
-        # #66 作用域 = 本 combo 键：findings（规则与 LLM 同粒度）只对本键出题——菜单
-        # rationale 引用的证据不来自另一个 FE 组合（findings 随 combo 居住）
-        findings = [{"key": k, **f} for k, e in m["models"].items() if k == key for f in (e.get("findings") or [])]
         o.state_digest = {
             **o.state_digest,
-            "findings": findings,
-            "cursor": {k: (dict(v) if isinstance(v, dict) else v) for k, v in cursor.items()},
+            "findings": [
+                {"key": k, **f} for k, e in m["models"].items() if k == key for f in (e.get("findings") or [])
+            ],
             "combo_key": key,
             "models": {
                 k: {
@@ -1339,79 +1329,20 @@ def propose_actions(session_id: str) -> list[Activation]:
                 for k, e in m["models"].items()
             },
             "has_cat": _has_cat(m),
+            "face": {family: _space_summary(family) for family in _candidates(m)},
         }
-        engine.fire(o=o)
-        activations = engine.poll_proposals()
-        subscribed = {getattr(r, "kind", None) for r in engine.rules.values()}
-        if unconsumed := sorted({f["kind"] for f in findings} - subscribed):
-            logger.warning("findings 无规则订阅（无静默丢弃——补订阅或修 kind）：%s", unconsumed)
-        items = [
-            {
-                "rule_key": a.rule_key,
-                "salience": a.salience,
-                "action": a.action,
-                "params": dict(a.params),
-                "rationale": a.rationale,
-                "evidence": {
-                    **(a.evidence or {}),
-                    "_rule": {"rule_key": a.rule_key, "kind": engine.kind_of(a.rule_key), "salience": a.salience},
-                },
-            }
-            for a in activations
-        ]
-    merged = [to_activation(c) for c in _merge_menu(items)]
-    stop = [a for a in merged if a.action == "finish"]
-    return [a for a in merged if a.action != "finish"] + stop  # 停止建议恒居末
+    return o
 
 
-def to_activation(c: dict) -> Activation:
-    """菜单项 → Activation（Handle 契约面）：全引擎产出（rule_key 必在——base.* 伪键已清零）。"""
-    return Activation(
-        rule_key=c["rule_key"],
-        action=c["action"],
-        params=dict(c.get("params") or {}),
-        salience=c.get("salience", -1),
-        rationale=c.get("rationale") or "",
-        evidence=dict(c.get("evidence") or {}),
-    )
-
-
-def _merge_menu(items: list[dict]) -> list[dict]:
-    """(action, params) 键合并（#38 会话侧补位——引擎不去重）：同动作同参 = 同一
-    建议的多重证据，浮出一项——rationale 并集（保序去重、"；"连接）；命中的规则
-    溯源并列进 ``evidence["co_hits"]``（每条含 rationale 与 ``_rule`` 分解——合并
-    不静默）。记分牌位保首现实体（poll 已按 salience 分排序——排序
-    确定性与可审计不变）。
-    """
-    out: list[dict] = []
-    pos: dict[tuple[str, str], int] = {}
-    for c in items:
-        k = (c["action"], _json(dict(c.get("params") or {})))
-        if k not in pos:
-            pos[k] = len(out)
-            entry = dict(c)
-            entry["_rats"] = [c["rationale"]] if c.get("rationale") else []
-            entry["_hits"] = (
-                [{"rationale": c["rationale"], "_rule": c["evidence"]["_rule"]}]
-                if c.get("evidence", {}).get("_rule")
-                else []
-            )
-            out.append(entry)
-            continue
-        cur = out[pos[k]]
-        if c.get("rationale") and c["rationale"] not in cur["_rats"]:
-            cur["_rats"].append(c["rationale"])
-        rule = c.get("evidence", {}).get("_rule")
-        if rule:
-            cur["_hits"].append({"rationale": c["rationale"], "_rule": rule})
-    for entry in out:
-        merged = len(entry["_rats"]) > 1 or len(entry["_hits"]) > 1
-        if len(entry["_rats"]) > 1:
-            entry["rationale"] = "；".join(entry["_rats"])
-        if merged and entry["_hits"]:
-            entry.setdefault("evidence", {})["co_hits"] = entry["_hits"]
-        del entry["_rats"], entry["_hits"]
-    return out
+def _space_summary(family: str) -> dict:
+    """签名超参面摘要：动态维（Space 声明，含边界）vs 静态常量——π 的参数化依据。"""
+    dynamic, static = {}, {}
+    for name, default in _family_params(family).items():
+        if isinstance(default, (ContinuousSpace, DiscreteSpace)):
+            dynamic[name] = space_to_json(default)
+        else:
+            static[name] = default
+    return {"dynamic": dynamic, "static": static}
 
 
 def _board(m: dict) -> dict:
@@ -1440,10 +1371,6 @@ def _digest(m: dict) -> str:
         f"runs={m['steps']}/{m['max_steps']};m={c['m']};seed={c['seed']};fe={c['F']['cat']}/{c['F']['num']};"
         f"pins={sorted(c['H'])};board={board or 'empty'}"
     )
-
-
-def _json(v) -> str:
-    return json.dumps(v, ensure_ascii=False)
 
 
 def save_loader(session_id: str, loader, key: str, v: int = 1) -> None:

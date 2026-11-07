@@ -3,7 +3,7 @@
 - 卡的核心是评估协议（task/metric/cv/预算），名字直说；全链改名（工具 schema、
   session start 签名、skills）
 - candidates = [{family, baseline: bool, space_hints: {param: 值|[lo,hi]}, seed}]：
-  research-review 标记恰一个 baseline（propose 时第一）；每候选默认随机种子
+  research-review 标记恰一个 baseline（观测 prior 可见——π 先跑它定参照系）；每候选默认随机种子
   （搜索期内冻结——换 seed = 换目标 = study 重开）
 - 开局校验 fail-loud 带候选清单：hints ⊆ 签名声明空间；baseline 恰一
 - hints 作为缺省 pins/narrowing 注入（select_model 时进光标），π 回合内可覆盖
@@ -198,15 +198,15 @@ def test_scalar_hint_pins(sessions_root, reg_csv):
     assert r.state_digest["cursor"]["H"] == {"n_estimators": 50}
 
 
-# ── 菜单：baseline 第一 ─────────────────────────────────────────────────────
+# ── 观测：baseline 标记可见（菜单退役后排序知识归 SKILL，事实归观测） ────────
 
 
-def test_propose_baseline_first(sessions_root, reg_csv):
+def test_observe_exposes_baseline_flags(sessions_root, reg_csv):
     s = _start(sessions_root, reg_csv)
-    props = ms.propose_actions(s.session_id)
-    sel = [p for p in props if p.action == "select_model"]
-    assert dict(sel[0].params)["family"] == "RF" and dict(sel[0].evidence or {})["baseline"] is True
-    assert sel[1].params["family"] == "XGB" and dict(sel[1].evidence or {})["baseline"] is False
+    o = ms.observe_session(s.session_id)
+    flags = {c["family"]: c["baseline"] for c in o.prior["candidates"]}
+    assert flags == {"RF": True, "XGB": False}
+    assert set(o.state_digest["face"]) == {"RF", "XGB"}  # 候选族超参面全集可见
 
 
 def test_defaults_held_only_by_build_signature():

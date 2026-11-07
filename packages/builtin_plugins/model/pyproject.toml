@@ -78,7 +78,7 @@ x_y = "mflowy.model.x_y:x_y"
 [project.entry-points."mflowy.tools"]
 validate_modeling_steps = "mflowy.model.tools:validate_modeling_steps"
 modeling_session_start = "mflowy.model.tools:modeling_session_start"
-modeling_propose = "mflowy.model.tools:modeling_propose"
+modeling_observe = "mflowy.model.tools:modeling_observe"
 modeling_apply = "mflowy.model.tools:modeling_apply"
 modeling_rollback = "mflowy.model.tools:modeling_rollback"
 modeling_finish = "mflowy.model.tools:modeling_finish"

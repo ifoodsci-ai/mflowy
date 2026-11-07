@@ -1,8 +1,9 @@
-"""清洗 POMDP 会话引擎契约:apply/snapshot/rollback + 候选生成 + 决策日志 + 预算。
+"""清洗 POMDP 会话引擎契约:apply/snapshot/rollback + 观测 + 决策日志 + 预算。
 
 环境面(转移/观测/奖励)在引擎;π 在调用方(agent 经 MCP 工具驱动)——检测与修复
 分离、内生质量奖励、never_drop 守卫、目标列禁改。#89 上壳后响应 = Observation/
 FinishVerdict 模型；盘上 = observation.json + decision.log（单记录版本树）。
+#113/#117：菜单退役——π 读观测（observe 幂等只读）+ 词表自构动作。
 """
 
 import json
@@ -11,7 +12,6 @@ import numpy as np
 import pandas as pd
 import pytest
 from mflowy.data import cleaning_session as cs
-from mflowy.data.types import as_series
 from mflowy.driver.pomdp import FinishVerdict, Observation
 
 
@@ -36,11 +36,6 @@ def _log(sessions_root, sid) -> list:
         for line in (sessions_root / sid / "decision.log").read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-
-
-def _menu(sid) -> list[dict]:
-    """菜单（MCP 面）：Activation → menu_of 形状。"""
-    return [cs.menu_of(a) for a in cs.propose_actions(sid)]
 
 
 @pytest.fixture
@@ -70,34 +65,17 @@ CARD = {
 }
 
 
-@pytest.fixture
-def claimed_csv(tmp_path) -> str:
-    """id_like 双列夹具:uid(未认领)与 sid(问卷认领)全唯一——注意全列判重下
-    duplicate 与 id_like 互斥(重复行破坏一切列的全唯一),故此夹具不带重复。"""
-    n = 30
-    df = pd.DataFrame(
-        {
-            "uid": [f"u{i:03d}" for i in range(n)],
-            "sid": [f"s{i:03d}" for i in range(n)],
-            "x": list(range(n)),
-        }
-    )
-    path = tmp_path / "claimed.csv"
-    df.to_csv(path, index=False)
-    return str(path)
-
-
 def test_session_lifecycle_stdout_pure(sessions_root, dirty_csv, capsys):
     """M7：会话全生命周期零 stdout——MCP stdio transport 下 stdout 是 JSON-RPC 通道。
 
-    start/propose/apply/rollback/finish 全走 _detect_all（观测通道）；detect
+    start/observe/apply/rollback/finish 全走 _detect_all（观测通道）；detect
     算子去 print（见 tests/detect/test_channel_purity.py）后，引擎路径任何
     一步都不得向真实流泄漏回显。"""
     s = cs.start_session(dirty_csv, card=CARD)
     assert capsys.readouterr().out == ""
     sid = s.session_id
 
-    cs.propose_actions(sid)
+    cs.observe_session(sid)
     assert capsys.readouterr().out == ""
 
     cs.apply_action(sid, "drop_duplicate", {})
@@ -179,10 +157,10 @@ def test_failed_apply_is_free(sessions_root, dirty_csv):
 def test_observation_computed_once_per_state(sessions_root, dirty_csv, monkeypatch):
     """L1 状态同一性：同指纹状态的观测不重算——纯函数备忘录化。
 
-    同态重复的调用点：apply-before 复用上一步 after / propose 复用最近态 /
-    finish（含幂等重入）复用终态。计数探针打在算子组合点（detect_missing
-    每次全量计算恰好被调一次）；start + 2×apply + propose + 2×finish 覆盖
-    3 个不同状态 → 恰好 3 次计算，而非每次调用全量重算的 8 次。
+    同态重复的调用点：apply-before 复用上一步 after / finish（含幂等重入）复用
+    终态；observe 读盘上投影零检测。计数探针打在算子组合点（detect_missing
+    每次全量计算恰好被调一次）；start + 2×apply + observe + 2×finish 覆盖
+    3 个不同状态 → 恰好 3 次计算，而非每次调用全量重算的 7 次。
     """
     calls = {"n": 0}
     real = cs.detect_missing
@@ -198,7 +176,7 @@ def test_observation_computed_once_per_state(sessions_root, dirty_csv, monkeypat
     s = cs.start_session(dirty_csv, card=CARD)  # state₀ 计算 → 1
     cs.apply_action(s.session_id, "drop_duplicate", {})  # before 命中 + state₁ 计算 → 2
     cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]})  # before 命中 + state₂ 计算 → 3
-    cs.propose_actions(s.session_id)  # 命中 state₂ → 3
+    cs.observe_session(s.session_id)  # 读投影零检测 → 3
     cs.finish_session(s.session_id, preview=True)  # 命中 state₂ → 3
     cs.finish_session(s.session_id)  # 幂等路径命中 state₂ → 3
 
@@ -263,102 +241,29 @@ def test_rollback_to_abandoned_branch_keeps_artifacts(sessions_root, dirty_csv):
     assert back.state_digest["v"] == 1
 
 
-def test_propose_actions_are_error_driven(sessions_root, dirty_csv):
-    """候选生成:错误清单 → 按类型映射参数化候选,含理由与来源缺陷。"""
+def test_observe_is_idempotent_zero_side_effect_read(sessions_root, dirty_csv):
+    """#117 observe：幂等只读零转移——回最近转移的观测本身，盘上零变化（续局锚点）。"""
     s = cs.start_session(dirty_csv, card=CARD)
+    r = cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]})
+    disk = {p.name: p.read_bytes() for p in (sessions_root / s.session_id).iterdir() if p.is_file()}
 
-    props = _menu(s.session_id)
+    o1 = cs.observe_session(s.session_id)
+    o2 = cs.observe_session(s.session_id)
 
-    by_node = {p["action"] for p in props}
-    assert "fill_median" in by_node  # ← missing×数值
-    assert "drop_duplicate" in by_node  # ← duplicate
-    assert "strip_units" in by_node  # ← stringly_numeric(卡里有 unit hint)
-    fill = next(p for p in props if p["action"] == "fill_median")
-    assert fill["params"]
-    assert fill["source_kinds"]
+    assert isinstance(o1, Observation) and o1 == o2 == r  # 幂等：同态同观测
+    assert {p.name: p.read_bytes() for p in (sessions_root / s.session_id).iterdir() if p.is_file()} == disk
 
 
-def test_propose_candidates_carry_evidence(sessions_root, dirty_csv):
-    """候选自带触发它的规则快照(kind/列/计数/最重 severity)——agent 决策有据。"""
+def test_observation_carries_column_evidence(sessions_root, dirty_csv):
+    """菜单退役后证据居所 = 观测：列画像带 dtype 族与数值分布读数（稳健档 vs 正态档的
+    选择基于读数而非标签——原 fill 候选的 col_shape 证据上浮到观测常驻面）。"""
     s = cs.start_session(dirty_csv, card=CARD)
+    cols = s.state_digest["columns"]
 
-    props = _menu(s.session_id)
-
-    fill = next(p for p in props if p["action"] == "fill_median")
-    ev = fill["evidence"]
-    assert ev["kind"] == "missing"
-    assert "hole" in ev["columns"]
-    assert ev["n"] >= 1
-    assert 0.0 < ev["severity_max"] <= 1.0
-
-
-def test_propose_excludes_card_claimed_columns(sessions_root, claimed_csv):
-    """卡感知契约:id_like 候选留下未认领列(uid),不引用问卷认领的 id 列(sid)。"""
-    s = cs.start_session(claimed_csv, card={"domain": "t", "id_columns": ["sid"]})
-
-    props = _menu(s.session_id)
-
-    id_props = [p for p in props if p.get("evidence", {}).get("kind") == "id_like"]
-    assert id_props, "uid 未认领,应触发 id_like 候选"
-    assert any("uid" in json.dumps(p["params"]) for p in id_props)
-    for p in id_props:
-        assert "sid" not in json.dumps(p["params"], ensure_ascii=False) + p["rationale"]
-
-
-def test_propose_vocab_drift_fail_loud(sessions_root, dirty_csv, monkeypatch):
-    """#89 ③片：问题规则现查词表——解题动作被卸载（插件漂移）时 propose fail-loud
-    带可用清单，不静默缩菜单（.repair 聚合退役后的词表纪律居所）。"""
-    import mflowy.driver.discover as disc
-
-    real = disc.discover
-
-    def _minus_fill(key):
-        return {k: v for k, v in real().items() if k != f"clean__{key}"}
-
-    s = cs.start_session(dirty_csv, card=CARD)
-    monkeypatch.setattr(disc, "discover", lambda: _minus_fill("fill_median"))
-    with pytest.raises(ValueError, match=r"fill_median.*不在 clean 词表.*可用"):
-        cs.propose_actions(s.session_id)
-    monkeypatch.setattr(disc, "discover", real)
-    assert any(p["action"] == "fill_median" for p in _menu(s.session_id))  # 词表复原即恢复
-
-
-def test_propose_menu_partitions_by_dtype(sessions_root, tmp_path):
-    """dtype 自筛菜单:fill 候选的 cols 组内同族——数值档不摸类别列,类别档不摸数值列。"""
-    df = pd.DataFrame(
-        {
-            "num_hole": [1.0, None, 3.0, None, 5.0],
-            "cat_hole": ["a", None, "b", None, "a"],
-            "x": [1.0, 2.0, 3.0, 4.0, 5.0],
-        }
-    )
-    path = tmp_path / "mixed.csv"
-    df.to_csv(path, index=False)
-
-    from mflowy.data.middlewares import type_family
-
-    s = cs.start_session(str(path), card={"domain": "t"})
-    props = _menu(s.session_id)
-
-    fills = [p for p in props if p["action"].startswith("fill_")]
-    assert fills, "混 dtype 缺失应出 fill 候选"
-    atom_family = {
-        "fill_median": "numeric",
-        "fill_mean": "numeric",
-        "fill_interpolate": "numeric",
-        "fill_mode": "categorical",
-        "fill_const": "categorical",
-        "fill_ffill": "datetime",
-        "fill_bfill": "datetime",
-    }
-    seen_parts = set()
-    for p in fills:
-        cols = p["params"].get("cols") or list(p["params"].get("columns", {}))
-        assert cols, p
-        fams = {type_family(as_series(df[c])) for c in cols if c in df.columns}
-        assert fams == {atom_family[p["action"]]}, (p["action"], fams)
-        seen_parts.add(atom_family[p["action"]])
-    assert {"numeric", "categorical"} <= seen_parts  # 两个分区都有各自菜单
+    assert cols["hole"]["family"] == "numeric" and cols["sid"]["family"] == "categorical"
+    stats = cols["hole"]
+    assert {"skew", "q1", "q2", "q3", "var"} <= set(stats)
+    assert stats["q1"] <= stats["q2"] <= stats["q3"]
 
 
 def test_freshness_stats_evaluated_at_apply(sessions_root, tmp_path):
@@ -376,16 +281,16 @@ def test_freshness_stats_evaluated_at_apply(sessions_root, tmp_path):
 
     df2 = cs.current_df(s.session_id)
     assert df2["x"].iloc[4] == pytest.approx(17.875)
-    assert df2["x"].iloc[4] != pytest.approx(26.5)  # 若 propose 时烙定均值则会得到污染值
+    assert df2["x"].iloc[4] != pytest.approx(26.5)  # 若参数在观测期烙定均值则会得到污染值
     assert r.state_digest["defects"].get("missing", 0) == 0
 
 
 def test_whitebox_loop_covers_load_hygiene(sessions_root, tmp_path):
-    """load 中间件三黑盒动作的白盒回路（detect→propose→apply）：
+    """load 中间件三黑盒动作的白盒回路（detect→π 自构→apply）：
 
-    相一：全空行(empty_row)与全空列(missing 1.0)同屏出候选;常量列因空行在场
+    相一：全空行(empty_row)与全空列(missing 1.0)同屏可见;常量列因空行在场
     (nunique(dropna=False) 把 NaN 计为一个值)暂不报——中间件的内部执行顺序
-    (先删空行再判常量)变成显式的 POMDP 两步;问卷认领列不入候选。
+    (先删空行再判常量)变成显式的 POMDP 两步。
     相二：删空行后 const 列的常量缺陷浮现。
     """
     df = pd.DataFrame(
@@ -401,62 +306,13 @@ def test_whitebox_loop_covers_load_hygiene(sessions_root, tmp_path):
     df.to_csv(path, index=False)
 
     s = cs.start_session(str(path), card={"domain": "t", "id_columns": ["sid"]})
-    props = _menu(s.session_id)
+    problems = s.state_digest["problems"]
+    assert problems.get("empty_row")
+    assert "dead" in {p["column"] for p in problems["missing"]}
+    assert "const" not in {p["column"] for p in problems.get("constant", [])}  # 空行未删,常量未浮现
 
-    empty = next(p for p in props if p["evidence"]["kind"] == "empty_row")
-    assert empty["action"] == "drop_missing_rows" and empty["params"]["how"] == "all"
-    assert empty["params"]["load"].endswith("v0.parquet")  # params 自含数据引用（#89）
-    missing_cols = next(p for p in props if p["action"] == "drop_cols" and p["evidence"]["kind"] == "missing")
-    assert "dead" in missing_cols["params"]["cols"]
-    assert "sid" not in missing_cols["params"]["cols"]
-    assert "const" not in missing_cols["params"]["cols"]  # 空行未删,常量未浮现
-
-    cs.apply_action(s.session_id, "drop_missing_rows", {"how": "all"})
-    props2 = _menu(s.session_id)
-
-    constant_cols = next(p for p in props2 if p["action"] == "drop_cols" and p["evidence"]["kind"] == "constant")
-    assert "const" in constant_cols["params"]["cols"]
-
-
-def test_propose_menu_covers_all_kind_repairs(sessions_root, tmp_path):
-    """全员候选原则:有 kind 对应的原子都进菜单(fill_mean/interpolate、drop_outlier_z 不缺席)——
-    无问题对应的条件型动作(python)不进菜单——range_clip 随 range_violation 问题出题。"""
-    n = 60
-    rng = np.random.default_rng(3)
-    x = rng.normal(size=n)
-    x[0] = 50.0  # outlier
-    df = pd.DataFrame({"x": x, "hole": np.where(rng.random(n) < 0.3, np.nan, 1.0)})
-    path = tmp_path / "tiers.csv"
-    df.to_csv(path, index=False)
-
-    s = cs.start_session(str(path), card={"domain": "t"})
-    actions = {p["action"] for p in _menu(s.session_id)}
-
-    assert {"fill_median", "fill_mean", "fill_interpolate"} <= actions
-    assert {"cap_iqr", "cap_z", "drop_outlier_iqr", "drop_outlier_z"} <= actions
-    assert "python" not in actions and "range_clip" not in actions  # 条件型,无 kind 对应
-
-
-def test_propose_menu_ordered_by_scoreboard(sessions_root, tmp_path):
-    """Story 13:菜单按记分牌权重×severity 降序——missing(0.35) 候选先于 id_like(0.05);
-    defect_priority 覆盖翻转次序(委托人的记分牌决定看单顺序)。"""
-    n = 40
-    df = pd.DataFrame(
-        {
-            "uid": [f"u{i:03d}" for i in range(n)],
-            "hole": [1.0 if i % 5 else None for i in range(n)],
-        }
-    )
-    path = tmp_path / "order.csv"
-    df.to_csv(path, index=False)
-
-    s = cs.start_session(str(path), card={"domain": "t"})
-    kinds_seq = [p["evidence"]["kind"] for p in _menu(s.session_id)]
-    assert kinds_seq.index("missing") < kinds_seq.index("id_like")
-
-    s2 = cs.start_session(str(path), card={"domain": "t", "defect_priority": {"id_like": 0.9}})
-    kinds_seq2 = [p["evidence"]["kind"] for p in _menu(s2.session_id)]
-    assert kinds_seq2.index("id_like") < kinds_seq2.index("missing")
+    r = cs.apply_action(s.session_id, "drop_missing_rows", {"how": "all"})
+    assert "const" in {p["column"] for p in r.state_digest["problems"]["constant"]}
 
 
 def test_budget_stops_apply(sessions_root, dirty_csv):
@@ -475,8 +331,7 @@ def test_real_responses_are_contract_models(sessions_root, dirty_csv):
     assert isinstance(s, Observation)
     assert Observation.model_validate(s.model_dump()) == s  # 封闭模型往返
 
-    acts = cs.propose_actions(s.session_id)
-    assert acts and all(a.rule_key and a.action for a in acts)
+    assert isinstance(cs.observe_session(s.session_id), Observation)
 
     r = cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]})
     assert isinstance(r, Observation) and r.reward is not None
@@ -490,7 +345,7 @@ def test_real_responses_are_contract_models(sessions_root, dirty_csv):
 
 
 def test_abandon_terminalizes_session(sessions_root, dirty_csv):
-    """#30 弃局：abandon 终态化——ack 回执、决策日志追加 abandon 记录、菜单清空、
+    """#30 弃局：abandon 终态化——ack 回执、决策日志追加 abandon 记录、观测带终态旗、
     动作/收局面关闭。"""
     s = cs.start_session(dirty_csv, card=CARD)
     cs.apply_action(s.session_id, "drop_duplicate", {})
@@ -503,7 +358,7 @@ def test_abandon_terminalizes_session(sessions_root, dirty_csv):
     log = _log(sessions_root, s.session_id)
     assert log[-1]["action"] == "abandon" and log[-1]["reason"] == "改卡重开"  # 审计进日志
     assert len(log) == 2  # apply + abandon——决策历史保留
-    assert cs.propose_actions(s.session_id) == []  # 菜单与终态一致
+    assert cs.observe_session(s.session_id).abandoned is True  # 终态照常可观测
     with pytest.raises(RuntimeError, match="终态"):
         cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]})
     with pytest.raises(RuntimeError, match="终态"):
@@ -573,12 +428,12 @@ def test_rollback_reward_is_recovery_delta(sessions_root, dirty_csv):
     assert noop.reward == 0.0
 
 
-def test_propose_empty_after_finish(sessions_root, dirty_csv):
-    """#30 菜单与终态一致：收局后 propose 返回 []（与 apply 的拒绝对称）。"""
+def test_observe_after_finish_reports_terminal(sessions_root, dirty_csv):
+    """#117 观测不是动作：收局后 observe 照常回观测（finished 旗）——与 apply 的终态拒绝互补。"""
     s = cs.start_session(dirty_csv, card=CARD)
-    assert cs.propose_actions(s.session_id)  # 活会话有候选
+    assert cs.observe_session(s.session_id).finished is False
     cs.finish_session(s.session_id)
-    assert cs.propose_actions(s.session_id) == []
+    assert cs.observe_session(s.session_id).finished is True
 
 
 def test_version_artifact_sha_in_records(sessions_root, dirty_csv):
@@ -690,7 +545,7 @@ def test_finish_plan_replays(sessions_root, dirty_csv, tmp_path, monkeypatch):
     assert cs._fingerprint(result.runs[-1].value) == last_apply["artifact_sha256"]
 
 
-# ── #65 先验观测：expected_ranges 全程可观测（观测→菜单→奖励全链） ──────────
+# ── #65 先验观测：expected_ranges 全程可观测（观测→转移→奖励全链） ──────────
 
 
 @pytest.fixture
@@ -719,54 +574,28 @@ RANGED_CARD = {
 
 
 def test_expected_ranges_observable_repairable_rewarded(sessions_root, ranged_csv):
-    """#65 先验观测：物理越界进缺陷清单/候选菜单/正奖励——问卷成本在循环内兑现。"""
+    """#65 先验观测：物理越界进缺陷清单/正奖励——问卷成本在循环内兑现。"""
     s = cs.start_session(ranged_csv, card=RANGED_CARD)
     sid = s.session_id
 
-    # ① 观测：物理越界进缺陷清单（kind × count + 证据）
+    # ① 观测：物理越界进缺陷清单（defect × count + 证据）
     assert s.state_digest["defects"].get("range_violation") == 1
+    assert [p["column"] for p in s.state_digest["problems"]["range_violation"]] == ["temp"]
 
-    # ② 菜单：range_clip 温和档 / drop_outside 激进档双档入单（边界证据同尺）
-    menu = _menu(sid)
-    by_action = {c["action"]: c for c in menu}
-    assert set(by_action) >= {"range_clip", "drop_outside"}
-    assert by_action["range_clip"]["params"]["ranges"] == {"temp": [0.0, 100.0]}
-    dp = by_action["drop_outside"]["params"]
-    assert {k: dp[k] for k in ("cols", "lo", "hi")} == {"cols": ["temp"], "lo": 0.0, "hi": 100.0}
-    assert dp["load"].endswith(".parquet")  # 自含引用
-
-    # ③ 转移：修越界得正奖励（求和口径——消除缺陷不减分）
+    # ② 转移：修越界得正奖励（求和口径——消除缺陷不减分）
     r = cs.apply_action(sid, "range_clip", {"ranges": {"temp": [0.0, 100.0]}})
     assert r.reward is not None and r.reward > 0
     assert r.state_digest["defects"].get("range_violation", 0) == 0
 
 
-def test_fill_candidates_carry_distribution_evidence(sessions_root, dirty_csv):
-    """#65 证据富化：fill_median/fill_mean 候选 evidence 携带目标列偏度/四分位——
-    稳健档 vs 正态档的选择基于读数而非标签。"""
-    s = cs.start_session(dirty_csv, card=CARD)
-    menu = _menu(s.session_id)
-    by_action = {c["action"]: c for c in menu}
-
-    for action in ("fill_median", "fill_mean"):
-        shape = by_action[action]["evidence"]["col_shape"]
-        assert "hole" in shape
-        stats = shape["hole"]
-        assert set(stats) == {"skew", "q1", "q2", "q3"}
-        assert stats["q1"] <= stats["q2"] <= stats["q3"]
-
-
-def test_clean_state_proposes_finish(sessions_root, tmp_path):
-    """#89 ③片：缺陷清零 → 菜单尾部出现 finish 提议（停止建议 = 普通规则的资格门
-    产出，salience=0 垫底——建议通道与硬预算门分离）。"""
+def test_clean_state_has_no_stop_suggestion_channel(sessions_root, tmp_path):
+    """#120 停止建议通道退役：缺陷清零即观测自明（defects 空），π 从观测自决收局——
+    观测面无引擎侧停止提议。"""
     df = pd.DataFrame({"x": [1.0, 5.0, 2.0, 8.0], "y": [9.0, 3.0, 7.0, 4.0]})
     path = tmp_path / "clean.csv"
     df.to_csv(path, index=False)
 
     s = cs.start_session(str(path), card={"domain": "t"})
-    assert not s.state_digest["defects"]  # 干净起点（无缺陷可修）
-
-    acts = cs.propose_actions(s.session_id)
-    assert acts, "规则面应产出（至少停止建议）"
-    assert acts[-1].action == "finish" and acts[-1].salience == 0  # 停止建议恒居末
-    assert all(a.action != "finish" for a in acts[:-1])  # 修复候选在前
+    o = cs.observe_session(s.session_id)
+    assert not o.state_digest["defects"]  # 干净起点（无缺陷可修）——收局判据在观测
+    assert "should_stop" not in o.state_digest and "finish" not in json.dumps(dict(o.state_digest))

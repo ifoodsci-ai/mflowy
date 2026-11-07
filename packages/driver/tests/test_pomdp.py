@@ -2,15 +2,16 @@
 
 seam 即 interface，测试即消费方（先例：test_reflect.py）——只测外部行为。
 样本即独立真源：issue #29 类型表 + #89 会话基座设计（七键封闭/终态双旗/
-action-params 平铺/拒收必附 reason），非实现回填。
+拒收必附 reason）+ #117/#120 换血（propose 出局、observe 入局，Activation 退役），
+非实现回填。
 """
 
+import importlib
 import inspect
 
 import pytest
 from mflowy.driver.pomdp import (
     TOP_K_DECISIONS,
-    Activation,
     FinishVerdict,
     Observation,
     POMDPSessionHandle,
@@ -20,22 +21,32 @@ from pydantic import ValidationError
 
 class TestExports:
     def test_contract_surface(self):
-        """会话 SDK 契约面：三投影模型 + TOP_K + Handle 齐备（机制住 session 模块）。"""
+        """会话 SDK 契约面：两投影模型 + TOP_K + Handle 齐备（机制住 session 模块）；
+        菜单候选模型 Activation 随规则引擎退役（#120）。"""
         import mflowy.driver.pomdp as m
 
-        for name in ("Observation", "FinishVerdict", "Activation", "TOP_K_DECISIONS", "POMDPSessionHandle"):
+        for name in ("Observation", "FinishVerdict", "TOP_K_DECISIONS", "POMDPSessionHandle"):
             assert hasattr(m, name), name
+        assert not hasattr(m, "Activation")
+
+    def test_rule_sdk_retired(self):
+        """规则引擎 SDK 整模块退役（#120）——菜面两域全灭，零存活消费者，防回潮。"""
+        with pytest.raises(ModuleNotFoundError):
+            importlib.import_module("mflowy.driver.rule")
 
     def test_handle_six_ops(self):
-        """Handle = 无状态 sid 寻址服务面：六操作齐备（load 绑定句柄为后置扩展点）。"""
-        for op in ("start", "propose", "apply", "rollback", "finish", "abandon"):
+        """Handle = 无状态 sid 寻址服务面：六操作齐备（propose 出局、observe 入局——#117）。"""
+        for op in ("start", "observe", "apply", "rollback", "finish", "abandon"):
             assert hasattr(POMDPSessionHandle, op), op
+        assert not hasattr(POMDPSessionHandle, "propose")
         # 具名核心 + *args 域尾巴：apply 的 sid/action 具名，域选项不进契约签名
         sig = inspect.signature(POMDPSessionHandle.apply)
         assert list(sig.parameters)[:3] == ["self", "sid", "action"]
         assert any(p.kind is inspect.Parameter.VAR_POSITIONAL for p in sig.parameters.values())
         assert list(inspect.signature(POMDPSessionHandle.start).parameters) == ["self", "args"]
-        assert list(inspect.signature(POMDPSessionHandle.propose).parameters) == ["self", "sid"]
+        observe = inspect.signature(POMDPSessionHandle.observe)
+        assert list(observe.parameters) == ["self", "sid"]
+        assert observe.return_annotation in (Observation, "Observation")  # 幂等只读：回观测本身
 
 
 def _observation(**over):
@@ -126,43 +137,3 @@ class TestFinishVerdictModel:
             FinishVerdict.model_validate(_verdict(deliverables="x"))
         with pytest.raises(ValidationError):
             FinishVerdict.model_validate(_verdict(decision_log={"step": 1}))
-
-
-def _activation(**over):
-    """合法激活样本——独立真源：#89（proposal 嵌套键退役，action/params 平铺）。"""
-    base = {
-        "rule_key": "missing_values.fill",
-        "action": "clean__fill_missing",
-        "params": {"cols": ["age"], "strategy": "median"},
-        "salience": 3_000_000,
-        "rationale": "缺失率 42% 的数值列用中位数填充",
-        "evidence": {"kind": "missing", "n": 42},
-    }
-    base.update(over)
-    return base
-
-
-class TestActivationModel:
-    def test_valid_and_json_roundtrip(self):
-        a = Activation.model_validate(_activation())
-        assert a.action == "clean__fill_missing" and a.params["strategy"] == "median"
-        assert Activation.model_validate(a.model_dump()) == a
-
-    def test_extra_forbidden_old_proposal_key_rejected(self):
-        """旧嵌套键 proposal 拒收（extra=forbid）——迁移面 fail-loud。"""
-        with pytest.raises(ValidationError, match="proposal"):
-            Activation.model_validate(_activation(proposal={"action": "x", "params": {}}))
-
-    def test_frozen(self):
-        a = Activation.model_validate(_activation())
-        with pytest.raises(ValidationError):
-            a.salience = 0  # type: ignore[misc]
-
-    def test_strict_teeth(self):
-        with pytest.raises(ValidationError):
-            Activation.model_validate(_activation(salience=True))  # bool 不冒充记分牌
-        with pytest.raises(ValidationError):
-            Activation.model_validate(_activation(salience="5"))
-        with pytest.raises(ValidationError):
-            Activation.model_validate(_activation(action=""))  # 空动作名
-        Activation.model_validate(_activation(evidence=None))  # 无证据链白名单

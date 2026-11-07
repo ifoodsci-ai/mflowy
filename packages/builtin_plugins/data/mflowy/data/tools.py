@@ -136,23 +136,26 @@ def clean_session_start(
     return cleaning_session.start_session(file_path, card=card, max_steps=max_steps).model_dump()
 
 
-def clean_propose(session_id: Annotated[str, Field(description="会话 ID")]) -> list[dict]:
-    """候选动作生成：当前错误清单 → 按类型映射的参数化修复候选（合法走法生成器）。
+def clean_observe(session_id: Annotated[str, Field(description="会话 ID")]) -> dict:
+    """观测清洗会话（幂等只读零转移）：回当前观测——缺陷清单（state_digest.problems）
+    + 质量分 + 列画像 + 预算/步数 + 近期决策 + 终态旗。
 
-    何时使用 clean_propose：
-    - 每步决策前看可选动作（agent 只做选择，不需要自己枚举参数）
+    选项面不设菜单：可执行算子 = clean 词表全集（list_nodes(namespace="clean") /
+    get_node_info 看参数面），按观测证据自构 clean_apply。
+
+    何时使用 clean_observe：
+    - 续局 / 上下文丢失后重新定位（拿 session_id 直接观测，无副作用）
+    - 终态会话同样可观测（finished/abandoned 旗即收局事实）
     """
     from . import cleaning_session
 
-    return [cleaning_session.menu_of(a) for a in cleaning_session.propose_actions(session_id)]
+    return cleaning_session.observe_session(session_id).model_dump()
 
 
 def clean_apply(
     session_id: Annotated[str, Field(description="会话 ID")],
-    node: Annotated[str, Field(description="clean 词表动作名（clean_propose 的 action 字段）")],
-    params: Annotated[
-        dict | None, Field(description="动作参数（clean_propose 的 params 字段，None=用动作缺省）")
-    ] = None,
+    node: Annotated[str, Field(description="clean 词表算子名（list_nodes(namespace='clean') 可查）")],
+    params: Annotated[dict | None, Field(description="算子参数（get_node_info 的参数面，None=用算子缺省）")] = None,
 ) -> dict:
     """执行一个清洗动作：守卫 → 转移 → 快照 → diff/错误清单/质量分（s′ 观测）→ 决策日志。
 
@@ -163,7 +166,7 @@ def clean_apply(
     负 reward 即 clean_rollback。
 
     何时使用 clean_apply：
-    - 从候选中选定动作后提交执行（响应自带 reward 与 state_digest——直接读数决策）
+    - 读观测证据选定算子与参数后提交执行（响应自带 reward 与 state_digest——直接读数决策）
     """
     from . import cleaning_session
 

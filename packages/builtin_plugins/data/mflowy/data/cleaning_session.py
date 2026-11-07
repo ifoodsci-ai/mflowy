@@ -5,10 +5,11 @@ driver.POMDPSession——本模块只填转移语义：动作面分发（单步�
 Conf→Builder→DAG.run，#89 ②片——apply 与导出计划同构）、检测证据（算进
 state_digest——s′ 免费自带，
 检测算子是观测通道不是动作）、终局 U + θ 验收门、计划导出（Conf → flow_to_yaml
-单源序列化——apply 与导出同构，Builder 可全量重放）。
+单源序列化——apply 与导出同构，Builder 可全量重放）。选项面不设菜单（#113）：
+π 读观测 + clean 词表（平台工具 list_nodes/get_node_info 投影）自构动作。
 
 盘上（会话目录）：
-- observation.json / decision.log / rules.pkl —— 壳三件（见 driver.session）
+- observation.json / decision.log —— 壳两件（见 driver.session）
 - v{n}.parquet —— 版本工件；分配 = 决策日志派生 max+1，永不复用已 commit 版本
   （弃分支工件盘上永存——审计面）
 - plan.yaml —— 收局交付物（幂等重入确定性重建）
@@ -43,7 +44,7 @@ from mflowy.data.detect.range_violation import range_violation as detect_range_v
 from mflowy.data.detect.scoring import quality_score as _qs_raw
 from mflowy.data.detect.stringly import stringly as detect_stringly
 from mflowy.data.fingerprint import fingerprint
-from mflowy.driver.pomdp import Activation, FinishVerdict, Observation
+from mflowy.driver.pomdp import FinishVerdict, Observation
 from mflowy.driver.session import POMDPSession
 from mflowy.utils.file import sha256_of, write_text_atomic
 
@@ -130,8 +131,8 @@ def _num(x):
 
 def _column_profile(df: pd.DataFrame) -> dict:
     """列画像（#89 ③片检测层证据富化）：dtype 族 + 数值分布读数（skew/四分位）+
-    总体方差——问题规则的证据基座（dtype 自筛/档位读数/共线方差选择全在此取，
-    规则零 df 引用）。计算单源 = statistic 域 univariate_facts；memo 随指纹。"""
+    总体方差——π 的决策证据（dtype 族/档位读数/共线方差选择全在此取，π 零 df
+    接触）。计算单源 = statistic 域 univariate_facts；memo 随指纹。"""
     memo_key = _fingerprint(df)
     hit = _PROFILE_MEMO.get(memo_key)
     if hit is not None:
@@ -309,8 +310,8 @@ def _refresh_state_digest(
     o: Observation, report: ErrorReport, quality: dict, *, v: int, df: pd.DataFrame, file: str
 ) -> None:
     """检测证据写进 state_digest（s′ 免费自带的落点，#89 ③片富化面）：
-    problems 问题投影 + columns 列画像 + current_file 当前版本工件——问题规则的
-    全部触发证据（规则纯消费 o，零 df 引用；params 的 load 引用源 = current_file）。"""
+    problems 问题投影 + columns 列画像 + current_file 当前版本工件——π 的全部
+    决策证据（π 纯消费观测，零 df 接触；apply 可选新鲜度引用源 = current_file）。"""
     problems: dict[str, list] = {}
     for e in report.errors:
         problems.setdefault(e.kind, []).append(
@@ -340,18 +341,6 @@ def _versions(o: Observation, log) -> list[int]:
     return sorted({0, *(r["v"] for r in log if "v" in r)})
 
 
-def menu_of(a: Activation) -> dict:
-    """菜单项形状（MCP 面）：规则快照自带订阅 kind 进 source_kinds（无 kind 记空）。"""
-    kind = (a.evidence or {}).get("kind")
-    return {
-        "action": a.action,
-        "params": dict(a.params),
-        "source_kinds": [kind] if kind else [],
-        "rationale": a.rationale,
-        "evidence": dict(a.evidence or {}),
-    }
-
-
 # ── 六操作（POMDPSessionHandle 活参考：模块级薄门面，只填转移语义） ─────────
 
 
@@ -368,9 +357,7 @@ def start_session(file_path: str, card: dict | None = None, max_steps: int = 15)
     report = _detect_all(df, card)
     quality = _quality_score(report, card=card)
 
-    from mflowy.data.repair_rules import default_engine
-
-    ss = POMDPSession(_root(), *default_engine().rules.values(), prefix="cs_")
+    ss = POMDPSession(_root(), prefix="cs_")
     with ss.start_ctx(max_steps=max_steps, prior=card) as o:
         v0 = ss.dir / "v0.parquet"  # 工件先行（开局 commit = 观测落盘）
         df.reset_index(drop=True).to_parquet(v0, index=False)
@@ -457,8 +444,8 @@ def apply_action(session_id: str, node: str, params: dict | None = None) -> Obse
     """
     params = dict(params or {})
     if node == "finish":
-        raise ValueError("`finish` 是操作面不是 apply 动作——菜单出现 finish 提议时走 clean_finish")
-    load_ref = params.pop("load", None)  # params 自含数据引用（#89）——寻址元数据，非节点参数
+        raise ValueError("`finish` 是操作面不是 apply 动作——收局走 clean_finish")
+    load_ref = params.pop("load", None)  # 可选新鲜度引用（当前版本工件）——寻址元数据，非节点参数
     try:
         get_node(f"clean__{node}")  # 词表预检（导入失败原音透传，不误诊）
     except CatalogMiss as e:
@@ -467,8 +454,8 @@ def apply_action(session_id: str, node: str, params: dict | None = None) -> Obse
     ss = _open(session_id)
     with ss.apply_ctx(node) as (o, log):
         if load_ref is not None and Path(load_ref).name != _current_file(o):
-            raise ValueError(  # 过期菜单新鲜度门（fail-loud 指路）——commit 前抛 = 免费
-                f"提议的 load 引用已过期（{load_ref} ≠ 当前版本 {_current_file(o)}）——重新 clean_propose 拿新鲜菜单"
+            raise ValueError(  # 过期决策新鲜度门（fail-loud 指路）——commit 前抛 = 免费
+                f"load 引用已过期（{load_ref} ≠ 当前版本 {_current_file(o)}）——clean_observe 取当前观测后重新决策"
             )
         _session_experiment(ss.id)  # 预建会话锚定实验（工件根 = 会话 .mlruns）
         df, out, run_id = _run_clean_step(ss, o, node, params, step_no=len(log) + 1)
@@ -542,24 +529,13 @@ def rollback(session_id: str, to_version: int) -> Observation:
     return o
 
 
-def propose_actions(session_id: str) -> list[Activation]:
-    """候选聚合（问题规则统一入口，#89 ③片）：问题知识随问题规则居住
-    （repair_rules——检测证据在 state_digest，规则纯消费 o），fire(o=观测)/poll 按
-    记分牌序聚合——权重×severity 降序（salience 同尺），置顶即事实默认档，噪声由
-    排序治理。params 自含 load（当前版本工件）；终态（收局/弃局）返回 []。
+def observe_session(session_id: str) -> Observation:
+    """观测（#117 取代 propose）：幂等只读零转移——回最近一次转移落盘的观测投影
+    （state_digest 由每次转移刷新：缺陷清单/质量分/列画像/当前版本）。续局/
+    re-orientation 锚点；终态会话照常可观测（finished/abandoned 旗即收局事实）。
     """
-    ss = _open(session_id)
-    if ss.is_terminal:
-        return []
-    with ss.propose_ctx() as (o, engine):
-        df = pd.read_parquet(ss.dir / _current_file(o))
-        report = _detect_all(df, o.prior)
-        _refresh_state_digest(  # 检测证据富化观测（problems/columns/current_file——规则的触发面）
-            o, report, o.state_digest["quality"], v=o.state_digest["v"], df=df, file=str(ss.dir / _current_file(o))
-        )
-        engine.fire(o=o)  # 触发上下文 = 观测（#89 ③片——问题规则纯消费 o）
-        activations = engine.poll_proposals()
-    return activations
+    with _open(session_id).observe_ctx() as o:
+        return o
 
 
 def current_df(session_id: str) -> pd.DataFrame:

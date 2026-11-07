@@ -18,7 +18,7 @@ disable-model-invocation: true
    仓库 examples/）；
 3. 产出**结构化候选清单** `[{family, baseline, space_hints, seed}]`（对齐运行期族
    目录——已声明 `.mdp_family` 者；清单外族 = 第一轮淘汰）：
-   - **baseline 恰一**：最稳的文献锚点候选（propose 时位于第一——先跑它定参照系）；
+   - **baseline 恰一**：最稳的文献锚点候选（model skill 推进序第一——先跑它定参照系）；
    - 每候选一句文献依据（"该规模表格基准上 GBDT 系长期占榜"）；
    - **space_hints**（可选）：文献知识注入搜索起点——标量 = pin 缺省（如
      `n_estimators: 500`）、区间 = 收窄（如 `max_depth: [4, 8]`）；保持缺省则留空；
