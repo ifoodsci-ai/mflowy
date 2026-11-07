@@ -78,17 +78,17 @@ def test_session_lifecycle_stdout_pure(sessions_root, dirty_csv, capsys):
     cs.observe_session(sid)
     assert capsys.readouterr().out == ""
 
-    cs.apply_action(sid, "drop_duplicate", {})
+    cs.apply_action(sid, "drop_duplicate", {}, reason="测试决策")
     assert capsys.readouterr().out == ""
 
-    cs.apply_action(sid, "fill_median", {"cols": ["hole"]})
+    cs.apply_action(sid, "fill_median", {"cols": ["hole"]}, reason="测试决策")
     assert capsys.readouterr().out == ""
 
     cs.rollback(sid, to_version=0)
     assert capsys.readouterr().out == ""
 
-    cs.apply_action(sid, "drop_duplicate", {})
-    cs.apply_action(sid, "fill_median", {"cols": ["hole"]})
+    cs.apply_action(sid, "drop_duplicate", {}, reason="测试决策")
+    cs.apply_action(sid, "fill_median", {"cols": ["hole"]}, reason="测试决策")
     assert capsys.readouterr().out == ""
 
     r = cs.finish_session(sid)
@@ -117,7 +117,7 @@ def test_apply_action_improves_quality_and_logs(sessions_root, dirty_csv):
     """apply fill_median:缺失清除、质量上升、决策日志记账、目标列不被捏造。"""
     s = cs.start_session(dirty_csv, card=CARD)
 
-    r = cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]})
+    r = cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]}, reason="测试决策")
 
     assert r.state_digest["v"] == 1
     assert r.state_digest["quality"]["score"] > s.state_digest["quality"]["score"]
@@ -125,10 +125,11 @@ def test_apply_action_improves_quality_and_logs(sessions_root, dirty_csv):
     # 决策日志 (s,a,r,s')——单记录版本树（v/file/sha 与走法同条）
     log = _log(sessions_root, s.session_id)
     assert len(log) == 1
-    assert log[0]["action"] == "fill_median" and log[0]["v"] == 1
+    assert log[0]["clean_op"] == "fill_median" and log[0]["v"] == 1
+    assert log[0]["intent"] == "fix" and log[0]["reason"] == "测试决策"
     assert log[0]["quality_before"] < log[0]["quality_after"]
     assert log[0]["diff"]["cols_added"] == []  # 单一副作用:fill 只填值,不捆绑指示列
-    assert r.recent_decisions[-1]["action"] == "fill_median"  # 观测投影 = 日志尾
+    assert r.recent_decisions[-1]["clean_op"] == "fill_median"  # 观测投影 = 日志尾
     # 目标列守卫:值不被填充/修改
     df = cs.current_df(s.session_id)
     raw = pd.read_csv(dirty_csv)
@@ -146,9 +147,9 @@ def test_failed_apply_is_free(sessions_root, dirty_csv):
 
     # ②片起转移走单步流 DAG——节点异常聚合进 DAGResult.error（类型归一，消息保留）
     with pytest.raises((ValueError, RuntimeError), match="不在数据框中"):
-        cs.apply_action(s.session_id, "drop_cols", {"cols": ["nope"]})
+        cs.apply_action(s.session_id, "drop_cols", {"cols": ["nope"]}, reason="测试决策")
 
-    r = cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]})
+    r = cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]}, reason="测试决策")
     assert r.steps == 1  # 失败尝试不计步
     assert r.state_digest["v"] == 1  # 失败尝试不落版本
     assert len(_log(sessions_root, s.session_id)) == 1  # 失败尝试不进决策日志
@@ -174,8 +175,8 @@ def test_observation_computed_once_per_state(sessions_root, dirty_csv, monkeypat
     monkeypatch.setattr(cs, "_REPORT_MEMO", {})
 
     s = cs.start_session(dirty_csv, card=CARD)  # state₀ 计算 → 1
-    cs.apply_action(s.session_id, "drop_duplicate", {})  # before 命中 + state₁ 计算 → 2
-    cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]})  # before 命中 + state₂ 计算 → 3
+    cs.apply_action(s.session_id, "drop_duplicate", {}, reason="测试决策")  # before 命中 + state₁ 计算 → 2
+    cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]}, reason="测试决策")  # before 命中 + state₂ 计算 → 3
     cs.observe_session(s.session_id)  # 读投影零检测 → 3
     cs.finish_session(s.session_id, preview=True)  # 命中 state₂ → 3
     cs.finish_session(s.session_id)  # 幂等路径命中 state₂ → 3
@@ -188,11 +189,11 @@ def test_apply_rejects_non_clean_node(sessions_root, dirty_csv):
     s = cs.start_session(dirty_csv, card=CARD)
 
     with pytest.raises(ValueError, match="clean"):
-        cs.apply_action(s.session_id, "profile", {})
+        cs.apply_action(s.session_id, "profile", {}, reason="测试决策")
     with pytest.raises(ValueError, match="clean"):
-        cs.apply_action(s.session_id, "no_such_node", {})
+        cs.apply_action(s.session_id, "no_such_node", {}, reason="测试决策")
     with pytest.raises(ValueError, match="操作面"):
-        cs.apply_action(s.session_id, "finish", {})  # #89：finish 提议走 clean_finish
+        cs.apply_action(s.session_id, "finish", {}, reason="测试决策")  # #89：finish 提议走 clean_finish
 
 
 def test_apply_import_failure_propagates_not_misdiagnosed(sessions_root, dirty_csv, monkeypatch):
@@ -208,13 +209,13 @@ def test_apply_import_failure_propagates_not_misdiagnosed(sessions_root, dirty_c
     s = cs.start_session(dirty_csv, card=CARD)
     monkeypatch.setattr(cs, "get_node", _boom)
     with pytest.raises(ModuleNotFoundError, match="fancydep"):
-        cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]})
+        cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]}, reason="测试决策")
 
 
 def test_rollback_restores_version(sessions_root, dirty_csv):
     """rollback:v1 回 v0,质量与缺陷复原（指针回拨——工件与日志不可篡改）。"""
     s = cs.start_session(dirty_csv, card=CARD)
-    after = cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]})
+    after = cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]}, reason="测试决策")
 
     r = cs.rollback(s.session_id, to_version=0)
 
@@ -224,15 +225,15 @@ def test_rollback_restores_version(sessions_root, dirty_csv):
     assert after.state_digest["v"] == 1
     # append-only：rollback 是记录不是删行
     log = _log(sessions_root, s.session_id)
-    assert [e["action"] for e in log] == ["fill_median", "rollback"]
+    assert [e.get("clean_op", e.get("action")) for e in log] == ["fill_median", "rollback"]
 
 
 def test_rollback_to_abandoned_branch_keeps_artifacts(sessions_root, dirty_csv):
     """#89 M5 语义：回滚后重跑不覆写弃分支——版本号永不复用、工件永存可回。"""
     s = cs.start_session(dirty_csv, card=CARD)
-    cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]})  # v1
+    cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]}, reason="测试决策")  # v1
     cs.rollback(s.session_id, to_version=0)  # 弃 v1 分支
-    r = cs.apply_action(s.session_id, "drop_duplicate", {})  # 新走法 → v2（不覆写 v1）
+    r = cs.apply_action(s.session_id, "drop_duplicate", {}, reason="测试决策")  # 新走法 → v2（不覆写 v1）
 
     assert r.state_digest["v"] == 2
     assert (sessions_root / s.session_id / "v1.parquet").exists()  # 弃分支工件在盘
@@ -244,7 +245,7 @@ def test_rollback_to_abandoned_branch_keeps_artifacts(sessions_root, dirty_csv):
 def test_observe_is_idempotent_zero_side_effect_read(sessions_root, dirty_csv):
     """#117 observe：幂等只读零转移——回最近转移的观测本身，盘上零变化（续局锚点）。"""
     s = cs.start_session(dirty_csv, card=CARD)
-    r = cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]})
+    r = cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]}, reason="测试决策")
     disk = {p.name: p.read_bytes() for p in (sessions_root / s.session_id).iterdir() if p.is_file()}
 
     o1 = cs.observe_session(s.session_id)
@@ -276,8 +277,8 @@ def test_freshness_stats_evaluated_at_apply(sessions_root, tmp_path):
     df.to_csv(path, index=False)
 
     s = cs.start_session(str(path), card={"domain": "t"})
-    cs.apply_action(s.session_id, "cap_iqr", {"cols": ["x"], "k": 1.5})
-    r = cs.apply_action(s.session_id, "fill_mean", {"cols": ["x"]})
+    cs.apply_action(s.session_id, "cap_iqr", {"cols": ["x"], "k": 1.5}, reason="测试决策")
+    r = cs.apply_action(s.session_id, "fill_mean", {"cols": ["x"]}, reason="测试决策")
 
     df2 = cs.current_df(s.session_id)
     assert df2["x"].iloc[4] == pytest.approx(17.875)
@@ -311,17 +312,17 @@ def test_whitebox_loop_covers_load_hygiene(sessions_root, tmp_path):
     assert "dead" in {p["column"] for p in problems if p["defect_type"] == "high_null"}
     assert "const" not in {p["column"] for p in problems if p["defect_type"] == "constant_col"}  # 空行未删,常量未浮现
 
-    r = cs.apply_action(s.session_id, "drop_missing_rows", {"how": "all"})
+    r = cs.apply_action(s.session_id, "drop_missing_rows", {"how": "all"}, reason="测试决策")
     assert "const" in {p["column"] for p in r.state_digest["problems"] if p["defect_type"] == "constant_col"}
 
 
 def test_budget_stops_apply(sessions_root, dirty_csv):
     """预算(max_steps)耗尽 → apply 拒绝并给出终止信号。"""
     s = cs.start_session(dirty_csv, card=CARD, max_steps=1)
-    cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]})
+    cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]}, reason="测试决策")
 
     with pytest.raises(RuntimeError, match="预算"):
-        cs.apply_action(s.session_id, "drop_duplicate", {})
+        cs.apply_action(s.session_id, "drop_duplicate", {}, reason="测试决策")
 
 
 def test_real_responses_are_contract_models(sessions_root, dirty_csv):
@@ -333,7 +334,7 @@ def test_real_responses_are_contract_models(sessions_root, dirty_csv):
 
     assert isinstance(cs.observe_session(s.session_id), Observation)
 
-    r = cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]})
+    r = cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]}, reason="测试决策")
     assert isinstance(r, Observation) and r.reward is not None
     rb = cs.rollback(s.session_id, to_version=0)
     assert isinstance(rb, Observation)
@@ -348,7 +349,7 @@ def test_abandon_terminalizes_session(sessions_root, dirty_csv):
     """#30 弃局：abandon 终态化——ack 回执、决策日志追加 abandon 记录、观测带终态旗、
     动作/收局面关闭。"""
     s = cs.start_session(dirty_csv, card=CARD)
-    cs.apply_action(s.session_id, "drop_duplicate", {})
+    cs.apply_action(s.session_id, "drop_duplicate", {}, reason="测试决策")
 
     ack = cs.abandon_session(s.session_id, reason="改卡重开")
 
@@ -360,7 +361,7 @@ def test_abandon_terminalizes_session(sessions_root, dirty_csv):
     assert len(log) == 2  # apply + abandon——决策历史保留
     assert cs.observe_session(s.session_id).abandoned is True  # 终态照常可观测
     with pytest.raises(RuntimeError, match="终态"):
-        cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]})
+        cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]}, reason="测试决策")
     with pytest.raises(RuntimeError, match="终态"):
         cs.rollback(s.session_id, to_version=0)  # 弃局承诺保留版本树——不可截断
     with pytest.raises(RuntimeError, match="不可收局"):
@@ -370,7 +371,7 @@ def test_abandon_terminalizes_session(sessions_root, dirty_csv):
 def test_finish_reentry_recovers_deliverables(sessions_root, dirty_csv):
     """#30 review 裁定：已收局重入 finish = 幂等重导出（π 丢包自愈），弃局不可复活。"""
     s = cs.start_session(dirty_csv, card=CARD)
-    cs.apply_action(s.session_id, "drop_duplicate", {})
+    cs.apply_action(s.session_id, "drop_duplicate", {}, reason="测试决策")
 
     first = cs.finish_session(s.session_id)
     again = cs.finish_session(s.session_id)  # 响应丢失后的重试
@@ -384,7 +385,7 @@ def test_finish_reentry_recovers_deliverables(sessions_root, dirty_csv):
 def test_rollback_blocked_at_terminal(sessions_root, dirty_csv):
     """终态不可回滚——版本树是审计面（弃局承诺保留、收局后重放对账依赖完整树）。"""
     s = cs.start_session(dirty_csv, card=CARD)
-    cs.apply_action(s.session_id, "drop_duplicate", {})
+    cs.apply_action(s.session_id, "drop_duplicate", {}, reason="测试决策")
     cs.finish_session(s.session_id)
     with pytest.raises(RuntimeError, match="终态"):
         cs.rollback(s.session_id, to_version=0)
@@ -408,7 +409,7 @@ def test_start_reward_none_digest_present(sessions_root, dirty_csv):
 def test_apply_reward_equals_delta_quality(sessions_root, dirty_csv):
     """#30 显式化：apply 响应 reward = ΔΦ（决策记录 after−before 上浮为显式键，舍入 4 位）。"""
     s = cs.start_session(dirty_csv, card=CARD)
-    r = cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]})
+    r = cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]}, reason="测试决策")
     rec = _log(sessions_root, s.session_id)[-1]
     assert r.reward == pytest.approx(round(rec["quality_after"] - rec["quality_before"], 4))
     assert r.state_digest["digest"] != s.state_digest["digest"]  # 状态已转移
@@ -418,12 +419,12 @@ def test_apply_reward_equals_delta_quality(sessions_root, dirty_csv):
 def test_rollback_reward_is_recovery_delta(sessions_root, dirty_csv):
     """#30 显式化：rollback 响应 reward = 恢复 ΔΦ——撤销改进为负、no-op 回滚恰为零。"""
     s = cs.start_session(dirty_csv, card=CARD)
-    cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]})
+    cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]}, reason="测试决策")
     r = cs.rollback(s.session_id, to_version=0)
     assert r.reward is not None and r.reward < 0  # 撤掉一次质量改进
     assert r.state_digest["digest"] == s.state_digest["digest"]  # 回到 v0 状态
 
-    cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]})  # 回到 v1
+    cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]}, reason="测试决策")  # 回到 v1
     noop = cs.rollback(s.session_id, to_version=1)  # 回滚到当前版本 = 零转移
     assert noop.reward == 0.0
 
@@ -446,7 +447,7 @@ def test_version_artifact_sha_in_records(sessions_root, dirty_csv):
     sid = s.session_id
     assert s.state_digest["v0"]["artifact_sha256"] == sha256_of(sessions_root / sid / "v0.parquet")
 
-    cs.apply_action(sid, "fill_median", {"cols": ["hole"]})
+    cs.apply_action(sid, "fill_median", {"cols": ["hole"]}, reason="测试决策")
     rec = _log(sessions_root, sid)[0]
     assert rec["artifact_sha256"] == sha256_of(sessions_root / sid / "v1.parquet")
     assert rec["artifact_sha256"] != s.state_digest["v0"]["artifact_sha256"]  # 内容变 → 地址变
@@ -458,7 +459,7 @@ def test_version_artifact_sha_in_records(sessions_root, dirty_csv):
 def test_finish_preview_zero_side_effects(sessions_root, dirty_csv):
     """#30 preview：零副作用只读探针——观测无 mutation、不导出 plan、θ 门不生效、会话可继续 apply。"""
     s = cs.start_session(dirty_csv, card=CARD)
-    cs.apply_action(s.session_id, "drop_duplicate", {})
+    cs.apply_action(s.session_id, "drop_duplicate", {}, reason="测试决策")
     obs_before = _obs(sessions_root, s.session_id)
 
     r = cs.finish_session(s.session_id, preview=True, min_quality=0.999)
@@ -469,7 +470,7 @@ def test_finish_preview_zero_side_effects(sessions_root, dirty_csv):
     assert r["report"]["final_quality"]["score"] > 0  # 键名与真收局对齐
     assert "deliverables" not in r
     assert _obs(sessions_root, s.session_id) == obs_before  # 零 mutation（finished 仍 False）
-    r2 = cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]})  # 会话仍活
+    r2 = cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]}, reason="测试决策")  # 会话仍活
     assert r2.state_digest["v"] == 2
 
 
@@ -494,8 +495,8 @@ def test_finish_exports_plan_and_final(sessions_root, dirty_csv):
     load 节点——Builder 可独立重放（见 test_finish_plan_replays）。
     """
     s = cs.start_session(dirty_csv, card=CARD)
-    cs.apply_action(s.session_id, "drop_duplicate", {})
-    cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]})
+    cs.apply_action(s.session_id, "drop_duplicate", {}, reason="测试决策")
+    cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]}, reason="测试决策")
 
     r = cs.finish_session(s.session_id)
     assert isinstance(r, FinishVerdict)
@@ -519,8 +520,8 @@ def test_finish_plan_replays(sessions_root, dirty_csv, tmp_path, monkeypatch):
     """
     monkeypatch.setenv("MLFLOW_TRACKING_URI", f"sqlite:///{tmp_path}/tracking.db")
     s = cs.start_session(dirty_csv, card=CARD)
-    cs.apply_action(s.session_id, "drop_duplicate", {})
-    cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]})
+    cs.apply_action(s.session_id, "drop_duplicate", {}, reason="测试决策")
+    cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]}, reason="测试决策")
     r = cs.finish_session(s.session_id)
     assert isinstance(r, FinishVerdict)
     assert r.accepted and "- load__file:" in r.deliverables["plan_yaml"]
@@ -583,7 +584,7 @@ def test_expected_ranges_observable_repairable_rewarded(sessions_root, ranged_cs
     assert [p["column"] for p in s.state_digest["problems"] if p["defect_type"] == "range_violation"] == ["temp"]
 
     # ② 转移：修越界得正奖励（求和口径——消除缺陷不减分）
-    r = cs.apply_action(sid, "range_clip", {"ranges": {"temp": [0.0, 100.0]}})
+    r = cs.apply_action(sid, "range_clip", {"ranges": {"temp": [0.0, 100.0]}}, reason="测试决策")
     assert r.reward is not None and r.reward > 0
     assert r.state_digest["defects"].get("range_violation", 0) == 0
 
@@ -660,3 +661,74 @@ def test_card_id_priors_feed_detector(sessions_root, tmp_path):
     assert problems[("suspected_id", "pk")]["severity"] == "high"  # 强先验直出
     assert ("prior_conflict", "loose") in problems  # known_id 唯一率 <0.95 → 冲突
     assert problems[("prior_conflict", "loose")]["severity"] == "medium"
+
+
+# ── #113/#117/#118：决策面换血——clean_op/intent/finding_ids/reason + keep/residual/manifest ──
+
+
+def test_apply_decision_surface_finding_ids_and_reason(sessions_root, dirty_csv):
+    """提交面双必填：finding_ids ⊆ 当前 problems（幻觉即免费失败）、reason 非空、
+    日志键 clean_op + 派生 intent（drop_cols⇒drop、其余⇒fix）。"""
+    s = cs.start_session(dirty_csv, card=CARD)
+    sid = s.session_id
+    hole_id = next(p["finding_id"] for p in s.state_digest["problems"] if p.get("column") == "hole")
+
+    with pytest.raises(ValueError, match="reason"):
+        cs.apply_action(sid, "fill_median", {"cols": ["hole"]}, reason=" ")  # 空理由拒绝
+    with pytest.raises(ValueError, match="finding_ids"):
+        cs.apply_action(sid, "fill_median", {"cols": ["hole"]}, finding_ids=["ghost::x"], reason="r")
+
+    r = cs.apply_action(sid, "fill_median", {"cols": ["hole"]}, finding_ids=[hole_id], reason="中位数填空")
+    rec = _log(sessions_root, sid)[-1]
+    assert rec["finding_ids"] == [hole_id] and rec["reason"] == "中位数填空"
+    assert rec["clean_op"] == "fill_median" and rec["intent"] == "fix"
+    assert r.steps == 1
+
+    cs.apply_action(sid, "drop_cols", {"cols": ["pct"]}, reason="剔除 ID 列")
+    assert _log(sessions_root, sid)[-1]["intent"] == "drop"  # drop_cols ⇒ drop（派生单源）
+
+
+def test_apply_noop_rejected(sessions_root, tmp_path):
+    """#113：no-op 步否决——不动 df 的提交拒绝（keep 走 finish 声明），免费不落版本。"""
+    df = pd.DataFrame({"a": [1.0, 2.0, 3.0]})
+    path = tmp_path / "deduped.csv"
+    df.to_csv(path, index=False)
+    s = cs.start_session(str(path), card={"domain": "t"})
+
+    with pytest.raises(ValueError, match="no-op"):
+        cs.apply_action(s.session_id, "drop_duplicate", {}, reason="试探")
+    assert len(_log(sessions_root, s.session_id)) == 0  # 免费
+    assert cs.observe_session(s.session_id).state_digest["v"] == 0  # 不落版本
+
+
+def test_finish_keep_declarations_residual_manifest(sessions_root, tmp_path):
+    """#113/#118：finish keep 声明——残留附理由进 residual、manifest = card 先验 +
+    keep 派生；不动 df、不吃步数；幻觉 keep id fail-loud。"""
+    n = 150
+    df = pd.DataFrame(
+        {
+            "sid": [f"s{i:04d}" for i in range(n)],  # suspected_id 残留
+            "x": list(range(n)),
+            "target": list(range(n)),
+        }
+    )
+    path = tmp_path / "residual.csv"
+    df.to_csv(path, index=False)
+    s = cs.start_session(str(path), card={"domain": "t", "target": "target", "id_columns": ["sid"]})
+    sid = s.session_id
+    sid_problem = next(p for p in s.state_digest["problems"] if p.get("column") == "sid")
+
+    keeps = [{"finding_id": sid_problem["finding_id"], "reason": "业务键保留供 join"}]
+    with pytest.raises(ValueError, match="keep"):
+        cs.finish_session(sid, keeps=[{"finding_id": "ghost::x", "reason": "r"}])  # 幻觉拒绝
+
+    r = cs.finish_session(sid, keeps=keeps)
+    assert isinstance(r, FinishVerdict) and r.accepted
+    tu = r.terminal_utility
+    residual_map = {x["finding_id"]: x for x in tu["residual"]}
+    assert residual_map[sid_problem["finding_id"]]["keep_reason"] == "业务键保留供 join"
+    assert tu["manifest"]["excluded_from_features"] == ["sid"]  # card id_columns ∪ pk ∪ composite
+    assert tu["manifest"]["keep_declarations"] == keeps
+    assert tu["manifest"]["id_priors"]["id_columns"] == ["sid"]
+    assert tu["steps"] == 0  # keep 声明不吃步数
+    assert list(cs.current_df(sid).columns) == ["sid", "x", "target"]  # 不动 df

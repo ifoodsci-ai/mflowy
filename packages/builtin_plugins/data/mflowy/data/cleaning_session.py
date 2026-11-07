@@ -15,8 +15,9 @@ state_digest——s′ 免费自带，
 - plan.yaml —— 收局交付物（幂等重入确定性重建）
 
 决策日志 = 单记录版本树：v0 元数据住 state_digest["v0"]；每次 apply 一条
-{step, action, params, s, s_next, quality_before/after, diff, v, file,
-artifact_sha256}；rollback/finish/abandon 是记录不是删行——截断在接口层不存在。
+{step, clean_op, intent, finding_ids, reason, params, s, s_next, quality_before/after,
+diff, v, file, artifact_sha256}（#113/#117——clean_op 执行名 + intent 派生 + 溯源/理由）；
+rollback/finish/abandon 是记录不是删行——截断在接口层不存在。
 
 守卫：动作必须出自 clean 词表；never_drop 列（目标/保护/ID/时间）存活；目标列
 值禁改（行删除允许）；问卷保留率下限（动作过激即拒——失败免费，试探走「提交 →
@@ -46,6 +47,7 @@ from mflowy.data.detect.suspected_id import PRIOR_KEYS
 from mflowy.data.detect.suspected_id import suspected_id as detect_suspected_id
 from mflowy.data.fingerprint import fingerprint
 from mflowy.data.routing import routing_hints
+from mflowy.data.types import excluded_from_features
 from mflowy.driver.pomdp import FinishVerdict, Observation
 from mflowy.driver.session import POMDPSession
 from mflowy.utils.file import sha256_of, write_text_atomic
@@ -454,18 +456,38 @@ def _run_clean_step(ss: POMDPSession, o: Observation, node: str, params: dict, s
     return load_run.value, clean_run.value, clean_run.run_id
 
 
-def apply_action(session_id: str, node: str, params: dict | None = None) -> Observation:
+def intent_of(clean_op: str) -> str:
+    """意图派生（单源，#111/#113——π 不声明）：drop_cols ⇒ drop、其余执行 ⇒ fix、
+    finish 残留 ⇒ keep（收局时域）。"""
+    return "drop" if clean_op == "drop_cols" else "fix"
+
+
+def apply_action(
+    session_id: str,
+    node: str,
+    params: dict | None = None,
+    *,
+    finding_ids: list[str] | tuple[str, ...] = (),
+    reason: str = "",
+) -> Observation:
     """执行一个 clean 词表动作：守卫 → 转移 → 快照 → 观测/奖励 → 决策日志。
+
+    提交面双必填（#117 Q3）：``finding_ids``（本步处理的 findings——非空时校验 ⊆
+    当前 problems 的 finding_id，幻觉 id 即免费失败；可空 = 行级算子/逃生舱）、
+    ``reason``（每步可审计的非空理由）。日志键 = ``clean_op``（执行名，#111 action
+    归意图面）+ 派生 ``intent``。
 
     转移走单步流编译执行（Conf→Builder→DAG.run——编译校验/观测/捕获/血缘免费，
     apply 与导出计划同构）。失败即免费异常（守卫/校验在 commit 点前抛出——不耗
-    预算、不落版本、不进决策日志）；dry_run 已退役（#65——试探走「提交 → 免费 s′
-    → 负 reward 即 rollback」）。版本分配 = 日志派生 max+1（append-only——永不
-    复用已 commit 版本）。
+    预算、不落版本、不进决策日志）；no-op 步否决（不动 df 的提交拒绝——keep 走
+    finish 声明，#113）；dry_run 已退役（#65——试探走「提交 → 免费 s′ → 负 reward
+    即 rollback」）。版本分配 = 日志派生 max+1（append-only——永不复用已 commit 版本）。
     """
     params = dict(params or {})
     if node == "finish":
         raise ValueError("`finish` 是操作面不是 apply 动作——收局走 clean_finish")
+    if not reason or not reason.strip():
+        raise ValueError("reason 必填非空——每步决策可审计（本步为什么执行这个算子）")
     load_ref = params.pop("load", None)  # 可选新鲜度引用（当前版本工件）——寻址元数据，非节点参数
     try:
         get_node(f"clean__{node}")  # 词表预检（导入失败原音透传，不误诊）
@@ -474,6 +496,14 @@ def apply_action(session_id: str, node: str, params: dict | None = None) -> Obse
 
     ss = _open(session_id)
     with ss.apply_ctx(node) as (o, log):
+        if finding_ids:
+            known = {p["finding_id"] for p in o.state_digest.get("problems") or ()}
+            ghosts = sorted(set(finding_ids) - known)
+            if ghosts:
+                raise ValueError(
+                    f"finding_ids 引用不存在的 finding：{ghosts}（当前 problems 共 {len(known)} 条"
+                    "——幻觉 id 免费失败，clean_observe 取当前观测后重新决策）"
+                )
         if load_ref is not None and Path(load_ref).name != _current_file(o):
             raise ValueError(  # 过期决策新鲜度门（fail-loud 指路）——commit 前抛 = 免费
                 f"load 引用已过期（{load_ref} ≠ 当前版本 {_current_file(o)}）——clean_observe 取当前观测后重新决策"
@@ -481,6 +511,10 @@ def apply_action(session_id: str, node: str, params: dict | None = None) -> Obse
         _session_experiment(ss.id)  # 预建会话锚定实验（工件根 = 会话 .mlruns）
         df, out, run_id = _run_clean_step(ss, o, node, params, step_no=len(log) + 1)
         _guard(df, out, o.prior)
+        if df.equals(out):
+            raise ValueError(  # no-op 步否决（#113）：不动 df 的提交拒绝——keep 走 finish 声明
+                f"动作 `{node}` 未改变数据（no-op）——保留不动 df 的处置走 clean_finish 的 keep 声明"
+            )
         diff = _diff_summary(df, out)
 
         before_report = _detect_all(df, o.prior)
@@ -507,7 +541,10 @@ def apply_action(session_id: str, node: str, params: dict | None = None) -> Obse
         log.append(
             {
                 "step": len(log) + 1,
-                "action": node,
+                "clean_op": node,  # 执行名（#111：action 归意图面，派生见 intent_of）
+                "intent": intent_of(node),
+                "finding_ids": list(finding_ids),
+                "reason": reason,
                 "params": params,
                 "s": _digest(before_report),
                 "s_next": _digest(report),
@@ -574,7 +611,7 @@ def _plan_yaml(o: Observation, log) -> str:
     stack: list[int] = [0]
     for r in log:
         if "v" in r:
-            path.append((r["action"], r.get("params") or {}))
+            path.append((r["clean_op"], r.get("params") or {}))
             stack.append(r["v"])
         elif r.get("action") == "rollback":
             while stack and stack[-1] > r["to_v"]:
@@ -599,33 +636,71 @@ def _plan_yaml(o: Observation, log) -> str:
     return flow_to_yaml(tuple(flow))
 
 
-def finish_session(session_id: str, min_quality: float | None = None, preview: bool = False) -> FinishVerdict | dict:
+def _residual_with_keeps(report: ErrorReport, keeps: list[dict] | None) -> list[dict]:
+    """残留清单（#113/#118）：finish 时 problems 逐条，附 π 的 keep 理由（声明过即注）——
+    未声明的残留照列（审计诚实），幻觉 keep id 由调用方校验先行拒绝。"""
+    by_id = {k["finding_id"]: k.get("reason", "") for k in keeps or ()}
+    return [
+        {**f, "keep_reason": by_id[f["finding_id"]]} if f["finding_id"] in by_id else f
+        for f in (e.as_dict() for e in report.errors)
+    ]
+
+
+def _manifest(card: Mapping[str, Any] | None, keeps: list[dict] | None) -> dict:
+    """manifest（#118）：card ID 先验字段 + keep 声明派生——「保留血缘不进特征」的
+    审计面（tag_metadata 否决后的承接，#116）。excluded_from_features 单源 =
+    data.types.excluded_from_features（与 model 域开局剔除面同式）。"""
+    card = dict(card or {})
+    return {
+        "id_priors": {k: card.get(k) for k in (*PRIOR_KEYS,) if card.get(k) is not None},
+        "excluded_from_features": excluded_from_features(card),
+        "keep_declarations": list(keeps or ()),
+    }
+
+
+def finish_session(
+    session_id: str,
+    keeps: list[dict] | None = None,
+    min_quality: float | None = None,
+    preview: bool = False,
+) -> FinishVerdict | dict:
     """收局：终局 U（train-fold 快速学习器）+ θ 验收门 + 导出可执行清洗计划。
+
+    keeps = [{finding_id, reason}]（π 的 keep 声明，#113）：残留 findings 逐条附理由
+    进 terminal_utility.residual——不动 df、不吃步数（no-op apply 已被否决）；幻觉
+    finding_id fail-loud。manifest（#118）= card ID 先验 + keep 声明派生。
 
     min_quality（θ 门轻量版）：终态内生质量 < θ → accepted=False 返回继续
     （不导出 plan、会话保留，可继续 apply 或无门重收）；缺省不设门恒导出。
     preview=True 只读探针（零副作用：不收局/不导出/θ 门不生效）。终局语义：
     已弃局不可收局（终态互斥）；已收局重入 = 幂等重导出（壳只读重入保证双
     commit 不可能）。terminal_utility 值域域定：{u, final_quality, final_report,
-    steps}——skill ≤ 0 =「干净但不可学」警戒线。
+    residual, manifest, steps}——skill ≤ 0 =「干净但不可学」警戒线。
     """
     ss = _open(session_id)
     o = ss.observation
     if o.abandoned:
         raise RuntimeError("会话已弃局：不可收局（弃局不可复活，改卡重开走新会话）")
+    if keeps:
+        known = {p["finding_id"] for p in o.state_digest.get("problems") or ()}
+        ghosts = sorted({k["finding_id"] for k in keeps} - known)
+        if ghosts:
+            raise ValueError(f"keep 声明引用不存在的 finding：{ghosts}（当前 problems 才可声明 keep）")
 
     final_df = pd.read_parquet(ss.dir / _current_file(o))
     report = _detect_all(final_df, o.prior)
     quality = _quality_score(report, card=o.prior)  # 与回路同尺（卡权重全程生效）
     utility = _terminal_utility(final_df, o.prior)
     n_applies = sum(1 for r in ss.decision_log if "v" in r)
+    residual = _residual_with_keeps(report, keeps)
+    manifest = _manifest(o.prior, keeps)
 
     if preview:
         return {
             "session_id": session_id,
             "preview": True,
             "terminal_utility": utility,
-            "report": {"final_quality": quality, "steps": n_applies},
+            "report": {"final_quality": quality, "steps": n_applies, "residual": residual, "manifest": manifest},
             "decision_log": list(ss.decision_log),
         }
 
@@ -633,6 +708,8 @@ def finish_session(session_id: str, min_quality: float | None = None, preview: b
         **(utility or {}),  # 终局 U 键平铺（task/metric/score/baseline/skill；无 target 时缺省）
         "final_quality": quality,
         "final_report": {"defects": report.counts(), "summary": report.summary()},
+        "residual": residual,
+        "manifest": manifest,
         "steps": n_applies,
     }
     if min_quality is not None and quality["score"] < min_quality:

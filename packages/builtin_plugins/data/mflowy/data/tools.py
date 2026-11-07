@@ -155,22 +155,36 @@ def clean_observe(session_id: Annotated[str, Field(description="会话 ID")]) ->
 def clean_apply(
     session_id: Annotated[str, Field(description="会话 ID")],
     node: Annotated[str, Field(description="clean 词表算子名（list_nodes(namespace='clean') 可查）")],
+    finding_ids: Annotated[
+        list[str] | None,
+        Field(
+            description="本步处理的 finding_id 清单（state_digest.problems 的 finding_id）——"
+            "非空时校验 ⊆ 当前 findings（幻觉即免费失败）；空列表 = 行级算子/无 finding 对应的处置"
+        ),
+    ],
+    reason: Annotated[str, Field(description="本步决策理由（必填非空——每步可审计）")],
     params: Annotated[dict | None, Field(description="算子参数（get_node_info 的参数面，None=用算子缺省）")] = None,
 ) -> dict:
     """执行一个清洗动作：守卫 → 转移 → 快照 → diff/错误清单/质量分（s′ 观测）→ 决策日志。
+
+    提交面双必填（#117）：finding_ids（本步处理的 findings，可空）+ reason（非空，
+    每步可审计）；日志键 clean_op + 派生 intent（drop/fix）。
 
     响应自带 reward（本步 ΔΦ 质量差，舍入 4 位，正值 = 改善）与 state_digest
     （缺陷摘要指纹）——直接读数决策，无需从决策日志做减法。
 
     失败即免费异常（不耗预算、不落版本）——不确定动作的试探面 = 提交后读 s′，
-    负 reward 即 clean_rollback。
+    负 reward 即 clean_rollback；no-op 步否决（不动 df 的提交拒绝——keep 走
+    clean_finish 声明）。
 
     何时使用 clean_apply：
     - 读观测证据选定算子与参数后提交执行（响应自带 reward 与 state_digest——直接读数决策）
     """
     from . import cleaning_session
 
-    return cleaning_session.apply_action(session_id, node, params or {}).model_dump()
+    return cleaning_session.apply_action(
+        session_id, node, params or {}, finding_ids=finding_ids or [], reason=reason
+    ).model_dump()
 
 
 def clean_rollback(
@@ -195,6 +209,13 @@ def clean_rollback(
 
 def clean_finish(
     session_id: Annotated[str, Field(description="会话 ID")],
+    keeps: Annotated[
+        list[dict] | None,
+        Field(
+            description="keep 声明：[{finding_id, reason}]——残留缺陷的保留理由（不动 df、"
+            "不吃步数；prior_conflict 的处置收敛为 keep，理由 cite card.source）"
+        ),
+    ] = None,
     min_quality: Annotated[
         float | None,
         Field(description="θ 验收门：终态内生质量 < 该值时拒收（accepted=False 返回继续，不导出计划）；缺省不设门"),
@@ -222,7 +243,7 @@ def clean_finish(
 
     from . import cleaning_session
 
-    out = cleaning_session.finish_session(session_id, min_quality=min_quality, preview=preview)
+    out = cleaning_session.finish_session(session_id, keeps=keeps, min_quality=min_quality, preview=preview)
     return out.model_dump() if isinstance(out, FinishVerdict) else out
 
 
