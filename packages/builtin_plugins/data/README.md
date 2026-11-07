@@ -18,9 +18,10 @@ plot EDA 图族（族内扁平，直住 `plot/`）。数据栈为硬依赖，装
 | R 奖励        | 过程奖励 = ΔΦ（前后同尺、卡权重双侧生效）；rollback 奖励 = 恢复的 ΔΦ；终局 U = train-fold 快速学习器 skill（只在 finish 出现，θ 验收门可拒收） | `apply_action` / `_terminal_utility` / `finish_session` |
 
 - 动作族：`load/`（6 节点）、`statistic/`（profile=info 薄封装 / univariate 单变量 typed 统计+规则化 findings / bivariate 双变量三路无 target 全对——效应量定档 p 把门）、`detect/`（8 缺陷算子 +
-  ErrorReport 契约 + quality_score + `detect/rules.py` 共享规则——与 clean 原子同尺的
-  唯一居所）、`clean/`（19 命名原子，族内扁平六模块：drop×6 / fill×7（ffill/bfill 带 by= 组内
-  防泄漏）/ cap×3（cap_iqr·cap_z·range_clip）/ add_missing_flag / strip_units / python——
+  DefectType/Severity 封闭枚举 + Finding 六字段契约 + quality_score + `detect/rules.py`
+  共享判据（zscore/iqr 栅栏、脱敏、suspected_id 打分谓词）、`clean/`（23 命名原子：drop×6 /
+  fill×7（ffill/bfill 带 by= 组内防泄漏）/ cap×3 / add_missing_flag / strip_units /
+  mask_cols·hash_cols（匿名化）/ cast_cols·to_category（类型档）/ python——
   策略在名、级联删除、类型族不适配即报错；选项面 = 词表全集（π 自构动作，菜单随 #113 退役；
   条件型 python 无对应缺陷类型））
 - 共享件：主题门面上住 `mflowy-utils[plot]`（`mflowy.utils.plot`——Agg 后端 + seaborn
@@ -30,4 +31,20 @@ plot EDA 图族（族内扁平，直住 `plot/`）。数据栈为硬依赖，装
 - 观测面：`clean_observe` 幂等只读（续局锚点）——候选规则与菜单随 #113 退役，缺陷→算子的
   策略知识外置 clean skill（决策指南）
 - 判据：镜像路径有对应测试（`tests/`），`uv sync` 后 `list-nodes` 可见（新模块须重跑 `uv sync`）
+
+## 存活不变量对照（测试名自述 ↔ 设计文档 INV 编号，#119）
+
+不变量不设编号面（AGENTS/CONTEXT 零编号）——存活不变量以测试名自述，设计文档 §11 的
+INV 编号在此对照存档；已 dissolve 项随载体死（INV-3 批量提交防自相矛盾、INV-7 空 cols
+静默容忍、INV-9 批量化排序、dry_run——#113/#118/#119 裁定）：
+
+| 不变量 | 自述测试 | 居所 |
+| --- | --- | --- |
+| INV-1 rationale score 前缀 | `test_rationale_requires_score_prefix` / `test_smoke_every_finding_holds_contract` | `tests/detect/test_errors.py`、`test_smoke.py` |
+| INV-2 evidence 脱敏 | `test_evidence_samples_are_masked` / `test_mask_text` | `tests/detect/` |
+| INV-4 转形：finish 残留全带 keep 理由 | `test_finish_keep_declarations_residual_manifest` | `tests/test_cleaning_session.py` |
+| INV-5 转形：intent 派生 | `test_apply_decision_surface_finding_ids_and_reason` | 同上 |
+| INV-6 clean 原子返回新 df | `test_clean_op_runs_with_min_params_returns_new_df` | `tests/clean/test_vocab_smoke.py` |
+| INV-8 clean_op ∈ 词表 + params 合 schema | `test_apply_rejects_non_clean_node` / `test_registry_matches_tools_module` | 会话与工具镜像测试 |
+| INV-10 转形：算子不暴露为 π 工具 | `test_menu_tool_retired_observe_in`（API 面事实） | `tests/test_data_tools_registry.py` |
 - 第三方插件参考：以 mflowy 为 base 依赖，声明 `[project.entry-points."mflowy.plugins"]` 即成插件
