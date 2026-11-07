@@ -2,7 +2,7 @@
 
 AI 编码 agent 在本仓库的唯一指引。代码是真相源——本文件只写代码里查不到的东西：约定、理由、陷阱、红线。存疑先探索再假设；动态文件树用 `tree --gitignore` 现查。
 
-**同步规则**：本文件随行为变更同 PR 更新（工具签名、依赖方向、注册站点、迁移表状态）。教学文档漂移 = 缺陷——用户文档可以等 release 回填，本文与 `.agents/skills/` 的漂移按 P0 处理。
+**同步规则**：本文件随行为变更同 PR 更新（工具签名、依赖方向、注册站点）。教学文档漂移 = 缺陷——用户文档可以等 release 回填，本文与 `.agents/skills/` 的漂移按 P0 处理。
 
 ## Project
 
@@ -57,19 +57,8 @@ uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 6. **依赖声明完整**：import 了什么就声明什么——靠传递依赖侥幸工作的 import 是缺陷（当前存量：scipy）。
 7. **测试钉契约**：行为变更带契约测试；架构不变量（依赖方向/版本锁步/注册表镜像）住 `tests/`；测试替身只打 adapter 缝位（`_DEFAULT_CATALOG`/`Tracking` seam）；测试随包镜像 `packages/<pkg>/tests/** ↔ mflowy/<pkg>/**`，跨域接缝用例住消费侧包；接缝测试真跑产物，以 mock 为主的地方补真跑。
 8. **文档同频**：工具行为改 docstring（`tools/list` 自动下发即 API 文档）；本文件与 skills 随行为变更同 PR 更新（见同步规则）。
+9. **mixin 组合方契约**：mixin 引用组合方才满足的属性/方法，一律直取 + 带码 ignore 注明「组合方满足——定义期不可见」（#122 裁定：是否满足取决于组合方）；TYPE_CHECKING 借基/伪继承伪造类型面即债。属性在缺是值级可选性（`getattr(..., None)` 语义，如 `evals_result_` 随 eval_set 在缺）；第三方无 py.typed 的属性发现走回退链，全缺 fail-loud。
 
-## 目标态与迁移规则（破坏性授权）
-
-下表为目标态，优先级高于现状兼容：触碰违规区域的变更顺手收敛（可 breaking，CHANGELOG 记 BREAKING，验收测试先行），也接受专项 PR。完成一条即更新本表行与 CHANGELOG。
-
-| #   | 目标态                                                                 | 存量违规点                                        | 验收                                                   |
-| --- | ---------------------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------ |
-| M6  | `registry.families()` 对缺 extra 条目降级跳过                          | 已收敛（#49 引擎侧 ImportError 跳过+warning+钉测；#43 CI no-torch job 环境级验收：词表降级断言 + RF 会话链冒烟） | 无 torch 环境 CI job 跑通 RF 会话                     |
-| M9  | 遥测端点 env 可覆盖 + agentcat monkeypatch 带 feature-detect           | 已收敛（0.2.0：`telemetry.py` env 逃生舱 + feature-detect 告警，`test_telemetry.py` 钉测） | `MFLOWY_TELEMETRY_ENDPOINT` 指向 `docker/telemetry` 可用 |
-| M11 | 剧本层完整入库：skills 全 git 追踪、引用文档入仓、工具名 ⊆ `tools/list` 有测试锁定 | 已收敛（0.2.0：skills 全 git 追踪，`test_workspace.py` SKILL 工具名断言钉测） | `test_workspace.py` 增 SKILL 工具名断言               |
-| M12 | breaking 小步走 0.x minor，0.2.0 尽快切 released                       | 已收敛：0.2.0 于 2026-11-04 切版（原 unreleased 堆 81 commit 三批 BREAKING 已收口） | CHANGELOG 0.2.0 带 release 日期                        |
-
-小项随触碰收敛（不单列）：finish 与过程奖励同尺（卡权重）、propose 只出签名可受理的候选、域专用查询迁出 utils。（原「utils mlflow 转 extra」已撤销——tracking 是节点 run 刚需，hard dep 合理。）
 
 ## 添加能力
 
