@@ -1,0 +1,401 @@
+"""测试 discover：插件目录、entry point 解析与 @node 属性校验"""
+
+import logging
+from importlib.metadata import EntryPoint
+
+import pytest
+from mflowy.driver import discover as discover_mod
+from mflowy.driver.discover import (
+    CatalogMiss,
+    DeclarationMismatch,
+    EntryPointCatalog,
+    discover,
+    entry,
+    get_edge,
+    get_node,
+    list_all,
+)
+from mflowy.driver.node import node
+
+_STEPS = ("load", "clean", "model", "plot", "statistic", "x_transformer", "")  # ""=非归组桶（x_y/split）
+
+
+@node()
+def _fake_plugin(**kwargs):
+    """本地插件替身：契约测试的加载目标——driver 测试不 import builtin_plugins（纯内核 CI 可独立跑）"""
+    return "ok"
+
+
+# ========== 真实元数据（依赖 uv sync 后的 editable 安装） ==========
+
+
+class TestCatalog:
+    def test_catalog_has_all_steps(self):
+        """内置插件目录覆盖全部能力族（driver-only 环境无插件时跳过）"""
+        all_modules = list_all()
+        if not all_modules:
+            pytest.skip("无插件安装（driver-only 环境），内置目录断言不适用")
+        for step in _STEPS:
+            assert step in all_modules, f"{step} has no registered modules"
+            module = all_modules[step][0]
+            assert get_node(f"{step}__{module}" if step else module) is not None, f"{step}.{module} node not found"
+
+    def test_all_plugins_resolve_to_callable_chain(self):
+        """目录中全部插件可解析为可调用调度链/边工厂（缺 extra 的环境会在此暴露）"""
+        for step, modules in list_all().items():
+            module = modules[0]
+            if step == "edges":
+                assert callable(get_edge(module).fn), f"edges.{module} fn 不可调"
+            else:
+                h = get_node(f"{step}__{module}" if step else module)
+                assert callable(h.fn) and callable(h.run), f"{step}.{module} 契约不完整（fn/run，#126 条目面）"
+
+    def test_metadata_queries_zero_import(self):
+        """discover/entry 纯元数据查询：不触发任何插件 import"""
+        import sys
+
+        before = set(sys.modules)
+        assert "load__csv" in discover()
+        assert entry("load__csv") is not None
+        assert entry("load__nope") is None
+        assert set(sys.modules) == before
+
+
+# ========== 契约（伪 entry points） ==========
+
+
+def _ep(name: str, value: str, group: str = discover_mod.GROUPS[0]) -> EntryPoint:
+    return EntryPoint(name=name, value=value, group=group)
+
+
+@pytest.fixture
+def fake_entry_points(monkeypatch):
+    """以伪 entry points 表替换 importlib.metadata.entry_points。
+
+    目录查询现算（无 @cache）：伪表追加即时可见，无缓存重置/清理必要。
+    """
+    table: list[EntryPoint] = []
+    monkeypatch.setattr(discover_mod, "entry_points", lambda group=None: [e for e in table if e.group == group])
+    return table
+
+
+class TestDiscoverTable:
+    def test_new_plugin_visible_without_cache_reset(self, fake_entry_points):
+        """目录热更新：进程内新出现的 entry point 即时可见（无 @cache，无需重置）。
+
+        元数据面（entry/discover）即时可见；解析面别名键 fail-loud（#140：别名 ep
+        用法退役——load.hot 指向的 x_y 注册键是裸名 x_y，非 load__hot）。
+        """
+        fake_entry_points.append(_ep("load.hot", "mflowy.model.x_y:x_y"))
+        assert entry("load__hot") is not None
+        with pytest.raises(ValueError, match="声明与注册不一致"):
+            get_node("load__hot")
+
+    def test_name_is_identity(self, fake_entry_points):
+        fake_entry_points.append(_ep("load.csv", "mflowy.data.load.csv_loader:csv"))
+        table = discover()
+        assert table["load__csv"].value == "mflowy.data.load.csv_loader:csv"
+
+    def test_bad_name_skipped_with_warning(self, fake_entry_points, caplog):
+        fake_entry_points.append(_ep("load.", "x:y"))
+        fake_entry_points.append(_ep(".csv", "x:y"))
+        assert discover() == {}
+        assert len(caplog.messages) == 2
+
+    def test_bare_name_lands_in_ungrouped_bucket(self, fake_entry_points):
+        """非归组节点：裸节点名（无点号）合法，进空 namespace 桶；别名裸键解析 fail-loud（#140）。"""
+        # 伪键取词表外裸名（bare_probe）：真键（如 x_y）可能已被会话内暖驻，暖命中会绕开伪表（顺序依赖）
+        fake_entry_points.append(_ep("bare_probe", "mflowy.model.x_y:x_y"))
+        table = discover()
+        assert table["bare_probe"].value == "mflowy.model.x_y:x_y"
+        assert entry("bare_probe") is not None
+        with pytest.raises(ValueError, match="声明与注册不一致"):
+            get_node("bare_probe")  # 别名裸键（x_y 注册键 ≠ bare_probe）不再经身份桥兜底
+
+    def test_plugins_group_overrides_builtin(self, fake_entry_points, caplog):
+        caplog.set_level(logging.INFO)
+        fake_entry_points.append(_ep("load.csv", "mflowy.data.load.csv_loader:csv"))
+        fake_entry_points.append(_ep("load.csv", "my_pkg.loaders:csv", group=discover_mod.GROUPS[1]))
+        table = discover()
+        assert table["load__csv"].value == "my_pkg.loaders:csv"
+        assert any("覆盖" in m for m in caplog.messages)
+
+    def test_same_group_collision_warns(self, fake_entry_points, caplog):
+        caplog.set_level(logging.WARNING)
+        fake_entry_points.append(_ep("load.csv", "a:csv"))
+        fake_entry_points.append(_ep("load.csv", "b:csv"))
+        table = discover()
+        assert table["load__csv"].value == "b:csv"
+        assert any("冲突" in m for m in caplog.messages)
+
+    def test_key_ambiguity_fails_loud(self, fake_entry_points):
+        """键歧义病理：不同 (ns, node) 对折叠为同一 node_key（节点名含 ``__``）→ fail-loud
+        （红线 1：寻址歧义 raise 带双方候选，绝不静默折叠）。"""
+        fake_entry_points.append(_ep("a.b__c", "x:one"))
+        fake_entry_points.append(_ep("a__b.c", "x:two"))
+        with pytest.raises(ValueError, match=r"a__b__c.*歧义"):
+            discover()
+
+    def test_cross_tier_collision_warns(self, fake_entry_points, caplog):
+        """跨层撞名防线：边名撞节点 node_key/组名 → 物化时 warning（优先级边>组>节点会改写既有图）。"""
+        caplog.set_level(logging.WARNING)
+        fake_entry_points.append(_ep("load.csv", "mflowy.data.load.csv_loader:csv"))
+        fake_entry_points.append(_ep("edges.load__csv", "my_pkg.edges:load__csv"))
+        discover()
+        assert any("同名" in m and "边" in m for m in caplog.messages)
+
+
+class TestLoadContract:
+    @pytest.mark.parametrize(
+        ("ep_name", "target", "key"),
+        [
+            ("load.plain", "mflowy.utils.file:read_text", "load__plain"),  # 未装饰
+            ("wrongns.x_y", "mflowy.model.x_y:x_y", "wrongns__x_y"),  # 错 namespace（x_y 装饰为裸名）
+            ("alias_probe", "mflowy.model.x_y:x_y", "alias_probe"),  # 别名裸键（#86 无别名政策对齐）
+        ],
+    )
+    def test_bad_declaration_unified_error(self, fake_entry_points, ep_name, target, key):
+        """坏声明三类（未装饰/错 namespace/别名键）统一「声明与注册不一致」fail-loud
+        （#140 翻 #126「只查装饰不比名」——错 namespace 升格加载期门），文案带 ep 与键上下文。"""
+        fake_entry_points.append(_ep(ep_name, target))
+        with pytest.raises(DeclarationMismatch) as ei:
+            get_node(key)
+        assert isinstance(ei.value, ValueError)  # 专类 ⊂ ValueError：既有捕获姿势不破
+        assert "声明与注册不一致" in str(ei.value)
+        assert key in str(ei.value) and target in str(ei.value)  # 键 + ep 上下文双带
+        if ep_name == "load.plain":
+            assert "实际注册键" not in str(ei.value)  # 未装饰：无候选可给（宁缺毋滥）
+        else:
+            assert "实际注册键：['x_y']" in str(ei.value)  # 错 namespace/别名：目标本尊实际注册键
+
+    def test_get_miss_lists_available(self, fake_entry_points):
+        fake_entry_points.append(_ep("load.csv", "mflowy.data.load.csv_loader:csv"))
+        with pytest.raises(ModuleNotFoundError, match=r"Available: \['csv'\]"):
+            get_node("load__nope")
+
+
+class TestWarmPath:
+    """#137 三步解析流：注册表暖路径先于目录现算——结构钉测（非计时，掐断目录现算仍成功）。"""
+
+    def _kill_discovery(self, monkeypatch):
+        def _boom(*args, **kwargs):
+            raise AssertionError("暖路径不应现算目录（discover 被掐断）")
+
+        monkeypatch.setattr(discover_mod, "discover", _boom)
+
+    def test_node_warm_hit_survives_discovery_death(self, monkeypatch):
+        """priming（注册表有键）后掐断目录现算，get_node 仍成功——钉「先查注册表」的本构。"""
+        import mflowy.driver.edge as e_mod
+
+        @node(namespace="load")
+        def _warm_probe(**kw):
+            return "ok"
+
+        @e_mod.edge
+        def _warm_edge(x):
+            return x
+
+        self._kill_discovery(monkeypatch)
+        assert get_node("load___warm_probe").fn is _warm_probe
+        assert get_edge("_warm_edge").fn is _warm_edge  # 边同构（EDGE_REGISTRY 暖路径）
+
+    def test_cold_then_warm_identity_roundtrip(self, monkeypatch):
+        """冷路径③（ep.load 触发装饰注册）为暖路径①上膛：二次查询零目录现算、同一条目。"""
+        if "x_y" not in discover():
+            pytest.skip("无插件安装（driver-only 环境），真插件冷暖往返不适用")
+        first = get_node("x_y")  # priming：冷解析（目录现算 + 加载 + 注册表查表）
+        self._kill_discovery(monkeypatch)
+        assert get_node("x_y") is first  # 暖命中 = 首载条目（dict 直取，不再现算）
+
+
+class TestCatalogMiss:
+    """词表 miss 类型化：CatalogMiss ⊂ ModuleNotFoundError，与导入失败类型正交。"""
+
+    def test_miss_raises_catalog_miss(self, fake_entry_points):
+        """miss → CatalogMiss（子类兼容：既有 except ModuleNotFoundError 姿势不破）。"""
+        fake_entry_points.append(_ep("load.csv", "mflowy.data.load.csv_loader:csv"))
+        with pytest.raises(CatalogMiss, match=r"Available: \['csv'\]"):
+            get_node("load__nope")
+
+    def test_miss_carries_structured_context(self, fake_entry_points):
+        """CatalogMiss 携带 namespace/name/available——消费方免解析消息文本。"""
+        fake_entry_points.append(_ep("load.csv", "mflowy.data.load.csv_loader:csv"))
+        with pytest.raises(CatalogMiss) as ei:
+            get_node("load__nope")
+        assert ei.value.namespace == "load"
+        assert ei.value.name == "nope"
+        assert ei.value.available == ["csv"]
+
+    def test_import_failure_is_not_catalog_miss(self, fake_entry_points):
+        """导入失败（装了但导不进）≠ CatalogMiss 实例——探针不吞由类型正交构造保证。"""
+        fake_entry_points.append(_ep("edges.boom", "mflowy.builtin_plugins.nope:fn"))
+        with pytest.raises(ModuleNotFoundError, match="No module named") as ei:
+            EntryPointCatalog().find_edge("boom")
+        assert not isinstance(ei.value, CatalogMiss)
+
+
+class TestEdgesNamespace:
+    def test_get_edge_reads_only_edges_ns(self, fake_entry_points):
+        """边约定注册在 edges ns：get_edge 只查 edges 桶，其他桶不认。"""
+        fake_entry_points.append(_ep("load.as_df", "mflowy.model.x_y:x_y"))
+        with pytest.raises(ModuleNotFoundError):
+            get_edge("as_df")  # 非 edges 桶的边函数不可见
+
+    def test_find_edge_probe_semantics(self, fake_entry_points):
+        """find_edge 探针：miss/非 edges 桶返 None，坏声明（未标 @edge）统一文案 fail-loud。"""
+        fake_entry_points.append(_ep("load.as_df", "mflowy.model.x_y:x_y"))
+        # 伪键避开真实装插件键（#137 暖路径先查注册表——同名真边已暖驻时不走伪表）
+        fake_entry_points.append(_ep("edges.read_text", "mflowy.utils.file:read_text"))
+        cat = EntryPointCatalog()
+        assert cat.find_edge("as_df") is None  # 非 edges 桶不可见（纯元数据判定，不 load）
+        assert cat.find_edge("nope") is None  # miss
+        with pytest.raises(ValueError, match="声明与注册不一致"):
+            cat.find_edge("read_text")  # 坏声明不吞——比 None 更响
+
+    def test_find_edge_import_failure_propagates(self, fake_entry_points):
+        """导入失败的边 entry point 不当 miss 吞：真 miss 只认目录无名，load 期异常透传。"""
+        fake_entry_points.append(_ep("edges.boom", "mflowy.builtin_plugins.nope:fn"))
+        with pytest.raises(ModuleNotFoundError, match="No module named"):
+            EntryPointCatalog().find_edge("boom")
+
+    def test_get_edge_miss_lists_available(self, fake_entry_points):
+        fake_entry_points.append(_ep("edges.as_df", "mflowy.model.x_y:x_y"))
+        with pytest.raises(ModuleNotFoundError, match="Available"):
+            get_edge("nope")
+
+
+class TestHandlerNamespaceDecl:
+    def test_decorator_namespace_decl_to_registry(self):
+        """@node(namespace=...) 声明归组（#126 零属性挂载）：注册表键 = node_key，ns 入条目。"""
+        import mflowy.driver.node as n_mod
+        from mflowy.driver.config import NodeConf
+        from mflowy.driver.node import NODE_REGISTRY
+
+        @n_mod.node(namespace="load")
+        def _ns_plugin(**kwargs):
+            return "ok"
+
+        # 桩自带前导下划线：load__ + _ns_plugin = load___ns_plugin（连接符是 __）
+        assert NODE_REGISTRY["load___ns_plugin"].fn is _ns_plugin
+        assert NODE_REGISTRY["load___ns_plugin"].ns == "load"
+
+        @n_mod.node(namespace="plot")  # 无前导下划线的干净桩——锚定连接符本身
+        def feat(**kwargs):
+            return "ok"
+
+        assert NODE_REGISTRY["plot__feat"].fn is feat
+        # 装饰器键与内核 NodeConf 走同一构造来源（config.node_key 单一来源）
+        assert NodeConf(name="feat", node_key="plot__feat").node_key == "plot__feat"
+
+        @n_mod.node()  # 缺省 = 非归组（ns=None 归一）
+        def _ungrouped(**kwargs):
+            return "ok"
+
+        # 注册表键全局唯一（#140 桥退役）：桩名避开他模块同名装饰（test_runtime_validation._plain）
+        assert NODE_REGISTRY["_ungrouped"].fn is _ungrouped  # 裸名只剥空组连接符——私有前导保留
+        assert NODE_REGISTRY["_ungrouped"].ns is None
+        # 零属性挂载：fn 原样
+        assert not hasattr(_ungrouped, "node_key") and not hasattr(_ungrouped, "namespace")
+
+
+class TestRenameHint:
+    """#86 词表 miss 文案带改名去向：词干后缀建议（唯一命中才出）+ 一般情形不退化。"""
+
+    def test_retired_key_hints_current(self, fake_entry_points):
+        fake_entry_points.append(_ep("shap.explanation", "mflowy.model.x_y:x_y"))
+        with pytest.raises(CatalogMiss, match="候选：'shap__explanation'"):
+            get_node("plot__shap_explanation")
+
+    def test_bare_retired_key_hints_namespaced(self, fake_entry_points):
+        fake_entry_points.append(_ep("shap.explanation", "mflowy.model.x_y:x_y"))
+        with pytest.raises(CatalogMiss, match="候选：'shap__explanation'"):
+            get_node("shap_explanation")
+
+    def test_retired_ns_key_hints_edge_bare_name(self, fake_entry_points):
+        """model__predict → 边键以裸名提示（YAML 边寻址面）。"""
+        fake_entry_points.append(_ep("edges.predict", "mflowy.model.x_y:x_y"))
+        with pytest.raises(CatalogMiss, match="候选：'predict'"):
+            get_node("model__predict")
+
+    def test_gibberish_miss_no_hint_available_intact(self, fake_entry_points):
+        """纯拼错/不存在键：无候选行（不误导），Available 清单语义保持。"""
+        fake_entry_points.append(_ep("load.csv", "mflowy.data.load.csv_loader:csv"))
+        with pytest.raises(CatalogMiss) as ei:
+            get_node("load__zzqqxx")
+        assert "候选" not in str(ei.value)
+        assert "Available: ['csv']" in str(ei.value)
+
+    def test_ambiguous_match_suppressed(self, fake_entry_points):
+        """同名裸名跨组（a__widget/b__widget）多义 → 不出建议（宁缺毋滥）。"""
+        fake_entry_points.append(_ep("a.widget", "mflowy.model.x_y:x_y"))
+        fake_entry_points.append(_ep("b.widget", "mflowy.model.x_y:x_y"))
+        with pytest.raises(CatalogMiss) as ei:
+            get_node("model__widget")
+        assert "候选" not in str(ei.value)
+
+
+@pytest.mark.parametrize(
+    ("retired", "current"),
+    [
+        ("plot__shap_explanation", "shap__explanation"),
+        ("shap_explanation", "shap__explanation"),
+        ("model__predict", "predict"),
+        ("model__search_input", "search_input"),
+    ],
+)
+def test_retired_keys_hint_current_vocab(retired, current):
+    """#86/#67 验收：四个历史寻址键的 CatalogMiss 文案带对应现行键（真目录 seam）。"""
+    if "shap__explanation" not in discover():
+        pytest.skip("无插件安装（driver-only 环境），内置目录断言不适用")
+    with pytest.raises(CatalogMiss, match=f"候选：'{current}'"):
+        get_node(retired)
+
+
+class TestCollisionWarnDedup:
+    """#55 撞名 warning 进程内去重：目录零缓存现算——同键冲突每次扫描都撞，恰发一次。"""
+
+    def test_same_group_override_warns_once(self, fake_entry_points, monkeypatch, caplog):
+        import logging
+
+        monkeypatch.setattr(discover_mod, "_warned", set())
+        fake_entry_points.append(_ep("load.dup", "mflowy.model.x_y:x_y"))
+        fake_entry_points.append(_ep("load.dup", "mflowy.model.x_y:x_y_v2"))  # 同组覆盖 → warning
+        with caplog.at_level(logging.WARNING):
+            discover()
+            discover()  # 第二次扫描：零缓存现算，同一冲突不重发
+        hits = [r for r in caplog.records if "冲突" in r.getMessage()]
+        assert len(hits) == 1, [r.getMessage() for r in caplog.records]
+
+    def test_cross_tier_collision_warns_once(self, fake_entry_points, monkeypatch, caplog):
+        import logging
+
+        monkeypatch.setattr(discover_mod, "_warned", set())
+        fake_entry_points.append(_ep("edges.load", "mflowy.model.x_y:x_y"))  # 边名撞组名
+        fake_entry_points.append(_ep("load.csv", "mflowy.data.load.csv_loader:csv"))
+        with caplog.at_level(logging.WARNING):
+            discover()
+            discover()
+        hits = [r for r in caplog.records if "同名" in r.getMessage()]
+        assert len(hits) == 1, [r.getMessage() for r in caplog.records]
+
+
+class TestRegistryHome:
+    def test_node_edge_import_zero_discover(self):
+        """#132：注册表归居契约模块——新鲜进程 import node/edge 不拉起 discover
+        （装饰路径零 discover import，环被结构性消除而非惰性推迟）。"""
+        import subprocess
+        import sys
+
+        # 含装饰：@node 生效（注册表写入 + 织链）后 discover 仍不在进程内——
+        # 直接边（已删）与传递边（builtin_middleware→context 的 get_node 已惰性）双断
+        code = (
+            "import sys\n"
+            "import mflowy.driver.node as n, mflowy.driver.edge as e\n"
+            "@n.node(namespace='load')\n"
+            "def _probe(**kw): return 1\n"
+            "@e.edge\n"
+            "def _edge_probe(x): return x\n"
+            "assert n.NODE_REGISTRY['load___probe'].fn is _probe and e.EDGE_REGISTRY['edges___edge_probe'].fn is _edge_probe\n"
+            "sys.exit(0 if 'mflowy.driver.discover' not in sys.modules else 1)\n"
+        )
+        subprocess.run([sys.executable, "-c", code], check=True)  # 非零退出即败

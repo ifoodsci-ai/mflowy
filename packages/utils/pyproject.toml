@@ -1,0 +1,35 @@
+[project]
+name = "mflowy-utils"
+version = "0.2.0"
+description = "MFlowy shared utilities — mlflow helpers, jinja sandbox, logging, capture"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    # mlflow 工具层（tracking/experiment 封装）。钉 3.15 系（~= 上界封 minor）：
+    # 默认库 ~/.mflowy/mlflow.db 跨安装形态（dev 锁 / uvx 自由解析）共享单文件，
+    # schema 随 minor 前移——开放上界曾致 uvx 解析 3.17 前向迁移共享库、dev 工具
+    # 全体不可读（2026-10 事故）；升级须锁与声明同 PR 同步 + CHANGELOG 记 BREAKING
+    "mlflow~=3.15.2",
+    # jinja 沙箱模板
+    "jinja2>=3.1.0",
+]
+
+[project.optional-dependencies]
+# 图表环境就绪 + 主题门面（mflowy.utils.plot）——两域包默认依赖本 extra
+plot = [
+    "numpy>=2.0.0",
+    "matplotlib>=3.11.0",
+    "seaborn>=0.13.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["mflowy"]
+dev-mode-dirs = ["."]
+
+[tool.hatch.build.targets.sdist]
+include = ["mflowy", "pyproject.toml"]

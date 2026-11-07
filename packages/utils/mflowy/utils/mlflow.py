@@ -1,0 +1,506 @@
+import logging
+import os
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
+from itertools import count
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, Protocol
+
+from .path import task_dir
+
+# mlflow 延迟导入（deliberate design）：tracking 是实现细节，仅真实 tracking 调用点拉起
+# ——裸 CLI（list-nodes）与测试态（FakeTracking 绑定）不付 ~1.5s 的 mlflow import 成本。
+
+logger = logging.getLogger(__name__)
+
+# 当前 workflow 的 experiment_id — ContextVar 随线程/请求隔离。
+# mlflow fluent 的 _active_experiment_id 是进程级全局，MCP server 并发分发
+# 多 workflow 时会互相覆盖；start_run 必须显式携带本值。
+_experiment_id_var: ContextVar[str | None] = ContextVar("mflowy_experiment_id", default=None)
+_workflow_tags_var: ContextVar[dict[str, str] | None] = ContextVar("mflowy_workflow_tags", default=None)
+
+
+def set_workflow_tags(tags: dict[str, str] | None):
+    """DAG.run 期注入 run 级指纹 tags；返回 token 供 reset（并发 workflow 经 ContextVar 隔离）。"""
+    return _workflow_tags_var.set(tags)
+
+
+def reset_workflow_tags(token) -> None:
+    _workflow_tags_var.reset(token)
+
+
+def workflow_tags() -> dict[str, str]:
+    return _workflow_tags_var.get() or {}
+
+
+def set_active_experiment(experiment_id: str | None) -> None:
+    """记录当前 workflow 的 experiment_id（供 start_run 显式指定）。"""
+    _experiment_id_var.set(experiment_id)
+
+
+def active_experiment_id() -> str | None:
+    """当前 workflow 的 experiment_id；workflow 上下文外为 None（走 mlflow 默认解析）。"""
+    return _experiment_id_var.get()
+
+
+# ========== Tracking seam：interface + 双 adapter + ContextVar 绑定 ==========
+# 形态与 driver.discover 的目录 seam 同构（interface + 生产/内存双 adapter + use_* 绑定）。
+# 内核（dag/builtin_middleware/context）零直呼 mlflow.*，测试绑 FakeTracking 即得观察面。
+
+
+class Tracking(Protocol):
+    """tracking interface：内核遥测的唯一入口（seam 即此）。"""
+
+    def ensure_experiment(self, name: str, description: str) -> Any:
+        """确保实验存在（无则建），返回含 name/experiment_id 的实验对象。"""
+        ...
+
+    def node_run(self, run_name: str, experiment_id: str | None) -> Any:
+        """节点 run 窗口（上下文管理器，yield 含 info.run_id 的 run 对象）。"""
+        ...
+
+    def set_tag(self, key: str, value: str) -> None: ...
+    def set_tags(self, tags: dict[str, str]) -> None: ...
+    def log_params(self, params: dict[str, Any]) -> None: ...
+    def run_status(self, run_id: str) -> str: ...
+    def run_artifacts(self, run_id: str) -> list[str]:
+        """run 顶层工件路径清单（目录条目在内，嵌套文件经 path 下钻——account 期
+        NodeResult.artifacts 快照的数据源）。"""
+        ...
+
+    def set_experiment_tag(self, experiment_id: str, key: str, value: str) -> None:
+        """实验级 tag 写入（如 mflowy.graph 结构图——本实验最新结构覆写）。"""
+        ...
+
+    def describe_run(self, run_id: str, text: str) -> None:
+        """run 描述写入（mlflow.note.content tag）——account 期 ≡ NodeResult.output。"""
+        ...
+
+    @property
+    def active_run_id(self) -> str | None:
+        """当前窗口内 run id（窗外 None）——窗口观察面（内核测试消费）。"""
+        ...
+
+
+class MlflowTracking:
+    """生产 adapter：吸收实验准备与节点 run 的全部 fluent/env/全局栈知识。"""
+
+    def ensure_experiment(self, name: str, description: str) -> Any:
+        import mlflow
+
+        setup()
+        if exp := mlflow.get_experiment_by_name(name):
+            exp_id = exp.experiment_id
+        else:
+            exp_id = mlflow.create_experiment(
+                name, tags={"mlflow.note.content": description}, artifact_location=get_artifact_uri()
+            )
+        exp = mlflow.set_experiment(experiment_id=exp_id)
+        # 实验 id 由内核（DAG._run）统一发布——实验交接在 seam 上，adapter 不各自藏状态
+        logger.debug(
+            "MLflow ready — tracking_uri=%s — artifact_location=%s",
+            mlflow.get_tracking_uri(),
+            exp.artifact_location,
+        )
+        return exp
+
+    def node_run(self, run_name: str, experiment_id: str | None):
+        import mlflow
+
+        return mlflow.start_run(run_name=run_name, experiment_id=experiment_id)
+
+    def set_tag(self, key: str, value: str) -> None:
+        import mlflow
+
+        mlflow.set_tag(key, clip_tag_value(value))
+
+    def set_tags(self, tags: dict[str, str]) -> None:
+        import mlflow
+
+        mlflow.set_tags({k: clip_tag_value(v) for k, v in tags.items()})
+
+    def log_params(self, params: dict[str, Any]) -> None:
+        import mlflow
+
+        mlflow.log_params(params)
+
+    def run_status(self, run_id: str) -> str:
+        import mlflow
+
+        return mlflow.get_run(run_id).info.status
+
+    def run_artifacts(self, run_id: str) -> list[str]:
+        import mlflow
+
+        return [a.path for a in mlflow.MlflowClient().list_artifacts(run_id)]
+
+    def set_experiment_tag(self, experiment_id: str, key: str, value: str) -> None:
+        import mlflow
+        from mlflow.utils.validation import MAX_EXPERIMENT_TAG_VAL_LENGTH
+
+        mlflow.MlflowClient().set_experiment_tag(
+            experiment_id, key, clip_tag_value(value, limit=MAX_EXPERIMENT_TAG_VAL_LENGTH)
+        )
+
+    def describe_run(self, run_id: str, text: str) -> None:
+        import mlflow
+
+        mlflow.MlflowClient().set_tag(run_id, "mlflow.note.content", clip_tag_value(text))
+
+    @property
+    def active_run_id(self) -> str | None:
+        import mlflow
+
+        run = mlflow.active_run()
+        return run.info.run_id if run else None
+
+
+class FakeTracking:
+    """内存 adapter（测试）：记录 tag/param 写入与 run 生命周期，零 mlflow 依赖。
+
+    - ``tags`` / ``params`` 最后值；``tag_log`` 为 set_tag 调用序（替代 patch 断言）
+    - ``run_status`` 未知 run 抛 KeyError——业务错误不吞
+    """
+
+    def __init__(self):
+        self.tags: dict[str, str] = {}
+        self.tag_log: list[tuple[str, str]] = []
+        self.params: dict[str, Any] = {}
+        self.experiments: dict[str, str] = {}
+        self.experiment_tags: dict[str, dict[str, str]] = {}  # exp_id → tags（ensure 播种）
+        self.runs: dict[str, str] = {}
+        self.artifacts: dict[str, list[str]] = {}  # run_id → 工件清单（测试播种断言面）
+        self.descriptions: dict[str, str] = {}  # run_id → 描述（describe_run 断言面）
+        self.active_run_id: str | None = None  # 当前窗口内 run（窗外 None）——窗口断言面
+        self._active_stack: list[str] = []  # 嵌套窗口栈（对齐 mlflow fluent 栈语义）
+        self._seq = count(1)
+
+    def ensure_experiment(self, name: str, description: str) -> Any:
+        if name not in self.experiments:  # 幂等不烧计数器——run/experiment 序号各自单调
+            self.experiments[name] = f"fake_exp_{next(self._seq)}"
+        eid = self.experiments[name]
+        self.experiment_tags.setdefault(eid, {})
+        return SimpleNamespace(name=name, experiment_id=eid, artifact_location="memory://")
+
+    def set_experiment_tag(self, experiment_id: str, key: str, value: str) -> None:
+        self.experiment_tags[experiment_id][key] = value  # 未 ensure 的实验 KeyError 不吞
+
+    @contextmanager
+    def node_run(self, run_name: str, experiment_id: str | None):
+        run_id = f"fake_run_{next(self._seq)}"
+        self.runs[run_id] = "RUNNING"
+        self._active_stack.append(run_id)
+        self.active_run_id = run_id
+        try:
+            yield SimpleNamespace(info=SimpleNamespace(run_id=run_id, run_name=run_name))
+            self.runs[run_id] = "FINISHED"
+        except BaseException:  # 含 KeyboardInterrupt/GeneratorExit——中断也记 FAILED 不卡 RUNNING
+            self.runs[run_id] = "FAILED"
+            raise
+        finally:
+            self._active_stack.pop()
+            self.active_run_id = self._active_stack[-1] if self._active_stack else None
+
+    def set_tag(self, key: str, value: str) -> None:
+        self.tag_log.append((key, value))
+        self.tags[key] = value
+
+    def set_tags(self, tags: dict[str, str]) -> None:
+        for key, value in tags.items():
+            self.set_tag(key, value)
+
+    def log_params(self, params: dict[str, Any]) -> None:
+        self.params.update(params)
+
+    def run_status(self, run_id: str) -> str:
+        return self.runs[run_id]  # 未知 run KeyError 透传——不吞
+
+    def run_artifacts(self, run_id: str) -> list[str]:
+        return list(self.artifacts[run_id])  # 未知 run 同 run_status：KeyError 不吞
+
+    def describe_run(self, run_id: str, text: str) -> None:
+        if run_id not in self.runs:  # 未知 run 同 run_status：KeyError 不吞
+            raise KeyError(run_id)
+        self.descriptions[run_id] = text
+
+
+# mlflow tag 值长度上限（backend 约束，取 mlflow 活常量防版本漂移）——
+# 超长值（宽 fan-in 的点分血缘 / 大图 mermaid）截断，写 tag 不炸 run。
+# 两类上限不同：run tag 8000、实验 tag 5000
+def clip_tag_value(value: str, limit: int | None = None) -> str:
+    """tag 值截断至上限（backend 约束由 adapter 吸收），尾接省略号示截断。
+
+    缺省 run tag 上限；实验 tag 调用方显式传 ``MAX_EXPERIMENT_TAG_VAL_LENGTH``。
+    """
+    from mlflow.utils.validation import MAX_TAG_VAL_LENGTH
+
+    cap = limit if limit is not None else MAX_TAG_VAL_LENGTH
+    return value if len(value) <= cap else value[: cap - 1] + "…"
+
+
+_DEFAULT_TRACKING = MlflowTracking()
+_tracking_var: ContextVar[Tracking | None] = ContextVar("mflowy_tracking", default=None)
+
+
+def active_tracking() -> Tracking:
+    """当前生效的 tracking adapter：ContextVar 绑定优先（测试），缺省 MlflowTracking。"""
+    return _tracking_var.get() or _DEFAULT_TRACKING
+
+
+@contextmanager
+def use_tracking(t: Tracking) -> Iterator[Tracking]:
+    """绑定 tracking adapter（ContextVar 随上下文隔离），退出恢复默认。
+
+    线程不继承绑定（contextvars 语义）——跨线程执行需在目标线程内重新绑定；
+    未绑定回落 MlflowTracking（真实 mlflow）。
+    """
+    token = _tracking_var.set(t)
+    try:
+        yield t
+    finally:
+        _tracking_var.reset(token)
+
+
+def default_tracking_uri() -> str:
+    """固定默认 tracking 库（~/.mflowy/mlflow.db），与任务目录解耦。
+
+    MCP server 进程中 task_dir 随计算任务漂移（或未设置），默认值若
+    挂靠 task_dir，查询工具要么报错、要么命中上一次任务的临时库；
+    固定路径保证 workflow 侧（setup）与查询侧（mflowy.mcp.tools）同库。
+    """
+    d = Path.home() / ".mflowy"
+    d.mkdir(exist_ok=True)
+    return f"sqlite:///{d / 'mlflow.db'}"
+
+
+def setup():
+    """设置 MLflow tracking URI（幂等）。"""
+    import mlflow
+
+    tracking_uri = os.getenv("MLFLOW_TRACKING_URI", default_tracking_uri())
+    mlflow.set_tracking_uri(tracking_uri)
+
+
+def _window_or_skip(subject, *, what: str, graceful: bool):
+    """active run 守卫（工件壳 / metrics 壳共用单源）：窗内返回 run；窗外
+    ``graceful`` → warning + None，否则 fail-loud——mlflow fluent 无窗口会静默自建
+    孤儿 run 污染默认实验，守卫必须前置。"""
+    import mlflow
+
+    run = mlflow.active_run()
+    if run is not None:
+        return run
+    if graceful:
+        logger.warning("无 active run，跳过%s: %s", what, subject)
+        return None
+    raise RuntimeError(f"{what}须在 active run 窗口内（无窗口即无居所）")
+
+
+def _artifact_shell(
+    artifact_file: str,
+    writer: Callable[[str], Any],
+    *,
+    direct_write: bool = False,
+    graceful: bool = False,
+) -> Any:
+    """工件落盘壳（模板方法）：active run 守卫 → 目的地解析 → 落盘回调 → Saved 通知。
+
+    - writer 收到解析后的落盘目的地（flavor 自决用否）：fluent 系由 mlflow 走
+      artifact repo 可忽略之；直写系（pickle）以此为写目的地
+    - ``direct_write``：远程 scheme fail-loud（直写只对本地工件树成立）；fluent 系
+      远程 store 保完整 URI（仅作通知，mlflow 自行上传）
+    - ``graceful``：窗口外 skip + warning（直调形态的合法降级显式化）；默认
+      fail-loud——mlflow fluent 无窗口时静默自建孤儿 run 污染默认实验，守卫必须前置
+    - 返回 writer 的返回值（如 ``log_model`` 的 model_uri）
+    """
+    from urllib.parse import unquote, urlparse
+
+    run = _window_or_skip(artifact_file, what="工件落盘", graceful=graceful)
+    if run is None:
+        return None
+    uri = f"{run.info.artifact_uri}/{artifact_file}"
+    parsed = urlparse(uri)
+    if parsed.scheme == "file":
+        destination = str(Path(unquote(parsed.path)))
+    elif parsed.scheme == "":
+        destination = uri  # sqlite tracking 缺省 artifact root 的裸路径形态
+    elif direct_write:
+        raise ValueError(f"artifact 根非本地（{uri}）——直写只支持本地工件树")
+    else:
+        destination = uri
+    result = writer(destination)
+    logger.info("Saved: %s", destination)
+    return result
+
+
+def log_table(df, artifact_file: str, *, graceful: bool = False):
+    """mlflow.log_table（经落盘壳：守卫/通知单点）。"""
+    import mlflow
+
+    return _artifact_shell(artifact_file, lambda _: mlflow.log_table(df, artifact_file), graceful=graceful)
+
+
+def log_dict(dictionary, artifact_file: str, *, graceful: bool = False):
+    """mlflow.log_dict（经落盘壳：守卫/通知单点）。"""
+    import mlflow
+
+    return _artifact_shell(artifact_file, lambda _: mlflow.log_dict(dictionary, artifact_file), graceful=graceful)
+
+
+def log_pickle(obj, artifact_file: str, *, graceful: bool = False):
+    """对象 pickle 直写 active run 工件树（如 split.pkl——#66 节点副产物）。
+
+    ``pickle.dumps`` 内存序列化 + 直写 run ``artifact_uri`` 终路径——无 tmp 暂存、
+    无 log_artifact 二次拷贝（工件树即正典居所）。直写形态远程 artifact 根
+    fail-loud（壳 ``direct_write``）。
+    """
+    import pickle
+
+    def _write(destination: str) -> None:
+        local = Path(destination)
+        local.parent.mkdir(parents=True, exist_ok=True)
+        local.write_bytes(pickle.dumps(obj))
+
+    return _artifact_shell(artifact_file, _write, direct_write=True, graceful=graceful)
+
+
+def log_model(pipe, name: str = "final", **kwargs) -> str | None:
+    """mlflow.sklearn.log_model（经落盘壳）：窗口内落模型返回 model_uri。
+
+    终训模型本体的唯一持久化面（产物名恒 ``final``）；恒 graceful——直调形态
+    （DAG 窗口外）合法降级为内存态 loader（model_uri=None）。
+    """
+    import mlflow.sklearn as mlflow_sklearn  # 别名绑定子模块——经父模块属性访问不被 pyright 认可（mlflow __init__ 未重导出）
+
+    def _write(_: str) -> str:
+        return mlflow_sklearn.log_model(pipe, name=name, **kwargs).model_uri
+
+    return _artifact_shell(name, _write, graceful=True)
+
+
+def log_file(src, *, graceful: bool = False):
+    """本地文件原样挂 run 工件树（mlflow.log_artifact 经落盘壳）——原始文件面
+    （如 study sqlite 的只读投影，#95 项5）；工件名 = 源文件名。"""
+    from pathlib import Path
+
+    import mlflow
+
+    name = Path(src).name
+    return _artifact_shell(name, lambda _: mlflow.log_artifact(str(src)), graceful=graceful)
+
+
+def run_artifacts(run_id: str) -> list[str]:
+    """按 run_id 列工件路径（薄封装——域侧 fail-loud 清单的检索面）。"""
+    import mlflow
+
+    setup()
+    return [a.path for a in mlflow.MlflowClient().list_artifacts(run_id)]
+
+
+def download_run_artifact(run_id: str, artifact_file: str) -> str:
+    """按 run_id 取回工件本地路径（副产物的读回入口）。"""
+    import mlflow.artifacts  # 子模块导入（mlflow 惰性再导出，from mlflow 取 artifacts 静态不可见）
+
+    setup()
+    return mlflow.artifacts.download_artifacts(run_id=run_id, artifact_path=artifact_file)
+
+
+def log_figure(fig, filename: str, dpi: int = 300, *, graceful: bool = False):
+    """mlflow.log_figure（经落盘壳：守卫/通知单点）——图形微调随 writer 进壳，窗外跳过零副作用。
+
+    落盘即闭图（#92 单源纪律）：600dpi Agg 缓冲 ~80MB/张，泄漏即 pyplot
+    图管理器进程级累积（长跑 server 每次 holdout 终评漏 ~5 张）——闭图收在
+    本缝，直调方（_evaluation_plots/_loss_curve）与 log_plot 中间件一次覆盖。"""
+    import mlflow
+    from matplotlib import pyplot as plt
+    from mflowy.utils.plot import prepare_figure  # 惰性导入——plot 属 [plot] extra，不得进模块顶层
+
+    def _write(_: str):
+        prepare_figure(fig, dpi)  # 微调单源（与 save_figure 共用，#95 项6）
+        try:
+            mlflow.log_figure(fig, filename, save_kwargs={"dpi": dpi, "bbox_inches": "tight"})
+        finally:
+            plt.close(fig)  # 落盘即闭（#92）——只在真正落盘路径闭图；窗外跳过/守卫失败零副作用（#93 壳契约）)
+
+    return _artifact_shell(filename, _write, graceful=graceful)
+
+
+def get_artifact_uri() -> str:
+    """实验 artifact 根路径（MlflowTracking.ensure_experiment 建实验时用）。"""
+    return (task_dir() / ".mlruns").as_uri()
+
+
+def set_tags(tags: dict):
+    import mlflow
+
+    mlflow.set_tags(tags)
+
+
+def log_metrics(metrics: dict[str, float], *, graceful: bool = False):
+    """mlflow.log_metrics 的 seam 包装（守卫前置）——域代码不直呼 fluent API。
+
+    直呼的代价：无 active run 时 fluent 静默自建孤儿 run（落 CWD 默认
+    ``./mlruns``，包根污染成因之一）；守卫语义对齐工件落盘壳——默认
+    fail-loud，``graceful`` 为直调形态的合法降级（跳过 + warning）。
+    """
+    import mlflow
+
+    if _window_or_skip(sorted(metrics)[:5], what="metrics 落盘", graceful=graceful) is None:
+        return
+    mlflow.log_metrics(metrics)
+
+
+def search_experiment_model_run_ids(experiment_id: str) -> dict[str, str]:
+    """批量查询实验中所有 ``tags.mflowy.node LIKE 'model__%'`` 的 FINISHED run_id（node_key 形）。
+
+    一次 MLflow 查询返回 {module: run_id} 字典，供 model 族 step_options 闭包消费——
+    避免 option 逐 step 触发 N 次查询。
+
+    - 实验不存在（或已删除）时 logger.warning 提示并返回空 dict
+    - ``mflowy.node``（node_key 形）取组内名作为 module 名（如 ``model__XGB`` → ``XGB``）
+    - 仅返回 ``status='FINISHED'`` 的 run，避免拿到 FAILED/KILLED 的废 run_id
+    - 同 module 多条 FINISHED run 时取 start_time 最早的一条（order_by ASC + dict 覆盖语义）
+    - 包含 ``model.loader``（prune/resume/shap 产生的 loader run）——step_options 内部用
+      ``node.node_name == 'loader'`` 跳过，dict 中 ``loader`` entry 自然不被消费
+
+    Args:
+        experiment_id: MLflow 实验 ID。
+
+    Returns:
+        {module_name: run_id}，例如 {"XGB": "abc123", "LGBM": "def456", "loader": "xyz"}；
+        实验不存在时返回 {}。
+
+    Example:
+        >>> run_id_map = search_experiment_model_run_ids("123")
+        >>> # run_id_map 供 model/step_options 的 prune_model_step / resume_model_step 工厂消费
+    """
+    setup()
+    if not experiment_id:
+        logger.warning("experiment_id 为空，跳过 model run 查询")
+        return {}
+    import mlflow
+    from mlflow.exceptions import MlflowException
+
+    try:
+        exp = mlflow.get_experiment(experiment_id)
+    except MlflowException:
+        exp = None
+    if exp is None:
+        logger.warning("实验`%s`不存在", experiment_id)
+        return {}
+    runs = mlflow.search_runs(
+        experiment_ids=[experiment_id],
+        filter_string="tags.mflowy.node LIKE 'model__%' AND attributes.status = 'FINISHED'",
+        order_by=["start_time ASC"],
+        output_format="list",
+    )
+    assert isinstance(runs, list)
+    from mflowy.driver.config import split_node_key
+
+    result: dict[str, str] = {}
+    for r in runs:
+        step = r.data.tags.get("mflowy.node", "")
+        result[split_node_key(step)[1]] = r.info.run_id
+    return result

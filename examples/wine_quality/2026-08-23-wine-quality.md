@@ -46,7 +46,7 @@ series: 数茧深度案例系列（3 / 5）
 | alcohol | 酒精 (vol%) | 8.4–14.9 |
 | **quality** | **品质评分** | **3–8** |
 
-![Wine 数值特征尺度对比](img/wine_numeric_scale_box.png)
+![Wine 数值特征尺度对比（现名 plot.violin；图为本案例当时的 boxplot 形态）](img/wine_numeric_scale_box.png)
 
 ---
 
@@ -62,7 +62,7 @@ series: 数茧深度案例系列（3 / 5）
 
 ![Wine 目标-特征 LOWESS 趋势](img/wine_target_trend_by_numeric.png)
 
-![Wine 数值特征分布质量](img/wine_numeric_quality_kde_hist.png)
+![Wine 数值特征分布质量（现名 plot.histogram）](img/wine_numeric_quality_kde_hist.png)
 
 ---
 

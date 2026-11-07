@@ -1,0 +1,78 @@
+"""mflowy MCP server 入口（stdio）。
+
+启动方式::
+    uvx --from "mflowy[mcp,model] @ file://$(pwd)" mflowy-mcp  # 完全体（Local dispatch）
+
+环境变量::
+
+    MFLOWY_JOB_PROVIDER    — "local"（默认）或 "module:Class"（自定义 JobProvider 实现）
+    MLFLOW_TRACKING_URI    — mlflow 查询工具用（默认 sqlite:///${HOME}/.mflowy/mlflow.db）
+    MFLOWY_TELEMETRY       — 遥测三态 ask（默认，elicitation 首次工具调用提问）/ on / off
+
+SDK 与遥测住 ``[mcp]`` extra——本模块顶层零 SDK 导入（CLI/裸装形态可安全 import）；
+``main()`` 以 ``find_spec`` 探测：未装给安装提示，装了但坏由真实导入裸 traceback。
+"""
+
+from __future__ import annotations
+
+import logging
+import sys
+from typing import TYPE_CHECKING
+
+from mflowy.utils.logging import setup
+
+if TYPE_CHECKING:
+    from mcp.server.mcpserver import MCPServer
+
+logger = logging.getLogger(__name__)
+
+_HINT = 'MCP server 需要 SDK 与遥测依赖：pip install "mflowy[mcp]"（uvx 则 --from "mflowy[mcp]" mflowy-mcp）'
+
+
+def register(mcp: MCPServer):
+    """工具注册：``mflowy.tools`` entry points 组——平台工具（mflowy-mcp pyproject
+    静态声明）与域包声明同构发现（装哪个域包多哪批工具，安装形态即通道），
+    host 对域零 import；声明面 ↔ 函数面镜像契约钉在 tests/mcp/。
+
+    每工具经 ``route_task_dir`` 中间件包裹（#95 裁定 B 的 MCP 路由锚定）：工具
+    声明锚参数（``@anchor_task_dir`` 元数据）从业务参数推锚，推不出缺省
+    ``~/.mflowy``（server 无业务 CWD 语义）。"""
+    from pathlib import Path
+
+    from mflowy.utils.path import route_task_dir
+
+    from .tools import _tool_entry_points
+
+    for ep in _tool_entry_points():
+        mcp.tool()(route_task_dir(Path.home() / ".mflowy")(ep.load()))
+
+
+def main() -> None:
+    setup()  # 日志绑定 stderr（stdout 是 JSON-RPC 通道）+ 第三方库降噪
+
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        sdk_ok = int(version("mcp").split(".")[0]) >= 2  # mcp.server.mcpserver 需 ≥2.0
+    except PackageNotFoundError:
+        sdk_ok = False
+    if not sdk_ok:  # 未装或旧版 → 安装提示；装了 2.x 但坏 → 下方真实导入裸 traceback
+        print(f"Error: 未安装 MCP SDK（≥2.0）\n{_HINT}", file=sys.stderr)
+        raise SystemExit(1)
+    from mcp.server.mcpserver import MCPServer
+
+    from . import telemetry
+
+    # 遥测：on→立即接线 agentcat（纯 OTLP）；ask 未决→首次工具调用 elicitation；off→纯净运行
+    mode = telemetry.resolve_telemetry()
+    mcp = MCPServer(name="mflowy")
+    register(mcp)
+    if mode == "ask":
+        telemetry.install_consent_middleware(mcp)
+    elif mode == "on":
+        telemetry.wire_agentcat(mcp)
+    mcp.run()  # stdio transport
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,288 @@
+"""插件目录与解析。entry point name 即注册身份：``namespace.node_name``（点式）。
+
+词表来源（按序合并，后组覆盖前组）：
+
+- ``mflowy.builtin_plugins``：本包内置能力，pyproject ``[project.entry-points]`` 静态声明（声明即词表；加载期拦「注册表不自洽」，名段与装饰器逐字一致由 CR 兜底）
+- ``mflowy.plugins``：第三方插件包，声明即注册（随 uv/pip 安装进入环境）
+
+目录表形为**扁平身份键**：``dict[node_key, EntryPoint]``（``组名__节点名``，与
+YAML 列表项键 / NodeEntry.name 同构——寻址单源贯穿）；分组视图（``list_all`` /
+``namespace_nodes``）经 ``split_node_key`` 派生。跨 ``(ns, node)`` 对的键歧义
+（节点名含 ``__`` 的病理）在装配期 warning——扁平表将其暴露为可见冲突而非静默并存。
+
+模块级门面（``get_node``/``get_edge``/``find_edge``/``list_all``/``entry``）委托唯一（节点查询键一律 node_key；边查询令牌=裸边名，内部组 ``edges__`` 键）
+adapter（``EntryPointCatalog``），是目录消费的唯一姿势。解析三步（#137/#140）：
+①注册表暖命中（``NODE_REGISTRY``/``EDGE_REGISTRY``——进程内已加载节点 dict 量级，
+零目录现算）→ ②miss 才现算目录表（纯元数据零 import，安装即时可见保留）→ ③首载
+``ep.load()`` 触发装饰注册，按**同一 node_key 二次查注册表**（发现表键 = 注册表
+键，身份桥退役）——load 后 miss = 声明与注册不一致（未装饰/错 namespace/别名键
+统一一类）fail-loud，与 #86 无别名政策对齐。
+热更新赌注收窄：卸载/后组覆盖的即时可见让渡（暖命中驻留——进程内中途卸载或
+覆盖包比安装更罕见）。
+
+词表 miss 类型化：``CatalogMiss`` ⊂ ModuleNotFoundError =「能力没装」，与 ``ep.load()``
+的导入失败（裸 ModuleNotFoundError =「装了但导不进」）按类型二分——探针
+（``find_edge``）据此 miss 返 None 而不吞导入失败。``DeclarationMismatch`` ⊂
+ValueError =「声明与注册不自洽」（③ load 后按键 miss）——词表枚举消费方据此降级
+（键歧义等其它 ValueError 不受影响，照常 fail-loud）。
+"""
+
+from __future__ import annotations
+
+import logging
+from importlib.metadata import EntryPoint, entry_points
+
+from .config import node_key, split_node_key
+from .edge import EDGE_REGISTRY, Edge
+from .node import NODE_REGISTRY, Node
+
+logger = logging.getLogger(__name__)
+
+# 撞名/坏名 warning 进程内去重（#55）：目录零缓存现算——同进程每次扫描重复发射，
+# 真撞名即刷屏；热更新赌注保持（新 entry point 即时可见，去重只针对已报过的同一对）
+_warned: set[tuple[str, str]] = set()
+
+
+def _warn_once(kind: str, key: str, msg: str) -> None:
+    """同进程同类同键 warning 恰发一次（刷屏即噪音——诊断价值在首报）。"""
+    if (kind, key) in _warned:
+        return
+    _warned.add((kind, key))
+    logger.warning(msg)
+
+
+GROUPS = ("mflowy.builtin_plugins", "mflowy.plugins")  # 后组覆盖前组
+
+
+def discover() -> dict[str, EntryPoint]:
+    """{node_key: EntryPoint}（扁平身份键），纯元数据零 import。"""
+    table: dict[str, EntryPoint] = {}
+    origins: dict[str, tuple[str, str]] = {}  # 键首见来源 (ns, node)——键歧义检测基准
+    for g in GROUPS:
+        for ep in entry_points(group=g):
+            if "." in ep.name:
+                namespace, node_name = ep.name.split(".", 1)
+                if not namespace or not node_name:
+                    _warn_once(
+                        "malformed",
+                        f"{g}:{ep.name}",
+                        f"entry point 名 {ep.name!r} 不满足 namespace.node_name（{g}: {ep.value}），跳过",
+                    )
+                    continue
+            else:
+                namespace, node_name = "", ep.name  # 非归组节点：裸节点名
+            key = node_key(namespace, node_name)
+            if (prev := table.get(key)) is not None:
+                if prev.group == g:
+                    _warn_once(
+                        "override",
+                        f"{key}:{ep.value}",
+                        f"插件 {ep.name} 冲突：{ep.group}:{ep.value} 覆盖 {prev.group}:{prev.value}",
+                    )
+                else:
+                    logger.info(f"插件 {ep.name} 冲突：{ep.group}:{ep.value} 覆盖 {prev.group}:{prev.value}")
+                if origins.get(key) != (namespace, node_name):
+                    raise ValueError(
+                        f"目录键 {key!r} 歧义：{(namespace, node_name)} 与 {origins.get(key)} "
+                        "折叠为同一寻址键——节点名应避免 ``__``（寻址按 rpartition 取末段）；"
+                        f"冲突双方：{ep.group}:{ep.value} 与 {prev.group}:{prev.value}"
+                    )
+            table[key] = ep
+            origins.setdefault(key, (namespace, node_name))
+    _warn_cross_tier_collisions(table, origins)
+    return table
+
+
+def namespace_nodes(namespace: str) -> dict[str, EntryPoint]:
+    """某命名空间的 {裸节点名: EntryPoint}——扁平目录的分组派生视图（族目录消费面）。"""
+    return {split_node_key(key)[1]: ep for key, ep in discover().items() if split_node_key(key)[0] == namespace}
+
+
+def _warn_cross_tier_collisions(table: dict[str, EntryPoint], origins: dict[str, tuple[str, str]]) -> None:
+    """跨层撞名防线：边名撞节点 node_key/组名——解析优先级（边>组>节点）会改写既有图绑定。
+
+    消费注册期 (ns, node) 真值（origins）而非键派生——边名自身可含 ``__``，
+    rpartition 会切错段。
+    """
+    edges = {node for (ns, node) in origins.values() if ns == "edges"}
+    if not edges:
+        return
+    namespaces = {ns for ns, _ in origins.values()} - {"", "edges"}
+    for edge_name in edges:
+        if edge_name in namespaces or edge_name in table:
+            _warn_once(
+                "cross", edge_name, f"边 {edge_name!r} 与节点/组同名：解析优先级边>组>节点，同名图的绑定将改写为边"
+            )
+
+
+def _rename_hint(namespace: str, name: str) -> str | None:
+    """历史/拼错寻址键 → 现行键一行迁移建议（#86 词干后缀匹配，唯一命中才出）。
+
+    规范化（小写、去 ``_``）后整等或互为后缀（短侧 ≥5 字符防短名误配）且候选
+    唯一才出——多义/无线索不出（宁缺毋滥不误导）；边键以裸名显示（YAML 边寻址面）。
+    只改文案：旧键仍拒绝（不引入静默别名），用户按报错改一行 YAML 即命中现行键。
+    """
+    import re
+
+    def _norm(s: str) -> str:
+        return re.sub(r"_+", "", s.lower())
+
+    missed = _norm(f"{namespace}__{name}") if namespace else _norm(name)
+    hits: set[str] = set()
+    for key in discover():
+        key_ns, bare = split_node_key(key)
+        for cand in (_norm(key), _norm(bare)):
+            if min(len(cand), len(missed)) >= 5 and (cand == missed or cand.endswith(missed) or missed.endswith(cand)):
+                hits.add(bare if key_ns == "edges" else key)
+                break
+    if len(hits) == 1:
+        return f"改名/拼写候选：{next(iter(hits))!r}（历史键只拒绝不接受——改用现行键）"
+    return None
+
+
+def _node_miss_msg(node_name: str, namespace: str, available) -> str:
+    """目录 miss 报错文案（单一契约源）——带改名/拼写候选（#86 一行迁移，无候选零附加）。"""
+    if namespace == "edges":
+        return f"Edge '{node_name}' not found. Available: {sorted(available)}"
+    msg = f"Node '{node_name}' not found for namespace '{namespace}'. Available: {sorted(available)}"
+    if hint := _rename_hint(namespace, node_name):
+        msg = f"{msg}. {hint}"
+    return msg
+
+
+class CatalogMiss(ModuleNotFoundError):
+    """词表 miss：能力没装（目录无名，装包或改拼写）。区别于 ``ep.load()`` 的导入失败
+    （裸 ModuleNotFoundError = 装了但导不进）。继承保证既有 ``except ModuleNotFoundError``
+    捕获姿势不破；探针（find_edge）以类型正交性保证 miss 判定不吞导入失败。"""
+
+    def __init__(self, namespace: str, name: str, available, msg: str | None = None) -> None:
+        # 属性赋值须在 super() 之后：ImportError.__init__ 会重置 self.name（模块名语义）
+        super().__init__(msg or _node_miss_msg(name, namespace, available))
+        self.namespace = namespace
+        self.name = name
+        self.available = sorted(available)
+
+    @classmethod
+    def namespace_miss(cls, namespace: str, available) -> CatalogMiss:
+        """namespace 级 miss（词表过滤）：name 即所缺 namespace，namespace 置空串（非组语境）。"""
+        return cls("", namespace, available, msg=f"Namespace '{namespace}' not found. Available: {sorted(available)}")
+
+
+class DeclarationMismatch(ValueError):
+    """声明与注册不自洽（#140 ③）：ep.load() 后注册表无声明键——未装饰 / 装饰
+    namespace 或函数名与声明错位 / 别名键统一一类。继承 ValueError 保既有捕获姿势；
+    词表枚举消费方（module._ns_info）按本类降级而非击穿整表。"""
+
+
+def _resolve(key: str) -> EntryPoint:
+    """扁平目录按键查表，miss 抛 CatalogMiss（Available = 同 namespace 裸名清单）。"""
+    ep = discover().get(key)
+    if ep is None:
+        ns, name = split_node_key(key)
+        raise CatalogMiss(ns, name, namespace_nodes(ns))
+    return ep
+
+
+def _checked[T: (Node, Edge)](ep: EntryPoint, key: str, kind: str, registry: dict[str, T]) -> T:
+    """加载 entry point 并按注册表键查表（#140 注册表单源：发现表键 = 注册表键）。
+
+    ``ep.load()`` 的模块导入触发装饰器写入注册表；load 后按**同一 node_key 二次
+    查表**（与 ① 暖命中同一查表动作），miss = 声明与注册不一致——未装饰 / 装饰
+    namespace 或函数名与声明错位 / 别名键统一一类（细分税不付），fail-loud 带
+    ep 与键上下文（#140 翻 #126「只查装饰不比名」：错 namespace 升格加载期门）。
+    """
+    fn = ep.load()
+    if (entry := registry.get(key)) is None:
+        # 错误路径扫注册表给「实际注册键」候选（红线 1 带候选清单）；fn 仅用于此处
+        # 诊断，成功路径零消费（暖路径③同①——纪律保证键一致，机器不做宽容）
+        actual = sorted(k for k, e in registry.items() if e.fn is fn)
+        hint = f"；实际注册键：{actual}" if actual else ""
+        raise DeclarationMismatch(
+            f"entry point {ep.group}:{ep.name} = {ep.value} 声明与注册不一致："
+            f"加载后注册表无 {kind} 键 {key!r}（未装饰 @{kind} 或装饰 namespace/函数名与声明错位）{hint}"
+        )
+    return entry
+
+
+def _load_node(key: str) -> Node:
+    """三步解析（#137/#140）：①注册表暖命中 → ②目录查表（miss 语义不变）→ ③加载后按同一键查注册表。"""
+    if (warm := NODE_REGISTRY.get(key)) is not None:
+        return warm
+    return _checked(_resolve(key), key, "node", NODE_REGISTRY)
+
+
+def _load_edge(key: str) -> Edge:
+    """边版三步解析（与节点同构，注册表 = EDGE_REGISTRY）。"""
+    if (warm := EDGE_REGISTRY.get(key)) is not None:
+        return warm
+    return _checked(_resolve(key), key, "edge", EDGE_REGISTRY)
+
+
+class EntryPointCatalog:
+    """唯一 adapter：三步解析（注册表暖路径 → 目录现算查表 → 加载后按同一键查注册表），
+    miss 抛 CatalogMiss 带 Available 列表；目录面保持现算（安装即时可见），卸载/后组
+    覆盖即时可见让渡于暖驻留。"""
+
+    def node(self, key: str) -> Node:
+        """节点目录访问：返回注册表 Node（调度面；原函数 = ``entry.fn``，#137 raw 面退役）。"""
+        return _load_node(key)
+
+    def edge(self, edge_name: str) -> Edge:
+        """边目录访问（边寻址令牌=裸名，内部组 ``edges__`` 键）；原函数 = ``entry.fn``。"""
+        return _load_edge(node_key("edges", edge_name))
+
+    def find_edge(self, edge_name: str) -> Edge | None:
+        """探针：词表 miss（CatalogMiss）返 None——异常控制流不出 adapter。
+
+        坏声明（注册表不一致）与导入失败（ep.load 抛非 CatalogMiss 的 ModuleNotFoundError）
+        在加载期 fail-loud 透传，不与 miss 混淆——类型正交，miss 判定不吞导入失败。
+        """
+        try:
+            return self.edge(edge_name)
+        except CatalogMiss:
+            return None
+
+    def list_all(self) -> dict[str, list[str]]:
+        return {ns: sorted(names) for ns, names in _grouped().items()}
+
+    def entry(self, key: str) -> EntryPoint | None:
+        return discover().get(key)
+
+
+_DEFAULT_CATALOG = EntryPointCatalog()
+
+
+def _grouped() -> dict[str, list[str]]:
+    """{namespace: [裸节点名]}——扁平目录的分组视图（词表投影的派生基座）。"""
+    grouped: dict[str, list[str]] = {}
+    for key in discover():
+        ns, name = split_node_key(key)
+        grouped.setdefault(ns, []).append(name)
+    return grouped
+
+
+# ========== 门面（唯一 adapter 的便捷委托，目录消费的唯一姿势） ==========
+
+
+def get_node(key: str) -> Node:
+    """严格版：目录入口（查询键 = node_key）→ 注册表 Node。miss → CatalogMiss + available 列表"""
+    return _DEFAULT_CATALOG.node(key)
+
+
+def get_edge(edge_name: str) -> Edge:
+    """边函数约定注册在 edges ns 下；miss → CatalogMiss（探针消费方改用 find_edge）。"""
+    return _DEFAULT_CATALOG.edge(edge_name)
+
+
+def find_edge(edge_name: str) -> Edge | None:
+    """探针：miss 返 None；坏声明与导入失败照常透传（类型正交保证不吞）。"""
+    return _DEFAULT_CATALOG.find_edge(edge_name)
+
+
+def list_all() -> dict[str, list[str]]:
+    return _DEFAULT_CATALOG.list_all()
+
+
+def entry(key: str) -> EntryPoint | None:
+    """元数据视图：entry point 原件（extras 标注等消费，零 import）；查询键 = node_key。"""
+    return _DEFAULT_CATALOG.entry(key)
