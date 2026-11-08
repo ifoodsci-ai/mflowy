@@ -19,7 +19,7 @@ state_digest——s′ 免费自带，
 diff, v, file, artifact_sha256}（#113/#117——clean_op 执行名 + intent 派生 + 溯源/理由）；
 rollback/finish/abandon 是记录不是删行——截断在接口层不存在。
 
-守卫：动作必须出自 clean 词表；never_drop 列（目标/保护/ID/时间）存活；目标列
+守卫：动作必须出自 clean 词表；never_drop 列（目标/受保护/时间，#112——ID 不在其列）存活；目标列
 值禁改（行删除允许）；问卷保留率下限（动作过激即拒——失败免费，试探走「提交 →
 免费 s′ → 负 reward 即 rollback」）。
 """
@@ -209,7 +209,7 @@ def _guard(df: pd.DataFrame, out: pd.DataFrame, card: Mapping[str, Any] | None) 
     """动作守卫：never_drop 存活 + 目标列值禁改（行删除允许）。"""
     gone = [c for c in never_drop(card) if c in df.columns and c not in out.columns]
     if gone:
-        raise ValueError(f"动作删除了不可删列 {gone}（never_drop：目标/保护/ID/时间）")
+        raise ValueError(f"动作删除了不可删列 {gone}（never_drop：目标/受保护/时间）")
     target = card.get("target") if card else None
     if target and target in df.columns and target in out.columns:
         t0, t1 = df[target], out[target]
