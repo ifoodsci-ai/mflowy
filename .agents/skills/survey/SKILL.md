@@ -52,4 +52,4 @@ disable-model-invocation: true
 ## 参考
 
 - 姊妹词表：statistic.univariate / statistic.bivariate（findings 溯源）；
-- 内层引擎工具：clean_session_start / clean_propose / clean_apply（clean skill 手册）。
+- 内层引擎工具：clean_session_start / clean_observe / clean_apply（clean skill 手册）。

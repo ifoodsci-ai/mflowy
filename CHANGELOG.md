@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 数据域对齐《数据质量 Agent Workflow 设计文档 v1.0》——决策地图 #110 落地（BREAKING·0.2.x 批次）
+
+规则引擎时代结束：菜单/候选生成全线退役，π 可见面 = 动作词表全集 + 观测证据；
+机制 = 事实，π = 选择。
+
+- **BREAKING**（导入/工具面）：规则引擎 SDK `driver/rule.py` 整模块删除（Rule /
+  RuleEngine / compose_should_stop / salience 组合子——两域菜面全灭，零存活消费者）；
+  `Activation` 契约模型、`POMDPSessionHandle.propose`、`rules.pkl` 盘上件、
+  `POMDPSession(*rules)` 构造签名随废；六操作换血 **propose 出局、`observe(sid)` 入局**
+  （幂等只读零转移，终态照常可观测）——两域同步：`clean_propose`/`modeling_propose`
+  工具退役，`clean_observe`/`modeling_observe` 上位；model 域 `propose_rules.py` 菜面
+  删除（finding 词表单源 `taxonomy.py`；观测读时投影决策面——findings/combo_key/
+  models 摘要/has_cat/face 候选超参面）。
+- **BREAKING**（缺陷契约）：`kind` → `defect_type` 全面更名（DataError/KINDS 集中表
+  退役）——`DefectType`/`Action`/`Severity` 三封闭 str-Enum 单处定义（12 缺陷成员 =
+  文档核心值 ∪ 现状扩展值，pii 随检测器毕业）；改名五值：missing→`high_null`（纯门禁
+  0.05 报告/0.30 high）、constant→`constant_col`、outlier→`outlier_numeric`、
+  stringly_numeric→`format_anomaly`（子集语义）、id_like→`suspected_id`（打分检测器
+  `detect.suspected_id` 四出口：composite 组合键 / 强先验直出 / 反先验冲突 / 常规打分
+  ——新增 `suspected_composite_id`/`prior_conflict`）。**Finding 六字段**（finding_id
+  结构键 `{defect_type}::{锚点}` + 序号后缀 / 定位键 column|rows 互斥（rows 字段退役
+  改行级定位键）/ severity 三档（float 退役——score 进 rationale 前缀）/ evidence
+  脱敏 str）；severity 分档罚分进质量分 Φ；权重随枚举全量显式覆盖（无兜底）。
+- **BREAKING**（先验卡）：PriorKnowledge 七字段并入 DomainCard（`primary_key_columns`
+  /`foreign_key_columns`/`composite_keys`/`known_non_id_columns`/`hinted_id_patterns`/
+  `source`）；**never_drop 收缩为 target/protected/time——ID 列不再自动免删**（drop/
+  hash/mask 归 π 决策，误删兜底 = POMDP 回滚）；model 域 id 剔除面 = known_id ∪ pk ∪
+  composite 成员（fk 不剔）。
+- **clean 词表 19 → 23 原子**：新增 `mask_cols`/`hash_cols`（匿名化——脱敏判据与检测
+  证据同源 `mask_text`）/`cast_cols`/`to_category`（format_anomaly 修复面）；判据成文
+  「值域封闭，身份开放」入 CONTEXT.md。
+- **决策面换血**：`clean_apply` 增 `finding_ids`（非空校验 ⊆ 当前 findings，幻觉免费
+  失败）+ `reason`（必填非空）；决策日志键 `action` → `clean_op` + 派生 `intent`
+  （drop_cols⇒drop、其余⇒fix、finish 残留⇒keep）；no-op 步否决；`clean_finish` 增
+  `keeps` keep 声明（residual 逐条附理由 + manifest = ID 先验 ∪ keep 派生）；观测
+  `state_digest.problems` = Finding 六字段全量透传、`routing_hints` 常驻（提示非约束）、
+  列画像 `missing_rate` 常驻。
+- **问卷/naive 层**：id 问题单问两档证据（全唯一疑似 + 组合唯一疑似——univariate
+  `hits["composite"]` 组合候选）；`defect_priority` 卡覆盖键按枚举值收（未知键
+  fail-loud）。
+- **测试面（#119）**：SMOKE_DF/SMOKE_CARD 行为闭环（产出并集 = DefectType 全集、
+  severity 三档、score 前缀、脱敏、finding_id 结构键）；三面闭合（产出者 × 权重 ×
+  路由提示）枚举驱动；clean 词表参数化冒烟（23 原子最小参数 + INV-6 返回新 df）。
+- dry_run 维持退役（#65 钉死测试不拆）；rounds/phase 枚举不引入（相界 = 「谁能调
+  什么」——算子不暴露为 π 工具即 API 面事实）；INV-3/INV-7 随载体死 dissolve。
+
 ### model 域化石退役：用户超参缺省迁冻结第四面（#141，#126 目标收官·BREAKING·model 域导入面）
 
 - `model/utils.py` 活反射提取器（每次调用 `inspect.signature` 取超参默认值）删除；

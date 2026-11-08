@@ -2,13 +2,13 @@
 
 driver=机制、域=策略——POMDPSession 吃下壳骨架：六个操作上下文承载业务流程
 （终态门/预算门/prior 冻结/append-only 决策日志/统一盘上写序），域实现
-``pomdp.POMDPSessionHandle`` 只填转移语义。盘上三文件：
+``pomdp.POMDPSessionHandle`` 只填转移语义。盘上两文件（rules.pkl 随规则引擎
+退役——#120；存量会话的遗留文件不读不迁，GC 自然回收）：
 
 - ``observation.json``：观测摘要（七键+终态双旗，pydantic 封闭模型），整读改写、
   原子落盘——观测投影，最后写
 - ``decision.log``：决策日志（JSONL append-only，一行一条 (s,a,r,s′)）——
   ``ra`` 接口无删除面；**追加即 commit 点**
-- ``rules.pkl``：规则引擎实例（整读整写、异常零副作用——语义沿 rule 模块）
 
 统一写序（构造保证）：工件先行（域、未 commit、孤儿无害）→ 日志追加（commit）→
 观测投影最后落盘。崩溃窗口二分：追加前崩 = 失败免费；追加后投影前崩 = 日志领先，
@@ -30,11 +30,9 @@ from typing import Any
 from mflowy.utils.file import write_text_atomic
 
 from .pomdp import TOP_K_DECISIONS, Observation
-from .rule import Rule, RuleEngine, load_rule_engine, save_rule_engine
 
 OBSERVATION_FILE = "observation.json"
 DECISION_LOG_FILE = "decision.log"
-RULES_FILE = "rules.pkl"
 
 
 def gc_report_key(dry_run: bool) -> str:
@@ -123,17 +121,17 @@ class _DecisionLog:
 class POMDPSession:
     """POMDP 会话壳（#89 统一机制）：所有业务共用，域只填转移语义。
 
-    新开 = ``POMDPSession(root, *rules, prefix)``：mint id + 建目录 + 规则引擎
-    由 ``*rules`` 现建落盘 + 空决策日志；开局观测由 ``start_ctx`` 提交。
+    新开 = ``POMDPSession(root, prefix=...)``：mint id + 建目录 + 空决策日志；
+    开局观测由 ``start_ctx`` 提交。
     重水化 = ``POMDPSession.open(dir)``：入口一致性牙齿（观测投影 ≡ 日志尾）。
-    步数口径：``counts_step(action) -> bool`` 模块级谓词（可 pickle），缺省
-    None = 每 apply 计步；预算门 = counts_step(action) ∧ steps ≥ max_steps。
+    步数口径：``counts_step(action) -> bool`` 模块级谓词，缺省 None = 每 apply
+    计步；预算门 = counts_step(action) ∧ steps ≥ max_steps。
     """
 
     def __init__(
         self,
         root: Path | str,
-        *rules: Rule,
+        *,
         prefix: str = "",
         counts_step: Callable[[str], bool] | None = None,
     ) -> None:
@@ -144,7 +142,6 @@ class POMDPSession:
         self._dir = self._root / sid
         self._dir.mkdir(exist_ok=False)  # sid 冲突 fail-loud
         self._id = sid
-        save_rule_engine(str(self._dir / RULES_FILE), RuleEngine().register(*rules))
         (self._dir / DECISION_LOG_FILE).write_text("", encoding="utf-8")
 
     @classmethod
@@ -202,17 +199,13 @@ class POMDPSession:
         self._write_observation(o)
 
     @contextmanager
-    def propose_ctx(self) -> Iterator[tuple[Observation, RuleEngine]]:
-        """出题：可变观测 + 规则引擎（检测证据进 state_digest、fire(o)/poll 在 body）。
+    def observe_ctx(self) -> Iterator[Observation]:
+        """观测：水化 + 投影（只读零写——幂等、零转移，壳里最简操作）。
 
-        终态门兜底 raise——域应先查 ``is_terminal`` 返回空菜单（建议通道）。
-        exit 写序：规则引擎 → 观测投影最后。
+        yield 盘上观测的副本：域可在 body 内组装读时投影（只回调用方），exit 不落盘；
+        不设终态门——终态会话照常可观测（续局/re-orientation 锚点，观测不是动作）。
         """
-        o = self._gate_mutable()
-        engine = self._load_engine()
-        yield o, engine
-        save_rule_engine(str(self._dir / RULES_FILE), engine)
-        self._write_observation(o)
+        yield self._load_observation()
 
     @contextmanager
     def apply_ctx(self, action: str) -> Iterator[tuple[Observation, _DecisionLog]]:
@@ -269,7 +262,7 @@ class POMDPSession:
     # ── 内部件（三个 RWA 原语与门）─────────────────────────────────────────
 
     def _gate_mutable(self) -> Observation:
-        """可变打开的终态门：已终态会话动作面为空（apply/rollback/propose 共用）。"""
+        """可变打开的终态门：已终态会话动作面为空（apply/rollback 共用）。"""
         o = self._load_observation()
         if o.finished or o.abandoned:
             raise RuntimeError(f"会话已终态（收局/弃局）：动作面为空（{self._id}）")
@@ -283,12 +276,6 @@ class POMDPSession:
         if not p.exists():
             raise FileNotFoundError(f"会话未开局（缺 observation.json）: {self._id}")
         return Observation.model_validate(json.loads(p.read_text(encoding="utf-8")))
-
-    def _load_engine(self) -> RuleEngine:
-        engine = load_rule_engine(str(self._dir / RULES_FILE))
-        if engine is None:  # 构造期必落——缺失即损坏（不静默重建：自定义规则不允许被换掉）
-            raise RuntimeError(f"rules.pkl 缺失（会话损坏）: {self._id}")
-        return engine
 
     def _write_observation(self, o: Observation) -> None:
         """观测投影落盘（最后写）：prior 冻结牙齿 + recent_decisions 日志尾投影。"""

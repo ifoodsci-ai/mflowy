@@ -2,7 +2,7 @@
 
 栅栏实现唯一居所在 detect/rules（apply 时对当前状态求值，与 detect.outliers 同尺）；
 range_clip 的判据 = detect.range_violation（问卷 expected_ranges 的领域先验，
-#65 观测通道化）——kind=range_violation 挂 .repair 进候选菜单。
+#65 观测通道化）——判断与执行同尺。
 """
 
 import logging

@@ -14,13 +14,13 @@ from mflowy.data.detect.collinear import collinear
 from mflowy.data.detect.constant import constant
 from mflowy.data.detect.duplicates import duplicates
 from mflowy.data.detect.errors import ErrorReport
-from mflowy.data.detect.id_like import id_like
 from mflowy.data.detect.missing import missing
 from mflowy.data.detect.outliers import outliers
 from mflowy.data.detect.range_violation import range_violation
 from mflowy.data.detect.stringly import stringly
+from mflowy.data.detect.suspected_id import suspected_id
 
-OPERATORS = [missing, duplicates, outliers, constant, stringly, id_like, collinear, range_violation]
+OPERATORS = [missing, duplicates, outliers, constant, stringly, suspected_id, collinear, range_violation]
 
 # 声明式算子的必填先验参数（其余算子零参数直调）
 _OP_KWARGS = {range_violation: {"ranges": {"x1": [-3.0, 3.0]}}}
@@ -28,8 +28,8 @@ _OP_KWARGS = {range_violation: {"ranges": {"x1": [-3.0, 3.0]}}}
 
 @pytest.fixture
 def dirty_df() -> pd.DataFrame:
-    """五算子各至少一缺陷：缺失/重复/离群/单位污染/共线。"""
-    n = 60
+    """各算子至少一缺陷：缺失/重复/离群/单位污染/共线/疑似标识。"""
+    n = 150  # suspected_id 常规打分最小非空行数（_MIN_ROWS=100）
     rng = np.random.default_rng(7)
     x1 = rng.normal(size=n)
     x1[0] = 40.0  # 注入 zscore 离群
@@ -40,14 +40,14 @@ def dirty_df() -> pd.DataFrame:
             "hole": np.where(rng.random(n) < 0.3, np.nan, 1.0),
             "const": [3.0] * n,  # 常量死列（constant 维度）
             "pct": [f"{v:.1f}%" for v in rng.uniform(0, 100, n)],
-            "sid": [f"s{i:03d}" for i in range(n)],
+            "sample_id": [f"s{i:03d}" for i in range(n)],
         }
     )
     return pd.concat([df, df.head(5)]).reset_index(drop=True)  # 5 条重复行
 
 
-# id_like 判据全唯一，重复行破坏一切列的全唯一——喂去重视图（其余算子吃重复）
-_DEDUP_OPS = {id_like}
+# suspected_id 打分吃全唯一形态——重复行破坏全唯一，喂去重视图（其余算子吃重复）
+_DEDUP_OPS = {suspected_id}
 
 
 @pytest.mark.parametrize("op", OPERATORS, ids=lambda f: f.__name__)
@@ -65,6 +65,6 @@ def test_summary_remains_the_token_friendly_carrier(dirty_df, capsys):
     """print 退役，摘要载体仍在——需要人读回显的调用方调 summary()。"""
     report = missing(load=dirty_df)
 
-    assert "missing" in report.summary()
+    assert "high_null" in report.summary()
     assert "ErrorReport" in report.summary()
     assert capsys.readouterr().out == ""

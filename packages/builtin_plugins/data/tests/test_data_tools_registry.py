@@ -27,6 +27,12 @@ def test_registry_matches_tools_module():
         assert callable(fn) and getattr(fn, "__name__", "") == name
 
 
+def test_menu_tool_retired_observe_in():
+    """#117 工具面换血：clean_propose（菜单）退役、clean_observe（幂等只读观测）上位。"""
+    declared = {ep.name for ep in entry_points(group="mflowy.tools") if ep.dist and ep.dist.name == "mflowy-data"}
+    assert "clean_observe" in declared and "clean_propose" not in declared
+
+
 def test_clean_apply_schema_has_no_dry_run():
     """#65 dry_run 退役的 schema 面钉住：工具入参 schema 不再出现 dry_run
     （docstring 编译的 schema 随签名自动更新——本测防参数回潮）。"""

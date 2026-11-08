@@ -1,12 +1,15 @@
-"""共享规则实现：zscore/iqr 栅栏——detect 与 clean 修复侧同源的唯一居所。
+"""共享规则实现：zscore/iqr 栅栏 + 脱敏——detect 与 clean 修复侧同源的唯一居所。
 
 非词表模块（无 @node，不产 entry point）。全部纯函数、零判断：
-不产 severity/ErrorReport（判断在 detect 算子），只做"从声明式参数确定性推导
+不产 severity/Finding（判断在 detect 算子），只做"从声明式参数确定性推导
 掩码/栅栏"。修复原子（cap_iqr / drop_outlier_iqr / …）与本模块的 detect 算子
-必须 import 同一函数——口径分歧（如 std 自由度）从结构上根除。
+必须 import 同一函数——口径分歧（如 std 自由度）从结构上根除；``mask_text``
+是 INV-2 脱敏单源（evidence 样本与 clean.mask_cols 共用）。
 """
 
 from __future__ import annotations
+
+import re
 
 import numpy as np
 import pandas as pd
@@ -14,6 +17,15 @@ from mflowy.data.types import as_series
 
 # rule 与默认档位的配对（detect.outliers / 修复原子的默认参数共用）
 RULE_DEFAULT_K = {"zscore": 3.0, "iqr": 1.5}
+
+
+def mask_text(value: str, *, keep_head: int = 2, keep_tail: int = 2, mask_char: str = "*") -> str:
+    """文本脱敏（INV-2 单源）：首尾各留 keep_head/keep_tail 字符，中间以 mask_char 遮蔽；
+    长度不足以保留时不因短而泄漏（全遮）。样本进 Finding.evidence 前必须过本函数。"""
+    s = str(value)
+    if len(s) <= keep_head + keep_tail:
+        return mask_char * len(s)
+    return s[:keep_head] + mask_char * (len(s) - keep_head - keep_tail) + s[len(s) - keep_tail :]
 
 
 def zscore_mask(series: pd.Series, k: float = 3.0) -> pd.Series:
@@ -45,8 +57,72 @@ def iqr_mask(series: pd.Series, k: float = 1.5) -> pd.Series:
     return (series < lo) | (series > hi)
 
 
+# ── suspected_id 打分判据（#115：纯计算零判断——数值档位在算子模块，判据居此共用） ──
+
+# 命名边界匹配（+3）：词元化的 id 语义词（order_id / userId / SN / batch_no …）
+_NAME_ID_TOKENS = re.compile(r"(?i)(^|_|-)(id|uid|uuid|guid|sn|sku|key|code|no|num|batch)(_|-|$)")
+
+# 格式命中（+2）：UUID / 长十六进制 / 雪花数（长数字串）/ 定长大写前缀码
+_FORMAT_PATTERNS = (
+    re.compile(r"^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$"),  # UUID
+    re.compile(r"^[0-9a-fA-F]{16,}$"),  # 长十六进制
+    re.compile(r"^[0-9]{15,19}$"),  # 雪花/长数字
+    re.compile(r"^[A-Z]{2,8}-?[0-9]{3,}$"),  # 前缀码（ORD-000123 / AB123）
+)
+
+# 排除模式（−3）与业务词（−2）：强负证据压过正证据
+_EXCLUDE_PATTERNS = (re.compile(r"(?i)^(is|has|flag|n_?)"), re.compile(r"(?i)_(img|url|uri|path|file|mail|tel|phone)$"))
+_BUSINESS_WORDS = frozenset(
+    w.lower()
+    for w in ("name", "title", "desc", "text", "note", "notes", "remark", "comment", "label", "content", "summary")
+)
+
+
+def name_id_score(name: str) -> int:
+    """列名 ID 语义匹配 → +3。"""
+    return 3 if _NAME_ID_TOKENS.search(str(name)) else 0
+
+
+def format_id_hit(series: pd.Series) -> bool:
+    """样本值命中 UUID/十六进制/雪花/前缀码任一格式。"""
+    sample = series.dropna().astype(str).head(50)
+    return any(any(p.match(v) for v in sample) for p in _FORMAT_PATTERNS)
+
+
+def exclusion_score(name: str) -> int:
+    """排除模式 → −3；业务词词元 → −2（强负证据——压过正证据，防误报）。"""
+    n = str(name).lower()
+    if any(p.search(n) for p in _EXCLUDE_PATTERNS):
+        return -3
+    tokens = re.split(r"[^a-z0-9]+", n)
+    return -2 if any(t in _BUSINESS_WORDS for t in tokens if t) else 0
+
+
+def length_concentration(series: pd.Series) -> float:
+    """长度集中度：众数长度占比（1.0 = 定长）。"""
+    s = series.dropna().astype(str)
+    if s.empty:
+        return 0.0
+    return float(s.str.len().value_counts(normalize=True).iloc[0])
+
+
+def monotonic_ratio(series: pd.Series) -> float:
+    """单调相关：相邻差分同号占比（数值列自增 ID 的指纹；1.0 = 严格单调）。"""
+    coerced = pd.to_numeric(series.dropna(), errors="coerce")
+    assert isinstance(coerced, pd.Series)  # Series 入 → Series 出（stub 返标量联合）
+    x = coerced.to_numpy(dtype=float)
+    if len(x) < 3:
+        return 0.0
+    d = np.diff(x)
+    nonzero = d[d != 0]
+    if len(nonzero) == 0:
+        return 0.0
+    up = float((nonzero > 0).sum())
+    return max(up, len(nonzero) - up) / len(nonzero)
+
+
 def is_id_like(series: pd.Series) -> bool:
-    """全唯一且非 float 的标识列疑似——univariate 事实 / bivariate 跳过 / detect.id_like 判断三家共用。
+    """全唯一且非 float 的标识列疑似——univariate 事实 / bivariate 跳过 / suspected_id 反先验出口三家共用。
 
     float 连续列天然全唯一，排除防大面积误报；int 全唯一列计入（标签编码的 ID）。
     """

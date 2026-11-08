@@ -37,12 +37,6 @@ def _floor_verdict(v):
         assert v.reason  # 拒收必附 reason
 
 
-def _floor_candidate(c):
-    from mflowy.driver.pomdp import Activation
-
-    assert isinstance(c, Activation) and c.action and isinstance(c.params, dict)
-
-
 @pytest.fixture(autouse=True)
 def isolate_tracking(tmp_path, monkeypatch):
     """mlflow seam 外 fluent 直调（objective→MlflowClient）——隔离到 tmp sqlite。"""
@@ -374,7 +368,7 @@ def test_terminal_empty_action_face(sessions_root, reg_csv, tmp_path):
     s, _ = _hpo(sessions_root, reg_csv, n_trials=1)
     ms.apply_action(s.session_id, "final_train_test")
     ms.finish_session(s.session_id, pdf=_pdf(tmp_path))
-    assert ms.propose_actions(s.session_id) == []
+    assert ms.observe_session(s.session_id).finished is True  # 终态照常可观测（观测不是动作）
     with pytest.raises(RuntimeError, match="终态"):
         ms.apply_action(s.session_id, "run_hpo", {"n_trials": 1})
     with pytest.raises(RuntimeError, match="终态"):
@@ -514,19 +508,19 @@ def test_abandon_closes_all_planes(sessions_root, reg_csv):
     s, _ = _hpo(sessions_root, reg_csv, n_trials=1)
     ack = ms.abandon_session(s.session_id, reason="改协议重开")
     assert ack["abandoned"] is True
-    assert ms.propose_actions(s.session_id) == []
+    assert ms.observe_session(s.session_id).abandoned is True
     with pytest.raises(RuntimeError, match="终态"):
         ms.apply_action(s.session_id, "run_hpo", {"n_trials": 1})
     with pytest.raises(RuntimeError, match="弃局"):  # 壳 finish_ctx 的弃局门（改协议重开走新会话）
         ms.finish_session(s.session_id, pdf="/no/such/report.pdf")
 
 
-# ── propose：单源谓词机器 ────────────────────────────────────────────────────
+# ── observe：读时投影（#117/#120——菜单退役，π 读观测自构动作） ──────────────
 
 
 def test_findings_drive_only_same_combo(sessions_root, cat_csv):
-    """#66 story 17：findings 只对本 combo 键出题（规则与 LLM 同粒度）——菜单
-    rationale 引用的证据不来自另一个 FE 组合。
+    """#66 story 17：观测的 findings 只投影本 combo 键（规则与 LLM 同粒度）——π 读到的
+    证据不来自另一个 FE 组合。
 
     #84 注记：确定性依赖 run_hpo 的盘上 study sampler 带 seed（`_open_study`）——
     曾走未钉缺省 sampler，θ* 每进程漂移导致本用例非确定性失败。"""
@@ -540,11 +534,11 @@ def test_findings_drive_only_same_combo(sessions_root, cat_csv):
     ms.report_findings(
         sid, k_ordinal, [{"kind": "fold_std", "severity": 0.9, "evidence": {"cv": 0.5}, "message": "折间不稳-ordinal"}]
     )
-    props = ms.propose_actions(sid)  # 光标在 RF|onehot
-    assert all("折间不稳" not in (p.rationale or "") for p in props)  # 证据不跨 FE 组合
+    o = ms.observe_session(sid)  # 光标在 RF|onehot
+    assert all(f.get("message") != "折间不稳-ordinal" for f in o.state_digest["findings"])  # 证据不跨 FE 组合
     ms.apply_action(sid, "select_FE", {"node": "ordinal_encoder"})  # 光标回 RF|ordinal
-    props2 = ms.propose_actions(sid)
-    assert any("折间不稳" in (p.rationale or "") for p in props2)  # 本键 findings 恢复出题
+    o2 = ms.observe_session(sid)
+    assert any(f.get("message") == "折间不稳-ordinal" and f["key"] == k_ordinal for f in o2.state_digest["findings"])
 
 
 def test_run_hpo_theta_deterministic_across_studies(sessions_root, cat_csv):
@@ -560,52 +554,29 @@ def test_run_hpo_theta_deterministic_across_studies(sessions_root, cat_csv):
     assert thetas[0] == thetas[1], thetas
 
 
-def test_propose_menu_covers_action_faces(sessions_root, reg_csv):
-    """菜单谓词机：开局 = select_model（候选族）；选模型后 = 计算动作 + 配置动作。"""
-    s = _start(sessions_root, reg_csv)
-    props = ms.propose_actions(s.session_id)
-    assert [p.action for p in props] == ["select_model"]
-    _floor_candidate(props[0])
-
-    ms.apply_action(s.session_id, "select_model", {"family": "RF"})
-    props2 = ms.propose_actions(s.session_id)
-    faces = {p.action for p in props2}
-    assert {"run_hpo", "set_hp", "set_hp_space", "set_seed"} <= faces
-
-    ms.apply_action(s.session_id, "run_hpo", {"n_trials": 1})
-    faces3 = {p.action for p in ms.propose_actions(s.session_id)}
-    assert "final_train_test" in faces3 and "select_model" in faces3  # 已训未全冻结 → 降级留在候选
-
-
-def test_fully_frozen_family_leaves_candidates(sessions_root, reg_csv):
-    """全 combo 冻结才移出候选（多模型交付/rank 的依据）。"""
-    s, _ = _hpo(sessions_root, reg_csv, n_trials=1)
-    ms.apply_action(s.session_id, "final_train_test")
-    faces = {p.action for p in ms.propose_actions(s.session_id)}
-    assert "select_model" not in faces
-
-
-def test_propose_merges_same_action_params(sessions_root, reg_csv):
-    """#38 会话侧合并：同 (action, params) 菜单项唯一——rationale 并集（"；"连接）、
-    命中溯源并列 co_hits（合并不静默）。"""
-    s, _ = _hpo(sessions_root, reg_csv, n_trials=2)
+def test_observe_projection_covers_decision_faces(sessions_root, reg_csv):
+    """观测读时投影 = π 的决策面（原菜单的证据上浮）：开局 = 候选族超参面（动态维可收窄 /
+    静态常量可 pin）；选模型后 = combo 键；搜索后 = 账本摘要（θ*/u_inner/冻结旗）。
+    observe 只读零写——盘上零变化。"""
+    s = _start(sessions_root, reg_csv, fams=("RF", "XGB"))
     sid = s.session_id
-    ms.report_findings(
-        sid,
-        _K_RF,
-        [
-            {"kind": "fold_std", "severity": 0.9, "evidence": {"cv": 0.5}, "message": "折间不稳-a"},
-            {"kind": "fold_std", "severity": 0.8, "evidence": {"cv": 0.4}, "message": "折间不稳-b"},
-        ],
-    )
-    props = ms.propose_actions(sid)
-    keys = [(p.action, json.dumps(dict(p.params), sort_keys=True)) for p in props]
-    assert len(keys) == len(set(keys))  # (action, params) 全键唯一
-    deepen = [p for p in props if p.action == "run_hpo"]
-    assert len(deepen) == 1  # 多条 fold_std 命中同一加深题（n_trials 同式）→ 一项
-    assert "；" in deepen[0].rationale  # rationale 并集
-    assert len(dict(deepen[0].evidence or {})["co_hits"]) >= 2  # 命中溯源并列（不静默吸收）
-    _floor_candidate(deepen[0])
+    o = ms.observe_session(sid)
+    _floor_observation(o)
+    assert set(o.state_digest["face"]) == {"RF", "XGB"}  # 候选族超参面全集（不截断选项）
+    assert set(o.state_digest["face"]["RF"]) == {"dynamic", "static"}
+    assert o.state_digest["combo_key"] is None and o.state_digest["models"] == {}
+
+    ms.apply_action(sid, "select_model", {"family": "RF"})
+    assert ms.observe_session(sid).state_digest["combo_key"] == _K_RF
+
+    ms.apply_action(sid, "run_hpo", {"n_trials": 1})
+    disk = {p.name: p.read_bytes() for p in (sessions_root / sid).iterdir() if p.is_file()}
+    entry = ms.observe_session(sid).state_digest["models"][_K_RF]
+    assert entry["u_inner"] is not None and entry["best_params"] and entry["frozen"] is False
+    assert {p.name: p.read_bytes() for p in (sessions_root / sid).iterdir() if p.is_file()} == disk  # 零写
+
+    ms.apply_action(sid, "final_train_test")
+    assert ms.observe_session(sid).state_digest["models"][_K_RF]["frozen"] is True  # 冻结事实可见
 
 
 # ── split 身份 tag 落 run ───────────────────────────────────────────────────

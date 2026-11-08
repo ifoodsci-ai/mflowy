@@ -151,23 +151,38 @@ class TASKTYPE(DualFormStrEnum):
 class DomainCard:
     """数据领域建档卡：问卷答案的结构化产物，两个 POMDP 的先验输入。
 
-    由 survey 节点产出（列引用已对 df 校验，撒谎 fail-loud）。消费约定：
-    - clean.auto：never_drop 列免删、unit_hints 供 strip_units、expected_ranges 供 range_clip、target 指明标签列
+    由 survey 剧本产出（列引用已对 df 校验，撒谎 fail-loud）。消费约定：
+    - clean 域：never_drop 列免删、unit_hints 供 strip_units、expected_ranges 供
+      range_violation/range_clip、target 指明标签列；ID 分级字段（pk/fk/known_id/
+      composite/known_non_id/hinted）喂 suspected_id 检测器四出口（#115）
+    - #112 breaking：never_drop 收缩为 target/protected/time——ID 列不再自动免删，
+      drop/hash/mask 归 π 按 SKILL 策略决（误删兜底 = POMDP 回滚）
     """
 
     domain: str
     goal: str = ""
     target: str | None = None
-    id_columns: tuple[str, ...] = ()
+    id_columns: tuple[str, ...] = ()  # known_id 档（普通标识列）
     time_column: str | None = None
     unit_hints: dict[str, str] = field(default_factory=dict)
     protected_columns: tuple[str, ...] = ()
     expected_ranges: dict[str, tuple[float, float]] = field(default_factory=dict)
+    # ── 先验分级字段（#112：PriorKnowledge 并入卡——三合一载体，冻结牙齿自动覆盖）──
+    primary_key_columns: tuple[str, ...] = ()  # 强先验：唯一率 ≥0.95 → suspected_id(high) 跳打分
+    foreign_key_columns: tuple[str, ...] = ()  # 强先验同上（join 需求可见——fk 在卡）
+    composite_keys: tuple[tuple[str, ...], ...] = ()  # 组合唯一 → suspected_composite_id(joined 名锚点)
+    known_non_id_columns: tuple[str, ...] = ()  # 反先验：常规跳过，is_id_like 命中 → prior_conflict
+    hinted_id_patterns: tuple[str, ...] = ()  # 弱先验：列名命中正则 → 打分 +2（re 语义，坏模式 fail-loud）
+    source: str = "manual"  # 权威度（manual/lineage/governance_platform——prior_conflict 冲突策略输入）
+
+    def __post_init__(self) -> None:
+        """通道宽容：composite_keys 成员归一为 tuple（as_dict 往返/JSON 输入不较形态）。"""
+        self.composite_keys = tuple(tuple(g) for g in self.composite_keys)
 
     @property
     def never_drop(self) -> tuple[str, ...]:
-        """任何清洗动作不得删除的列：目标/受保护/ID/时间列。"""
-        cols = [self.target, *self.protected_columns, *self.id_columns, self.time_column]
+        """任何清洗动作不得删除的列：目标/受保护/时间（#112：ID 各档不再自动免删）。"""
+        cols = [self.target, *self.protected_columns, self.time_column]
         return tuple(dict.fromkeys(c for c in cols if c is not None))
 
     @classmethod
@@ -183,22 +198,51 @@ class DomainCard:
         unit_hints=None,
         protected_columns=None,
         expected_ranges=None,
+        primary_key_columns=None,
+        foreign_key_columns=None,
+        composite_keys=None,
+        known_non_id_columns=None,
+        hinted_id_patterns=None,
+        source: str = "manual",
     ) -> DomainCard:
         """问卷答案 → 卡片（fail-loud 校验的单一事实源）。
 
-        列引用逐项对照 df（撒谎 fail-loud）；expected_ranges 列必须数值且下限 ≤ 上限。
-        应用层 compile_survey 工具与本包内问卷节点共用本校验。
+        列引用逐项对照 df（撒谎 fail-loud——分级字段与复合键成员全检）；expected_ranges
+        列必须数值且下限 ≤ 上限；hinted_id_patterns 须为合法正则；source ∈ 三值白名单。
+        应用层问卷与两域会话开局共用本校验。
         task 唯一归属建模协议（ProtocolCard.task）——task_hint 已退役（fail-loud 门在
         cleaning_session._freeze_card，现实的带毒入口是旧卡喂 start_session）。
         """
+        import re
+
         import pandas as pd
 
         id_columns = list(id_columns or [])
         protected_columns = list(protected_columns or [])
         unit_hints = dict(unit_hints or {})
         raw_ranges = expected_ranges or {}
+        pk = list(primary_key_columns or [])
+        fk = list(foreign_key_columns or [])
+        composites = [tuple(g) for g in (composite_keys or [])]
+        known_non_id = list(known_non_id_columns or [])
+        hinted = tuple(hinted_id_patterns or [])
+        if source not in ("manual", "lineage", "governance_platform"):
+            raise ValueError(f"source 须为 manual/lineage/governance_platform，得到 {source!r}")
+        for pat in hinted:
+            re.compile(pat)  # 坏正则当场报（不静默吞）
 
-        named = [target, time_column, *id_columns, *protected_columns, *unit_hints, *raw_ranges]
+        named = [
+            target,
+            time_column,
+            *id_columns,
+            *protected_columns,
+            *unit_hints,
+            *raw_ranges,
+            *pk,
+            *fk,
+            *(c for g in composites for c in g),
+            *known_non_id,
+        ]
         missing = sorted({c for c in named if c is not None and c not in df.columns})
         if missing:
             raise ValueError(f"问卷引用了数据框中不存在的列: {','.join(f'`{c}`' for c in missing)}")
@@ -221,6 +265,12 @@ class DomainCard:
             unit_hints=unit_hints,
             protected_columns=tuple(protected_columns),
             expected_ranges=ranges,
+            primary_key_columns=tuple(pk),
+            foreign_key_columns=tuple(fk),
+            composite_keys=tuple(composites),
+            known_non_id_columns=tuple(known_non_id),
+            hinted_id_patterns=hinted,
+            source=source,
         )
 
     def as_dict(self) -> dict:
@@ -228,3 +278,19 @@ class DomainCard:
         from dataclasses import asdict
 
         return asdict(self)
+
+
+def excluded_from_features(card: dict | None) -> list[str]:
+    """ID 特征剔除面单源（#112 涟漪）：pk ∪ known_id(id_columns) ∪ composite 成员——
+    防 ID 泄漏的建模剔除清单（fk 不剔——join 需求可见且可作类别特征）；data 会话
+    manifest 与 model 域开局共用本式。"""
+    card = card or {}
+    return sorted(
+        set(
+            [
+                *(card.get("primary_key_columns") or []),
+                *(card.get("id_columns") or []),
+                *(c for g in (card.get("composite_keys") or []) for c in g),
+            ]
+        )
+    )

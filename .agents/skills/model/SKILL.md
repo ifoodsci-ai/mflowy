@@ -1,12 +1,12 @@
 ---
 name: model
-description: 建模训练 POMDP 回合操作手册(mflowy)。开局产物就绪后开始建模回合，或建模会话进行中(收到 session_id)时使用。配合 mflowy MCP 工具 modeling_session_start / modeling_propose / modeling_apply(action) / modeling_rollback / modeling_report_findings / modeling_finish / modeling_abandon 驱动回合循环——动作空间 = 八动作面（配置编辑 + 计算动作），环境面在引擎，π(策略)是你。会话恒单目标任务——多目标在会话外三层循环（多目标→多模型→单目标任务会话，每目标各开一会话）。前置:model-brief skill 已产出开局入参（cv_card = cv.split 配置 yaml 明文 + 显式协议参数，含 research-review 结构化候选）。
+description: 建模训练 POMDP 回合操作手册(mflowy)。开局产物就绪后开始建模回合，或建模会话进行中(收到 session_id)时使用。配合 mflowy MCP 工具 modeling_session_start / modeling_observe / modeling_apply(action) / modeling_rollback / modeling_report_findings / modeling_finish / modeling_abandon 驱动回合循环——动作空间 = 八动作面（配置编辑 + 计算动作），环境面在引擎，π(策略)是你。会话恒单目标任务——多目标在会话外三层循环（多目标→多模型→单目标任务会话，每目标各开一会话）。前置:model-brief skill 已产出开局入参（cv_card = cv.split 配置 yaml 明文 + 显式协议参数，含 research-review 结构化候选）。
 disable-model-invocation: true
 ---
 
 # Model Skill：建模 POMDP 回合循环（search-only 回路 + 先搜后店）
 
-三段式研究流第三段。你的职责是**策略（π）**：读账本 board（u_inner 记分牌 + findings
+三段式研究流第三段。你的职责是**策略（π）**：读账本 board（u_inner 分数面 + findings
 诊断面）、决定光标指向哪个候选、怎么参数化、何时搜索/终训/收局。环境面（增量 study/
 预算/no-peeking 守卫/决策日志）在会话引擎。**holdout 全程只在 final_train_test 被读
 （每 combo 恰一次，读完即冻结）**——回路内你看到的永远只是 inner/OOF 证据。
@@ -42,13 +42,24 @@ modeling_session_start(final_path, cv_card=<cv.split 配置 yaml 明文>,
    X_test·y_test·y_pred 副产物/plan 一体（交付的 plan_yaml 就是那次终训本身）→ holdout
    终评恰一次 → **combo 冻结**（同键不可再搜索）；reward = 0（终局效用 u 只进 verdict 面）。
 
-`modeling_propose` 菜单 = findings 驱动层（记分牌序浮于顶部：折间不稳→加深、误差
-集中→FE 换档、贴边界/过拟合→正则收窄、切片塌陷→类别权重；**findings 只对本 combo
-键出题**——证据不跨 FE 组合）+ 基座层（baseline 第一、未跑候选、终训交付、配置动作面）。
-规则 findings 与你落诊的 LLM findings 均匀聚合。
+**读观测，自构动作**——引擎不出菜单：`modeling_observe(session_id)`（幂等只读）回
+决策面——`findings`（**只投影本 combo 键**，证据不跨 FE 组合；规则 findings 与你落诊
+的 LLM findings 均匀聚合）、`combo_key`、`models` 账本摘要（θ*/u_inner/冻结旗）、
+`has_cat`、`face`（各候选族超参面：动态维可收窄、静态常量可 pin）。
+
+决策指南（起点不是边界）：
+- **推进序**：baseline 候选先跑（定参照系）→ 未跑候选 `select_model` + `run_hpo`
+  首搜（n_trials=10）→ 已搜 combo `final_train_test` 交付（holdout 恰一次）；
+- **findings → 动作**：`fold_std`（折间不稳）→ `run_hpo` 加深（n_trials ≈ max(8,
+  3×上次)）；过拟合族（`overfit_train_val_gap`/`overfit_val_loss_rise`/`drift`/
+  `complexity_edge`）→ 族正则参数 `set_hp_space` 收窄到上半区（静态面则 `set_hp` pin）；
+  欠拟合族（`underfit_high_close`/`underfit_loss_plateau`）→ `select_FE` 换档加信号 +
+  正则放宽到下半区；`error_concentrated` → `select_FE` 换编码/缩放重跑；
+  `slice_collapse` → 族有 `scale_pos_weight` 时 `set_hp` 提少数类权重（如 2.0）；
+- **收局**：预算将尽 / board 平台期 / 交付面已足 → 走收局剧本（停止没有引擎提示）。
 
 **预算即决策**：只有计算动作吃步——配置编辑自由试错；好钢（run_hpo 深度）用在 board
-最有希望的方向。**自由参数化**：菜单只是建议不是边界（词表外动作/未知参数会被拒）。
+最有希望的方向。**自由参数化**：词表内动作与参数自由组合（词表外动作/未知参数会被拒）。
 
 ## 控制面
 
@@ -80,8 +91,5 @@ modeling_session_start(final_path, cv_card=<cv.split 配置 yaml 明文>,
 
 ## 参考
 
-- 引擎与状态机：`packages/builtin_plugins/model/mflowy/model/session.py`（八动作面/
-  增量 study/freeze）；诊断算子：`mflowy/model/diagnose.py`；出题规则：
-  `mflowy/model/propose_rules.py`
 - 设计依据：Jamieson & Talwalkar 2016（SH）——Δu_inner 奖励即 diminishing-return 信号
 - 快照（取代前的回路设计）：docs/research/2026-10-09-modeling-mdp-design.md

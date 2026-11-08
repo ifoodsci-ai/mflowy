@@ -1,8 +1,22 @@
-"""quality_score 契约:内生质量奖励(质量改善 − 信息损失),规则引擎、可审计。"""
+"""quality_score 契约：内生质量奖励（质量改善 − 信息损失），可审计、无 LLM。
+
+#111/#124：severity 三档按档位罚分（float 不复活）；权重随枚举全量显式覆盖
+（无兜底——未知类型在构造期即 fail-loud，不存在「默认小权重」路径）。
+"""
 
 import pytest
-from mflowy.data.detect.errors import DataError, ErrorReport
-from mflowy.data.detect.scoring import quality_score
+from mflowy.data.detect.errors import DefectType, ErrorReport, Finding, Severity, rationale
+from mflowy.data.detect.scoring import _SEVERITY_PENALTY, _WEIGHTS, defect_weight, quality_score
+
+
+def _f(defect=DefectType.HIGH_NULL, column="a", severity=Severity.MEDIUM):
+    return Finding(
+        defect_type=defect,
+        column=column,
+        severity=severity,
+        rationale=rationale(0.4, "测试"),
+        evidence="测试",
+    )
 
 
 def _report(*errors):
@@ -12,94 +26,56 @@ def _report(*errors):
 def test_clean_report_scores_one():
     """零缺陷 = 满分 1.0。"""
     s = quality_score(ErrorReport(shape=(100, 5)))
-
     assert s["score"] == 1.0
     assert s["defects"] == {}
 
 
-def test_missing_only_score_is_weighted_sum():
-    """只有缺失(两列 0.2/0.4,求和 0.6):score = 1 − 0.35×0.6 = 0.79。"""
+def test_weights_cover_every_enum_member():
+    """#124：权重表随枚举全量显式覆盖——扩枚举成员必须显式定权（无兜底）。"""
+    assert set(_WEIGHTS) == set(DefectType)  # pii 随检测器毕业入枚举（#110 未决项）
+
+
+def test_penalty_is_band_weighted_sum():
+    """同类型多条按档位罚分求和：score = 1 − weight × Σ罚分。"""
     report = _report(
-        DataError(kind="missing", column="a", severity=0.2),
-        DataError(kind="missing", column="b", severity=0.4),
+        _f(column="a", severity=Severity.LOW),
+        _f(column="b", severity=Severity.MEDIUM),
     )
 
     s = quality_score(report)
 
-    assert s["defects"]["missing"] == 0.6
-    assert s["score"] == pytest.approx(1 - 0.35 * 0.6)
+    penalty = _SEVERITY_PENALTY[Severity.LOW] + _SEVERITY_PENALTY[Severity.MEDIUM]
+    assert s["defects"]["high_null"] == pytest.approx(penalty)
+    assert s["score"] == pytest.approx(1 - _WEIGHTS[DefectType.HIGH_NULL] * penalty)
+    assert s["weights"] == {"high_null": _WEIGHTS[DefectType.HIGH_NULL]}  # 审计面只带在场类型
 
 
-# ── 单调性（#65）：消除缺陷 ⇒ Φ 不降——按 kind 均值聚合的三反例钉成回归 ──────
+def test_eliminating_any_finding_never_decreases_score():
+    """#65 单调化：按类型求和口径下，消除任何一条 finding 都使 Φ 不降。"""
+    report = _report(_f(column="a", severity=Severity.HIGH), _f(column="b", severity=Severity.LOW))
+    s_full = quality_score(report)
+    s_part = quality_score(_report(report.errors[0]))
+    assert s_part["score"] >= s_full["score"]
 
 
-def test_phi_monotone_under_any_error_removal():
-    """一般单调断言：移除任意单条缺陷，Φ 不降。"""
-    base = [
-        DataError(kind="missing", column="a", severity=0.9),
-        DataError(kind="missing", column="b", severity=0.1),
-        DataError(kind="collinear", column="c", severity=0.8),
-        DataError(kind="collinear", column="d", severity=0.2),
-        DataError(kind="constant", column="e", severity=1.0),
-        DataError(kind="constant", column="f", severity=1.0),
-    ]
-    s0 = quality_score(_report(*base))["score"]
-    for i in range(len(base)):
-        s1 = quality_score(_report(*(base[:i] + base[i + 1 :])))["score"]
-        assert s1 >= s0, f"移除 {base[i]} 后 Φ 下降（{s0} → {s1}）——奖励非单调"
+def test_defect_priority_overrides_and_fails_loud_on_unknown():
+    """委托人的记分牌（per-episode 覆盖）优先；引用未知缺陷类型 fail-loud 带候选。"""
+    assert defect_weight(DefectType.SUSPECTED_ID, {"suspected_id": 0.9}) == 0.9
+    assert defect_weight("suspected_id") == _WEIGHTS[DefectType.SUSPECTED_ID]  # 值形态收
+    with pytest.raises(ValueError, match="可用"):
+        defect_weight(DefectType.HIGH_NULL, {"novel_kind": 0.5})
+    with pytest.raises(ValueError, match="可用"):
+        quality_score(_report(_f()), weights={"missing": 0.9})  # 退役 kind 名当即报错
 
 
-def test_removing_constant_column_is_rewarded():
-    """反例一：多常量列删一个——均值口径恒零奖励；求和口径每列计价 weight×1.0。"""
-    s_two = quality_score(
-        _report(
-            DataError(kind="constant", column="a", severity=1.0), DataError(kind="constant", column="b", severity=1.0)
-        )
-    )["score"]
-    s_one = quality_score(_report(DataError(kind="constant", column="a", severity=1.0)))["score"]
-
-    assert s_one - s_two == pytest.approx(0.10)  # weight(constant) = 0.10
-
-
-def test_fixing_weaker_collinear_pair_is_not_penalized():
-    """反例二：修共线弱对不因剩余强对抬组均值而得负奖励。"""
-    s0 = quality_score(
-        _report(
-            DataError(kind="collinear", column="a", severity=0.9), DataError(kind="collinear", column="b", severity=0.3)
-        )
-    )["score"]
-    s1 = quality_score(_report(DataError(kind="collinear", column="a", severity=0.9)))["score"]
-
-    assert s1 > s0
-
-
-def test_filling_low_missing_column_is_not_penalized():
-    """反例三：单修低缺失率列不因剩余高缺失列抬组均值而得负奖励。"""
-    s0 = quality_score(
-        _report(
-            DataError(kind="missing", column="a", severity=0.8), DataError(kind="missing", column="b", severity=0.2)
-        )
-    )["score"]
-    s1 = quality_score(_report(DataError(kind="missing", column="a", severity=0.8)))["score"]
-
-    assert s1 > s0
-
-
-def test_info_loss_needs_baseline_shapes():
-    """无基线 → info_loss=None(纯状态评分);有基线 → 行/列保留率。"""
-    report = ErrorReport(shape=(90, 4), errors=[DataError(kind="duplicate", severity=0.1)])
-
+def test_info_loss_needs_baseline_shape():
+    dup = Finding(
+        defect_type=DefectType.DUPLICATE,
+        rows=(1,),
+        rationale=rationale(0.05, "x"),
+        evidence="x",
+    )
+    report = _report(dup)
     assert quality_score(report)["info_loss"] is None
     s = quality_score(report, baseline=(100, 5))
-    assert s["info_loss"] == {"row_retained": 0.9, "col_retained": 0.8}
-
-
-def test_unknown_kind_gets_default_weight_and_is_auditable():
-    """分类学外类型走默认小权重不崩;components 可审计。"""
-    report = ErrorReport(shape=(10, 2), errors=[DataError(kind="novel_kind", column="a", severity=1.0)])
-
-    s = quality_score(report)
-
-    assert s["defects"]["novel_kind"] == 1.0
-    assert 0 < s["score"] < 1
-    assert s["weights"]["novel_kind"] == 0.05
+    assert s["info_loss"] == {"row_retained": 1.0, "col_retained": 1.0}

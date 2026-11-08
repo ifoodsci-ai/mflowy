@@ -5,19 +5,21 @@ driver.POMDPSession——本模块只填转移语义：动作面分发（单步�
 Conf→Builder→DAG.run，#89 ②片——apply 与导出计划同构）、检测证据（算进
 state_digest——s′ 免费自带，
 检测算子是观测通道不是动作）、终局 U + θ 验收门、计划导出（Conf → flow_to_yaml
-单源序列化——apply 与导出同构，Builder 可全量重放）。
+单源序列化——apply 与导出同构，Builder 可全量重放）。选项面不设菜单（#113）：
+π 读观测 + clean 词表（平台工具 list_nodes/get_node_info 投影）自构动作。
 
 盘上（会话目录）：
-- observation.json / decision.log / rules.pkl —— 壳三件（见 driver.session）
+- observation.json / decision.log —— 壳两件（见 driver.session）
 - v{n}.parquet —— 版本工件；分配 = 决策日志派生 max+1，永不复用已 commit 版本
   （弃分支工件盘上永存——审计面）
 - plan.yaml —— 收局交付物（幂等重入确定性重建）
 
 决策日志 = 单记录版本树：v0 元数据住 state_digest["v0"]；每次 apply 一条
-{step, action, params, s, s_next, quality_before/after, diff, v, file,
-artifact_sha256}；rollback/finish/abandon 是记录不是删行——截断在接口层不存在。
+{step, clean_op, intent, finding_ids, reason, params, s, s_next, quality_before/after,
+diff, v, file, artifact_sha256}（#113/#117——clean_op 执行名 + intent 派生 + 溯源/理由）；
+rollback/finish/abandon 是记录不是删行——截断在接口层不存在。
 
-守卫：动作必须出自 clean 词表；never_drop 列（目标/保护/ID/时间）存活；目标列
+守卫：动作必须出自 clean 词表；never_drop 列（目标/受保护/时间，#112——ID 不在其列）存活；目标列
 值禁改（行删除允许）；问卷保留率下限（动作过激即拒——失败免费，试探走「提交 →
 免费 s′ → 负 reward 即 rollback」）。
 """
@@ -36,20 +38,23 @@ from mflowy.data.detect.collinear import collinear as detect_collinear
 from mflowy.data.detect.constant import constant as detect_constant
 from mflowy.data.detect.duplicates import duplicates as detect_duplicates
 from mflowy.data.detect.errors import ErrorReport
-from mflowy.data.detect.id_like import id_like as detect_id_like
 from mflowy.data.detect.missing import missing as detect_missing
 from mflowy.data.detect.outliers import outliers as detect_outliers
 from mflowy.data.detect.range_violation import range_violation as detect_range_violation
 from mflowy.data.detect.scoring import quality_score as _qs_raw
 from mflowy.data.detect.stringly import stringly as detect_stringly
+from mflowy.data.detect.suspected_id import PRIOR_KEYS
+from mflowy.data.detect.suspected_id import suspected_id as detect_suspected_id
 from mflowy.data.fingerprint import fingerprint
-from mflowy.driver.pomdp import Activation, FinishVerdict, Observation
+from mflowy.data.routing import routing_hints
+from mflowy.data.types import excluded_from_features
+from mflowy.driver.pomdp import FinishVerdict, Observation
 from mflowy.driver.session import POMDPSession
 from mflowy.utils.file import sha256_of, write_text_atomic
 
 
 def _quality_score(report, baseline=None, card: Mapping[str, Any] | None = None):
-    """Φ 计分：卡携带的 defect_priority（kind→权重覆盖）随开局生效。"""
+    """Φ 计分：卡携带的 defect_priority（defect_type→权重覆盖）随开局生效。"""
     prio = (card or {}).get("defect_priority") or {}
     return _qs_raw(report, baseline=baseline, weights=prio or None)
 
@@ -67,16 +72,26 @@ def _open(session_id: str) -> POMDPSession:
 
 
 def never_drop(card: Mapping[str, Any] | None) -> list[str]:
-    """任何动作不得删除的列：目标/受保护/ID/时间（问卷先验）。"""
+    """任何动作不得删除的列：目标/受保护/时间（#112 breaking——ID 各档不再自动免删，
+    drop/hash/mask 归 π 决策；误删兜底 = POMDP 回滚）。单源 = DomainCard.never_drop——
+    读冻结卡的富化键（_freeze_card 开局落位，恒在；缺键即卡未走开局校验，fail-loud）。"""
+    if not card or card.get("never_drop") is None:
+        raise ValueError("never_drop 缺失——卡未经 start_session 冻结富化（合法卡恒带该键）")
+    return list(card["never_drop"])
+
+
+# 影响检测产出的卡先验键（memo 键组成 + suspected_id 注入面，#115）：ID 分级七键
+# 单源 = suspected_id.PRIOR_KEYS，另加 expected_ranges（range_violation 注入面）
+_PRIOR_MEMO_KEYS = ("expected_ranges", *PRIOR_KEYS)
+
+
+def _prior_card(card: Mapping[str, Any] | None) -> dict | None:
+    """冻结卡 → 检测器先验投影：只取 ID 分级键（富化键 never_drop/defect_priority 等
+    不进检测面——算子侧键集校验严格收口）。"""
     if not card:
-        return []
-    cols = [
-        card.get("target"),
-        *(card.get("protected_columns") or []),
-        *(card.get("id_columns") or []),
-        card.get("time_column"),
-    ]
-    return [c for c in dict.fromkeys(c for c in cols if c)]
+        return None
+    prior = {k: card[k] for k in _PRIOR_MEMO_KEYS if k != "expected_ranges" and card.get(k) is not None}
+    return prior or None
 
 
 def _detect_all(df: pd.DataFrame, card: Mapping[str, Any] | None = None) -> ErrorReport:
@@ -91,8 +106,13 @@ def _detect_all(df: pd.DataFrame, card: Mapping[str, Any] | None = None) -> Erro
     （多会话进程内防膨胀；清空只损失命中率，语义不变）。
     """
     ranges = (card or {}).get("expected_ranges") or {}
-    ranges_key = json.dumps(ranges, sort_keys=True, ensure_ascii=False) if ranges else ""
-    memo_key = (_fingerprint(df), ranges_key)
+    prior_key = json.dumps(
+        {k: (card or {}).get(k) for k in _PRIOR_MEMO_KEYS if (card or {}).get(k) is not None},
+        sort_keys=True,
+        ensure_ascii=False,
+        default=str,
+    )
+    memo_key = (_fingerprint(df), prior_key)
     hit = _REPORT_MEMO.get(memo_key)
     if hit is not None:
         return hit
@@ -104,10 +124,10 @@ def _detect_all(df: pd.DataFrame, card: Mapping[str, Any] | None = None) -> Erro
             detect_outliers,
             detect_constant,
             detect_stringly,
-            detect_id_like,
-            detect_collinear,
         )
     ]
+    reports.append(detect_suspected_id(load=df, card=_prior_card(card)))
+    reports.append(detect_collinear(load=df))
     if ranges:
         reports.append(detect_range_violation(load=df, ranges=ranges))
     report = ErrorReport(shape=df.shape, errors=[e for r in reports for e in r.errors])
@@ -130,8 +150,8 @@ def _num(x):
 
 def _column_profile(df: pd.DataFrame) -> dict:
     """列画像（#89 ③片检测层证据富化）：dtype 族 + 数值分布读数（skew/四分位）+
-    总体方差——问题规则的证据基座（dtype 自筛/档位读数/共线方差选择全在此取，
-    规则零 df 引用）。计算单源 = statistic 域 univariate_facts；memo 随指纹。"""
+    总体方差——π 的决策证据（dtype 族/档位读数/共线方差选择全在此取，π 零 df
+    接触）。计算单源 = statistic 域 univariate_facts；memo 随指纹。"""
     memo_key = _fingerprint(df)
     hit = _PROFILE_MEMO.get(memo_key)
     if hit is not None:
@@ -142,7 +162,8 @@ def _column_profile(df: pd.DataFrame) -> dict:
     var = df.select_dtypes(include="number").var().to_dict()  # type: ignore[reportAttributeAccessIssue]  # pandas-stubs var 重载联合含标量（DataFrame 轴 0 恒 Series）
     profile = {}
     for r in rows:
-        col: dict = {"family": r["family"]}
+        # missing_rate 常驻（#125 F1）：低空值列不产缺陷但画像可见——π 无需缺陷标签即可动手
+        col: dict = {"family": r["family"], "missing_rate": r["missing_rate"]}
         if r["family"] == "numeric":
             col |= {k: _num(r.get(k)) for k in ("skew", "q1", "q2", "q3")}
             col["var"] = _num(var.get(r["name"]))
@@ -188,7 +209,7 @@ def _guard(df: pd.DataFrame, out: pd.DataFrame, card: Mapping[str, Any] | None) 
     """动作守卫：never_drop 存活 + 目标列值禁改（行删除允许）。"""
     gone = [c for c in never_drop(card) if c in df.columns and c not in out.columns]
     if gone:
-        raise ValueError(f"动作删除了不可删列 {gone}（never_drop：目标/保护/ID/时间）")
+        raise ValueError(f"动作删除了不可删列 {gone}（never_drop：目标/受保护/时间）")
     target = card.get("target") if card else None
     if target and target in df.columns and target in out.columns:
         t0, t1 = df[target], out[target]
@@ -293,6 +314,13 @@ def _freeze_card(df: pd.DataFrame, card: dict) -> dict:
         "unit_hints",
         "protected_columns",
         "expected_ranges",
+        # 先验分级字段（#112——pk/fk/composite/known_non_id/hinted/source）
+        "primary_key_columns",
+        "foreign_key_columns",
+        "composite_keys",
+        "known_non_id_columns",
+        "hinted_id_patterns",
+        "source",
     )
     fields = {k: v for k, v in card.items() if k in known}
     built = DomainCard.build(df, **fields)
@@ -309,22 +337,18 @@ def _refresh_state_digest(
     o: Observation, report: ErrorReport, quality: dict, *, v: int, df: pd.DataFrame, file: str
 ) -> None:
     """检测证据写进 state_digest（s′ 免费自带的落点，#89 ③片富化面）：
-    problems 问题投影 + columns 列画像 + current_file 当前版本工件——问题规则的
-    全部触发证据（规则纯消费 o，零 df 引用；params 的 load 引用源 = current_file）。"""
-    problems: dict[str, list] = {}
-    for e in report.errors:
-        problems.setdefault(e.kind, []).append(
-            {"column": e.column, "severity": e.severity, "evidence": dict(e.evidence or {})}
-        )
+    problems 问题投影 + columns 列画像 + current_file 当前版本工件——π 的全部
+    决策证据（π 纯消费观测，零 df 接触；apply 可选新鲜度引用源 = current_file）。"""
     o.state_digest = {
         **o.state_digest,
         "v": v,
         "digest": _digest(report),
-        "defects": report.counts(),
+        "defects": report.counts(),  # defect×count 派生快读键（事实源 = problems）
         "summary": report.summary(),
         "shape": list(report.shape),
         "quality": quality,
-        "problems": problems,
+        "problems": [e.as_dict() for e in report.errors],  # Finding 六字段全量透传（投影只透传不组装）
+        "routing_hints": routing_hints(),  # 常驻提示（形状稳定；提示非约束——词表全集另经 list_nodes）
         "columns": _column_profile(df),
         "current_file": file,
     }
@@ -338,18 +362,6 @@ def _current_file(o: Observation) -> str:
 def _versions(o: Observation, log) -> list[int]:
     """可用版本清单：v0 + 全部已 commit 的 apply 版本（append-only——弃分支也可回）。"""
     return sorted({0, *(r["v"] for r in log if "v" in r)})
-
-
-def menu_of(a: Activation) -> dict:
-    """菜单项形状（MCP 面）：规则快照自带订阅 kind 进 source_kinds（无 kind 记空）。"""
-    kind = (a.evidence or {}).get("kind")
-    return {
-        "action": a.action,
-        "params": dict(a.params),
-        "source_kinds": [kind] if kind else [],
-        "rationale": a.rationale,
-        "evidence": dict(a.evidence or {}),
-    }
 
 
 # ── 六操作（POMDPSessionHandle 活参考：模块级薄门面，只填转移语义） ─────────
@@ -368,9 +380,7 @@ def start_session(file_path: str, card: dict | None = None, max_steps: int = 15)
     report = _detect_all(df, card)
     quality = _quality_score(report, card=card)
 
-    from mflowy.data.repair_rules import default_engine
-
-    ss = POMDPSession(_root(), *default_engine().rules.values(), prefix="cs_")
+    ss = POMDPSession(_root(), prefix="cs_")
     with ss.start_ctx(max_steps=max_steps, prior=card) as o:
         v0 = ss.dir / "v0.parquet"  # 工件先行（开局 commit = 观测落盘）
         df.reset_index(drop=True).to_parquet(v0, index=False)
@@ -446,19 +456,39 @@ def _run_clean_step(ss: POMDPSession, o: Observation, node: str, params: dict, s
     return load_run.value, clean_run.value, clean_run.run_id
 
 
-def apply_action(session_id: str, node: str, params: dict | None = None) -> Observation:
+def intent_of(clean_op: str) -> str:
+    """意图派生（单源，#111/#113——π 不声明）：drop_cols ⇒ drop、其余执行 ⇒ fix、
+    finish 残留 ⇒ keep（收局时域）。"""
+    return "drop" if clean_op == "drop_cols" else "fix"
+
+
+def apply_action(
+    session_id: str,
+    node: str,
+    params: dict | None = None,
+    *,
+    finding_ids: list[str] | tuple[str, ...] = (),
+    reason: str = "",
+) -> Observation:
     """执行一个 clean 词表动作：守卫 → 转移 → 快照 → 观测/奖励 → 决策日志。
+
+    提交面双必填（#117 Q3）：``finding_ids``（本步处理的 findings——非空时校验 ⊆
+    当前 problems 的 finding_id，幻觉 id 即免费失败；可空 = 行级算子/逃生舱）、
+    ``reason``（每步可审计的非空理由）。日志键 = ``clean_op``（执行名，#111 action
+    归意图面）+ 派生 ``intent``。
 
     转移走单步流编译执行（Conf→Builder→DAG.run——编译校验/观测/捕获/血缘免费，
     apply 与导出计划同构）。失败即免费异常（守卫/校验在 commit 点前抛出——不耗
-    预算、不落版本、不进决策日志）；dry_run 已退役（#65——试探走「提交 → 免费 s′
-    → 负 reward 即 rollback」）。版本分配 = 日志派生 max+1（append-only——永不
-    复用已 commit 版本）。
+    预算、不落版本、不进决策日志）；no-op 步否决（不动 df 的提交拒绝——keep 走
+    finish 声明，#113）；dry_run 已退役（#65——试探走「提交 → 免费 s′ → 负 reward
+    即 rollback」）。版本分配 = 日志派生 max+1（append-only——永不复用已 commit 版本）。
     """
     params = dict(params or {})
     if node == "finish":
-        raise ValueError("`finish` 是操作面不是 apply 动作——菜单出现 finish 提议时走 clean_finish")
-    load_ref = params.pop("load", None)  # params 自含数据引用（#89）——寻址元数据，非节点参数
+        raise ValueError("`finish` 是操作面不是 apply 动作——收局走 clean_finish")
+    if not reason or not reason.strip():
+        raise ValueError("reason 必填非空——每步决策可审计（本步为什么执行这个算子）")
+    load_ref = params.pop("load", None)  # 可选新鲜度引用（当前版本工件）——寻址元数据，非节点参数
     try:
         get_node(f"clean__{node}")  # 词表预检（导入失败原音透传，不误诊）
     except CatalogMiss as e:
@@ -466,13 +496,25 @@ def apply_action(session_id: str, node: str, params: dict | None = None) -> Obse
 
     ss = _open(session_id)
     with ss.apply_ctx(node) as (o, log):
+        if finding_ids:
+            known = {p["finding_id"] for p in o.state_digest.get("problems") or ()}
+            ghosts = sorted(set(finding_ids) - known)
+            if ghosts:
+                raise ValueError(
+                    f"finding_ids 引用不存在的 finding：{ghosts}（当前 problems 共 {len(known)} 条"
+                    "——幻觉 id 免费失败，clean_observe 取当前观测后重新决策）"
+                )
         if load_ref is not None and Path(load_ref).name != _current_file(o):
-            raise ValueError(  # 过期菜单新鲜度门（fail-loud 指路）——commit 前抛 = 免费
-                f"提议的 load 引用已过期（{load_ref} ≠ 当前版本 {_current_file(o)}）——重新 clean_propose 拿新鲜菜单"
+            raise ValueError(  # 过期决策新鲜度门（fail-loud 指路）——commit 前抛 = 免费
+                f"load 引用已过期（{load_ref} ≠ 当前版本 {_current_file(o)}）——clean_observe 取当前观测后重新决策"
             )
         _session_experiment(ss.id)  # 预建会话锚定实验（工件根 = 会话 .mlruns）
         df, out, run_id = _run_clean_step(ss, o, node, params, step_no=len(log) + 1)
         _guard(df, out, o.prior)
+        if df.equals(out):
+            raise ValueError(  # no-op 步否决（#113）：不动 df 的提交拒绝——keep 走 finish 声明
+                f"动作 `{node}` 未改变数据（no-op）——保留不动 df 的处置走 clean_finish 的 keep 声明"
+            )
         diff = _diff_summary(df, out)
 
         before_report = _detect_all(df, o.prior)
@@ -499,7 +541,10 @@ def apply_action(session_id: str, node: str, params: dict | None = None) -> Obse
         log.append(
             {
                 "step": len(log) + 1,
-                "action": node,
+                "clean_op": node,  # 执行名（#111：action 归意图面，派生见 intent_of）
+                "intent": intent_of(node),
+                "finding_ids": list(finding_ids),
+                "reason": reason,
                 "params": params,
                 "s": _digest(before_report),
                 "s_next": _digest(report),
@@ -542,24 +587,13 @@ def rollback(session_id: str, to_version: int) -> Observation:
     return o
 
 
-def propose_actions(session_id: str) -> list[Activation]:
-    """候选聚合（问题规则统一入口，#89 ③片）：问题知识随问题规则居住
-    （repair_rules——检测证据在 state_digest，规则纯消费 o），fire(o=观测)/poll 按
-    记分牌序聚合——权重×severity 降序（salience 同尺），置顶即事实默认档，噪声由
-    排序治理。params 自含 load（当前版本工件）；终态（收局/弃局）返回 []。
+def observe_session(session_id: str) -> Observation:
+    """观测（#117 取代 propose）：幂等只读零转移——回最近一次转移落盘的观测投影
+    （state_digest 由每次转移刷新：缺陷清单/质量分/列画像/当前版本）。续局/
+    re-orientation 锚点；终态会话照常可观测（finished/abandoned 旗即收局事实）。
     """
-    ss = _open(session_id)
-    if ss.is_terminal:
-        return []
-    with ss.propose_ctx() as (o, engine):
-        df = pd.read_parquet(ss.dir / _current_file(o))
-        report = _detect_all(df, o.prior)
-        _refresh_state_digest(  # 检测证据富化观测（problems/columns/current_file——规则的触发面）
-            o, report, o.state_digest["quality"], v=o.state_digest["v"], df=df, file=str(ss.dir / _current_file(o))
-        )
-        engine.fire(o=o)  # 触发上下文 = 观测（#89 ③片——问题规则纯消费 o）
-        activations = engine.poll_proposals()
-    return activations
+    with _open(session_id).observe_ctx() as o:
+        return o
 
 
 def current_df(session_id: str) -> pd.DataFrame:
@@ -577,7 +611,7 @@ def _plan_yaml(o: Observation, log) -> str:
     stack: list[int] = [0]
     for r in log:
         if "v" in r:
-            path.append((r["action"], r.get("params") or {}))
+            path.append((r["clean_op"], r.get("params") or {}))
             stack.append(r["v"])
         elif r.get("action") == "rollback":
             while stack and stack[-1] > r["to_v"]:
@@ -602,33 +636,71 @@ def _plan_yaml(o: Observation, log) -> str:
     return flow_to_yaml(tuple(flow))
 
 
-def finish_session(session_id: str, min_quality: float | None = None, preview: bool = False) -> FinishVerdict | dict:
+def _residual_with_keeps(report: ErrorReport, keeps: list[dict] | None) -> list[dict]:
+    """残留清单（#113/#118）：finish 时 problems 逐条，附 π 的 keep 理由（声明过即注）——
+    未声明的残留照列（审计诚实），幻觉 keep id 由调用方校验先行拒绝。"""
+    by_id = {k["finding_id"]: k.get("reason", "") for k in keeps or ()}
+    return [
+        {**f, "keep_reason": by_id[f["finding_id"]]} if f["finding_id"] in by_id else f
+        for f in (e.as_dict() for e in report.errors)
+    ]
+
+
+def _manifest(card: Mapping[str, Any] | None, keeps: list[dict] | None) -> dict:
+    """manifest（#118）：card ID 先验字段 + keep 声明派生——「保留血缘不进特征」的
+    审计面（tag_metadata 否决后的承接，#116）。excluded_from_features 单源 =
+    data.types.excluded_from_features（与 model 域开局剔除面同式）。"""
+    card = dict(card or {})
+    return {
+        "id_priors": {k: card.get(k) for k in (*PRIOR_KEYS,) if card.get(k) is not None},
+        "excluded_from_features": excluded_from_features(card),
+        "keep_declarations": list(keeps or ()),
+    }
+
+
+def finish_session(
+    session_id: str,
+    keeps: list[dict] | None = None,
+    min_quality: float | None = None,
+    preview: bool = False,
+) -> FinishVerdict | dict:
     """收局：终局 U（train-fold 快速学习器）+ θ 验收门 + 导出可执行清洗计划。
+
+    keeps = [{finding_id, reason}]（π 的 keep 声明，#113）：残留 findings 逐条附理由
+    进 terminal_utility.residual——不动 df、不吃步数（no-op apply 已被否决）；幻觉
+    finding_id fail-loud。manifest（#118）= card ID 先验 + keep 声明派生。
 
     min_quality（θ 门轻量版）：终态内生质量 < θ → accepted=False 返回继续
     （不导出 plan、会话保留，可继续 apply 或无门重收）；缺省不设门恒导出。
     preview=True 只读探针（零副作用：不收局/不导出/θ 门不生效）。终局语义：
     已弃局不可收局（终态互斥）；已收局重入 = 幂等重导出（壳只读重入保证双
     commit 不可能）。terminal_utility 值域域定：{u, final_quality, final_report,
-    steps}——skill ≤ 0 =「干净但不可学」警戒线。
+    residual, manifest, steps}——skill ≤ 0 =「干净但不可学」警戒线。
     """
     ss = _open(session_id)
     o = ss.observation
     if o.abandoned:
         raise RuntimeError("会话已弃局：不可收局（弃局不可复活，改卡重开走新会话）")
+    if keeps:
+        known = {p["finding_id"] for p in o.state_digest.get("problems") or ()}
+        ghosts = sorted({k["finding_id"] for k in keeps} - known)
+        if ghosts:
+            raise ValueError(f"keep 声明引用不存在的 finding：{ghosts}（当前 problems 才可声明 keep）")
 
     final_df = pd.read_parquet(ss.dir / _current_file(o))
     report = _detect_all(final_df, o.prior)
     quality = _quality_score(report, card=o.prior)  # 与回路同尺（卡权重全程生效）
     utility = _terminal_utility(final_df, o.prior)
     n_applies = sum(1 for r in ss.decision_log if "v" in r)
+    residual = _residual_with_keeps(report, keeps)
+    manifest = _manifest(o.prior, keeps)
 
     if preview:
         return {
             "session_id": session_id,
             "preview": True,
             "terminal_utility": utility,
-            "report": {"final_quality": quality, "steps": n_applies},
+            "report": {"final_quality": quality, "steps": n_applies, "residual": residual, "manifest": manifest},
             "decision_log": list(ss.decision_log),
         }
 
@@ -636,6 +708,8 @@ def finish_session(session_id: str, min_quality: float | None = None, preview: b
         **(utility or {}),  # 终局 U 键平铺（task/metric/score/baseline/skill；无 target 时缺省）
         "final_quality": quality,
         "final_report": {"defects": report.counts(), "summary": report.summary()},
+        "residual": residual,
+        "manifest": manifest,
         "steps": n_applies,
     }
     if min_quality is not None and quality["score"] < min_quality:

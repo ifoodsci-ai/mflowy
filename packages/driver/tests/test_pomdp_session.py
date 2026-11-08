@@ -1,15 +1,16 @@
 """POMDPSession 会话壳契约测试（#89）：六操作上下文 = 全部业务流程的缝。
 
-独立真源 = #89 设计稿：三文件纪律（observation 整读改写/decision.log 追加即
-commit/rules.pkl 整读整写）、终态门/预算门/prior 冻结、统一写序（工件→日志→
-投影）、幂等收局/弃局、open 一致性牙齿。假域不打真实节点——壳测试零域依赖。
+独立真源 = #89 设计稿 + #120 换血：两文件纪律（observation 整读改写/decision.log
+追加即 commit——rules.pkl 随规则引擎退役）、终态门/预算门/prior 冻结、统一写序
+（工件→日志→投影）、幂等收局/弃局、open 一致性牙齿、observe 只读零写。假域不打
+真实节点——壳测试零域依赖。
 """
 
 import json
 
 import pytest
 from mflowy.driver.pomdp import TOP_K_DECISIONS, Observation
-from mflowy.driver.session import DECISION_LOG_FILE, OBSERVATION_FILE, RULES_FILE, POMDPSession
+from mflowy.driver.session import DECISION_LOG_FILE, OBSERVATION_FILE, POMDPSession
 
 
 def _start(root, **kw) -> POMDPSession:
@@ -37,7 +38,7 @@ class TestLifecycle:
     def test_new_session_mints_dir_files_and_id_prefix(self, tmp_path):
         ss = POMDPSession(tmp_path, prefix="cs_")
         assert ss.id.startswith("cs_") and ss.dir == tmp_path / ss.id and ss.dir.is_dir()
-        assert (ss.dir / RULES_FILE).exists()  # 引擎构造期即落
+        assert [p.name for p in ss.dir.iterdir()] == [DECISION_LOG_FILE]  # 盘上两件之一（rules.pkl 退役）
         assert (ss.dir / DECISION_LOG_FILE).read_text(encoding="utf-8") == ""  # 空日志
         assert not (ss.dir / OBSERVATION_FILE).exists()  # 未开局——start_ctx 才是 commit 点
 
@@ -200,50 +201,32 @@ class TestRollbackFinishAbandon:
             ss2.abandon()
 
 
-# ── propose：观测+引擎双件 / exit 写序 ─────────────────────────────────────
+# ── observe：水化 + 投影，只读零写 ─────────────────────────────────────────
 
 
-class _ModRule:
-    """模块级出题替身（pkl 落盘要求：类须可 import 定位）。"""
-
-    key = "mod.solve"
-
-    def propose(self, o):
-        from mflowy.driver.pomdp import Activation
-
-        return [
-            Activation(
-                rule_key=self.key,
-                action="clean__solve",
-                params={},
-                salience=3,
-                rationale="r",
-            )
-        ]
-
-
-class TestProposeCtx:
-    def test_propose_yields_observation_and_engine(self, tmp_path):
-        ss = POMDPSession(tmp_path, _ModRule(), prefix="t_")
-        with ss.start_ctx(max_steps=3, state_digest={"defects": 2}) as _:
-            pass
-        with ss.propose_ctx() as (o, engine):
-            o.state_digest = {**o.state_digest, "defects": 0}  # 检测证据刷新
-            engine.fire(o=o)
-            acts = engine.poll_proposals()
-        assert [a.action for a in acts] == ["clean__solve"]
-        reopened = POMDPSession.open(ss.dir)
-        assert reopened._load_observation().state_digest["defects"] == 0  # 观测已投影
-        assert "mod.solve" in reopened._load_engine().rules  # 引擎已落盘（poll 排空态）
-
-    def test_propose_on_terminal_raises_as_backstop(self, tmp_path):
+class TestObserveCtx:
+    def test_observe_yields_projection_zero_write(self, tmp_path):
+        """observe = 幂等只读：yield 观测（域可在 body 内组装读时投影），exit 零落盘。"""
         ss = _start(tmp_path)
-        with ss.finish_ctx() as (o, log):
-            o.finished = True
-            log.append({"action": "finish"})
-        with pytest.raises(RuntimeError, match="已终态"):
-            with POMDPSession.open(ss.dir).propose_ctx():
-                pass  # 域应先查 is_terminal 出空菜单——门兜底
+        _apply(ss)
+        before = {p.name: p.read_bytes() for p in ss.dir.iterdir()}
+        with POMDPSession.open(ss.dir).observe_ctx() as o:
+            assert o.session_id == ss.id and o.steps == 1 and o.state_digest["v"] == 1
+            o.state_digest = {**o.state_digest, "read_time": "投影"}  # 读时投影只回调用方
+        assert {p.name: p.read_bytes() for p in ss.dir.iterdir()} == before  # 零写
+
+    @pytest.mark.parametrize("terminal", ["finish", "abandon"])
+    def test_observe_works_on_terminal_sessions(self, tmp_path, terminal):
+        """终态会话照常可观测（re-orientation 锚点——观测不是动作，不受终态门管）。"""
+        ss = _start(tmp_path)
+        if terminal == "finish":
+            with ss.finish_ctx() as (o, log):
+                o.finished = True
+                log.append({"action": "finish"})
+        else:
+            ss.abandon(reason="改卡")
+        with POMDPSession.open(ss.dir).observe_ctx() as o:
+            assert o.finished or o.abandoned
 
 
 # ── open 一致性牙齿：撕裂写检测 ────────────────────────────────────────────

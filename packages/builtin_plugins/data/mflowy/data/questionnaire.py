@@ -54,11 +54,7 @@ def propose_questions(file_path: str, card_partial: dict | None = None, eda_find
 
     with contextlib.redirect_stdout(io.StringIO()):
         rows, hits = univariate_facts(df)
-        stringly = [
-            f"{e.column} 疑似单位后缀({e.evidence.get('suffix')})"
-            for e in detect_stringly(load=df).errors
-            if e.kind == "stringly_numeric"
-        ]
+        stringly = [f"{e.column}: {e.evidence}" for e in detect_stringly(load=df).errors]
     schema = {r["name"]: r for r in rows}
     id_cols = hits.get("id", [])
     dt_cols = [n for n, r in schema.items() if r["family"] == "datetime"]
@@ -75,8 +71,14 @@ def propose_questions(file_path: str, card_partial: dict | None = None, eda_find
         ask("goal", "研究目标一句话？")
     if "target" not in card_partial:
         ask("target", "监督目标列是哪一列？（必须有——无 target 的探索性流程不支持）", target_candidates[:12])
-    if "id_columns" not in card_partial and hits.get("id"):
-        ask("id_columns", "哪些列是标识列（ID/批次号/样本名，将免删并从特征剔除）？", [f"全唯一疑似: {hits['id']}"])
+    _id_tiers = ("id_columns", "primary_key_columns", "foreign_key_columns", "composite_keys", "known_non_id_columns")
+    if not any(k in card_partial for k in _id_tiers) and (hits.get("id") or hits.get("composite")):
+        ask(
+            "id_columns",
+            "哪些列是标识列？（主键/外键/普通标识/组合键，如 batch+sample——作为 ID 先验，"
+            "决策时评估 join/特征角色，不再自动免删）",
+            [f"全唯一疑似: {hits['id']}", f"组合唯一疑似: {hits['composite']}"],
+        )
     if "time_column" not in card_partial and dt_cols:
         ask("time_column", "时间列是哪一列？", [f"时间类型列: {dt_cols}"])
     if "unit_hints" not in card_partial and stringly:
