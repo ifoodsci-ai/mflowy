@@ -63,6 +63,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - dry_run 维持退役（#65 钉死测试不拆）；rounds/phase 枚举不引入（相界 = 「谁能调
   什么」——算子不暴露为 π 工具即 API 面事实）；INV-3/INV-7 随载体死 dissolve。
 
+### Changed（clean 剧本）：先疑记法、后判离群——成批越界/离群不再默认截断删行
+
+range_violation / outlier_numeric 成批命中时先怀疑记法混录（同列两种记法差 10^k 倍：
+小数 vs 百分数、g vs kg），决策指南默认档（`range_clip` / `cap_*` / `drop_outlier_*` /
+`drop_outside`）暂停——证据样例已脱敏、倍率无法从观测读出，π 停下报告用户确认换算
+规则，确认后经 `python` 逃生舱换算（reason 记规则与倍率）。缓解 RANGE_VIOLATION 路由
+提示仅指向 `range_clip` 的破坏性走向；引擎侧单位归一见 #151，纯数字双记法见 #79。
+
 ### model 域化石退役：用户超参缺省迁冻结第四面（#141，#126 目标收官·BREAKING·model 域导入面）
 
 - `model/utils.py` 活反射提取器（每次调用 `inspect.signature` 取超参默认值）删除；

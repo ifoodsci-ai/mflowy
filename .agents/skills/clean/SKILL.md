@@ -62,6 +62,17 @@ clean_session_start(file_path, card=<DomainCard>, max_steps=15)   # 唯一主通
 | prior_conflict（先验与数据矛盾） | 处置收敛为 **keep**——finish 时带理由声明（cite card.source 权威度；manual 源建议复核先验） | — |
 | range_violation（物理越界） | `range_clip`(ranges=卡 expected_ranges) | `drop_outside`(cols, lo, hi) 删越界行 |
 
+**先疑记法，后判离群**：range_violation / outlier_numeric 成批命中（非零星几个）时，
+先怀疑**记法混录**——同列两种记法差 10^k 倍（小数 vs 百分数、g vs kg、mm vs m），
+越界的是另一种记法下的真值而非离群。上表默认档此时不适用：
+
+- 不截断不删行（`range_clip` / `cap_*` / `drop_outlier_*` / `drop_outside`）——会把可换算的真值毁成错值；
+- 证据样例已脱敏，倍率无法从观测读出——停下报告用户：列名、越界数与界、主体四分位
+  （`columns` 的 q1–q3）、建档阶段画像里的双峰/两簇线索，附倍率假设，请用户确认换算
+  规则（哪些行、乘多少）；
+- 用户确认 → 经 `python`(source=脚本) 逃生舱换算，`reason` 写明确认的规则与倍率；
+  判定为真实离群 → 回上表处置；暂不裁定 → 收局 `keeps` 声明附理由。
+
 观测常驻 `routing_hints`（defect_type → 推荐算子清单，提示非约束）；残留缺陷可
 带理由 keep 声明收局（`clean_finish` 的 `keeps`，不动 df、不吃步数）。
 
