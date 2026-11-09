@@ -81,7 +81,7 @@ min_row_retention: 0.9      # 过激动作会被引擎拒绝
 
 ```
 ① drop_duplicates        证据: duplicates×9, severity 0.9   理由: 双录入，跨折即泄漏
-② strip_units/pattern    证据: pattern×85, severity 0.8     理由: 溶剂变体归并 + 浓度记法统一
+② python/normalize_units 证据: format_anomaly×85, severity 0.8 理由: 溶剂变体归并 + 浓度记法统一
 ③ fill_missing(温度)     证据: missing×13(温度), sev 0.6    理由: 哨兵转缺失后中位数填充
 ④ drop_cols(设备型号)    证据: constant×1, sev 0.3          理由: 常量列零贡献
 ```
@@ -91,7 +91,7 @@ min_row_retention: 0.9      # 过激动作会被引擎拒绝
 **A**：执行（`clean_apply`）——质量 0.47 → 0.55。每步返回 diff 摘要与更新后的缺陷清单，决策日志记下 (s, a, r, s′)；菜单随状态刷新，已了结的候选退场：
 
 ```
-① strip_units/pattern    证据: pattern×85, severity 0.8
+① python/normalize_units 证据: format_anomaly×85, severity 0.8
 ② fill_missing(温度)     证据: missing×13(温度), sev 0.6
 ③ drop_cols(设备型号)    证据: constant×1, sev 0.3
 ```

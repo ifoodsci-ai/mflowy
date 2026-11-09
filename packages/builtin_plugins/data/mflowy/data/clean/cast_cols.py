@@ -1,7 +1,7 @@
 """类型族转换原子：cast_cols（数值/整数/字符串三档）/ to_category（类别声明）。
 
 format_anomaly 的修复面（#116 为 #125 预留）：cast 转换失败 fail-loud——不静默
-coerce 造 NaN（宁可拒绝，绝不静默改写语义）；单位污染列先 strip_units 再 cast。
+coerce 造 NaN（宁可拒绝，绝不静默改写语义）；单位污染列先 normalize_units 再 cast。
 """
 
 from typing import Annotated, Literal
@@ -41,7 +41,7 @@ def cast_cols(
             if int(bad_mask.sum()):
                 raise ValueError(
                     f"列 {c} 有 {int(bad_mask.sum())} 个不可解析为 {target_dtype} 的值"
-                    f"（如 {next(v for v, m in zip(series, bad_mask, strict=True) if m)!r}）——单位污染先 strip_units，纯文本列不属于此档"
+                    f"（如 {next(v for v, m in zip(series, bad_mask, strict=True) if m)!r}）——单位污染先 normalize_units，纯文本列不属于此档"
                 )
             series = parsed
         if target_dtype == "int":

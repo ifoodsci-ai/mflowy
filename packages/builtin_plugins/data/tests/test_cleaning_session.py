@@ -811,3 +811,25 @@ def test_session_mixed_units_normalized(sessions_root, tmp_path):
     assert "clean__normalize_units" in verdict.deliverables["plan_yaml"]
     replayed = _replay_plan(verdict.deliverables["plan_yaml"], tmp_path)
     assert cs._fingerprint(replayed) == _artifact_sha(sessions_root, s.session_id, 1)  # 重放 ≡ 交付数据
+
+
+def test_session_format_anomaly_single_unit_normalized(sessions_root, dirty_csv, tmp_path):
+    """#152 验收：单一单位列（全 %）format_anomaly → normalize_units 恒等倍率归一。"""
+    s = cs.start_session(dirty_csv, card=CARD)
+    fid = next(p["finding_id"] for p in s.state_digest["problems"] if p["defect_type"] == "format_anomaly")
+
+    r = cs.apply_action(
+        s.session_id,
+        "normalize_units",
+        {"columns": {"pct": {"to": "%", "factors": {"%": 1}}}},
+        finding_ids=[fid],
+        reason="单一单位恒等归一转数值（strip_units 退役承接，#152）",
+    )
+
+    assert all(p["defect_type"] != "format_anomaly" for p in r.state_digest["problems"])
+    assert pd.api.types.is_numeric_dtype(cs.current_df(s.session_id)["pct"])  # 会话级也钉转数值
+    verdict = cs.finish_session(s.session_id)
+    assert isinstance(verdict, FinishVerdict)
+    assert "clean__normalize_units" in verdict.deliverables["plan_yaml"]
+    replayed = _replay_plan(verdict.deliverables["plan_yaml"], tmp_path)
+    assert cs._fingerprint(replayed) == _artifact_sha(sessions_root, s.session_id, 1)  # 重放 ≡ 交付数据

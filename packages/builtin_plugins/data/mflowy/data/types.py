@@ -152,7 +152,7 @@ class DomainCard:
     """数据领域建档卡：问卷答案的结构化产物，两个 POMDP 的先验输入。
 
     由 survey 剧本产出（列引用已对 df 校验，撒谎 fail-loud）。消费约定：
-    - clean 域：never_drop 列免删、unit_hints 供 strip_units、expected_ranges 供
+    - clean 域：never_drop 列免删、unit_hints 供 normalize_units（单一单位列的 to/factors 先验）、expected_ranges 供
       range_violation/range_clip、target 指明标签列；ID 分级字段（pk/fk/known_id/
       composite/known_non_id/hinted）喂 suspected_id 检测器四出口（#115）
     - #112 breaking：never_drop 收缩为 target/protected/time——ID 列不再自动免删，

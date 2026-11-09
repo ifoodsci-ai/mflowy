@@ -50,3 +50,19 @@ class TestFlattenParams:
             "space.batch_size": 32,
             "tags": '["exp1", "exp2"]',
         }
+
+
+class TestMlflowKeyEscape:
+    """#151/#152：mlflow 键名字符集（字母数字/_-.空格:斜杠）外字符 → -XX 确定性
+    转义——单位 token 键（%/°C/公斤）经 DAG 遥测面不再炸；值面不受限。"""
+
+    def test_percent_token_key_escaped(self):
+        assert _flatten_params({"factors": {"%": 1}}) == {"factors.-25": 1}
+
+    def test_non_ascii_tokens_escaped_per_utf8_byte(self):
+        out = _flatten_params({"to": "°C", "u": {"公斤": 1000}})
+        assert out == {"to": "°C", "u.-e5-85-ac-e6-96-a4": 1000}  # 值原样、键按 UTF-8 字节转义
+
+    def test_safe_keys_untouched_and_composition(self):
+        out = _flatten_params({"columns": {"pct": {"to": "%", "factors": {"kg": 1000}}}})
+        assert out == {"columns.pct.to": "%", "columns.pct.factors.kg": 1000}  # 合法键零改写、值不动
