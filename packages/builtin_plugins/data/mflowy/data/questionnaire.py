@@ -13,6 +13,7 @@ import contextlib
 import io
 
 import pandas as pd
+from mflowy.data.detect.errors import DefectType
 from mflowy.data.detect.stringly import stringly as detect_stringly
 from mflowy.data.statistic.univariate import univariate_facts
 
@@ -54,7 +55,13 @@ def propose_questions(file_path: str, card_partial: dict | None = None, eda_find
 
     with contextlib.redirect_stdout(io.StringIO()):
         rows, hits = univariate_facts(df)
-        stringly = [f"{e.column}: {e.evidence}" for e in detect_stringly(load=df).errors]
+        # unit_hints 出题只对单一单位列（#151）：混录列（mixed_units）无法用 {列: 单位}
+        # 表达——π 在会话中读 token 分布后自定换算表（normalize_units）
+        stringly = [
+            f"{e.column}: {e.evidence}"
+            for e in detect_stringly(load=df).errors
+            if e.defect_type is DefectType.FORMAT_ANOMALY
+        ]
     schema = {r["name"]: r for r in rows}
     id_cols = hits.get("id", [])
     dt_cols = [n for n, r in schema.items() if r["family"] == "datetime"]

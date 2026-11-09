@@ -32,6 +32,9 @@ def _smoke_df(n=150) -> pd.DataFrame:
             "x2": 2.0 * x1 + 0.01 * rng.normal(size=n),  # collinear ×x1
             "hole": np.where(rng.random(n) < 0.4, np.nan, 1.0),  # high_null（40% ≥ 0.30 → high）
             "pct": [f"{v:.1f}%" for v in rng.uniform(0, 100, n)],  # format_anomaly
+            "wt": [f"{v:.1f}kg" for v in rng.uniform(5, 20, n - 30)]
+            + ["3cm"] * 20
+            + ["5s"] * 10,  # mixed_units（#151）
             "dead": [np.nan] * n,  # constant_col（全空列：nunique(dropna=False)=1）
             "target": rng.normal(size=n),
         }
