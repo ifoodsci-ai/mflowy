@@ -74,3 +74,33 @@ def test_no_upstream_skips_diff(fake_plugins, tmp_path, fake_tracking):
     flow = Builder(p).build().run()
     assert flow.status == "finished"
     assert "→" not in flow.runs[0].output  # 无前值：无 diff 行
+
+
+def test_column_renaming_op_does_not_crash_value_diff(fake_plugins, tmp_path, fake_tracking, fake_artifact_window):
+    """#149：改名列算子——shape 相等但列标签不同，值比较须跳过（value_diffs=None）、
+    removed/added 如实记录改名事实；旧守卫只看 shape，compare 直接抛
+    ``Can only compare identically-labeled`` 使整条 DAG 失败。"""
+
+    @node(df_diff, namespace="load")
+    def _csv(**kw) -> pd.DataFrame:
+        return pd.DataFrame({"x": [1, 2], "pct": ["10%", "20%"]})
+
+    @node(df_diff, namespace="clean")
+    def _rename(load: pd.DataFrame, clean: pd.DataFrame | None = None) -> pd.DataFrame:
+        return load.rename(columns={"pct": "pct(%)"})  # (2,2) → (2,2)：shape 不变、列标签变
+
+    fake_plugins.setdefault("load", {})["csv"] = _csv
+    fake_plugins.setdefault("clean", {})["rename"] = _rename
+    p = tmp_path / "rename.yaml"
+    p.write_text(
+        "name: rename\ndescription: ''\nflow:\n- load__csv:\n    name: L\n- clean__rename:\n    name: R\n",
+        encoding="utf-8",
+    )
+
+    with patch("mlflow.log_dict") as ld:
+        flow = Builder(p).build().run()
+
+    assert flow.status == "finished", flow.error  # 不再因值比较崩掉整条流
+    (report,) = [c.args[0] for c in ld.call_args_list if str(c.args[1]).endswith("rename_clean_report.json")]
+    assert report["value_diffs"] is None  # 列标签不齐 → 值不可比（诚实 None）
+    assert report["columns"] == {"removed": ["pct"], "added": ["pct(%)"]}  # 改名 = D+A 成对

@@ -25,6 +25,14 @@ def as_series(value: object) -> pd.Series:
     return value
 
 
+def frames_value_comparable(before: pd.DataFrame, after: pd.DataFrame) -> bool:
+    """帧值可比判据（单源，#149）：形状 + 列标签 + 行索引全等——会话 diff 摘要
+    （cleaning_session._diff_summary）与 df_diff 中间件（log_df_diff._compute_diff）
+    共用。两处守卫曾分叉（中间件只看 shape）：改名列算子 shape 不变但标签不齐，
+    ``DataFrame.compare`` 直接抛错使整条 DAG 失败——判据单源后此象不再。"""
+    return before.shape == after.shape and before.columns.equals(after.columns) and before.index.equals(after.index)
+
+
 class DualFormStrEnum(StrEnum):
     """值/名双形式枚举：pydantic 校验按值或按名解析（yaml/JSON 两种输入都收）。
 
