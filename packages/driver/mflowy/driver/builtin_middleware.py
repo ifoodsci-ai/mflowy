@@ -28,10 +28,11 @@ logger = logging.getLogger(__name__)
 def _mlflow_safe_key(key: str) -> str:
     """mlflow 参数键转义（遥测面专用，#151/#152）：mlflow 键名只收字母数字/_-.空格:斜杠，
     字符集外字符 → ``-XX`` 十六进制（ASCII 按码位、非 ASCII 按 UTF-8 字节——
-    ``%``→``-25``、``公斤``→``-e5-85-ac-e6-96-a4``；标记 ``-`` 本身在允许集，
-    与原生 ``-xx`` 段可能同形——遥测面可读性优先，解码不承诺）。仅转义遥测面键——业务参数
-    面（NodeConf.params/plan.yaml）原样，值不受 mlflow 键名约束。"""
-    safe = re.compile(r"[A-Za-z0-9 _\-./:]")
+    ``%``→``-25``、``公斤``→``-e5-85-ac-e6-96-a4``）；转义标记 ``-`` 自身虽在
+    mlflow 允许集亦转义（``-``→``-2d``）——编码单射可解码，转义段不与原生 ``-xx``
+    键同形（flat 无静默覆写丢参）。仅转义遥测面键——业务参数面（NodeConf.params/
+    plan.yaml）原样，值不受 mlflow 键名约束。"""
+    safe = re.compile(r"[A-Za-z0-9 _./:]")
 
     def esc(ch: str) -> str:
         if safe.fullmatch(ch):

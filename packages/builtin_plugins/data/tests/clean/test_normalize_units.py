@@ -58,6 +58,14 @@ def test_normalize_units_unparseable_fail_loud_with_signature():
         normalize_units(load=df, columns={"s": {"to": "kg", "factors": {"kg": 1}}})
 
 
+def test_normalize_units_factor_finite_domain():
+    """「正有限数」文案即域（评审 nit）：inf 非有限、bool 非数值倍率（True>0 也不收）。"""
+    with pytest.raises(ValueError, match="正有限数"):
+        normalize_units(load=WT, columns={"wt": {"to": "g", "factors": {"kg": float("inf"), "g": 1}}})
+    with pytest.raises(ValueError, match="正有限数"):
+        normalize_units(load=WT, columns={"wt": {"to": "g", "factors": {"kg": True, "g": 1}}})
+
+
 def test_normalize_units_spec_domain_fail_loud():
     """factor 正数域 + to 恒等律（factors[to]=1——倒挂即换算表写反）+ 规格形状。"""
     with pytest.raises(ValueError, match="恒等"):

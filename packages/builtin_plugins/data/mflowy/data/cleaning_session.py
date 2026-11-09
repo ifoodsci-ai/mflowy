@@ -186,7 +186,8 @@ _fingerprint = fingerprint  # 单一真源委托（mflowy.data.fingerprint）—
 
 
 def _diff_summary(before: pd.DataFrame, after: pd.DataFrame) -> dict:
-    """token 友好 diff：行列增删 + 值变格数（同形同标签同 dtype 时才算，否则 None）。"""
+    """token 友好 diff：行列增删 + 值变格数（形状+列标签+行索引全等才比——判据单源
+    frames_value_comparable；dtype 改写不可比由 except 兜 None）。"""
     cells_changed = None
     if frames_value_comparable(before, after):  # 帧值可比判据单源（#149——与 df_diff 中间件同尺）
         try:

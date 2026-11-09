@@ -54,7 +54,8 @@ class TestFlattenParams:
 
 class TestMlflowKeyEscape:
     """#151/#152：mlflow 键名字符集（字母数字/_-.空格:斜杠）外字符 → -XX 确定性
-    转义——单位 token 键（%/°C/公斤）经 DAG 遥测面不再炸；值面不受限。"""
+    转义——单位 token 键（%/°C/公斤）经 DAG 遥测面不再炸；值面不受限。转义标记
+    ``-`` 自身亦转义（-2d）——编码单射，转义段不与原生 ``-xx`` 键同形。"""
 
     def test_percent_token_key_escaped(self):
         assert _flatten_params({"factors": {"%": 1}}) == {"factors.-25": 1}
@@ -66,3 +67,9 @@ class TestMlflowKeyEscape:
     def test_safe_keys_untouched_and_composition(self):
         out = _flatten_params({"columns": {"pct": {"to": "%", "factors": {"kg": 1000}}}})
         assert out == {"columns.pct.to": "%", "columns.pct.factors.kg": 1000}  # 合法键零改写、值不动
+
+    def test_marker_hyphen_escaped_encoding_injective(self):
+        """评审 nit：标记 ``-`` 虽在 mlflow 允许集亦转义（-→-2d）——转义段不与原生
+        ``-xx`` 形键同形（无 flat 覆写静默丢参，红线 1）。"""
+        out = _flatten_params({"a%b": 1, "a-25b": 2})
+        assert out == {"a-25b": 1, "a-2d25b": 2}  # 两键互异、无覆写

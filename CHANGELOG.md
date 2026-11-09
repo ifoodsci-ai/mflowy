@@ -33,7 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   新算子**不改列名**（旧行为改名为 `列(单位)`）——按新列名取列的直接调用方需调整。
 - 同频：SKILL 处置表 / cast_cols 文案 / README 词表 / research-flow 第一幕菜单示意。
 - 附带修复（#151 缺口，由本票验收测暴露）：driver 遥测面 `_flatten_params` 叶键按
-  mlflow 键名字符集确定性转义（集外字符 → ``-XX`` 十六进制）——单位 token 键
+  mlflow 键名字符集确定性转义（集外字符与转义标记 ``-`` → ``-XX`` 十六进制，编码
+  单射——转义段不与原生 ``-xx`` 键同形）——单位 token 键
   （``%``/``°C``）此前在任何 DAG 上下文执行必炸（mlflow 键名校验拒绝；中文键
   在 3.15 的 Unicode ``\w`` 下实为可收——转义按白名单统一，跨版本保守面）；
   业务参数面（NodeConf.params/plan.yaml）不受影响。

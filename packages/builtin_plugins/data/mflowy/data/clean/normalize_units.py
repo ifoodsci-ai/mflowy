@@ -33,8 +33,9 @@ def normalize_units(
 
     factors 是 π 本次的换算表（来自检测证据的 token 分布），非单位登记表；执行时
     列内每个 token 必须有 factor（缺项 fail-loud 带候选——杜绝漏项被静默当成目标
-    单位），不可解析值 fail-loud（带形状签名），factor 必须 > 0（仿射换算如 °C→°F
-    非倍率可表达，走 python 逃生舱）；``to`` 若在 factors 中必须恒等（factors[to]=1
+    单位），不可解析值 fail-loud（带形状签名），factor 必须为正有限数（bool 非数值
+    倍率拒收；仿射换算如 °C→°F 非倍率可表达，走 python 逃生舱）；``to`` 若在
+    factors 中必须恒等（factors[to]=1
     ——目标单位换到自身是恒等，倒挂即换算表写反）。NaN 保持缺失语义。
     """
     df = clean if clean is not None else load
@@ -65,7 +66,14 @@ def _validate_spec(col: str, spec: dict) -> None:
         raise ValueError(f"列 {col!r} 的 to 须为非空目标单位串")
     if not isinstance(factors, dict) or not factors:
         raise ValueError(f"列 {col!r} 的 factors 须为非空 {{token: 倍率}}")
-    bad = {t: f for t, f in factors.items() if not isinstance(t, str) or not (isinstance(f, (int, float)) and f > 0)}
+    # 「正有限数」文案即域：bool 非数值倍率（True>0 也不收）、inf 非有限——均拒收
+    bad = {
+        t: f
+        for t, f in factors.items()
+        if not isinstance(t, str)
+        or isinstance(f, bool)
+        or not (isinstance(f, (int, float)) and f > 0 and f != float("inf"))
+    }
     if bad:
         raise ValueError(f"列 {col!r} 的 factor 须为正有限数（token: 倍率），违例: {bad}")
     if to in factors and factors[to] != 1:
