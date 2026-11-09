@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### df_diff 值比较守卫单源——改名列不再崩整条流（#149，fix）
+
+- 中间件 `log_df_diff._compute_diff` 的值比较守卫从「仅看 shape」收敛到与决策日志
+  `_diff_summary` 同一谓词（新共享件 `types.frames_value_comparable`：形状 + 列标签 +
+  行索引全等）——改名列算子（shape 不变、标签不齐）此前进 `DataFrame.compare` 直接抛
+  ``identically-labeled`` 使整条 DAG 失败，现如实记 ``value_diffs=None`` +
+  ``columns.removed/added`` 成对（改名 = 一删一增）。
+- 词表冒烟补**编译链形态**（load__file + clean__op 两节点流 Builder 真跑，#149 验收）：
+  算子 × 中间件交互缺陷第一时间暴露——直调 `node.fn` 的旧形态正是改名列崩溃长期
+  未暴露的原因；fn 级用例保留（快，钉 INV-6/参数面闭包）。
+
 ### BREAKING：strip_units 退役——normalize_units 承接（#152）
 
 - clean 词表 24 → 23：`clean.strip_units` 删除（模块 + entry point）。退役依据：三独立

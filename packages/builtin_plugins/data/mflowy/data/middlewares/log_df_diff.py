@@ -1,4 +1,5 @@
 import pandas as pd
+from mflowy.data.types import frames_value_comparable
 from mflowy.driver.context import Context
 from mflowy.driver.node import Chain
 from mflowy.utils import mlflow as mlflow_util
@@ -42,7 +43,8 @@ def _compute_diff(df1: pd.DataFrame, df2: pd.DataFrame) -> dict:
             "removed": df1.columns.difference(df2.columns).tolist(),
             "added": df2.columns.difference(df1.columns).tolist(),
         },
-        # 仅当两个DataFrame结构相同时，才能进行值差异比较
-        "value_diffs": df1.compare(df2) if df1.shape == df2.shape else None,
+        # 值可比判据单源（#149）：shape+列标签+行索引全等——只看 shape 会让改名列
+        # （pct→pct(%)）进 compare 直接抛 "identically-labeled" 使整条 DAG 失败
+        "value_diffs": df1.compare(df2) if frames_value_comparable(df1, df2) else None,
     }
     return report
