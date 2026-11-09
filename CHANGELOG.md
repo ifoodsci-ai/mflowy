@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 清洗计划导出改版本树溯源——跨分支回滚后计划与交付数据对齐（#106，fix）
+
+`_plan_yaml` 的「栈弹出」重建仅对沿当前栈回拨正确；#89 rollback 的指针回拨允许跳回
+任意已 commit 版本（含弃分支），跳回后 finish 的 plan.yaml 与 final_path 脱节（计划
+重放产物 ≠ 交付数据，跳回后新 apply 同样失真）。改为重放指针演化重建版本树（apply
+的父 = 当时指针，路径 = 父路径 + 本步）——不落新日志键、无迁移面，旧会话日志天然
+兼容；附指针重放守卫（重放终 ≠ 当前指针即 fail-loud，杜绝未知记录类型下的静默失真
+计划）。验收 = 两条新契约测试真跑 Builder 重放并按 artifact sha256 对账（跳回弃分支
+→finish；跳回→再 apply→finish）。
+
 ### 数据域对齐《数据质量 Agent Workflow 设计文档 v1.0》——决策地图 #110 落地（BREAKING·0.2.x 批次）
 
 规则引擎时代结束：菜单/候选生成全线退役，π 可见面 = 动作词表全集 + 观测证据；

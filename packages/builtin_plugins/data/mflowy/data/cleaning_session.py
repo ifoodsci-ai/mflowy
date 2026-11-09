@@ -603,20 +603,26 @@ def current_df(session_id: str) -> pd.DataFrame:
 
 
 def _plan_yaml(o: Observation, log) -> str:
-    """导出计划（Conf → flow_to_yaml 单源序列化）：当前生效路径（rollback 已弹出）。"""
+    """导出计划（Conf → flow_to_yaml 单源序列化）：指针版本沿版本树溯源的生成路径。"""
     from mflowy.driver.config import NodeConf
     from mflowy.driver.serializer import flow_to_yaml
 
-    path: list[tuple[str, dict]] = []  # 当前生效动作栈（apply 压入、rollback 弹出）
-    stack: list[int] = [0]
+    # 版本树（#106）：重放指针演化——apply 的父 = 当时指针（路径 = 父路径 + 本步），rollback
+    # 只拨指针。#89 任意已 commit 版本可回（含弃分支），栈弹出模型对跳回/侧跳失真
+    paths: dict[int, list[tuple[str, dict]]] = {0: []}
+    cur = 0
     for r in log:
         if "v" in r:
-            path.append((r["clean_op"], r.get("params") or {}))
-            stack.append(r["v"])
+            paths[r["v"]] = [*paths[cur], (r["clean_op"], r.get("params") or {})]
+            cur = r["v"]
         elif r.get("action") == "rollback":
-            while stack and stack[-1] > r["to_v"]:
-                stack.pop()
-                path.pop()
+            cur = r["to_v"]
+    if cur != o.state_digest["v"]:
+        raise ValueError(  # 指针重放守卫（红线 1）：未知指针移动记录类型 = 拒绝静默导出失真计划
+            f"决策日志指针重放脱节（重放终 {cur} ≠ 当前指针 v{o.state_digest['v']}）"
+            "——存在未知的指针移动记录类型，计划导出拒绝静默失真"
+        )
+    path = paths[o.state_digest["v"]]  # 与 final_path 同源寻址（_current_file 读同一指针）
     flow: list[dict] = [
         # 计划头部补数据源——无 load 节点的 clean 片段参数边无上游供数，Builder 拦截
         {
