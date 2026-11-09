@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 用户文档拆解：方法论知识库两份参考 + 叙事瘦身（#163，docs）
+
+- 新增 `docs/method/` 两份方法论参考：**数据清洗**（数据先验提示与示例 / 缺陷检测算子
+  矩阵 / 清洗算子矩阵）与**模型训练**（ML/DL 模型矩阵 / CV-HPO / 特征工程 / 模型评估）。
+  定位研究领域知识，**零词表绑定**（用户裁定：矩阵行 = 研究领域的算子/模型空间，不锚定
+  引擎当前词表、不做一致性断言、零镜像测试）；近 70 条文献锚点逐条核验存在性（题名/
+  作者/年份/venue，一手元数据页）并标注核验级别（摘要级/书目级），无裸引用。
+- `docs/research-flow.md` 瘦身为叙事入口：五律、三道冻结门、五幕对话、术语表保留；文末
+  锚点表瘦身为五律级（深度锚点归两份方法论文档，避免双份维护），导读处深链下钻路径。
+- 同频修复存量漂移（叙事案例对齐当前动作面）：第一幕 ID 列语义（#112——特征剔除防泄
+  漏，never_drop 只圈目标/受保护/时间）与建档卡注释；第二幕观测缺陷 kind 与算子名、
+  #117 提交面双必填（finding_ids + reason）、`clean_finish(preview)` 探针；第三幕开局
+  签名（file_path + cv_card）；第四幕八动作面（select_model/set_hp/set_hp_space/set_seed/
+  select_FE/run_hpo/final_train_test——`final_train_test` 承接退役 `eval_full` 单向门）与
+  `modeling_finish(pdf)` 收局剧本；术语表同步（选项面/光标/账本）。
+- 修正文献误归属一处："Krishnan & Stonebraker, *CleanML* 2020" → Li et al., ICDE 2021
+  （arXiv:1904.09483 comments "published in ICDE 2021" 一手核验）——更正记录随锚点入
+  data-cleaning.md 文末。
+- AGENTS.md 文档模型路由表 +2 行（两份方法论文档去处）。
+
 ### df_diff 值比较守卫单源——改名列不再崩整条流（#149，fix）
 
 - 中间件 `log_df_diff._compute_diff` 的值比较守卫从「仅看 shape」收敛到与决策日志
