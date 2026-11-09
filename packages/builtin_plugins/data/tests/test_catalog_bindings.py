@@ -50,6 +50,7 @@ def test_clean_ns_direct_load_upstream():
         "add_missing_flag",
         "range_clip",
         "strip_units",
+        "normalize_units",
         "python",
     ):
         assert _bindings("clean", name) == expected, name

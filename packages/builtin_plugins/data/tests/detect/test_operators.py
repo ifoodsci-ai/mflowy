@@ -260,3 +260,77 @@ def test_evidence_samples_are_masked():
 
     assert "sample_id_" not in e.evidence  # 原文不泄漏
     assert "sa" in e.evidence and "00" in e.evidence  # 首尾各 2 字符保留
+
+
+# ── mixed_units（#151）：单位 token 画像——混录与单一单位互斥出口 ──────────────
+
+
+def test_detect_mixed_units_reports_token_distribution():
+    """单位混录：多字符 token 识别 + 完整分布进证据；kg/cm/s 异量纲由 π 判（引擎零单位知识）。"""
+    df = pd.DataFrame({"重量": [f"{15 + i}.0kg" for i in range(7)] + ["3cm", "5s"]})
+
+    report = stringly(load=df)
+
+    (e,) = report.errors
+    assert e.defect_type is DefectType.MIXED_UNITS and e.column == "重量"
+    assert e.severity is Severity.HIGH
+    assert e.finding_id == "mixed_units::重量"
+    for tok in ("kg", "cm", "s"):
+        assert tok in e.evidence  # 完整分布（非众数）
+
+
+def test_detect_mixed_units_single_char_and_bare_tokens():
+    """单字符混录不再误报单一单位；裸数字是 token ""——'0.23'/'12.3%' 同列入报。"""
+    mixed = pd.DataFrame({"s": ["15g", "3%", "5s"] + ["8g"] * 7})
+    bare = pd.DataFrame({"浓度": ["12.3%", "0.23", "45%", "0.5"] + ["33%"] * 6})
+
+    for df in (mixed, bare):
+        (e,) = stringly(load=df).errors
+        assert e.defect_type is DefectType.MIXED_UNITS
+    assert '""' in stringly(load=bare).errors[0].evidence  # 裸数字 token 显式可见
+
+
+def test_detect_mixed_units_unparseable_shape_signatures():
+    """不可解析值以形状签名入证据：结构可辨（检测限/不确定度），原文数字与字母不泄露。"""
+    df = pd.DataFrame({"s": ["15kg"] * 12 + ["3cm", "<0.01", "ND", "12.3±0.5"]})  # 可解析 13/15 ≥ 报告线
+
+    (e,) = stringly(load=df).errors
+
+    assert e.defect_type is DefectType.MIXED_UNITS
+    for sig in ("<9.9", "9.9±9.9"):
+        assert sig in e.evidence
+    assert "A" in e.evidence  # ND → A
+    for raw in ("0.01", "ND", "12.3", "±0.5"):
+        assert raw not in e.evidence
+
+
+def test_detect_mixed_units_case_sensitive_tokens():
+    """大小写即语义（mL 毫升 ≠ ML 兆升）：token 不归并，归并是判断、归 π。"""
+    df = pd.DataFrame({"s": ["5mL", "5ML"] + ["5mL"] * 8})
+
+    (e,) = stringly(load=df).errors
+
+    assert e.defect_type is DefectType.MIXED_UNITS
+    assert "mL" in e.evidence and "ML" in e.evidence
+
+
+def test_detect_format_anomaly_multi_char_single_unit():
+    """单一多字符单位列回归：全 kg → format_anomaly（v1 单字符正则下此处零 finding）。"""
+    df = pd.DataFrame({"s": [f"{v:.1f}kg" for v in np.linspace(10, 20, 12)]})
+
+    (e,) = stringly(load=df).errors
+
+    assert e.defect_type is DefectType.FORMAT_ANOMALY
+    assert "'kg'" in e.evidence
+
+
+def test_detect_format_anomaly_empty_token_no_crash():
+    """回归（#151 评审）：inf/Infinity 串——to_numeric 兜底全命中、词法零 token，
+    空 Counter 解包曾内爆；后缀 None 照报（v1 语义）。"""
+    df = pd.DataFrame({"s": ["inf", "-inf", "Infinity", "inf", "INF"]})
+
+    report = stringly(load=df)
+
+    (e,) = report.errors
+    assert e.defect_type is DefectType.FORMAT_ANOMALY
+    assert "None" in e.evidence  # 后缀 None

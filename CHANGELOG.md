@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 单位混录三层治理：mixed_units 缺陷类型 + normalize_units 算子（#151）
+
+分工 = 检测只报事实、π 判量纲（引擎零单位知识）、算子只执行换算表。
+
+- **检测**（`detect.stringly` 重构为 token 画像）：单位 token 支持多字符（≤8 字，
+  超长按自由文本计不可解析），裸数字 token = `""`；同列 ≥2 种 token → 新缺陷类型
+  **`mixed_units`**（DefectType 第 12 成员，0.x minor；恒 high、权重 0.15），证据 =
+  完整 token 分布 + 不可解析值**形状签名**（连续数字→9、字母/中文→A、符号保留——
+  `<0.01`→`<9.9`、`ND`→`A`、`12.3±0.5`→`9.9±9.9`，不泄露原文；替代遮蔽样例——
+  mask_text 会把 `ND` 遮成 `**`，检测限/不确定度写法不可辨）；恰 1 种 token 仍
+  `format_anomaly`（多字符单一单位列从**零 finding** 变可见——v1 单字符正则盲区）；
+  token 大小写不归并（mL 毫升 ≠ ML 兆升——归并是判断，归 π）。
+- **clean 词表 23 → 24**：`normalize_units`（π 给换算表 `factors = {token: 倍率}`；
+  列名**不变**——目标单位留 params 单源；覆盖校验/不可解析值/factor 正数域/to 恒等律
+  全 fail-loud；数值列走 `""` factor 统一尺度；仿射换算 °C→°F 走 python 逃生舱）；
+  词法与检测单源 `split_number_unit`。路由：mixed_units → normalize_units（不提示
+  strip——剥单位对混录静默算错）。
+- 问卷 unit_hints 出题只对单一单位列（混录列由会话内 π 读分布后自定换算表）。
+- SKILL 处置表增 mixed_units 行（同量纲换算 / 异量纲报告用户的量纲判断协议）。
+
 ### 清洗计划导出改版本树溯源——跨分支回滚后计划与交付数据对齐（#106，fix）
 
 `_plan_yaml` 的「栈弹出」重建仅对沿当前栈回拨正确；#89 rollback 的指针回拨允许跳回

@@ -775,3 +775,39 @@ def test_finish_keep_declarations_residual_manifest(sessions_root, tmp_path):
     assert tu["manifest"]["id_priors"]["id_columns"] == ["sid"]
     assert tu["steps"] == 0  # keep 声明不吃步数
     assert list(cs.current_df(sid).columns) == ["sid", "x", "target"]  # 不动 df
+
+
+def test_session_mixed_units_normalized(sessions_root, tmp_path):
+    """#151 接缝：mixed_units 证据 → π 判量纲给换算表 → normalize_units 执行——
+    finding 消失、列名不变、计划可重放 ≡ 交付数据。"""
+    n = 40
+    rng = np.random.default_rng(7)
+    df = pd.DataFrame(
+        {
+            "sid": [f"s{i:03d}" for i in range(2 * n)],
+            "wt": [f"{5 + v:.1f}kg" for v in rng.uniform(0, 10, n)] + ["500g"] * n,
+            "target": rng.normal(size=2 * n),
+        }
+    )
+    src = tmp_path / "mixed.csv"
+    df.to_csv(src, index=False)
+
+    s = cs.start_session(str(src), card={"domain": "t", "target": "target", "id_columns": ["sid"]})
+    fid = next(p["finding_id"] for p in s.state_digest["problems"] if p["defect_type"] == "mixed_units")
+    assert fid == "mixed_units::wt"  # 结构键路由 normalize_units（routing_hints 投影钉）
+
+    r = cs.apply_action(
+        s.session_id,
+        "normalize_units",
+        {"columns": {"wt": {"to": "g", "factors": {"kg": 1000, "g": 1}}}},
+        finding_ids=[fid],
+        reason="同量纲质量单位统一到 g（π 判：kg/g 可换算）",
+    )
+
+    assert all(p["defect_type"] != "mixed_units" for p in r.state_digest["problems"])
+    assert "wt" in r.state_digest["columns"]  # 列名不变
+    verdict = cs.finish_session(s.session_id)
+    assert isinstance(verdict, FinishVerdict)
+    assert "clean__normalize_units" in verdict.deliverables["plan_yaml"]
+    replayed = _replay_plan(verdict.deliverables["plan_yaml"], tmp_path)
+    assert cs._fingerprint(replayed) == _artifact_sha(sessions_root, s.session_id, 1)  # 重放 ≡ 交付数据

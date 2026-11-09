@@ -17,11 +17,11 @@ plot EDA 图族（族内扁平，直住 `plot/`）。数据栈为硬依赖，装
 | P·T 转移      | 守卫（never_drop 存活 / 目标列值禁改 / 保留率下限）→ 单步流编译执行（Conf→Builder→DAG，#89 ②片——apply 与导出计划同构）→ 新 parquet 版本 + 日志追加（commit 点）；rollback = 记录 + 指针回拨（append-only，弃分支盘上可回，#89 ④片） | `_guard` / `apply_action` / `rollback` |
 | R 奖励        | 过程奖励 = ΔΦ（前后同尺、卡权重双侧生效——severity 三档按档位罚分）；rollback 奖励 = 恢复的 ΔΦ；终局 U = train-fold 快速学习器 skill（只在 finish 出现，θ 验收门可拒收 + keep 声明/residual/manifest） | `apply_action` / `_terminal_utility` / `finish_session` |
 
-- 动作族：`load/`（6 节点）、`statistic/`（profile=info 薄封装 / univariate 单变量 typed 统计+规则化 findings / bivariate 双变量三路无 target 全对——效应量定档 p 把门）、`detect/`（8 缺陷算子 +
+- 动作族：`load/`（6 节点）、`statistic/`（profile=info 薄封装 / univariate 单变量 typed 统计+规则化 findings / bivariate 双变量三路无 target 全对——效应量定档 p 把门）、`detect/`（9 缺陷算子 +
   DefectType/Severity 封闭枚举 + Finding 六字段契约 + quality_score + `detect/rules.py`
-  共享判据（zscore/iqr 栅栏、脱敏、suspected_id 打分谓词）、`clean/`（23 命名原子：drop×6 /
-  fill×7（ffill/bfill 带 by= 组内防泄漏）/ cap×3 / add_missing_flag / strip_units /
-  mask_cols·hash_cols（匿名化）/ cast_cols·to_category（类型档）/ python——
+  共享判据（zscore/iqr 栅栏、脱敏、suspected_id 打分谓词）、`clean/`（24 命名原子：drop×6 /
+  fill×7（ffill/bfill 带 by= 组内防泄漏）/ cap×3 / add_missing_flag / strip_units·normalize_units（单位——
+  前者改列名 v1 原子、后者 π 给换算表且列名不变 #151）/ mask_cols·hash_cols（匿名化）/ cast_cols·to_category（类型档）/ python——
   策略在名、级联删除、类型族不适配即报错；选项面 = 词表全集（π 自构动作，菜单随 #113 退役；
   条件型 python 无对应缺陷类型））
 - 共享件：主题门面上住 `mflowy-utils[plot]`（`mflowy.utils.plot`——Agg 后端 + seaborn
