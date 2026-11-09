@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### BREAKING：strip_units 退役——normalize_units 承接（#152）
+
+- clean 词表 24 → 23：`clean.strip_units` 删除（模块 + entry point）。退役依据：三独立
+  缺陷（`str.rstrip` 字符集剥离——unit=`'kg'` 时 `'500g'` 被当 500 kg；
+  `errors="coerce"` 解析失败静默造 NaN；改列名 `列`→`列(单位)`——diff 值比较不可比
+  （#149）、守卫把改名当删列、冻结卡旧列名先验失效）+ 编译上下文实际不可用（df_diff
+  对改名列必崩，词表冒烟直调绕过中间件故长期未暴露）+ 仓内零消费方；单源收敛——
+  恒等倍率形态 `normalize_units(columns={列: {to: u, factors: {u: 1}}})` 即其严格超集。
+- 路由：format_anomaly → `{normalize_units, cast_cols, to_category}`；卡字段
+  unit_hints 语义挂靠 normalize_units（单一单位列 to/factors 先验）。
+- **迁移**：`clean__strip_units: {columns: {列: 单位}}` →
+  `clean__normalize_units: {columns: {列: {to: 单位, factors: {单位: 1}}}}`；
+  新算子**不改列名**（旧行为改名为 `列(单位)`）——按新列名取列的直接调用方需调整。
+- 同频：SKILL 处置表 / cast_cols 文案 / README 词表 / research-flow 第一幕菜单示意。
+- 附带修复（#151 缺口，由本票验收测暴露）：driver 遥测面 `_flatten_params` 叶键按
+  mlflow 键名字符集确定性转义（集外字符 → ``-XX`` 十六进制）——单位 token 键
+  （``%``/``°C``）此前在任何 DAG 上下文执行必炸（mlflow 键名校验拒绝；中文键
+  在 3.15 的 Unicode ``\w`` 下实为可收——转义按白名单统一，跨版本保守面）；
+  业务参数面（NodeConf.params/plan.yaml）不受影响。
+
 ### 单位混录三层治理：mixed_units 缺陷类型 + normalize_units 算子（#151）
 
 分工 = 检测只报事实、π 判量纲（引擎零单位知识）、算子只执行换算表。

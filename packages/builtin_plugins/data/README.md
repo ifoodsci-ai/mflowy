@@ -19,9 +19,9 @@ plot EDA 图族（族内扁平，直住 `plot/`）。数据栈为硬依赖，装
 
 - 动作族：`load/`（6 节点）、`statistic/`（profile=info 薄封装 / univariate 单变量 typed 统计+规则化 findings / bivariate 双变量三路无 target 全对——效应量定档 p 把门）、`detect/`（9 缺陷算子 +
   DefectType/Severity 封闭枚举 + Finding 六字段契约 + quality_score + `detect/rules.py`
-  共享判据（zscore/iqr 栅栏、脱敏、suspected_id 打分谓词）、`clean/`（24 命名原子：drop×6 /
-  fill×7（ffill/bfill 带 by= 组内防泄漏）/ cap×3 / add_missing_flag / strip_units·normalize_units（单位——
-  前者改列名 v1 原子、后者 π 给换算表且列名不变 #151）/ mask_cols·hash_cols（匿名化）/ cast_cols·to_category（类型档）/ python——
+  共享判据（zscore/iqr 栅栏、脱敏、suspected_id 打分谓词）、`clean/`（23 命名原子：drop×6 /
+  fill×7（ffill/bfill 带 by= 组内防泄漏）/ cap×3 / add_missing_flag / normalize_units（单位归一——
+  π 给换算表 {token: 倍率}、列名不变；strip_units 已退役 #152）/ mask_cols·hash_cols（匿名化）/ cast_cols·to_category（类型档）/ python——
   策略在名、级联删除、类型族不适配即报错；选项面 = 词表全集（π 自构动作，菜单随 #113 退役；
   条件型 python 无对应缺陷类型））
 - 共享件：主题门面上住 `mflowy-utils[plot]`（`mflowy.utils.plot`——Agg 后端 + seaborn

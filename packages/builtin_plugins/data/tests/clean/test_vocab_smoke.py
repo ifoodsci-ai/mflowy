@@ -31,7 +31,6 @@ _PARAMS: dict[str, dict | None] = {
     "cap_z": {"cols": ["x"]},
     "range_clip": {"ranges": {"x": [-100.0, 100.0]}},
     "add_missing_flag": {"cols": ["x"]},
-    "strip_units": {"columns": {"pct": "%"}},
     "normalize_units": {"columns": {"pct": {"to": "%", "factors": {"%": 1}}}},  # #151
     "mask_cols": {"cols": ["cat"]},
     "hash_cols": {"cols": ["cat"]},
