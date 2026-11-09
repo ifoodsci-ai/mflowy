@@ -15,6 +15,7 @@ _WEIGHTS: dict[DefectType, float] = {
     DefectType.HIGH_NULL: 0.35,
     DefectType.DUPLICATE: 0.20,
     DefectType.FORMAT_ANOMALY: 0.15,
+    DefectType.MIXED_UNITS: 0.15,  # #151：与 format_anomaly 同档（同使列数值语义失真，可校准）
     DefectType.OUTLIER_NUMERIC: 0.10,
     DefectType.CONSTANT_COL: 0.10,
     DefectType.COLLINEAR: 0.10,

@@ -20,7 +20,7 @@ _DOC_CORE = {
     "suspected_composite_id",
     "prior_conflict",
 }
-_EXTENSIONS = {"empty_row", "duplicate", "collinear", "range_violation"}
+_EXTENSIONS = {"empty_row", "duplicate", "collinear", "range_violation", "mixed_units"}  # #151
 
 
 def _f(**over) -> Finding:

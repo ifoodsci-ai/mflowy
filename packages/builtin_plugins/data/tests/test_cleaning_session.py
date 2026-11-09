@@ -511,14 +511,33 @@ def test_finish_exports_plan_and_final(sessions_root, dirty_csv):
     assert r.terminal_utility["steps"] == 2
 
 
-def test_finish_plan_replays(sessions_root, dirty_csv, tmp_path, monkeypatch):
+def _replay_plan(plan_yaml: str, tmp_path) -> pd.DataFrame:
+    """计划重放（data→driver 接缝）：plan_yaml → Builder 全量执行，回终节点 df。"""
+    from mflowy.driver.builder import Builder
+    from mflowy.utils.path import reset_task_dir, set_task_dir
+
+    yml = tmp_path / "replay.yaml"
+    yml.write_text("name: clean_replay\ndescription: 清洗终态计划重放\nflow:\n" + plan_yaml, encoding="utf-8")
+    token = set_task_dir(yml)
+    try:
+        result = Builder(str(yml)).build().run()
+    finally:
+        reset_task_dir(token)
+    assert result.status == "finished", result.error
+    return result.runs[-1].value
+
+
+def _artifact_sha(sessions_root, sid, v: int) -> str:
+    return next(e["artifact_sha256"] for e in _log(sessions_root, sid) if e.get("v") == v)
+
+
+def test_finish_plan_replays(sessions_root, dirty_csv, tmp_path):
     """接缝（data→driver）：finish 的 plan_yaml → Builder 全量执行 finished。
 
     与 model 侧 test_finish_plan_replays 对称——"会话终态 = 可独立重放 DAG"
     的双向兑现；计划头部 load 节点由 finish 生成端补全（缺它则 valid 门拦截）。
-    mlflow 走 tmp sqlite（Builder 尾链 run 生命周期真实落库）。
+    mlflow 由 sessions_root 夹具隔离到 tmp sqlite（Builder 尾链 run 生命周期真实落库）。
     """
-    monkeypatch.setenv("MLFLOW_TRACKING_URI", f"sqlite:///{tmp_path}/tracking.db")
     s = cs.start_session(dirty_csv, card=CARD)
     cs.apply_action(s.session_id, "drop_duplicate", {}, reason="测试决策")
     cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]}, reason="测试决策")
@@ -526,24 +545,48 @@ def test_finish_plan_replays(sessions_root, dirty_csv, tmp_path, monkeypatch):
     assert isinstance(r, FinishVerdict)
     assert r.accepted and "- load__file:" in r.deliverables["plan_yaml"]
 
-    from mflowy.driver.builder import Builder
-    from mflowy.utils.path import reset_task_dir, set_task_dir
-
-    yml = tmp_path / "replay.yaml"
-    yml.write_text(
-        "name: clean_replay\ndescription: 清洗终态计划重放\nflow:\n" + r.deliverables["plan_yaml"], encoding="utf-8"
-    )
-    token = set_task_dir(yml)
-    try:
-        result = Builder(str(yml)).build().run()
-    finally:
-        reset_task_dir(token)
-    assert result.status == "finished", result.error
+    replayed = _replay_plan(r.deliverables["plan_yaml"], tmp_path)
 
     # 对账（#30）：重放终态 ≡ 会话终态快照——CAS 闭合，重放 df 的内存指纹直接对
     # 决策日志尾记录的版本工件 sha（同值不同路径：buffer 序列化 vs 盘上文件）
     last_apply = [e for e in _log(sessions_root, s.session_id) if "v" in e][-1]
-    assert cs._fingerprint(result.runs[-1].value) == last_apply["artifact_sha256"]
+    assert cs._fingerprint(replayed) == last_apply["artifact_sha256"]
+
+
+def test_finish_plan_after_jump_back_to_abandoned_branch(sessions_root, dirty_csv, tmp_path):
+    """#106：回拨后跳回弃分支再收局——计划 = 指针版本沿版本树的生成路径（栈回放会丢 v2）。"""
+    s = cs.start_session(dirty_csv, card=CARD)
+    cs.apply_action(s.session_id, "drop_duplicate", {}, reason="测试决策")  # v1
+    cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]}, reason="测试决策")  # v2
+    cs.rollback(s.session_id, to_version=1)
+    cs.rollback(s.session_id, to_version=2)  # 跳回弃分支
+
+    r = cs.finish_session(s.session_id)
+    assert isinstance(r, FinishVerdict)
+
+    assert r.deliverables["final_path"].endswith("v2.parquet")
+    assert "clean__fill_median" in r.deliverables["plan_yaml"]
+    replayed = _replay_plan(r.deliverables["plan_yaml"], tmp_path)
+    assert cs._fingerprint(replayed) == _artifact_sha(sessions_root, s.session_id, 2)  # 重放 ≡ 交付数据
+
+
+def test_finish_plan_after_jump_back_then_new_apply(sessions_root, dirty_csv, tmp_path):
+    """#106 延伸：跳回弃分支后新 apply（v3 父 = v2）——计划含整条生成链，重放 ≡ v3 工件。"""
+    s = cs.start_session(dirty_csv, card=CARD)
+    cs.apply_action(s.session_id, "drop_duplicate", {}, reason="测试决策")  # v1
+    cs.apply_action(s.session_id, "fill_median", {"cols": ["hole"]}, reason="测试决策")  # v2
+    cs.rollback(s.session_id, to_version=1)
+    cs.rollback(s.session_id, to_version=2)  # 跳回弃分支
+    cs.apply_action(s.session_id, "cap_iqr", {"cols": ["x1"], "k": 0.5}, reason="测试决策")  # v3（父 v2）
+
+    r = cs.finish_session(s.session_id)
+    assert isinstance(r, FinishVerdict)
+
+    assert r.deliverables["final_path"].endswith("v3.parquet")
+    assert "clean__fill_median" in r.deliverables["plan_yaml"]
+    assert "clean__cap_iqr" in r.deliverables["plan_yaml"]
+    replayed = _replay_plan(r.deliverables["plan_yaml"], tmp_path)
+    assert cs._fingerprint(replayed) == _artifact_sha(sessions_root, s.session_id, 3)  # 重放 ≡ 交付数据
 
 
 # ── #65 先验观测：expected_ranges 全程可观测（观测→转移→奖励全链） ──────────
@@ -732,3 +775,61 @@ def test_finish_keep_declarations_residual_manifest(sessions_root, tmp_path):
     assert tu["manifest"]["id_priors"]["id_columns"] == ["sid"]
     assert tu["steps"] == 0  # keep 声明不吃步数
     assert list(cs.current_df(sid).columns) == ["sid", "x", "target"]  # 不动 df
+
+
+def test_session_mixed_units_normalized(sessions_root, tmp_path):
+    """#151 接缝：mixed_units 证据 → π 判量纲给换算表 → normalize_units 执行——
+    finding 消失、列名不变、计划可重放 ≡ 交付数据。"""
+    n = 40
+    rng = np.random.default_rng(7)
+    df = pd.DataFrame(
+        {
+            "sid": [f"s{i:03d}" for i in range(2 * n)],
+            "wt": [f"{5 + v:.1f}kg" for v in rng.uniform(0, 10, n)] + ["500g"] * n,
+            "target": rng.normal(size=2 * n),
+        }
+    )
+    src = tmp_path / "mixed.csv"
+    df.to_csv(src, index=False)
+
+    s = cs.start_session(str(src), card={"domain": "t", "target": "target", "id_columns": ["sid"]})
+    fid = next(p["finding_id"] for p in s.state_digest["problems"] if p["defect_type"] == "mixed_units")
+    assert fid == "mixed_units::wt"  # 结构键路由 normalize_units（routing_hints 投影钉）
+
+    r = cs.apply_action(
+        s.session_id,
+        "normalize_units",
+        {"columns": {"wt": {"to": "g", "factors": {"kg": 1000, "g": 1}}}},
+        finding_ids=[fid],
+        reason="同量纲质量单位统一到 g（π 判：kg/g 可换算）",
+    )
+
+    assert all(p["defect_type"] != "mixed_units" for p in r.state_digest["problems"])
+    assert "wt" in r.state_digest["columns"]  # 列名不变
+    verdict = cs.finish_session(s.session_id)
+    assert isinstance(verdict, FinishVerdict)
+    assert "clean__normalize_units" in verdict.deliverables["plan_yaml"]
+    replayed = _replay_plan(verdict.deliverables["plan_yaml"], tmp_path)
+    assert cs._fingerprint(replayed) == _artifact_sha(sessions_root, s.session_id, 1)  # 重放 ≡ 交付数据
+
+
+def test_session_format_anomaly_single_unit_normalized(sessions_root, dirty_csv, tmp_path):
+    """#152 验收：单一单位列（全 %）format_anomaly → normalize_units 恒等倍率归一。"""
+    s = cs.start_session(dirty_csv, card=CARD)
+    fid = next(p["finding_id"] for p in s.state_digest["problems"] if p["defect_type"] == "format_anomaly")
+
+    r = cs.apply_action(
+        s.session_id,
+        "normalize_units",
+        {"columns": {"pct": {"to": "%", "factors": {"%": 1}}}},
+        finding_ids=[fid],
+        reason="单一单位恒等归一转数值（strip_units 退役承接，#152）",
+    )
+
+    assert all(p["defect_type"] != "format_anomaly" for p in r.state_digest["problems"])
+    assert pd.api.types.is_numeric_dtype(cs.current_df(s.session_id)["pct"])  # 会话级也钉转数值
+    verdict = cs.finish_session(s.session_id)
+    assert isinstance(verdict, FinishVerdict)
+    assert "clean__normalize_units" in verdict.deliverables["plan_yaml"]
+    replayed = _replay_plan(verdict.deliverables["plan_yaml"], tmp_path)
+    assert cs._fingerprint(replayed) == _artifact_sha(sessions_root, s.session_id, 1)  # 重放 ≡ 交付数据

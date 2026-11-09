@@ -56,11 +56,23 @@ clean_session_start(file_path, card=<DomainCard>, max_steps=15)   # 唯一主通
 | outlier_numeric（数值离群） | `cap_iqr`(k=1.5，偏斜/重尾稳健)、`cap_z`(k=3，近正态) | `drop_outlier_iqr` / `drop_outlier_z`（行删除，看保留率） |
 | collinear（共线对） | `drop_cols`：每对删方差小者（`columns` 的 var），卡认领列不删 | — |
 | constant_col（常量列） | `drop_cols`（零信息） | — |
-| format_anomaly（格式异常） | `strip_units`(columns={列: 单位})——单位优先取卡 unit_hints，缺则读证据的众数后缀 | 纯数值字符串 `cast_cols`(target_dtype="float")；类别声明 `to_category` |
+| format_anomaly（格式异常） | `normalize_units`(columns={列: {to: 单位, factors: {单位: 1}}})——单位优先取卡 unit_hints（#152 起 strip_units 退役：本形态 = 换算表取恒等倍率，列名不变） | 纯数值字符串 `cast_cols`(target_dtype="float")；类别声明 `to_category` |
+| mixed_units（单位混录） | 读证据 token 分布判量纲：**同量纲**（kg/g、% 与裸数字）→ `normalize_units`(columns={列: {to: 目标, factors: {token: 倍率}}})——factors 覆盖列内全部 token（缺即免费失败），`""` = 裸数字；列名不变 | **异量纲**（kg/cm/s）= 数据异常：停下报告用户（分布+不可解析签名），勿换算——确认错录走 `python` 逃生舱/删行，或收局 `keeps` 声明 |
 | suspected_id（疑似标识列） | 确认后 `drop_cols` 出特征 | 需保留可连接性 → `hash_cols`（假名化，同值同哈希）/ `mask_cols`（脱敏） |
 | suspected_composite_id（疑似组合键） | 确认后 `drop_cols` 整组出特征 | join 语义保留原列，finish 时 keep 声明 |
 | prior_conflict（先验与数据矛盾） | 处置收敛为 **keep**——finish 时带理由声明（cite card.source 权威度；manual 源建议复核先验） | — |
 | range_violation（物理越界） | `range_clip`(ranges=卡 expected_ranges) | `drop_outside`(cols, lo, hi) 删越界行 |
+
+**先疑记法，后判离群**：range_violation / outlier_numeric 成批命中（非零星几个）时，
+先怀疑**记法混录**——同列两种记法差 10^k 倍（小数 vs 百分数、g vs kg、mm vs m），
+越界的是另一种记法下的真值而非离群。上表默认档此时不适用：
+
+- 不截断不删行（`range_clip` / `cap_*` / `drop_outlier_*` / `drop_outside`）——会把可换算的真值毁成错值；
+- 证据样例已脱敏，倍率无法从观测读出——停下报告用户：列名、越界数与界、主体四分位
+  （`columns` 的 q1–q3）、建档阶段画像里的双峰/两簇线索，附倍率假设，请用户确认换算
+  规则（哪些行、乘多少）；
+- 用户确认 → 经 `python`(source=脚本) 逃生舱换算，`reason` 写明确认的规则与倍率；
+  判定为真实离群 → 回上表处置；暂不裁定 → 收局 `keeps` 声明附理由。
 
 观测常驻 `routing_hints`（defect_type → 推荐算子清单，提示非约束）；残留缺陷可
 带理由 keep 声明收局（`clean_finish` 的 `keeps`，不动 df、不吃步数）。

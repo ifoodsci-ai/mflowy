@@ -31,7 +31,7 @@ _PARAMS: dict[str, dict | None] = {
     "cap_z": {"cols": ["x"]},
     "range_clip": {"ranges": {"x": [-100.0, 100.0]}},
     "add_missing_flag": {"cols": ["x"]},
-    "strip_units": {"columns": {"pct": "%"}},
+    "normalize_units": {"columns": {"pct": {"to": "%", "factors": {"%": 1}}}},  # #151
     "mask_cols": {"cols": ["cat"]},
     "hash_cols": {"cols": ["cat"]},
     "cast_cols": {"cols": ["num_str"], "target_dtype": "float"},
@@ -55,21 +55,31 @@ def _smoke_df() -> pd.DataFrame:
 @pytest.fixture(scope="module")
 def py_script(tmp_path_factory):
     p = tmp_path_factory.mktemp("pyclean") / "clean.py"
+    # 真改名（#149）：python 逃生舱改名列经编译链（df_diff 值比较）不崩的直接钉测——
+    # no-op copy 钉不到该缝
     p.write_text(
-        "import pandas as pd\n\n\ndef clean(df: pd.DataFrame) -> pd.DataFrame:\n    return df.copy()\n",
+        "import pandas as pd\n\n\ndef clean(df: pd.DataFrame) -> pd.DataFrame:\n"
+        '    return df.rename(columns={"pct": "pct_norm"})\n',
         encoding="utf-8",
     )
     return str(p)
+
+
+def _min_params(op: str, py_script: str) -> dict:
+    """最小合法参数单源（#149 评审）：python 特例与夹具查表一份——两测分持曾致
+    守卫失效（or {} 吞 None，缺夹具静默以空参跑）。"""
+    if op == "python":  # 表值 None 是约定（source 指向临时脚本）——特例前置过守卫
+        return {"source": py_script}
+    params = _PARAMS.get(op)
+    assert params is not None, f"词表成员 {op} 缺最小参数夹具（本测强制补 _PARAMS）"
+    return dict(params)
 
 
 @pytest.mark.parametrize("op", VOCAB, ids=str)
 def test_clean_op_runs_with_min_params_returns_new_df(op, py_script):
     """词表成员冒烟：最小合法参数跑通 + 新 df + 输入不变（INV-6）+ 参数面闭包。"""
     node = get_node(f"clean__{op}")
-    params = _PARAMS.get(op)
-    if op == "python":
-        params = {"source": py_script}
-    assert params is not None, f"词表成员 {op} 缺最小参数夹具（本测强制补 _PARAMS）"
+    params = _min_params(op, py_script)
 
     # 参数面闭包：冻结面必填字段（默认位 = Ellipsis）⊆ 夹具参数（新必填参数即红）
     required = {name for name, (_, default) in (node.param_fields or {}).items() if default is Ellipsis}
@@ -88,3 +98,36 @@ def test_clean_op_runs_with_min_params_returns_new_df(op, py_script):
 def test_vocab_fixture_covers_whole_vocab():
     """夹具表覆盖词表全集（discover 现算对照——卸载/新增即红）。"""
     assert set(VOCAB) == set(_PARAMS), sorted(set(VOCAB) ^ set(_PARAMS))
+
+
+@pytest.mark.parametrize("op", VOCAB, ids=str)
+def test_clean_op_smoke_through_middleware_chain(op, py_script, tmp_path, monkeypatch):
+    """#149：词表冒烟走真实编译链（load__file + clean__op 两节点流 Builder）——算子 ×
+    中间件（df_diff 值比较/mlflow 遥测面）交互缺陷第一时间暴露。直调 fn 的旧形态
+    正是改名列崩溃（df_diff × strip_units）长期未暴露的原因；fn 级用例保留（快，
+    钉 INV-6/参数面闭包），本测钉编译链形态。"""
+    from mflowy.driver.builder import Builder
+    from mflowy.driver.config import NodeConf
+    from mflowy.driver.serializer import flow_to_yaml
+    from mflowy.utils.path import reset_task_dir, set_task_dir
+
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", f"sqlite:///{tmp_path}/tracking.db")
+    params = _min_params(op, py_script)  # 空 dict = 合法最小参数（drop_duplicate）
+    csv = tmp_path / "smoke.csv"
+    _smoke_df().to_csv(csv, index=False)
+
+    flow = flow_to_yaml(
+        (
+            {"load__file": NodeConf(node_key="load__file", name="装载", params={"file_path": str(csv)})},
+            {f"clean__{op}": NodeConf(node_key=f"clean__{op}", name=f"链路-{op}", params=params)},
+        )
+    )
+    yml = tmp_path / "chain.yaml"
+    yml.write_text(f"name: vocab_chain_{op}\ndescription: 词表冒烟编译链\nflow:\n{flow}", encoding="utf-8")
+
+    token = set_task_dir(yml)
+    try:
+        result = Builder(str(yml)).build().run()
+    finally:
+        reset_task_dir(token)
+    assert result.status == "finished", (op, result.error)

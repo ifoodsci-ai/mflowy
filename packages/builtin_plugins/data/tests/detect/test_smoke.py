@@ -32,6 +32,9 @@ def _smoke_df(n=150) -> pd.DataFrame:
             "x2": 2.0 * x1 + 0.01 * rng.normal(size=n),  # collinear ×x1
             "hole": np.where(rng.random(n) < 0.4, np.nan, 1.0),  # high_null（40% ≥ 0.30 → high）
             "pct": [f"{v:.1f}%" for v in rng.uniform(0, 100, n)],  # format_anomaly
+            "wt": [f"{v:.1f}kg" for v in rng.uniform(5, 20, n - 30)]
+            + ["3cm"] * 20
+            + ["5s"] * 10,  # mixed_units（#151）
             "dead": [np.nan] * n,  # constant_col（全空列：nunique(dropna=False)=1）
             "target": rng.normal(size=n),
         }
@@ -122,3 +125,9 @@ def test_routing_hints_keys_full_values_within_vocab():
     bad = {d: sorted(ops - vocab) for d, ops in ROUTING_HINTS.items() if ops - vocab}
     assert not bad, f"ROUTING_HINTS 引用 clean 词表外算子: {bad}"
     assert routing_hints() == {d.value: sorted(ops) for d, ops in ROUTING_HINTS.items()}
+
+
+def test_routing_format_anomaly_reroutes_after_strip_units_retirement():
+    """#152：format_anomaly 路由换血 strip_units → normalize_units；全表无 strip_units。"""
+    assert ROUTING_HINTS[DefectType.FORMAT_ANOMALY] == frozenset({"normalize_units", "cast_cols", "to_category"})
+    assert "strip_units" not in {op for ops in ROUTING_HINTS.values() for op in ops}

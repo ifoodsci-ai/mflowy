@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### df_diff 值比较守卫单源——改名列不再崩整条流（#149，fix）
+
+- 中间件 `log_df_diff._compute_diff` 的值比较守卫从「仅看 shape」收敛到与决策日志
+  `_diff_summary` 同一谓词（新共享件 `types.frames_value_comparable`：形状 + 列标签 +
+  行索引全等）——改名列算子（shape 不变、标签不齐）此前进 `DataFrame.compare` 直接抛
+  ``identically-labeled`` 使整条 DAG 失败，现如实记 ``value_diffs=None`` +
+  ``columns.removed/added`` 成对（改名 = 一删一增）。
+- 词表冒烟补**编译链形态**（load__file + clean__op 两节点流 Builder 真跑，#149 验收）：
+  算子 × 中间件交互缺陷第一时间暴露——直调 `node.fn` 的旧形态正是改名列崩溃长期
+  未暴露的原因；fn 级用例保留（快，钉 INV-6/参数面闭包）。
+
+### BREAKING：strip_units 退役——normalize_units 承接（#152）
+
+- clean 词表 24 → 23：`clean.strip_units` 删除（模块 + entry point）。退役依据：三独立
+  缺陷（`str.rstrip` 字符集剥离——unit=`'kg'` 时 `'500g'` 被当 500 kg；
+  `errors="coerce"` 解析失败静默造 NaN；改列名 `列`→`列(单位)`——diff 值比较不可比
+  （#149）、守卫把改名当删列、冻结卡旧列名先验失效）+ 编译上下文实际不可用（df_diff
+  对改名列必崩，词表冒烟直调绕过中间件故长期未暴露）+ 仓内零消费方；单源收敛——
+  恒等倍率形态 `normalize_units(columns={列: {to: u, factors: {u: 1}}})` 即其严格超集。
+- 路由：format_anomaly → `{normalize_units, cast_cols, to_category}`；卡字段
+  unit_hints 语义挂靠 normalize_units（单一单位列 to/factors 先验）。
+- **迁移**：`clean__strip_units: {columns: {列: 单位}}` →
+  `clean__normalize_units: {columns: {列: {to: 单位, factors: {单位: 1}}}}`；
+  新算子**不改列名**（旧行为改名为 `列(单位)`）——按新列名取列的直接调用方需调整。
+- 同频：SKILL 处置表 / cast_cols 文案 / README 词表 / research-flow 第一幕菜单示意。
+- 附带修复（#151 缺口，由本票验收测暴露）：driver 遥测面 `_flatten_params` 叶键按
+  mlflow 键名字符集确定性转义（集外字符与转义标记 ``-`` → ``-XX`` 十六进制，编码
+  单射——转义段不与原生 ``-xx`` 键同形）——单位 token 键
+  （``%``/``°C``）此前在任何 DAG 上下文执行必炸（mlflow 键名校验拒绝；中文键
+  在 3.15 的 Unicode ``\w`` 下实为可收——转义按白名单统一，跨版本保守面）；
+  业务参数面（NodeConf.params/plan.yaml）不受影响。
+
+### 单位混录三层治理：mixed_units 缺陷类型 + normalize_units 算子（#151）
+
+分工 = 检测只报事实、π 判量纲（引擎零单位知识）、算子只执行换算表。
+
+- **检测**（`detect.stringly` 重构为 token 画像）：单位 token 支持多字符（≤8 字，
+  超长按自由文本计不可解析），裸数字 token = `""`；同列 ≥2 种 token → 新缺陷类型
+  **`mixed_units`**（DefectType 第 12 成员，0.x minor；恒 high、权重 0.15），证据 =
+  完整 token 分布 + 不可解析值**形状签名**（连续数字→9、字母/中文→A、符号保留——
+  `<0.01`→`<9.9`、`ND`→`A`、`12.3±0.5`→`9.9±9.9`，不泄露原文；替代遮蔽样例——
+  mask_text 会把 `ND` 遮成 `**`，检测限/不确定度写法不可辨）；恰 1 种 token 仍
+  `format_anomaly`（多字符单一单位列从**零 finding** 变可见——v1 单字符正则盲区）；
+  token 大小写不归并（mL 毫升 ≠ ML 兆升——归并是判断，归 π）。
+- **clean 词表 23 → 24**：`normalize_units`（π 给换算表 `factors = {token: 倍率}`；
+  列名**不变**——目标单位留 params 单源；覆盖校验/不可解析值/factor 正数域/to 恒等律
+  全 fail-loud；数值列走 `""` factor 统一尺度；仿射换算 °C→°F 走 python 逃生舱）；
+  词法与检测单源 `split_number_unit`。路由：mixed_units → normalize_units（不提示
+  strip——剥单位对混录静默算错）。
+- 问卷 unit_hints 出题只对单一单位列（混录列由会话内 π 读分布后自定换算表）。
+- SKILL 处置表增 mixed_units 行（同量纲换算 / 异量纲报告用户的量纲判断协议）。
+
+### 清洗计划导出改版本树溯源——跨分支回滚后计划与交付数据对齐（#106，fix）
+
+`_plan_yaml` 的「栈弹出」重建仅对沿当前栈回拨正确；#89 rollback 的指针回拨允许跳回
+任意已 commit 版本（含弃分支），跳回后 finish 的 plan.yaml 与 final_path 脱节（计划
+重放产物 ≠ 交付数据，跳回后新 apply 同样失真）。改为重放指针演化重建版本树（apply
+的父 = 当时指针，路径 = 父路径 + 本步）——不落新日志键、无迁移面，旧会话日志天然
+兼容；附指针重放守卫（重放终 ≠ 当前指针即 fail-loud，杜绝未知记录类型下的静默失真
+计划）。验收 = 两条新契约测试真跑 Builder 重放并按 artifact sha256 对账（跳回弃分支
+→finish；跳回→再 apply→finish）。
+
 ### 数据域对齐《数据质量 Agent Workflow 设计文档 v1.0》——决策地图 #110 落地（BREAKING·0.2.x 批次）
 
 规则引擎时代结束：菜单/候选生成全线退役，π 可见面 = 动作词表全集 + 观测证据；
@@ -52,6 +114,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   路由提示）枚举驱动；clean 词表参数化冒烟（23 原子最小参数 + INV-6 返回新 df）。
 - dry_run 维持退役（#65 钉死测试不拆）；rounds/phase 枚举不引入（相界 = 「谁能调
   什么」——算子不暴露为 π 工具即 API 面事实）；INV-3/INV-7 随载体死 dissolve。
+
+### Changed（clean 剧本）：先疑记法、后判离群——成批越界/离群不再默认截断删行
+
+range_violation / outlier_numeric 成批命中时先怀疑记法混录（同列两种记法差 10^k 倍：
+小数 vs 百分数、g vs kg），决策指南默认档（`range_clip` / `cap_*` / `drop_outlier_*` /
+`drop_outside`）暂停——证据样例已脱敏、倍率无法从观测读出，π 停下报告用户确认换算
+规则，确认后经 `python` 逃生舱换算（reason 记规则与倍率）。缓解 RANGE_VIOLATION 路由
+提示仅指向 `range_clip` 的破坏性走向；引擎侧单位归一见 #151，纯数字双记法见 #79。
 
 ### model 域化石退役：用户超参缺省迁冻结第四面（#141，#126 目标收官·BREAKING·model 域导入面）
 

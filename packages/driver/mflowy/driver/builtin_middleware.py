@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import asdict
 
 from mflowy.driver.context import Context
@@ -24,12 +25,31 @@ from mflowy.utils.mlflow import active_experiment_id, active_tracking, workflow_
 logger = logging.getLogger(__name__)
 
 
+def _mlflow_safe_key(key: str) -> str:
+    """mlflow 参数键转义（遥测面专用，#151/#152）：mlflow 键名只收字母数字/_-.空格:斜杠，
+    字符集外字符 → ``-XX`` 十六进制（ASCII 按码位、非 ASCII 按 UTF-8 字节——
+    ``%``→``-25``、``公斤``→``-e5-85-ac-e6-96-a4``）；转义标记 ``-`` 自身虽在
+    mlflow 允许集亦转义（``-``→``-2d``）——编码单射可解码，转义段不与原生 ``-xx``
+    键同形（flat 无静默覆写丢参）。仅转义遥测面键——业务参数面（NodeConf.params/
+    plan.yaml）原样，值不受 mlflow 键名约束。"""
+    safe = re.compile(r"[A-Za-z0-9 _./:]")
+
+    def esc(ch: str) -> str:
+        if safe.fullmatch(ch):
+            return ch
+        if ord(ch) < 0x80:
+            return f"-{ord(ch):02x}"
+        return "".join(f"-{b:02x}" for b in ch.encode("utf-8"))
+
+    return "".join(esc(ch) for ch in key)
+
+
 def _flatten_params(params: dict, _prefix: str = "") -> dict:
     """过滤并展平参数，供 mlflow.log_params 使用。
 
     - 跳过 None 值
     - 标量类型（str/int/float/bool）原样保留
-    - dict 递归展平，用 . 连接键名
+    - dict 递归展平，用 . 连接键名；叶键经 _mlflow_safe_key 转义（mlflow 键名字符集）
     - tuple 保持圆括号用 str() 转换
     - 其他复杂类型 json.dumps 序列化（dataclass 由标准库 asdict 兜底）
     """
@@ -39,13 +59,15 @@ def _flatten_params(params: dict, _prefix: str = "") -> dict:
         if v is None:
             continue
         if isinstance(v, dict):
-            flat.update(_flatten_params(v, _prefix=key))
-        elif isinstance(v, (str, int, float, bool)):
-            flat[key] = v
+            flat.update(_flatten_params(v, _prefix=key))  # 前缀保持原样——转义只在叶键一次
+            continue
+        if isinstance(v, (str, int, float, bool)):
+            leaf: object = v
         elif isinstance(v, tuple):
-            flat[key] = str(v)
+            leaf = str(v)
         else:
-            flat[key] = json.dumps(v, ensure_ascii=False, default=asdict)
+            leaf = json.dumps(v, ensure_ascii=False, default=asdict)
+        flat[_mlflow_safe_key(key)] = leaf
     return flat
 
 
