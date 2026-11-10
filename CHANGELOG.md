@@ -573,6 +573,17 @@ RemoteJobProvider 接入上游实验服务（决策地图 #153）实现系列的
   `Candidate` 残留；CONTRIBUTING 依赖归属段（`[stats]`/`[modeling]` 旧 extras）对齐
   域包形态。
 
+### 远程任务镜像基座：training-job 烧三挂载 ENV + zip 往返工具（#161，docker）
+
+- `docker/Dockerfile` 运行时层新增 `zip`/`unzip`（远程任务产物打包与跨 Job 继承解包，
+  任务包装器与调用方参考模式共用）。
+- 烧平台 Job 容器契约 ENV：`MFLOWY_TASK_DIR=/user-data/workspace`、
+  `MLFLOW_TRACKING_URI=sqlite:////user-data/workspace/mlflow.db`（决策地图 #153 定稿；
+  显式 `-e` 覆盖优先，本地/MCP 部署语义不变）。
+- `HOME=/tmp`：nobody 缺省 HOME 不可写，而 `utils/mlflow.py` setup() 急切 mkdir
+  `$HOME/.mflowy`、mlflow 遥测自写 `$HOME/.config/mlflow`（#161 研究回填）——指向
+  /tmp（per-pod 临时，不占 workspace 配额、不进 zip）。
+
 ### 用户文档拆解：方法论知识库两份参考 + 叙事瘦身（#163，docs）
 
 - 新增 `docs/method/` 两份方法论参考：**数据清洗**（数据先验提示与示例 / 缺陷检测算子
