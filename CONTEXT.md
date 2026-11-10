@@ -1,10 +1,12 @@
 # MFlowy
 
-YAML 配置驱动的模块化 ML 工作流引擎：能力以插件节点存在、图以 YAML 组装、全部能力经 MCP 工具暴露。本文件是**引擎元词汇**的词表——只定义这些词本身与禁用别名；节点与边函数的名字以运行期插件目录为唯一真源（`list-nodes` 可查），方法论术语见 [docs/research-flow.md](docs/research-flow.md) 自带术语表，均不在此复述。
+YAML 配置驱动的模块化 ML 工作流引擎：能力以插件节点存在、图以 YAML 组装、全部能力经 MCP 工具暴露。本文件是**元词汇**的词表，按「引擎内核（共享）+ 三子系统」分组（子系统划分与系统设计见 [docs/pilot-loop.md](docs/pilot-loop.md)）——只定义这些词本身与禁用别名；节点与边函数的名字以运行期插件目录为唯一真源（`list-nodes` 可查），方法论术语见 [docs/research-flow.md](docs/research-flow.md) 自带术语表，均不在此复述。
 
 ## Language
 
-### 单元与身份
+### 引擎内核（共享）
+
+#### 单元与身份
 
 **节点（node）**:
 词表的一个目录项：一个被 `@node` 标记的 pyfunc，身份是 entry point name。用户视角的"能力"即节点。
@@ -32,7 +34,7 @@ server/runner 同一真源发现并包装。工具组合节点，工具不是节
 **目录（词表）**:
 运行期全部节点与边函数的枚举，机器可查、构建期校验。两词同义："目录"强调查询面，"词表"强调语言约束面。
 
-### 寻址与图
+#### 寻址与图
 
 **节点名三形**:
 同一节点的三种写法：entry point 名 `plot.shap_summary`（目录与 YAML）、寻址名（node_key）`plot__shap_summary`（消费方参数边按此命中；`__` 连接符——组名与节点名皆可含 `_`，连接处无歧义，构造单一来源 `config.node_key`）、组内名 `shap_summary`（namespace 内的 node_name）。非归组节点（如 `predict`）三形合一为裸名。
@@ -50,7 +52,7 @@ _Avoid_: steps（第一代退役词）、嵌套叙事（flow/branches 树已退�
 **Conf / NodeConf**:
 Conf 是一份图的根配置，NodeConf 是图中单个节点的配置。两者都是真实类名，只差一个字。
 
-### 执行与观测
+#### 执行与观测
 
 **Context**:
 DAG 任务节点：持有配置、结果与双向依赖边，是执行与记账的单位。
@@ -68,7 +70,7 @@ _Avoid_: 环境容器、执行上下文、DI 容器
 **遥测面 / 数据面**:
 中间件的两平面：遥测面是 `log_*` 领域观测（活跃 mlflow run 窗口内执行）；数据面是参数边绑定（链启动前、run 窗口外）。数据面已边函数化，不经中间件。
 
-### 会话与域（0.2.0）
+#### 会话与域（0.2.0）
 
 **域包（domain package）**:
 按 POMDP 域切分的能力包：`mflowy-data`（load/statistic/detect/clean + 清洗会话）、
@@ -121,18 +123,14 @@ prior（冻结卡）与 state_digest（结构化状态摘要）；`recent_decisi
 部截断（TOP_K_DECISIONS=5，观测有界）。
 _Avoid_: Activation / 菜单 / 候选（#113/#120 退役——菜单是不完整过滤器，隐藏合法选项；π 可见面 = 动作词表全集）；should_stop 与停止建议（π 从观测自决收局，预算硬边界由守卫独立表达）；proposal 键与 Candidate（随 #89 拆分/退役）
 
-**先验卡（DomainCard）/ 协议卡（CVCard）**:
-两个 POMDP 的冻结输入：先验卡 = 数据域先验（target/ID 分级字段（pk/fk/known_id/
-composite/known_non_id/hinted）/单位/范围/protected + source 权威度——#112 PriorKnowledge
-并入卡；never_drop 收缩为 target/protected/time，ID 列处置归 π，survey 剧本编译）；
-协议卡 = 建模域对局规则（task/metric/CV/预算/约束，
-model-brief 问卷编译）。协议卡的引擎入参形态（#66）：cv_card = cv.split 配置 yaml
-明文（划分构建参数）+ start 显式参数（target/task/metric/candidates/max_steps/
-id_columns——显式 > card 背景分层缺省），CVCard.build 仍是四类校验的单一事实源。
-命名按内容不按过程；换协议 = board 作废 + test 重触，只能 abort 开新 episode。
-_Avoid_: ExperimentCard、ModelBrief、ModelingCard（协议卡禁用别名）
+### 数据清洗子系统（Clean）
 
-### 缺陷与判定（0.2.x）
+**先验卡（DomainCard）**:
+清洗 POMDP 的冻结输入：数据域先验（target/ID 分级字段（pk/fk/known_id/
+composite/known_non_id/hinted）/单位/范围/protected + source 权威度——#112 PriorKnowledge
+并入卡；never_drop 收缩为 target/protected/time，ID 列处置归 π，survey 剧本编译）。
+
+#### 缺陷与判定（0.2.x）
 
 **缺陷类型（defect_type）**:
 检测判断的**输出值域**——封闭 str-Enum（data 包单处定义），机器键控消费（记分牌
@@ -155,3 +153,21 @@ DefectType → 推荐 clean 算子集的静态表（data 包）：枚举键控�
 （闭包测试钉）、state_digest.routing_hints 常驻投影——**提示非约束、非过滤器**
 （π 可见面 = clean 词表全集）；策略知识（决策树/参数默认档）外置 clean skill。
 _Avoid_: 菜单/候选生成（#113 退役——菜单是不完整过滤器，隐藏合法选项）
+
+### 预测模型训练子系统（Model）
+
+**协议卡（CVCard）**:
+建模 POMDP 的冻结输入：建模域对局规则（task/metric/CV/预算/约束，
+model-brief 问卷编译）。协议卡的引擎入参形态（#66）：cv_card = cv.split 配置 yaml
+明文（划分构建参数）+ start 显式参数（target/task/metric/candidates/max_steps/
+id_columns——显式 > card 背景分层缺省），CVCard.build 仍是四类校验的单一事实源。
+命名按内容不按过程；换协议 = board 作废 + test 重触，只能 abort 开新 episode。
+_Avoid_: ExperimentCard、ModelBrief、ModelingCard（协议卡禁用别名）
+
+> 占位：远程执行词条（平台实验 / 追踪实验 / 平台任务 / 执行模式 / 模式专属参数 /
+> 受理面 / 继承 / 可继承 zip / 继承源任务 / 实验就绪——十词已终审，#160）随首个
+> remote 实现 PR 落本节（#153）。
+
+### 贝叶斯优化推荐子系统（BO）
+
+> 占位：本子系统词条随 bo 域落地 PR 填充（决策图 #171）。

@@ -11,7 +11,7 @@
         "--index",
         "https://download.pytorch.org/whl/cpu",
         "--from",
-        "mflowy[mcp,modeling]",
+        "mflowy[mcp,model]",
         "mflowy-mcp"
       ]
     }

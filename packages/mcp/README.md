@@ -1,12 +1,12 @@
-# mflowy-mcp — MCP 层：工具目录 · 执行策略 · 遥测
+# mflowy-mcp — MCP 层：入口 · 工具目录 · 平台登录 · 遥测
 
-MFlowy 以 MCP 为架构主体：本包的 `tools.py` 定义全部工具（pyfunc），三种形态共享同一套实现（CLI / MCP 双命令入口 + 直接 import）。
+MFlowy 以 MCP 为架构主体：全部能力以工具（pyfunc）暴露，经 entry points 组 `mflowy.tools` 发现——域工具住各自域包、平台工具住本包（见下方「0.2.0 tools 解耦」），三种形态共享同一套实现（CLI / MCP 双命令入口 + 直接 import）。
 
 | 入口 | 命令 | 场景 |
 |------|------|------|
 | **CLI 通道** | `mflowy <tool> '<json args>'` | 命令行、K8s Job 容器、subprocess；裸装即用（零 SDK）——`DAGResult.status != finished` 以**非零退出码**外传失败，不吞 |
 | **MCP 通道** | `mflowy-mcp` | stdio server，MCP 客户端 / agent（Claude Code、Cursor 等）接入；SDK+遥测住 `[mcp]` extra |
-| 直接 import | `mflowy.mcp.tools` pyfunc | 宿主程序内嵌调用 |
+| 直接 import | `mflowy.{mcp,data,model}.tools` pyfunc | 宿主程序内嵌调用 |
 
 **工件锚定（task_dir）双路由**（#95）：两入口路由到同一工具函数，锚由入口中间件（`route_task_dir`）决定——工具以 `@anchor_task_dir("<参数名>")` 声明锚参数（纯元数据，签名/schema 零影响），从业务路径参数推父目录为任务目录（实验工件根 = `task_dir/.mlruns`）。CLI：`MFLOWY_TASK_DIR` env **钉住**（推导不覆写）→ 未设时推导 → 缺省 `cwd`；MCP：推导 → 缺省 `~/.mflowy`（server 无业务 CWD 语义）。MCP 侧数据路径须绝对（相对路径不推锚，解析处 fail-loud）。
 
@@ -16,34 +16,22 @@ MFlowy 以 MCP 为架构主体：本包的 `tools.py` 定义全部工具（pyfun
 > 同一真源消费，镜像契约钉在 `tests/mcp/test_platform_tools_registry.py`），域工具发现即用。
 > 装哪个域包多哪批工具（`tools/list` = 已安装能力）。
 
-## 工具三分
+## 工具分组（执行位置）
 
 | 类别 | 工具 | 执行位置 |
 |------|------|---------|
-| info | `list_nodes` / `get_node_info` / `validate_modeling_steps` / `file_hash` | 始终本地（base 依赖够用） |
+| info | `list_nodes` / `get_node_info` / `file_hash` | 始终本地（base 依赖够用） |
 | 分析与问卷 | `data_profile` / `eda` / `propose_questions` | 始终本地（轻量、无跨环境状态） |
-| 建模 | `modeling` / `explanation` / `predict` / `inverse_optimization` | **JobProvider 委派** |
-| mlflow | `get_experiment` / `get_run` | 始终本地（工件后端为本地文件树，内容直接访问） |
-| 平台登录 | `login` | 本地（拉起浏览器授权，loopback 回调） |
+| POMDP 会话 | `clean_*` 六操作 + `modeling_*` 七操作（含 `report_findings`） | 始终本地（会话态在本地盘上工件） |
+| 报告素材 | `draw_taylor_diagram` / `modeling_report_skeleton` | 始终本地 |
+| YAML 预检 | `validate_modeling_steps` | 始终本地（结构化 `{valid: false, error}` 错误契约） |
+| 建模 compute | `modeling` / `hyperparameters_search` / `explanation` / `predict` / `inverse_optimization` | **JobProvider 委派** |
+| mlflow 观测 | `get_experiment` / `get_run` | 始终本地（工件后端为本地文件树） |
+| 平台 | `login`（OAuth 2.1 浏览器授权）/ `sessions_gc`（TTL 回收） | 本地 |
 
-建模类经 JobProvider 委派：内置 `local` 实现（LocalJobProvider，[modeling] extra 直调 driver 编排），远程实现接管执行环境。
+建模类经 JobProvider 委派（内置 `local` / 自定义 `module:Class`）——协议与自定义执行环境接入见 [mflowy-model README](../builtin_plugins/model/README.md)「JobProvider」节（预测模型训练子系统）。
 
 **错误契约二分**：官方 MCP SDK 对非 ToolError 异常脱敏（客户端只收裸 `Error executing tool <name>`）。`validate_modeling_steps` 的领域结果本就是"不合法 + 原因"——全部失败路径（缺文件/片段格式/YAML 语法/DAG 构建）走结构化 `{valid: false, error}` 返回，agent 拿到详情自我纠正；其余工具的 operational error（路径/run 不存在等）维持 crash 通道（runner 侧非零退出码）。
-
-## JobProvider：接入自定义执行环境
-
-MFlowy 不内置绑定任何远程执行平台。实现 `JobProvider` 协议（`packages/builtin_plugins/model/mflowy/model/job_provider/protocol.py`）的 **5 个类型化方法**（hyperparameters_search / modeling / explanation / predict / inverse_optimization，每个方法带 `headers: Mapping[str, str] | None` 透传请求元数据，MCP 客户端经 `call_tool(meta={...})` 携带），即可把建模工具委派到任意执行环境——K8s Job、远程集群、Serverless 均可。方法签名以 protocol.py 为准（本文不复述，防漂移）；契约行为由 `packages/builtin_plugins/model/tests/test_job_provider.py` / `test_tools_headers.py` 锁定。
-
-启用方式：
-
-```bash
-PYTHONPATH=/srv/my-provider \
-MFLOWY_JOB_PROVIDER=my_pkg.job_provider:MyRemoteProvider \
-uvx --from "mflowy[mcp,modeling]" mflowy-mcp
-```
-
-- `MFLOWY_JOB_PROVIDER`：`local`（默认）或 `module:Class`；模块经宿主 `sys.path` 解析，provider 以标准 Python 包交付
-- 规划预留：底层资源装载的 `JobProvisioner` 契约（mount / create / unmount / get_output）见 [roadmap](../../docs/roadmap.md)
 
 ## 平台登录（login）
 
@@ -72,3 +60,4 @@ MCP 工具调用诊断采集：工具名、完整输入输出、调用意图。�
 
 - DAG 内核与插件 SDK：[mflowy-driver README](../driver/README.md)
 - 能力目录与边函数：[mflowy-builtin-plugins README](../builtin_plugins/README.md)
+- 远程执行（JobProvider 协议与自定义执行环境接入）：[mflowy-model README](../builtin_plugins/model/README.md)

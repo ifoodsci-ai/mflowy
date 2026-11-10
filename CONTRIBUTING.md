@@ -41,7 +41,8 @@ make fmt                            # ruff format
    - User-facing configurable params are annotated `Annotated[T, "描述"]`.
    - New compute entities register via the `@node` decorator — no manual wiring.
    - Keep new dependencies out of `base` unless truly needed; data-stack
-     dependencies go in `[stats]` / `[modeling]` extras.
+     stacks go into the owning domain package (data/model) or its extras (e.g. model's
+     `[deep]`); aggregate-package extras are domain selectors (`[data]`/`[model]`/`[mcp]`/`[deep]`).
 3. **Test** — add tests mirroring the code path (`tests/` mirrors `mflowy/`).
    Run `make test` before pushing.
 4. **Lint** — `make lint && make fmt`.
@@ -66,7 +67,8 @@ make fmt                            # ruff format
 - [docs/research-flow.md](docs/research-flow.md) — methodology guide for users
 - [docs/roadmap.md](docs/roadmap.md) — feature roadmap
 - [packages/driver/README.md](packages/driver/README.md) — DAG kernel: design philosophy & architecture
-- [packages/mcp/README.md](packages/mcp/README.md) — MCP tools, remote execution (JobProvider) & telemetry
+- [packages/builtin_plugins/model/README.md](packages/builtin_plugins/model/README.md) — modeling domain catalog & remote execution (JobProvider)
+- [packages/mcp/README.md](packages/mcp/README.md) — MCP tools, platform login & telemetry
 
 ## Telemetry
 

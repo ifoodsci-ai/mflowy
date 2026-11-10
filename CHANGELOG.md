@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 系统设计文档：PILOT 入仓 + 三子系统重排（#171 / #185，docs）
+
+- 新增 `docs/pilot-loop.md`：PILOT-AI4S（先验继承闭环优化测试系统）系统设计 canon——
+  数据清洗 / 预测模型训练 / 贝叶斯优化推荐三子系统 × 先验继承 × 学习门禁；头部「落位
+  现状对照表」随实现推进更新（正文不改写）。README 主题对齐闭环（PILOT 叙事 + 三子
+  系统状态表）、roadmap 增「工业实验闭环（PILOT）」规划行（#171）。
+- `CONTEXT.md` 重排为「引擎内核（共享）+ 三子系统」分组（#185）：跨子系统机制词
+  （单元与身份 / 寻址与图 / 执行与观测 / 会话与域）归引擎内核节；先验卡（DomainCard）
+  与「缺陷与判定」归**数据清洗子系统**；协议卡（CVCard）归**预测模型训练子系统**，
+  并留远程执行十词（#160 终审）占位——随首个 remote 实现 PR 落该节（#153）；**贝叶
+  斯优化推荐子系统**占位，随 bo 域落地 PR 填充（#171）。词条定义零改动，唯一内容
+  变更 = 「先验卡 / 协议卡」合词条按域拆两条。
+- **远程执行文档归预测模型训练子系统**（#185）：「JobProvider：接入自定义执行环境」
+  节自 mcp README 迁入 model README（协议、实现与契约测试本就住 model 域包），悬空的
+  JobProvisioner 规划行不再随迁（#153 裁定被设计取代）；mcp README 开头句 / 标题 /
+  直接 import 行对齐「零域依赖 host」事实；AGENTS.md 路由行拆分（写远程 provider →
+  model README），driver README / README（C4 与 distribution 表）/ CONTRIBUTING 的
+  归属表述与链接同频。
+- 同频：roadmap 能力域行名对齐三子系统全称；AGENTS.md 词表节与 README 文档节随
+  CONTEXT.md 分组更新；mcp README 工具表补 POMDP 会话 / 报告素材 / YAML 预检组
+  （全部 31 工具入表）。其余路由表文档（data README、research-flow、method 两份、
+  pilot-loop 本体）逐份审查裁定不动。
+- 存量漂移修复：`.mcp.json.example` / mcp README / driver README 退役 extra
+  `[mcp,modeling]` → `[mcp,model]`（照文档安装即报错）；model README 已退役契约
+  `Candidate` 残留；CONTRIBUTING 依赖归属段（`[stats]`/`[modeling]` 旧 extras）对齐
+  域包形态。
+
 ### 用户文档拆解：方法论知识库两份参考 + 叙事瘦身（#163，docs）
 
 - 新增 `docs/method/` 两份方法论参考：**数据清洗**（数据先验提示与示例 / 缺陷检测算子

@@ -7,7 +7,7 @@ extra（uvx 安装需 `--index https://download.pytorch.org/whl/cpu`，仅 MLP f
 
 ## 会话 POMDP 元素表（O/S/A/P·T/R）
 
-契约下限与校验器住 `driver/pomdp.py`（Observation / FinishVerdict / Candidate）；本域语义如下（引擎 = `session.py`，s 元组与八动作面的完整定义见
+契约下限与校验器住 `driver/pomdp.py`（Observation / FinishVerdict）；本域语义如下（引擎 = `session.py`，s 元组与八动作面的完整定义见
 模块 docstring。转移确定性——无概率转移表；可观测性 = diagnose/规则覆盖面：board 聚合与
 findings 是真态的多对一投影——同聚合不同病灶不可分；u_inner/std 是隐藏真值的带噪估计
 （fold_std 观测即为此设）；report_findings（#36）= π 自带传感器的私有观测落账，补程序化观测
@@ -77,3 +77,25 @@ MY_MODEL.mdp_family = {
   引擎——π 撰写后 `finish(pdf)` 收编进 deliverables（tmp/rename 原子落盘，不编译不验内容）
 - 观测面：`modeling_observe` 幂等只读，读时投影 π 的决策面（本 combo 键 findings / 账本摘要 /
   has_cat / 候选族超参面）——出题规则与菜单随 #120 退役，finding kind 词表单源 `taxonomy.py`
+
+## JobProvider：compute 工具的执行委派
+
+五个 compute 工具（hyperparameters_search / modeling / explanation / predict /
+inverse_optimization）经 JobProvider 委派执行：内置 `local` 实现（LocalJobProvider，
+本包内直调 driver 编排），远程实现接管执行环境。MFlowy 不内置绑定任何远程执行平台——
+实现 `JobProvider` 协议（`job_provider/protocol.py`）的 **5 个类型化方法**（与五工具同名，
+每个方法带 `headers: Mapping[str, str] | None` 透传请求元数据，MCP 客户端经
+`call_tool(meta={...})` 携带），即可把建模工具委派到任意执行环境——K8s Job、远程集群、
+Serverless 均可。方法签名以 protocol.py 为准（本文不复述，防漂移）；契约行为由
+`tests/test_job_provider.py` / `tests/test_tools_headers.py` 锁定。
+
+启用方式：
+
+```bash
+PYTHONPATH=/srv/my-provider \
+MFLOWY_JOB_PROVIDER=my_pkg.job_provider:MyRemoteProvider \
+uvx --from "mflowy[mcp,model]" mflowy-mcp
+```
+
+- `MFLOWY_JOB_PROVIDER`：`local`（默认）或 `module:Class`；模块经宿主 `sys.path` 解析，provider 以标准 Python 包交付
+- 远程工具的平台身份（OAuth 登录与 Bearer 接线）见 [mflowy-mcp README](../../mcp/README.md)「平台登录」节

@@ -6,7 +6,7 @@ AI 编码 agent 在本仓库的唯一指引。代码是真相源——本文件�
 
 ## Project
 
-MFlowy：YAML 配置驱动的模块化 ML 工作流引擎，全部能力以 **MCP tools**（pyfunc）暴露——MCP server（stdio）、JSON runner（K8s Job 容器）、直接 import 三入口。
+MFlowy：YAML 配置驱动的模块化 ML 工作流引擎，全部能力以 **MCP tools**（pyfunc）暴露——MCP server（stdio）、JSON runner（K8s Job 容器）、直接 import 三入口。业务系统 = PILOT 三子系统闭环（[docs/pilot-loop.md](docs/pilot-loop.md)）：Clean / Model 两域已落地，BO 推荐域设计进行中（#171）。
 
 **Language**: Python 3.12 | 代码注释与文档：中文
 
@@ -88,13 +88,15 @@ uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 
 | 触发场景                   | 去处                                                                                   |
 | -------------------------- | -------------------------------------------------------------------------------------- |
-| 查术语 / 选词              | [CONTEXT.md](CONTEXT.md)（引擎元词汇 + 禁用别名）                                      |
+| 查术语 / 选词              | [CONTEXT.md](CONTEXT.md)（元词汇 + 禁用别名；按「引擎内核（共享）+ 三子系统」分组）    |
 | 动 driver / YAML / 写插件  | [packages/driver/README.md](packages/driver/README.md)                                 |
 | 查能力目录 / 边函数 / 遥测 | [packages/builtin_plugins/data/README.md](packages/builtin_plugins/data/README.md) + [packages/builtin_plugins/model/README.md](packages/builtin_plugins/model/README.md) |
-| 写远程 provider / 遥测同意门 | [packages/mcp/README.md](packages/mcp/README.md)                                     |
+| 写远程 provider（JobProvider 协议/自定义执行环境） | [packages/builtin_plugins/model/README.md](packages/builtin_plugins/model/README.md)（预测模型训练子系统——协议与实现住 model 域包） |
+| 平台登录 / 遥测同意门      | [packages/mcp/README.md](packages/mcp/README.md)                                       |
 | 用户方法论 / 案例叙事      | [docs/research-flow.md](docs/research-flow.md)（五律总纲 + 五幕叙事入口）              |
 | 查数据清洗方法论（先验 / 检测算子 / 清洗算子矩阵） | [docs/method/data-cleaning.md](docs/method/data-cleaning.md)（研究领域知识，零词表绑定） |
 | 查建模方法论（模型矩阵 / CV-HPO / 特征工程 / 评估） | [docs/method/model-training.md](docs/method/model-training.md)（研究领域知识，零词表绑定） |
+| 查系统闭环设计（PILOT 三子系统 / 学习门禁 / 先验继承） | [docs/pilot-loop.md](docs/pilot-loop.md)（目标态叙事 + 落位现状对照表；BO 决策图 #171） |
 | 规划新功能 / 查路线图      | [docs/roadmap.md](docs/roadmap.md)（已实现清单以 `tools/list` 为真源，roadmap 只留规划） |
 
 **防漂移**：代码已表达的只链接不复述（文件树/签名/行号锚点留给代码）；只写追加式文档（新案例 → `examples/` 快照，新版本 → `CHANGELOG.md`）；"漂移可接受"仅限用户文档，release 边界回填——本文件与 skills 除外（见同步规则）。**剧本引用面谓词**（#65 裁定）：操作 skill（`.agents/skills/*`）参考节只允许引用工具名与入仓文档——引用实现路径（含包结构迁移前的旧路径）即 P0 漂移，删除而非修正。新建文档先过漂移测试："这文件里哪句话会因下次代码 PR 失效？"有答案就不建。
@@ -109,4 +111,4 @@ repo 从 `git remote -v` 推断。issue/PR 共号段：`#42` 先 `gh pr view 42`
 
 ## 词表
 
-两层：**引擎元词汇**（节点/边/组/Context 的定义与禁用别名）见 [CONTEXT.md](CONTEXT.md)；**节点名唯一词表 = 运行期插件目录**（`driver/discover.py` 读两组 entry points；边注册于 `edges` ns 但不进 `list_nodes`）。解析三步（#137/#140）：注册表暖命中 → 目录查表 → 首载加载后按同一键查注册表（发现表键 = 注册表键，load 后 miss = 「声明与注册不一致」fail-loud）——解析面 ⊇ 词表（已导入的装饰节点可暖命中，生产不可达：一文件一节点下忘声明即无人 import）；暖驻留让渡卸载/后组覆盖的即时可见。**编译即校验**：Builder 增量编译（平铺有序列表 + 节点表）对参数边全量 fail-loud——拓扑序/词表 miss/撞名/类型门/参数 schema 校验（#131：已知键子集对装饰期模型，与运行期 validate_call 同源、未知键放过）。issue 标题 / 提案 / 测试名一律用 node/namespace 术语；目录里没有的概念 = 语言超纲信号。插件 SDK = `driver/node.py`（@node 装饰器）+ `edge.py` + `builtin_middleware.py` 尾链，破坏性变更受 CHANGELOG 语义化版本约束。
+两层：**元词汇**（引擎内核共享词——节点/边/组/Context/会话——与三子系统域词的定义与禁用别名，按「引擎内核（共享）+ 三子系统」分组；新域词落所属子系统节，跨子系统共享的机制词才进内核节）见 [CONTEXT.md](CONTEXT.md)；**节点名唯一词表 = 运行期插件目录**（`driver/discover.py` 读两组 entry points；边注册于 `edges` ns 但不进 `list_nodes`）。解析三步（#137/#140）：注册表暖命中 → 目录查表 → 首载加载后按同一键查注册表（发现表键 = 注册表键，load 后 miss = 「声明与注册不一致」fail-loud）——解析面 ⊇ 词表（已导入的装饰节点可暖命中，生产不可达：一文件一节点下忘声明即无人 import）；暖驻留让渡卸载/后组覆盖的即时可见。**编译即校验**：Builder 增量编译（平铺有序列表 + 节点表）对参数边全量 fail-loud——拓扑序/词表 miss/撞名/类型门/参数 schema 校验（#131：已知键子集对装饰期模型，与运行期 validate_call 同源、未知键放过）。issue 标题 / 提案 / 测试名一律用 node/namespace 术语；目录里没有的概念 = 语言超纲信号。插件 SDK = `driver/node.py`（@node 装饰器）+ `edge.py` + `builtin_middleware.py` 尾链，破坏性变更受 CHANGELOG 语义化版本约束。

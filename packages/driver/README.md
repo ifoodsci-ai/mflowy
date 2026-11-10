@@ -2,7 +2,7 @@
 
 **一个轻量的、能力全部以插件存在的、由 YAML 编排的 DAG 编译与调度内核。**
 
-职责一句话：构建期把 YAML 图（多为模板或 LLM 生成）编译成 Context DAG，运行期串行调度插件目录中的 node——计算发生在插件内，内核只组合与调度，并把每次运行装配成可追溯的实验记录（DAGResult + MLflow runs）。远程执行由 JobProvider（mcp 包）把整个工具抬到远端，driver 本体始终进程内。
+职责一句话：构建期把 YAML 图（多为模板或 LLM 生成）编译成 Context DAG，运行期串行调度插件目录中的 node——计算发生在插件内，内核只组合与调度，并把每次运行装配成可追溯的实验记录（DAGResult + MLflow runs）。远程执行由 JobProvider（model 域包）把整个工具抬到远端，driver 本体始终进程内。
 
 本内核由三件制品构成，本文即按此组织：
 
@@ -268,7 +268,7 @@ dependencies = ["mflowy>=1.0"]
 
 ```bash
 # ③ 安装即注册
-uvx --from "mflowy[mcp,modeling]" --with mflowy-extra mflowy-mcp
+uvx --from "mflowy[mcp,model]" --with mflowy-extra mflowy-mcp
 ```
 
 - 参数边三层寻址：**边名（`@edge` 变换，注册于 `edges` ns）> 组名索引 > node_key 索引**——边名命中目录探针（`find_edge` 单次查 `edges` 桶，miss 返 None、导入失败透传）即绑变换；**组名索引优先于 node_key 索引**（表1 未命中才查表2）；零命中编译期 fail-raise（必选边）。类型不匹配的适配写 `@edge` 边函数（恒单值注入，编译期组装、声明序晚绑定），编译期做输入/输出注解一致性校验
@@ -291,5 +291,6 @@ uvx --from "mflowy[mcp,modeling]" --with mflowy-extra mflowy-mcp
 ## 相关文档
 
 - 能力目录与边函数契约：[mflowy-builtin_plugins README](../builtin_plugins/README.md)
-- 引擎消费方（MCP 工具 / JobProvider / 遥测）：[mflowy-mcp README](../mcp/README.md)
+- 引擎消费方（MCP 工具 / 遥测）：[mflowy-mcp README](../mcp/README.md)
+- 远程执行（JobProvider 协议与接入）：[mflowy-model README](../builtin_plugins/model/README.md)
 - 仓库级导航与规约：[AGENTS.md](../../AGENTS.md)
