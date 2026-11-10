@@ -26,8 +26,8 @@
 **每轮步骤**：
 
 1. 镜像重建：待测分支（含 `feat/remote-job-image` 的 `docker/Dockerfile`——zip/unzip + 烧 `MFLOWY_TASK_DIR=/user-data/workspace`、`MLFLOW_TRACKING_URI=sqlite:////user-data/workspace/mlflow.db`、`HOME=/tmp`）构建 `training-job:latest` → `docker save` → k3s containerd 导入；tar 留档 `/tmp/training-job-<git短sha>.tar`（#161 模式）。
-2. 镜像内断言：四烧 ENV 回显、`mflowy-job`（wrap 子命令）在 PATH、`mflowy --version` 与 `list_nodes` 词表可用。
-3. preset 断言（OTP web token，`GET /api/v1/job-presets`）：cpu-standard v2 在列且 workspace 1024Mi。
+2. 镜像内断言：四烧 ENV 回显、mflowy 版本回显（`importlib.metadata`，#161 实证形态）与 `mflowy list_nodes` 词表可用；`mflowy-job`（wrap 子命令）在 PATH——**仅切片 ④ 落地后**断言（基座镜像无此入口）。
+3. preset 断言：cpu-standard v2 在列且 workspace 1024Mi（OTP web token 查 `GET /api/v1/job-presets`——该路对 web token 的可达性 #161 **未留档**，#161 驱动是以种子 id 直提 CreateJob；不通则以 S1 CreateJob 受理成功为替代证据并记录）。
 4. OTP 登录演练：`POST /api/v1/auth/send-verification-code/login` → dev Redis（容器 `mflowy-infra-redis-1`，密码取 `mflowy-platform/.env.redis`）`vcode:login:<email>` 取码 → `POST /api/v1/auth/login`。**连续登录间隔 ≥65s**（per-IP 1/min + per-(purpose,email) 冷却，#161 踩坑两次）。
 
 **驱动方式**：平台面 = curl 脚本（改编 #161 留档 `/tmp/mflowy-base-verify/run.sh`）；工具面 = MCP 通道小驱动脚本（stdio 连 `mflowy-mcp`，cwd 置于临时目录——通道纪律断言依赖真实 MCP 通道）。载荷构造：CLI runner 单 JSON argv、name/desc 等客户端拼进 JSON（无 key=value 追加合并）。
@@ -46,7 +46,7 @@
    - workspace 语义：`.scratch` 下载 404、ListFiles 无 workspace 根（emptyDir 不落 S3）
    - uploads 只读探针（写探针失败）
 
-## S2 实验就绪：`ensure_platform_experiment`（🟢 实现后即测；upload-url 属 /experiments 面，CLI scope 实测放行——若复测 403 则随 #46 转 🔴）
+## S2 实验就绪：`ensure_platform_experiment`（🟢 实现后即测；upload-url 属 /experiments 下 files 面——#161 留档为「`/experiments/*` ✓」整体结论，files 子路未逐路实测，复测 403 则随 #46 转 🔴）
 
 **正向**：
 
@@ -85,7 +85,7 @@
 - J1 轮询：返回 `{job_id, status, terminal, tail_lines, logs}`；未终态 `terminal=false` 继续；`succeeded` → `terminal=true` 停轮
 - `tail_lines` 边界：0 / 负 / 10001 → 本地 fail-loud（不发出 HTTP；上游 `<=0→500` 是其容错非我方语义）
 
-## S5 拉取与本地查询（🟢 实现后即测；download-url 属 files 面）
+## S5 拉取与本地查询（🟢 实现后即测；download-url 属 /experiments 下 files 面——CLI scope 放行依据同 S2，未逐路实测，复测 403 则随 #46 转 🔴）
 
 - `download_platform_job_artifacts(job_id=J1, platform_experiment_id=E, target_dir=<已存在>)` → 解压落位 `target_dir/{J1}/`（zip 根 = workspace 根）；返回 `{job_id, platform_experiment_id, local_task_dir, file_count, mlflow_db:<path>}`；zip 本体即弃（target_dir 无 .zip 残留）
 - zip 内容断言（hpo 形态）：`mlflow.db` + `.mlruns/` 树 + `.mflowy/study/<run_id>.db` 活文件 + run 工件 `study.db`
