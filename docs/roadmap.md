@@ -20,12 +20,13 @@
 | 方向              | 说明                                                |
 | ----------------- | --------------------------------------------------- |
 | **评估不确定性量化** | 选参指标的折间 std 已随训练落 run（`{scoring}_std`，来自 inner CV 分数）；待补：① 全指标折间离散度（终评后补一轮 multi-metric CV，或以 holdout bootstrap 置信区间替代）；② `predict` 输出预测不确定性（单一最终模型下需换来源：conformal prediction 或训练时落盘的 OOF 残差分布）；③ 差距小于折间波动时标记"无显著差异"。证据链：科学审计 P0（排名决策无显著性证据）+ P1（预测无不确定性）。亦是贝叶斯优化推荐子系统（BO，#171）的 Model→BO 接口上游依赖（uncertainty——依赖链评论见 #76） |
-| **逆向搜索可信度约束** | `search_input` 三项防护：① 置信度约束——优化目标在最终模型输出上附包络外推惩罚项或硬约束（单一最终模型下分歧来源改为训练时落盘的 holdout 残差分布）；② 密度感知搜索空间——推断空间附观测密度加权或显式警告包络外推区域；③ 收敛证据——输出 best-value 轨迹与多种子稳定性对比，替代固定 n_trials 的"预算内最好"。证据链：科学审计 P0（模型即真理/包络幻觉/无收敛证据三大逆向设计经典陷阱均未设防）。OOD/密度感知面与 BO 预测可信域先验同源（#171/#76 依赖链） |
+| **逆向搜索可信度约束** | 三项防护随 [#82](https://github.com/ifoodsci-ai/mflowy/issues/82) 划归 BO 图 [#171](https://github.com/ifoodsci-ai/mflowy/issues/171)（2026-11-11 起进图内消化）：① 置信度约束——[#174](https://github.com/ifoodsci-ai/mflowy/issues/174) 已裁：BO v1 置信度列 not_available，上游请求 CV+ 逐点区间 + OOD 标记（依赖链评论见 #76）；② 密度感知——原拟 GPSampler 后验天性承接，随 [#175](https://github.com/ifoodsci-ai/mflowy/issues/175) TPE 单引擎裁定失去载体（待真实需求再议）；③ 收敛证据——#171 雾区（毕业条件 = 首版 e2e 验收）。one-shot `inverse_optimization` 维持现状待 BO 图统一重构 |
 | **效应量检验严谨化** | `effect_size`：① 多重比较 BH 校正（当前按 min p 挑 top-3 无校正）；② η²→ω²、Cramér's V→bias-corrected 版本；③ 方差不齐时 Welch ANOVA。证据链：科学审计 P1；效应量为主 p 为辅的定位不变，校正只影响 p 的使用可信度 |
 | **任务推理硬化** | `infer_task_type_by_statistic` 工具与 x_y 内部 `_infer_task` 两处：① unique_ratio 阈值附样本量依赖说明（小样本 r≥0.5 判回归、大样本 r<5% 判分类，同一变量结论随 n 漂移）；② r<5% 短路提前于等距整数甄别——真实整数量（计数/年龄）大样本下误判分类，短路前增加等距整数检查。证据链：科学审计 P1 |
 | **族内输出注解一致性（目录面）** | 构建期声明复核（`verify_output_hint`）已随参数边落地（运行期值级复核随 #57 退役——静态安全哲学）；残余在目录面——归组成员返回注解互相一致性仍无校验，第三方 `model.my_model` 声明与族内漂移要到消费点才暴露。方向：测试期加载族成员比对返回注解（原构建期 AST 扫描钩子已随注册静态化退役），坏契约 fail-loud 在目录面 |
 | **沙箱节点族泛化** | agent 现场生成计算的通道仅 `load.python`/`clean.python` 两个沙箱节点（外部 .py + 固定 df 契约）；方向：泛化为「声明所属 namespace + 满足该组输出契约」的通用沙箱节点，经 validate 面校验后进图——用族输出契约校验（见上条）换「agent 扩词表」的回路，不引入运行期注册/热重载 |
 | **工业实验闭环（PILOT）** | 贝叶斯优化推荐子系统（BO，[决策图 #171](https://github.com/ifoodsci-ai/mflowy/issues/171) 进行中）+ 学习门禁 + 先验继承链——三子系统闭环 `Clean→Model→BO→Wet-lab↺`，系统设计见 [pilot-loop.md](pilot-loop.md)；搜索空间按连续+离散/组合+描述符混合一等公民收口 |
+| **BO 多目标扩展** | 产率×纯度 Pareto 等双目标（首版单目标已裁 [#174](https://github.com/ifoodsci-ai/mflowy/issues/174)）；TPE/NSGAII 多目标能力在位（[#175](https://github.com/ifoodsci-ai/mflowy/issues/175)）、扩展不换引擎；触发 = 真实双目标需求且上游供多目标列（[追踪 #188](https://github.com/ifoodsci-ai/mflowy/issues/188)） |
 | 数据合成          | CTGAN + 约束 pipeline                                |
 | 超参采样器扩充    | Random / Grid / CMA-ES（当前仅 TPE）                  |
 | 缺失值专项可视化  | 当前由数值分布图间接覆盖                              |
