@@ -19,6 +19,9 @@ from pathlib import Path
 
 _TaskDir: ContextVar[Path | None] = ContextVar("task_dir", default=None)
 _TaskDirPinned: ContextVar[bool] = ContextVar("task_dir_pinned", default=False)
+# 入口通道标识（#159 §6 路径形态通道纪律）：知识住 route_task_dir 布线处
+# （server="mcp" / runner="cli"），工具经 resolve_input_path 共享助手消费
+_EntryChannel: ContextVar[str | None] = ContextVar("entry_channel", default=None)
 
 
 def set_task_dir(task_file: str | Path):
@@ -99,24 +102,32 @@ def _anchor_dir(value) -> Path | None:
 
 
 @contextmanager
-def _call_scoped(anchor: str | None, kwargs: dict, default: str | Path):
-    """单次调用的 task_dir 绑定：钉住不动；锚推导 > 路由缺省；用毕还原。"""
-    if _TaskDirPinned.get():
-        yield
-        return
-    value = _anchor_dir(kwargs.get(anchor)) if anchor else None
-    token = _TaskDir.set(value if value is not None else Path(default).absolute())
+def _call_scoped(anchor: str | None, kwargs: dict, default: str | Path, channel: str | None):
+    """单次调用的 task_dir 绑定：钉住不动；锚推导 > 路由缺省；用毕还原。
+
+    通道标识随调用作用域绑定（钉住态同样可见——钉住只免锚推导不免通道纪律）。"""
+    channel_token = _EntryChannel.set(channel)
     try:
-        yield
+        if _TaskDirPinned.get():
+            yield
+            return
+        value = _anchor_dir(kwargs.get(anchor)) if anchor else None
+        token = _TaskDir.set(value if value is not None else Path(default).absolute())
+        try:
+            yield
+        finally:
+            _TaskDir.reset(token)
     finally:
-        _TaskDir.reset(token)
+        _EntryChannel.reset(channel_token)
 
 
-def route_task_dir(default: str | Path):
+def route_task_dir(default: str | Path, *, channel: str | None = None):
     """入口路由中间件（CLI runner / MCP server.register 共用，#95 裁定 B）。
 
     优先级：env 钉住（pin_task_dir）> 工具声明锚参数推导 > 路由缺省
     （CLI=cwd、MCP=~/.mflowy）；绑定作用域限本次调用（token 用毕即还）。
+    ``channel``（#159 §6）：入口标识（"cli"/"mcp"），供 ``resolve_input_path``
+    的路径形态通道纪律消费——布线处声明、工具侧查询。
     """
 
     def deco(fn):
@@ -125,19 +136,39 @@ def route_task_dir(default: str | Path):
 
             @wraps(fn)
             async def async_wrapper(*args, **kwargs):
-                with _call_scoped(anchor, kwargs, default):
+                with _call_scoped(anchor, kwargs, default, channel):
                     return await fn(*args, **kwargs)
 
             return async_wrapper
 
         @wraps(fn)
         def wrapper(*args, **kwargs):
-            with _call_scoped(anchor, kwargs, default):
+            with _call_scoped(anchor, kwargs, default, channel):
                 return fn(*args, **kwargs)
 
         return wrapper
 
     return deco
+
+
+def entry_channel() -> str | None:
+    """当前调用的入口通道（"cli"/"mcp"；直接 import 宿主 = None）。"""
+    return _EntryChannel.get()
+
+
+def resolve_input_path(value: str | Path) -> Path:
+    """工具入参路径的通道纪律（#159 §6，共享解析助手）。
+
+    相对路径按 cwd 寻址——CLI 通道（runner，cwd = 终端执行路径，含容器内
+    wrapper 调用）接受并解析；MCP 通道 cwd 无业务参考意义 → 拒收 fail-loud。
+    绝对路径两通道均原样。通道未知（直接 import 宿主）按 CLI 语义处理。
+    """
+    p = Path(value)
+    if p.is_absolute():
+        return p
+    if _EntryChannel.get() == "mcp":
+        raise ValueError(f"MCP 通道拒收相对路径：{value!r}（server 无业务 cwd 语义）——请传绝对路径")
+    return Path.cwd() / p
 
 
 def ensure_relative_path_under_task_dir(path: str | Path) -> Path:

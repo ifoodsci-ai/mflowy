@@ -59,7 +59,7 @@ def main() -> None:
 
     if env_dir := os.environ.get("MFLOWY_TASK_DIR"):
         pin_task_dir(env_dir)
-    table = {ep.name: route_task_dir(Path.cwd())(ep.load()) for ep in eps}
+    table = {ep.name: route_task_dir(Path.cwd(), channel="cli")(ep.load()) for ep in eps}
     func = table.get(tool_name)
     if func is None:
         print(f"Unknown tool: {tool_name}", file=sys.stderr)

@@ -44,7 +44,43 @@ def register(mcp: MCPServer):
     from .tools import _tool_entry_points
 
     for ep in _tool_entry_points():
-        mcp.tool()(route_task_dir(Path.home() / ".mflowy")(ep.load()))
+        mcp.tool()(route_task_dir(Path.home() / ".mflowy", channel="mcp")(_fail_loud(ep.load())))
+
+
+def _fail_loud(fn):
+    """fail-loud 消息透传（红线 1，MCP 通道）：工具 raise 的候选清单式报错必须达 agent。
+
+    SDK 缺省把工具异常掩成 ``Error executing tool <name>``（多租户防泄漏缺省）；
+    mflowy 的 fail-loud 文案是设计面（CLI 通道全量打印），统一转 ``ToolError``
+    透传——消息带异常类名供诊断，crash 的完整 traceback 仍在 server stderr。
+    """
+    import inspect
+    from functools import wraps
+
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    def _to_tool_error(e: Exception) -> ToolError:
+        return ToolError(f"{type(e).__name__}: {e}")
+
+    if inspect.iscoroutinefunction(fn):
+
+        @wraps(fn)
+        async def async_wrapped(*args, **kwargs):
+            try:
+                return await fn(*args, **kwargs)
+            except Exception as e:
+                raise _to_tool_error(e) from e
+
+        return async_wrapped
+
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:
+            raise _to_tool_error(e) from e
+
+    return wrapped
 
 
 def main() -> None:
