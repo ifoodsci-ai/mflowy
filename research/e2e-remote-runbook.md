@@ -5,9 +5,9 @@
 >
 > **阶段徽标**（上游依赖维度；素材维度见下）：
 > - 🟢 = 实现落地后即可执行，上游无阻塞
-> - 🔴 = 实现落地后仍被 [mflowy-platform#46](https://github.com/lincode7/mflowy-platform/issues/46) 阻塞（CLI scope 表缺 jobs/presets 路），上游扩表后转正
+> - **上游阻塞已解除（2026-11-11）**：[mflowy-platform#46](https://github.com/lincode7/mflowy-platform/issues/46) 已完成关闭——CLI scope 表扩容（jobs 族全放行，admin 路维持 deny-by-default）+ 网关按 dev HEAD 重建重部署（镜像 `ba896b9cd942`，含 #45 regen）；线上 CLI token 实证四条契约路全过闸（部署前 403 → 部署后 200）、admin preset `workspace_size_mi` HTTP 往返 + 落库非 0。原 🔴 阶段（S3/S4/S6）全部转 🟢；上游 dev 领先 origin/dev 2 提交未推送。
 >
-> 素材维度：S0/S1 以基座（[镜像与 preset 端到端验证基座](https://github.com/ifoodsci-ai/mflowy/issues/161)）即可执行；S2+ 需对应实现 PR 落地。#46 转正前，部分门 = S0/S1/S2/S5/S7 + S3/S4/S6/S8 的无上游依赖断言。
+> 素材维度：S0/S1 以基座（[镜像与 preset 端到端验证基座](https://github.com/ifoodsci-ai/mflowy/issues/161)）即可执行；S2+ 需对应实现 PR 落地。
 
 ## 契约单源
 
@@ -46,7 +46,7 @@
    - workspace 语义：`.scratch` 下载 404、ListFiles 无 workspace 根（emptyDir 不落 S3）
    - uploads 只读探针（写探针失败）
 
-## S2 实验就绪：`ensure_platform_experiment`（🟢 实现后即测；upload-url 属 /experiments 下 files 面——#161 留档为「`/experiments/*` ✓」整体结论，files 子路未逐路实测，复测 403 则随 #46 转 🔴）
+## S2 实验就绪：`ensure_platform_experiment`（🟢 实现后即测；upload-url 属 /experiments 下 files 面——#161 留档为「`/experiments/*` ✓」整体结论，files 子路未逐路实测，复测 403 则记上游漂移票）
 
 **正向**：
 
@@ -63,7 +63,7 @@
 - 清单含目录 / basename 以 `.` 开头（dotfile）/ 清单内撞名 → fail-loud（dotfile 拒整次同步）
 - MCP 通道传相对路径 files → 拒收 fail-loud（runner 通道接受——通道纪律）
 
-## S3 提交与受理（🔴 blockedBy #46：create_job + list_presets）
+## S3 提交与受理（🟢 实现后即测；原 🔴 blockedBy #46 已解除——CLI scope 扩表部署实证 2026-11-11）
 
 **正向**：
 
@@ -80,12 +80,12 @@
 - `--kwargs-json` 载荷 >128KiB → provider 预检 fail-loud 提示拆分
 - local 模式带 platform_experiment_id/inherit → 忽略且恒 `finished`+`dag_result`（模式专属参数原则，先例 headers）
 
-## S4 在途观察：`get_platform_job_logs`（🔴 blockedBy #46）
+## S4 在途观察：`get_platform_job_logs`（🟢 实现后即测；原 🔴 blockedBy #46 已解除）
 
 - J1 轮询：返回 `{job_id, status, terminal, tail_lines, logs}`；未终态 `terminal=false` 继续；`succeeded` → `terminal=true` 停轮
 - `tail_lines` 边界：0 / 负 / 10001 → 本地 fail-loud（不发出 HTTP；上游 `<=0→500` 是其容错非我方语义）
 
-## S5 拉取与本地查询（🟢 实现后即测；download-url 属 /experiments 下 files 面——CLI scope 放行依据同 S2，未逐路实测，复测 403 则随 #46 转 🔴）
+## S5 拉取与本地查询（🟢 实现后即测；download-url 属 /experiments 下 files 面——CLI scope 放行依据同 S2，未逐路实测，复测 403 则记上游漂移票）
 
 - `download_platform_job_artifacts(job_id=J1, platform_experiment_id=E, target_dir=<已存在>)` → 解压落位 `target_dir/{J1}/`（zip 根 = workspace 根）；返回 `{job_id, platform_experiment_id, local_task_dir, file_count, mlflow_db:<path>}`；zip 本体即弃（target_dir 无 .zip 残留）
 - zip 内容断言（hpo 形态）：`mlflow.db` + `.mlruns/` 树 + `.mflowy/study/<run_id>.db` 活文件 + run 工件 `study.db`
@@ -95,7 +95,7 @@
 
 **负向**：target_dir 不存在 → fail-loud；MCP 通道相对 target_dir → 拒收。
 
-## S6 续跑链：继承 × resume × 跨 Job 寻址（🔴 blockedBy #46）
+## S6 续跑链：继承 × resume × 跨 Job 寻址（🟢 实现后即测；原 🔴 blockedBy #46 已解除）
 
 三个 job 依次落在**同一平台实验 E**（同实验宿主多 Job）：
 
@@ -126,9 +126,9 @@
 | ① 镜像与依赖基座（Dockerfile 合入 + Makefile 镜像 tag 版本钉（`training-job:$(WHL_VERSION)`）+ httpx2/pydantic 进 model 默认依赖） | S0 S1 | 无 |
 | ② platform_client + 错误族（单测为主） | S0 S1 S8 | 无 |
 | ③ ensure_platform_experiment（mcp 两站注册） | S2 | 无（复测 upload-url scope） |
-| ④ RemoteJobProvider + `mflowy-job wrap` + JobOutcome 协议/compute 参数面 | S3 S4 S5 | #46 |
+| ④ RemoteJobProvider + `mflowy-job wrap` + JobOutcome 协议/compute 参数面 | S3 S4 S5 | 无（#46 已解除） |
 | ⑤ download 工具 + 观察面单参改造 | S5 S7 | 无 |
-| ⑥ resume_study_from 机制 + 系列收尾 | 全链 S1–S8 | #46（收尾须 #46 已扩表） |
+| ⑥ resume_study_from 机制 + 系列收尾 | 全链 S1–S8 | 无（#46 已解除） |
 
 **通过判据**：所涉阶段断言全绿。每轮留档（附 PR 描述）：分支 sha、镜像 tar 路径、experiment id、全部 job id、每 job 日志尾、zip 清单（`unzip -l`）、驱动脚本输出。
 
