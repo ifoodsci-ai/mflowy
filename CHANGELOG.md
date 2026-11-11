@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 远程执行切片②：platform_client + 错误族（#195，feat）
+
+RemoteExperimentClient 落地（`job_provider/platform_client.py`，#157 决议）——系列
+后续切片（ensure 工具 / RemoteJobProvider / download 工具）的共同地基，纯单测面。
+
+- 九方法面（`list_jobs` 砍除）：实验查/建、presigned upload/download-url、list_files
+  （服务端目录树客户端拍平）、create/get_job、job logs、list_presets——wire = pydantic
+  `extra=ignore`，时间戳 int64 epoch 秒原样（`workspace_size_mi: int | None` 承接
+  上游 #45 regen 缺失窗口）。
+- 鉴权接线：逐请求 `ensure_access_token`；401 → force 强刷一次重放一次，仍 401 →
+  `LoginRequiredError`。`ensure_access_token` 增 `force` 钮（utils API 变更：未过期
+  也走锁内刷新——服务端判无效时本地 exp 不可信；等锁期间并发轮换则复用新值不空刷）。
+- 错误族：`PlatformApiError`（endpoint + base_url + 三形态提取的 message；传输层
+  异常统一归此，含 MFLOWY_BASE_URL/NodePort 可达性提示——S8）/ `PlatformNotFoundError`
+  （404，ensure「绝不静默转创建」消费）；presigned 传输段（`upload_presigned` /
+  `download_presigned`，tmp+rename 原子写）错误面剥 query、只报 status + S3 `<Code>`，
+  **凭据不变量**（#186）：任何报错不含 X-Amz 签名材料（契约测试钉住）。
+- base_url 解析链公开单源 `resolve_base_url`（与 auth 同链同缺省，不另立 PLATFORM var）。
+- `JOB_TERMINAL_STATUSES` 常量单源（logs 工具 terminal 判定，切片④消费）。
+- mount_type 字面量校验 fail-loud 附候选；404 候选清单纪律（附已查 id + 建议动作）。
+  契约测试 = MockTransport 全桩零真实网络：client 17 例（三形态错误提取参数化 ×3，
+  凭据不变量覆盖 S3 错误分支与传输分支）+ auth force 镜像两例。
+
 ### 远程执行基座：镜像 zip 往返 + 版本钉 + 依赖面（#153 切片①，feat）
 
 RemoteJobProvider 接入上游实验服务（决策地图 #153）实现系列的首个切片——镜像与依赖
