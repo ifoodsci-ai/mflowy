@@ -1,4 +1,4 @@
-.PHONY: install build build-whl test test-cov typecheck lint fmt precommit clean help e2e-info e2e-statistic e2e-mcp e2e-bench e2e ui
+.PHONY: install build build-whl test test-cov typecheck lint fmt precommit clean help e2e-info e2e-statistic e2e-mcp e2e-bench e2e-remote e2e ui
 
 # 默认目标
 help:
@@ -19,11 +19,11 @@ help:
 	@echo "  make clean            清理临时文件"
 	@echo "  make e2e              三入口分发冒烟（CLI/stdio 真实进程 + diabetes 全链，发布前人肉跑）"
 	@echo "  make e2e-bench        六基准冒烟门（iris/digits/titanic + 工业三链 + 分类会话链，判据含指标下限）"
+	@echo "  make e2e-remote       S0/S1 平台契约回归（remote 系列 PR 门禁，需本地 k3s dev 集群）"
 	@echo "  make ui [P=]          启动 MLflow UI 查看实验记录"
 	@echo ""
-	@echo "镜像覆盖（可选）:"
-	@echo "  make build IMAGE_TAG=v1.0.0"
-	@echo "  make build IMAGE_REGISTRY=localhost:5000"
+	@echo "镜像覆盖（可选，tag 缺省 = 版本钉 training-job:\$$(WHL_VERSION)，latest 已退役）:"
+	@echo "  make build IMAGE=\"<registry>/training-job:<版本>\"  整串覆盖（如生产 push images.mflowy.com）"
 	@echo "  make build MFLOWY_EXTRA_MODULES=\"mflowy-extra==0.1\"  定制插件包"
 
 # 安装全部依赖
@@ -49,11 +49,13 @@ typecheck:
 build-whl:
 	uv build --all --wheel -o dist/
 
-# wheel 版本（pyproject.toml 单一来源，注入 Dockerfile ARG VERSION）
-WHL_VERSION ?= $(shell sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)
+# wheel 版本（pyproject.toml 单一来源，注入 Dockerfile ARG VERSION；提取件与 e2e 驱动共享）
+WHL_VERSION ?= $(shell sh scripts/_whl_version.sh pyproject.toml)
 
-# 构建 Docker 镜像（全部依赖）
-IMAGE          = training-job:latest
+# 构建 Docker 镜像（全部依赖）。tag = pyproject 版本单源（#187 统一版本钉：
+# latest 退役——dev 同 tag 重建 = 测试位、链中途禁重导；生产 push 不可变 tag）；
+# 整串覆盖走命令行 IMAGE=（如 images.mflowy.com/training-job:<V>）
+IMAGE          = training-job:$(WHL_VERSION)
 
 # 额外插件包（空格分隔，如 make build MFLOWY_EXTRA_MODULES="mflowy-extra==0.1"）
 MFLOWY_EXTRA_MODULES ?=
@@ -122,6 +124,14 @@ e2e-mcp:
 # 越限自证：BENCH_FLOOR_BUMP='iris|RF|99' make e2e-bench
 e2e-bench:
 	uv run --extra model --extra deep python scripts/_e2e_bench.py
+
+# S0/S1 平台契约回归（remote 实现系列 PR 合并门禁——docs/research/2026-11-11-e2e-remote-runbook.md）：
+# 平台面 curl 驱动（OTP 登录 → 建实验 → 上传 → CreateJob cmd=sh → 轮询 → 断言），
+# 钉住上游契约、与 mflowy 实现解耦。需本地 k3s dev 集群 + OTP 账号 + redis 容器，
+# 人肉门（对齐 e2e/e2e-bench 形态，不进常规 PR 门）；OTP 连续登录间隔 ≥65s。
+# 镜像前置（S0.1）：make build（版本钉 training-job:$(WHL_VERSION)）→ docker save → k3s 导入
+e2e-remote:
+	bash scripts/_e2e_remote_platform.sh
 
 e2e: e2e-info e2e-statistic e2e-mcp
 	@set -e; \

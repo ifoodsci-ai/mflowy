@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 远程执行基座：镜像 zip 往返 + 版本钉 + 依赖面（#153 切片①，feat）
+
+RemoteJobProvider 接入上游实验服务（决策地图 #153）实现系列的首个切片——镜像与依赖
+基座；S0/S1 平台契约回归本轮全绿（26 断言 / 0 失败 / 1 过渡 warn，本树重建镜像
+`training-job:0.2.0`，证据随 PR 描述留档）。
+
+- `docker/Dockerfile` 运行时层新增 `zip`/`unzip`（远程任务产物打包与跨 Job 继承解包，
+  任务包装器与调用方参考模式共用）；烧平台 Job 容器契约 ENV：
+  `MFLOWY_TASK_DIR=/user-data/workspace`、`MLFLOW_TRACKING_URI=sqlite:////user-data/workspace/mlflow.db`
+  （显式 `-e` 覆盖优先，本地/MCP 部署语义不变）；`HOME=/tmp`——nobody 缺省 HOME 不可写，
+  而 `utils/mlflow.py` setup() 急切 mkdir `$HOME/.mflowy`（#161 研究回填）。
+- 镜像 tag 版本钉（#187 统一版本钉）：Makefile `IMAGE = training-job:$(WHL_VERSION)`
+  （pyproject 版本单源；提取件 `scripts/_whl_version.sh` 与 e2e 驱动共享），`latest`
+  全面退役；dead 变量示例（`IMAGE_TAG`/`IMAGE_REGISTRY`）从 help 清除，整串覆盖走
+  命令行 `IMAGE=`。
+- 依赖面（#157/#159 决议：`[remote]` extra 取消）：`httpx2>=2.12` 与 `pydantic>=2.13.4`
+  进 mflowy-model 默认依赖——wire 模型与 JobOutcome 直用 pydantic（不再靠 driver 传递
+  侥幸，红线 6 清偿）、HTTP 栈 = httpx2（锁内既有，MCP server 形态零新增包）；后续四新
+  平台工具无条件注册、零降级面。锁文件仅增依赖边，解析版本零变动。
+- E2E 验收 runbook 入仓（#165）：`docs/research/2026-11-11-e2e-remote-runbook.md`——
+  remote 实现系列 PR 的合并门禁（S0–S8 九段 + 切片→必过映射）。S0/S1 平台面驱动
+  `scripts/_e2e_remote_platform.sh`（OTP 登录 → preset 断言 → 建实验 → 上传 →
+  CreateJob cmd=sh → 轮询断言；`make e2e-remote`；redis 凭据经 REDISCLI_AUTH 注入、
+  网关调用统一 30s 超时）与基座载荷（`scripts/_e2e_remote_task.sh` /
+  `_e2e_remote_payload.json`）同批入仓；roadmap 增发版轮镜像策略行。
+- `CONTEXT.md` 预测模型训练子系统落远程执行十词（#160 终审原样搬运：平台实验 / 追踪
+  实验 / 平台任务 / 执行模式 / 模式专属参数 / 受理面 / 继承 / 可继承 zip / 继承源
+  任务 / 实验就绪），占位随本 PR 消解。
+
 ### 系统设计文档：PILOT 入仓 + 三子系统重排（#171 / #185，docs）
 
 - 新增 `docs/pilot-loop.md`：PILOT-AI4S（先验继承闭环优化测试系统）系统设计 canon——

@@ -20,6 +20,11 @@ dependencies = [
     "numpy>=2.0.0",
     "pandas>=2.2,<3",
     "scipy>=1.17.0",
+    # 远程 JobProvider 基座（#153/#157 决议：[remote] extra 取消——wire 模型与
+    # JobOutcome 直用 pydantic（不再靠 driver 传递侥幸），HTTP 栈 = httpx2（2.x
+    # 延续线，锁内既有）；后续四新平台工具无条件注册、零降级面）
+    "httpx2>=2.12",
+    "pydantic>=2.13.4",
 ]
 
 [project.optional-dependencies]
