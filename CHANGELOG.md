@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 远程执行切片③：ensure_platform_experiment 实验就绪工具（#196，feat）
+
+remote 系列工具面第一件（#156/#159 决议）：查建平台实验 + 文件清单增量同步 +
+可继承面回报——后续 compute 提交的前置动作（CONTEXT 词条「实验就绪」）。
+
+- 新平台工具 `ensure_platform_experiment`（mcp 两站注册）：传 id = 查询模式
+  （校验存在，404 fail-loud **绝不静默转创建**）；不传 = 创建模式（name 必填）；
+  id 与 name/desc 同传 = 参数来源冲突拒绝。返回
+  `{platform_experiment_id, files: {uploaded/updated/skipped: [{local, remote}]},
+  inheritable: [{job_id, status}]}`（inheritable = outputs 下有 `{job_id}.zip` 的
+  job，newest first、status 不过滤；发现面取代已砍除的 list_platform_jobs）。
+- 增量同步：本地 MD5 ↔ 远端 etag 裸字符串全等——「裸」= 剥 S3 引号（网关恒带引号
+  下发，不剥则幂等面失效，S2 E2E 实证；multipart etag 含 `-` 自然落重传）；size 不
+  参与判定也不进返回面（#156 返回 shape 为准，agent 对本地文件自知）；不删除远端
+  未列文件；清单预检 fail-loud 家族（dotfile 拒整次 / 目录 / 撞名 / 不存在 / MCP
+  相对路径拒收）。
+- 聚合面：根 `[mcp]` extra 增随 `mflowy-model`（#159 §5「既有 model 依赖传递」前提
+  在包级不成立——mcp 包保持零域依赖，server 分发形态经聚合取得 model；裸 mflowy-mcp
+  嵌入形态按「安装形态即通道」fail-loud ImportError）。
+- **路径形态通道纪律落地**（#159 §6）：`route_task_dir` 增 `channel` 入参
+  （runner="cli" / server="mcp"）+ 共享解析助手 `resolve_input_path`——相对路径
+  CLI 按 cwd 接受、MCP 拒收 fail-loud（server 无业务 cwd 语义）。
+- **MCP 通道 fail-loud 消息透传**（server `_fail_loud`）：SDK 缺省把工具异常掩成
+  `Error executing tool <name>`（多租户防泄漏缺省）——统一转 `ToolError` 透传
+  （消息带异常类名，CLI 通道本就全量打印；红线 1 的候选清单文案必须达 agent）。
+  E2E 首跑实证：透传前负向断言全被掩。
+- 懒加载边界：工具体内 import model 包 platform_client（mcp 保持零域依赖 host——
+  注册无条件、执行随安装形态，裸 host 无 model 时 fail-loud ImportError，零降级机器）。
+- S2 工具面 E2E 驱动入仓（`make e2e-remote-tools` → `scripts/_e2e_remote_tools.py`，
+  MCP stdio 真实通道 + 遥测 off 常设）；本轮 **13/13 绿**（含 upload-url 对 CLI
+  token 实测 200——#161 期 files 子路 scope 疑虑解除）。J1 继承面断言随切片④生长。
+
 ### 远程执行切片②：platform_client + 错误族（#195，feat）
 
 RemoteExperimentClient 落地（`job_provider/platform_client.py`，#157 决议）——系列

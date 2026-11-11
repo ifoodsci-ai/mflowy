@@ -14,6 +14,7 @@ MFlowy 以 MCP 为架构主体：全部能力以工具（pyfunc）暴露，经 e
 > 经 entry points 组 `mflowy.tools` 注册；本包为**零域依赖 host**——平台工具（词表/mlflow
 > 观测/工件/指纹/登录）由 mflowy-mcp pyproject **同组静态声明**（与域包同构，server/runner
 > 同一真源消费，镜像契约钉在 `tests/mcp/test_platform_tools_registry.py`），域工具发现即用。
+> remote 系列平台工具（`ensure_platform_experiment` 等）的引擎住 model 包 platform_client，**函数体内懒加载**——注册无条件、执行随安装形态（裸 host 缺 model 时调用 fail-loud ImportError；`mflowy[mcp]` 聚合 extra 已含 model）。
 > 装哪个域包多哪批工具（`tools/list` = 已安装能力）。
 
 ## 工具分组（执行位置）
@@ -28,10 +29,11 @@ MFlowy 以 MCP 为架构主体：全部能力以工具（pyfunc）暴露，经 e
 | 建模 compute | `modeling` / `hyperparameters_search` / `explanation` / `predict` / `inverse_optimization` | **JobProvider 委派** |
 | mlflow 观测 | `get_experiment` / `get_run` | 始终本地（工件后端为本地文件树） |
 | 平台 | `login`（OAuth 2.1 浏览器授权）/ `sessions_gc`（TTL 回收） | 本地 |
+| 平台·remote | `ensure_platform_experiment`（实验就绪：查建 + 文件增量同步 + 可继承面） | 平台 API（经 model 包 platform_client，懒加载） |
 
 建模类经 JobProvider 委派（内置 `local` / 自定义 `module:Class`）——协议与自定义执行环境接入见 [mflowy-model README](../builtin_plugins/model/README.md)「JobProvider」节（预测模型训练子系统）。
 
-**错误契约二分**：官方 MCP SDK 对非 ToolError 异常脱敏（客户端只收裸 `Error executing tool <name>`）。`validate_modeling_steps` 的领域结果本就是"不合法 + 原因"——全部失败路径（缺文件/片段格式/YAML 语法/DAG 构建）走结构化 `{valid: false, error}` 返回，agent 拿到详情自我纠正；其余工具的 operational error（路径/run 不存在等）维持 crash 通道（runner 侧非零退出码）。
+**错误契约**：结构化失败面（`validate_modeling_steps` 的 `{valid: false, error}`）之外，工具的 fail-loud 报错（红线 1 的候选清单式文案——路径/run 不存在、参数冲突等）在 MCP 通道经 `server._fail_loud` 统一转 `ToolError` 透传（消息带异常类名；SDK 的多租户脱敏缺省对本地工具无益，CLI/runner 通道本就全量打印 + 非零退出码）；crash 的完整 traceback 仍在 server stderr。
 
 ## 平台登录（login）
 

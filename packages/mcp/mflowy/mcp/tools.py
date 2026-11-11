@@ -2,7 +2,10 @@
 
 域工具（数据/建模）不住此层：域包自持 ``tools.py`` 并经 entry points 组
 ``mflowy.tools`` 注册，server/runner 发现即用（安装形态即通道——裸 host 只有
-平台工具，装哪个域包多哪批工具）。本模块保持零域包导入。
+平台工具，装哪个域包多哪批工具）。本模块保持零域包导入：remote 系列平台工具
+（ensure/logs/download，#153）消费 model 包 platform_client，**函数体内懒加载**
+——注册无条件（entry points 静态），执行随安装形态（裸 host 无 model 时
+fail-loud ImportError，不设降级机器，#159 §5）。
 
 模块公有面即平台工具函数面（镜像契约钉在 tests/mcp/）；非工具 helper 必须
 ``_`` 前缀——server/runner 共用的注册辅助件 ``_tool_entry_points`` 即此形态。
@@ -333,3 +336,142 @@ def login(
         force=force,
         device_name=device_name,
     )
+
+
+# ── remote 系列（#153）：平台实验就绪。client 详测住 model 包（#157），
+# 本层只做编排；经 ``_platform_client`` 工厂缝替换假 client（#159 §8）。
+
+
+def _platform_client():
+    """平台 client 工厂缝（懒加载 model 包——见模块头「安装形态即通道」）。"""
+    from mflowy.model.job_provider.platform_client import RemoteExperimentClient
+
+    return RemoteExperimentClient()
+
+
+def _md5_hex(path: Path) -> str:
+    """本地指纹（#157 §4）：MD5 hex，与远端 etag 裸字符串全等比对。"""
+    import hashlib
+
+    h = hashlib.md5()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _validate_file_manifest(files: list[str]) -> list[Path]:
+    """清单预检（agent 显式声明，不做 YAML basename 推断）：全量 fail-loud 后再同步。"""
+    from mflowy.utils.path import resolve_input_path
+
+    resolved: list[Path] = []
+    seen: dict[str, Path] = {}
+    for raw in files:
+        p = resolve_input_path(raw)  # 通道纪律：MCP 拒收相对路径（#159 §6）
+        if p.name.startswith("."):
+            raise ValueError(
+                f"清单含 dotfile（{raw}）——上游 list 面不显示隐藏文件，逐次同步将判缺失死循环重传，整次拒绝"
+            )
+        if p.is_dir():
+            raise ValueError(f"清单项是目录（{raw}）——只收文件（不做目录展开）")
+        if not p.is_file():
+            raise FileNotFoundError(f"清单项不存在：{raw}（解析为 {p}）")
+        if p.name in seen:
+            raise ValueError(
+                f"清单内撞名：{seen[p.name]} 与 {p} 同 basename——远端名 /user-data/uploads/{p.name} 将互覆"
+            )
+        seen[p.name] = p
+        resolved.append(p)
+    return resolved
+
+
+def _diff_entry(p: Path) -> dict:
+    """同步 diff 条目单源（#156 §3 返回 shape：``{local, remote}``——size 不进
+    返回面：不参与判定，agent 对本地文件自知 size，远端侧无需第二份复述）。"""
+    return {"local": str(p), "remote": f"/user-data/uploads/{p.name}"}
+
+
+def _sync_uploads(client, experiment_id: str, paths: list[Path]) -> dict:
+    """增量同步（#156/#157）：查询 → 补缺 → 覆盖更新；不删除远端未列文件。
+
+    指纹 = 本地 MD5 hex ↔ 远端 etag 裸字符串全等——「裸」= 剥 S3 引号后的串
+    （网关/minio 恒带引号下发，不剥则永不相等、幂等面失效；S2 E2E 实证）；
+    multipart etag（含 ``-``）与 MD5 hex 永不相等 → 自然落入重传分支（fail-safe）。
+    """
+    import mimetypes
+
+    from mflowy.model.job_provider.platform_client import upload_presigned
+
+    remote = {f.filename: f for f in client.list_files(experiment_id, "uploads")}
+    result: dict[str, list[dict]] = {"uploaded": [], "updated": [], "skipped": []}
+    for p in paths:
+        entry = remote.get(p.name)
+        if entry is not None and entry.etag.strip('"') == _md5_hex(p):
+            result["skipped"].append(_diff_entry(p))
+            continue
+        content_type = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
+        url, headers = client.get_upload_url(experiment_id, "uploads", p.name, content_type)
+        upload_presigned(url, headers=headers, source=p)
+        result["updated" if entry is not None else "uploaded"].append(_diff_entry(p))
+    return result
+
+
+def _inheritable(client, experiment_id: str) -> list[dict]:
+    """可继承面：outputs 根下存在 ``{job_id}.zip`` 的 job（status 不过滤——失败
+    HPO 的部分 study db 可续跑；newest first；完整性校验在继承时做，#158 护栏）。"""
+    entries = client.list_files(experiment_id, "outputs")
+    job_ids = [e.filename[: -len(".zip")] for e in entries if e.filename.endswith(".zip") and "/" not in e.filename]
+    jobs = [client.get_job(j) for j in job_ids]
+    jobs.sort(key=lambda j: j.created_at, reverse=True)
+    return [{"job_id": j.id, "status": j.status} for j in jobs]
+
+
+def ensure_platform_experiment(
+    platform_experiment_id: Annotated[
+        str | None,
+        Field(
+            description="平台实验 ID：传入=查询模式（校验存在，不存在 fail-loud，绝不静默转创建）；不传=创建模式（name 必填）"
+        ),
+    ] = None,
+    files: Annotated[
+        list[str] | None,
+        Field(
+            description="本地文件清单（绝对路径；MCP 通道拒收相对路径）——增量同步到 uploads："
+            "MD5↔etag 全等跳过、不等覆盖更新；不删除远端未列文件"
+        ),
+    ] = None,
+    name: Annotated[
+        str | None, Field(description="新实验名（创建模式必填；与 platform_experiment_id 同传=参数来源冲突拒绝）")
+    ] = None,
+    desc: Annotated[str | None, Field(description="新实验描述（仅创建模式）")] = None,
+) -> dict:
+    """实验就绪（remote 系列前置动作）：查建平台实验、增量同步文件清单、回报可继承面。
+
+    何时使用 ensure_platform_experiment：
+    - 远程 compute 工具（hyperparameters_search / modeling / explanation / …）提交前：
+      拿到 platform_experiment_id 并把本地数据/脚本同步到 uploads
+    - 续跑场景：查该实验的可继承 zip 面（inheritable，newest first），取继承源 job_id
+    - 重复调用幂等：同清单全部 skipped（MD5↔etag）；改动过的文件恰好落 updated
+
+    返回 ``{platform_experiment_id, files: {uploaded/updated/skipped: [{local, remote}]},
+    inheritable: [{job_id, status}]}``——远端名恒为 ``/user-data/uploads/<basename>``。
+    """
+    if platform_experiment_id is not None and (name is not None or desc is not None):
+        raise ValueError(
+            f"参数来源冲突：platform_experiment_id 与 name/desc 同传——查询模式不带创建参数（id={platform_experiment_id}）"
+        )
+    client = _platform_client()
+    if platform_experiment_id is not None:
+        experiment = client.get_experiment(platform_experiment_id)  # 404 → PlatformNotFoundError，绝不静默转创建
+    elif name is None or not name.strip():
+        raise ValueError("不传 platform_experiment_id 时 name 必填（创建模式）——两参全缺无从定位实验")
+    else:
+        experiment = client.create_experiment(name, desc or "")
+    files_result: dict[str, list[dict]] = {"uploaded": [], "updated": [], "skipped": []}
+    if files:
+        files_result = _sync_uploads(client, experiment.id, _validate_file_manifest(files))
+    return {
+        "platform_experiment_id": experiment.id,
+        "files": files_result,
+        "inheritable": _inheritable(client, experiment.id),
+    }

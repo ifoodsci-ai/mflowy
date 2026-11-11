@@ -1667,6 +1667,7 @@ deep = [
 ]
 mcp = [
     { name = "mflowy-mcp", extra = ["mcp"] },
+    { name = "mflowy-model" },
 ]
 model = [
     { name = "mflowy-model" },
@@ -1692,6 +1693,7 @@ requires-dist = [
     { name = "mflowy-driver", editable = "packages/driver" },
     { name = "mflowy-mcp", editable = "packages/mcp" },
     { name = "mflowy-mcp", extras = ["mcp"], marker = "extra == 'mcp'", editable = "packages/mcp" },
+    { name = "mflowy-model", marker = "extra == 'mcp'", editable = "packages/builtin_plugins/model" },
     { name = "mflowy-model", marker = "extra == 'model'", editable = "packages/builtin_plugins/model" },
     { name = "mflowy-model", extras = ["deep"], marker = "extra == 'deep'", editable = "packages/builtin_plugins/model" },
     { name = "mflowy-utils", editable = "packages/utils" },
