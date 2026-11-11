@@ -32,4 +32,4 @@
 | 数据血缘可视化    | 当前为 MLflow tag，规划 UI 视图                       |
 | 时间序列支持      | 按需                                                  |
 | 英文文档 / 国际化 | 按需                                                  |
-| PyPI 发布         | 0.1.2 已实存于 PyPI（2026-08 起）；0.2.0 待发布 |
+| PyPI 发布         | 0.1.2 已实存于 PyPI（2026-08 起）；0.2.0 待发布。发版轮镜像策略（[#187](https://github.com/ifoodsci-ai/mflowy/issues/187) 统一版本钉）：同批 wheel 构建 `training-job:<版本>` → k3s 导入（dev 测试位，链中途禁重导）→ 上游种子钉版 → E2E 全链验收 → push `images.mflowy.com/training-job:<版本>`（不可变 tag，永不重推）→ PyPI；mlflow 升 minor 时镜像与客户端同步发 |

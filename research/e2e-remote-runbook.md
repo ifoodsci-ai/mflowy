@@ -11,7 +11,7 @@
 
 ## 契约单源
 
-本 runbook 只断言**可观察行为**，契约细节以各决议票为准：协议与参数面（[#156](https://github.com/ifoodsci-ai/mflowy/issues/156)）、client 与错误族（[#157](https://github.com/ifoodsci-ai/mflowy/issues/157)）、包装器与 zip 往返（[#158](https://github.com/ifoodsci-ai/mflowy/issues/158)）、工具组与观察面（[#159](https://github.com/ifoodsci-ai/mflowy/issues/159)，含 [单参推导回填](https://github.com/ifoodsci-ai/mflowy/issues/159#issuecomment-6771610683)）、产物清单（[#155](https://github.com/ifoodsci-ai/mflowy/issues/155)）、词汇（[#160](https://github.com/ifoodsci-ai/mflowy/issues/160)）、基座事实（[#161](https://github.com/ifoodsci-ai/mflowy/issues/161)）、遥测适用性（[#186](https://github.com/ifoodsci-ai/mflowy/issues/186)）。
+本 runbook 只断言**可观察行为**，契约细节以各决议票为准：协议与参数面（[#156](https://github.com/ifoodsci-ai/mflowy/issues/156)）、client 与错误族（[#157](https://github.com/ifoodsci-ai/mflowy/issues/157)）、包装器与 zip 往返（[#158](https://github.com/ifoodsci-ai/mflowy/issues/158)）、工具组与观察面（[#159](https://github.com/ifoodsci-ai/mflowy/issues/159)，含 [单参推导回填](https://github.com/ifoodsci-ai/mflowy/issues/159#issuecomment-6771610683)）、产物清单（[#155](https://github.com/ifoodsci-ai/mflowy/issues/155)）、词汇（[#160](https://github.com/ifoodsci-ai/mflowy/issues/160)）、基座事实（[#161](https://github.com/ifoodsci-ai/mflowy/issues/161)）、遥测适用性（[#186](https://github.com/ifoodsci-ai/mflowy/issues/186)）、镜像版本钉（[#187](https://github.com/ifoodsci-ai/mflowy/issues/187)）。
 注：runbook 票题面写「本地两参查询（tracking_uri + artifact_root_local）」——已被 #160 收敛为**单参 tracking_uri 推导式**，本文按终稿执行。
 
 ## S0 前置与基座（每轮执行，🟢 现在即可跑）
@@ -19,15 +19,15 @@
 **环境**：
 
 - gateway `http://localhost:30080`（`MFLOWY_BASE_URL`，本地 NodePort）
-- `MFLOWY_PLATFORM_JOB_PRESET=cpu-standard`（种子 **v2**，id `c0000004-0000-0000-0000-000000000004`：training-job:latest 8c/8Gi / workspace 1024Mi / 3600s）
+- `MFLOWY_PLATFORM_JOB_PRESET=cpu-standard`（种子 **v2**，id `c0000004-0000-0000-0000-000000000004`：training-job:`<V>` 8c/8Gi / workspace 1024Mi / 3600s——**版本钉**，V = pyproject 版本单源：发版轮上游种子钉版（#187 统一版本钉，`latest` 退役）；种子钉落地前的过渡轮以 admin RPC 建版本钉 preset 对齐）
 - CLI 凭据 `~/.mflowy/credentials.json`（`cli-acceptance@mflowy.dev`）；OTP 验收账号 `mflowy-base@mflowy.dev`
 - `MFLOWY_TELEMETRY=off`（常设：无交互自动化的唯一入口，单源 = PRIVACY.md 同意模型表 on/off 行；验收流量不进产品遥测池——[遥测适用性票](https://github.com/ifoodsci-ai/mflowy/issues/186) 转正裁定）
 
 **每轮步骤**：
 
-1. 镜像重建：待测分支（含 `feat/remote-job-image` 的 `docker/Dockerfile`——zip/unzip + 烧 `MFLOWY_TASK_DIR=/user-data/workspace`、`MLFLOW_TRACKING_URI=sqlite:////user-data/workspace/mlflow.db`、`HOME=/tmp`）构建 `training-job:latest` → `docker save` → k3s containerd 导入；tar 留档 `/tmp/training-job-<git短sha>.tar`（#161 模式）。
-2. 镜像内断言：四烧 ENV 回显、mflowy 版本回显（`importlib.metadata`，#161 实证形态）与 `mflowy list_nodes` 词表可用；`mflowy-job`（wrap 子命令）在 PATH——**仅切片 ④ 落地后**断言（基座镜像无此入口）。
-3. preset 断言：cpu-standard v2 在列且 workspace 1024Mi（OTP web token 查 `GET /api/v1/job-presets`——该路对 web token 的可达性 #161 **未留档**，#161 驱动是以种子 id 直提 CreateJob；不通则以 S1 CreateJob 受理成功为替代证据并记录）。
+1. 镜像重建：待测分支（含 `feat/remote-job-image` 的 `docker/Dockerfile`——zip/unzip + 烧 `MFLOWY_TASK_DIR=/user-data/workspace`、`MLFLOW_TRACKING_URI=sqlite:////user-data/workspace/mlflow.db`、`HOME=/tmp`）构建 `training-job:<V>`（V = pyproject 版本单源，`make build`；`latest` 退役——#187 统一版本钉）→ `docker save` → k3s containerd 导入；tar 留档 `/tmp/training-job-<V>-<git短sha>.tar`（版本钉为身份、sha 消歧周期内重建——tag 不可变仅在 registry 侧承诺，dev 同 tag 重建重导 = 测试位；**链中途禁重导**：重建仅在验收轮次间执行）。
+2. 镜像内断言：四烧 ENV 回显、mflowy 版本回显（`importlib.metadata`，#161 实证形态）与 `mflowy list_nodes` 词表可用；`mflowy-job`（wrap 子命令）在 PATH——**仅切片 ④ 落地后**断言（基座镜像无此入口）。wrap 首行 stdout 回显 `mflowy <version>`（#187 可见性决议，#158 spec 增行）落地后，独立版本探针退役。
+3. preset 断言：cpu-standard v2 在列且 workspace 1024Mi、image = `training-job:<V>`（版本钉，#187）（OTP web token 查 `GET /api/v1/job-presets`——该路对 web token 的可达性 #161 **未留档**，#161 驱动是以种子 id 直提 CreateJob；不通则以 S1 CreateJob 受理成功为替代证据并记录）。
 4. OTP 登录演练：`POST /api/v1/auth/send-verification-code/login` → dev Redis（容器 `mflowy-infra-redis-1`，密码取 `mflowy-platform/.env.redis`）`vcode:login:<email>` 取码 → `POST /api/v1/auth/login`。**连续登录间隔 ≥65s**（per-IP 1/min + per-(purpose,email) 冷却，#161 踩坑两次）。
 
 **驱动方式**：平台面 = curl 脚本（改编 #161 留档 `/tmp/mflowy-base-verify/run.sh`）；工具面 = MCP 通道小驱动脚本（stdio 连 `mflowy-mcp`，cwd 置于临时目录——通道纪律断言依赖真实 MCP 通道）。载荷构造：CLI runner 单 JSON argv、name/desc 等客户端拼进 JSON（无 key=value 追加合并）。
@@ -123,7 +123,7 @@
 
 | 实现切片 | 必过 | 上游 |
 | --- | --- | --- |
-| ① 镜像与依赖基座（Dockerfile 合入 + httpx2/pydantic 进 model 默认依赖） | S0 S1 | 无 |
+| ① 镜像与依赖基座（Dockerfile 合入 + Makefile 镜像 tag 版本钉（`training-job:$(WHL_VERSION)`）+ httpx2/pydantic 进 model 默认依赖） | S0 S1 | 无 |
 | ② platform_client + 错误族（单测为主） | S0 S1 S8 | 无 |
 | ③ ensure_platform_experiment（mcp 两站注册） | S2 | 无（复测 upload-url scope） |
 | ④ RemoteJobProvider + `mflowy-job wrap` + JobOutcome 协议/compute 参数面 | S3 S4 S5 | #46 |
