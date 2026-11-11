@@ -51,7 +51,9 @@ class PlatformNotFoundError(PlatformApiError):
     """404——ensure「实验不存在」分支消费（绝不静默转创建）。"""
 
 
-# ── wire 模型（外部边界校验即意义：pydantic + extra=ignore；时间戳 int64 epoch 秒原样）──
+# ── wire 模型（外部边界校验即意义：pydantic + extra=ignore；时间戳 int64 原样）──
+# proto3 JSON 序面：**零值字段整体省略**（gpu_count=0 的 CPU 档、size=0 的空文件……）——
+# 语义上可为零的标量一律带缺省，缺字段≠形状漂移（S3 实测 gpu_count 省略案）。
 
 
 class _Wire(BaseModel):
@@ -70,12 +72,12 @@ class Experiment(_Wire):
 class Job(_Wire):
     id: str
     cmd: str
-    args: list[str]
+    args: list[str] = []  # proto3 空数组省略
     preset_id: str
     status: str
     error_code: str = ""
     error_message: str = ""
-    created_at: int
+    created_at: int = 0
 
 
 class JobPreset(_Wire):
@@ -84,7 +86,7 @@ class JobPreset(_Wire):
     version: int
     cpu_millis: int
     memory_mi: int
-    gpu_count: int
+    gpu_count: int = 0  # proto3 零值省略——CPU 档不带该字段（S3 实测）
     active_deadline_seconds: int
     image: str
     ttl_seconds_after_finished: int
@@ -98,17 +100,17 @@ class FileEntry(_Wire):
 
     mount_type: str
     filename: str
-    size: int
+    size: int = 0  # proto3 零值省略（空文件）
     content_type: str = ""
     etag: str = ""
-    last_modified: int
+    last_modified: int = 0
 
 
 class FileMetadata(_Wire):
-    size: int
+    size: int = 0
     content_type: str = ""
     etag: str = ""
-    last_modified: int
+    last_modified: int = 0
 
 
 def _check_mount_type(mount_type: str, *, allow_empty: bool = False) -> str:

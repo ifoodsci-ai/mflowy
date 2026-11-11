@@ -170,3 +170,15 @@ def test_hyperparameters_search_storage_param_passthrough():
         params = inspect.signature(fn).parameters
         assert "study_storage_path" in params, fn
         assert params["study_storage_path"].default is None
+
+
+@pytest.mark.parametrize("tool", PROVIDER_METHODS)
+def test_platform_params_passthrough(tool):
+    """#156 §6：compute 工具对两模式专属参数的运行期透传（签名覆盖之外的行为用例）。"""
+    provider = RecordingProvider()
+    jp.set_job_provider(cast("JobProvider", provider))
+    asyncio.run(
+        getattr(tools, tool)(**DELEGATED_TOOLS[tool], platform_experiment_id="exp-px", inherit_platform_job_id="job-px")
+    )
+    last = provider.calls[-1]
+    assert last["platform_experiment_id"] == "exp-px" and last["inherit_platform_job_id"] == "job-px"

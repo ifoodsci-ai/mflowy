@@ -96,6 +96,7 @@ modeling = "mflowy.model.tools:modeling"
 explanation = "mflowy.model.tools:explanation"
 predict = "mflowy.model.tools:predict"
 inverse_optimization = "mflowy.model.tools:inverse_optimization"
+switch_job_provider = "mflowy.model.tools:switch_job_provider"
 
 [build-system]
 requires = ["hatchling"]

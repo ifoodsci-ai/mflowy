@@ -13,7 +13,6 @@ from __future__ import annotations
 import asyncio
 
 from mflowy.driver.builder import Builder
-from mflowy.driver.dag import DAGResult
 from mflowy.driver.serializer import flow_to_yaml
 from mflowy.model.model.step_options import prune_model_step, prune_x_transformer_step
 from mflowy.utils.file import fingerprint_tags, sha256_text
@@ -28,7 +27,7 @@ from ..templates import (
     count_model_steps,
     parse_steps_fragment,
 )
-from .protocol import Headers
+from .protocol import Headers, JobOutcome
 
 
 def _validate_model_arg(v: str) -> str:
@@ -105,7 +104,9 @@ def _build_modeling_steps(
 class LocalJobProvider:
     """完全体直调：编排逻辑 + compute 全部原地执行（[modeling] extra 环境）。
 
-    headers 形参满足 Protocol 契约但本地模式不消费。
+    headers / platform_experiment_id / inherit_platform_job_id 形参满足 Protocol
+    契约但本地模式不消费（模式专属参数原则，#156——先例 headers）；结果恒
+    ``JobOutcome.finished``（内嵌完整 DAGResult）。
     """
 
     # ── hyperparameters_search（#62 应用层拆分：search-only 工作负载） ──────
@@ -117,8 +118,10 @@ class LocalJobProvider:
         name: str,
         desc: str,
         study_storage_path: str | None = None,
+        platform_experiment_id: str | None = None,
+        inherit_platform_job_id: str | None = None,
         headers: Headers = None,
-    ) -> DAGResult:
+    ) -> JobOutcome:
         """搜索-only DAG：model 步带搜索空间 → search 行为（inner CV 选参，不终训不碰 holdout）。
 
         study_storage_path 非空时，search 行为的 optuna study 落该 sqlite 且
@@ -144,7 +147,7 @@ class LocalJobProvider:
                 if token is not None:
                     reset_study_storage(token)
 
-        return await asyncio.to_thread(_run)
+        return JobOutcome.finished(dag_result=await asyncio.to_thread(_run))
 
     # ── modeling ─────────────────────────────────────────────────────────
 
@@ -156,8 +159,10 @@ class LocalJobProvider:
         desc: str,
         experiment_id: str | None = None,
         prune_missing: bool = False,
+        platform_experiment_id: str | None = None,
+        inherit_platform_job_id: str | None = None,
         headers: Headers = None,
-    ) -> DAGResult:
+    ) -> JobOutcome:
         def _run():
             from mflowy.model.model.step_options import resume_model_step
 
@@ -185,7 +190,7 @@ class LocalJobProvider:
             )
             return builder.build().run(tags=_steps_fingerprint_tags(steps_text))
 
-        return await asyncio.to_thread(_run)
+        return JobOutcome.finished(dag_result=await asyncio.to_thread(_run))
 
     # ── explanation ─────────────────────────────────────────────────
 
@@ -197,8 +202,10 @@ class LocalJobProvider:
         name: str,
         desc: str,
         lowess_frac: float = 0.3,
+        platform_experiment_id: str | None = None,
+        inherit_platform_job_id: str | None = None,
         headers: Headers = None,
-    ) -> DAGResult:
+    ) -> JobOutcome:
         def _run():
             _validate_model_arg(model)
             steps_text = _require_steps(modeling_steps)
@@ -228,7 +235,7 @@ class LocalJobProvider:
             )
             return builder.build().run(tags=_steps_fingerprint_tags(steps_text))
 
-        return await asyncio.to_thread(_run)
+        return JobOutcome.finished(dag_result=await asyncio.to_thread(_run))
 
     # ── predict ──────────────────────────────────────────────────────────
 
@@ -237,8 +244,10 @@ class LocalJobProvider:
         *,
         data: str,
         model: str,
+        platform_experiment_id: str | None = None,
+        inherit_platform_job_id: str | None = None,
         headers: Headers = None,
-    ) -> DAGResult:
+    ) -> JobOutcome:
         def _run():
             _validate_model_arg(model)
             _, data_path = resolve_data_ref(data)
@@ -253,7 +262,7 @@ class LocalJobProvider:
             )
             return builder.build().run(tags=fingerprint_tags("data", data))
 
-        return await asyncio.to_thread(_run)
+        return JobOutcome.finished(dag_result=await asyncio.to_thread(_run))
 
     # ── inverse_optimization ─────────────────────────────────────────────────────
 
@@ -267,8 +276,10 @@ class LocalJobProvider:
         cross_rules: str | None = None,
         n_trials: int = 10000,
         seed: int = 42,
+        platform_experiment_id: str | None = None,
+        inherit_platform_job_id: str | None = None,
         headers: Headers = None,
-    ) -> DAGResult:
+    ) -> JobOutcome:
         def _run():
             _validate_model_arg(model)
             _, data_path = resolve_data_ref(data)
@@ -290,4 +301,4 @@ class LocalJobProvider:
             )
             return builder.build().run(tags=fingerprint_tags("data", data))
 
-        return await asyncio.to_thread(_run)
+        return JobOutcome.finished(dag_result=await asyncio.to_thread(_run))

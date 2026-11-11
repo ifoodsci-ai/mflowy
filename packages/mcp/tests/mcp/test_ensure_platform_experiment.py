@@ -16,9 +16,10 @@ from mflowy.utils.path import _EntryChannel
 class FakeClient:
     """假平台 client：记录调用面，uploads 面/outputs 面按剧本回放。"""
 
-    def __init__(self, *, uploads=(), outputs=(), jobs=(), fail_get_experiment=False):
+    def __init__(self, *, uploads=(), outputs=(), jobs=(), fail_get_experiment=False, logs="log-lines"):
         import itertools
 
+        self.logs_result = logs
         self.uploads = uploads if isinstance(uploads, dict) else {f.filename: f for f in uploads}
         self.outputs = list(outputs)
         self.jobs = {j["id"]: j for j in jobs}
@@ -47,6 +48,10 @@ class FakeClient:
     def get_job(self, job_id):
         self.calls.append(("get_job", job_id))
         return SimpleNamespace(**self.jobs[job_id])
+
+    def get_job_logs(self, job_id, tail_lines):
+        self.calls.append(("get_job_logs", tail_lines))
+        return self.logs_result
 
 
 def _entry(name, *, etag="", size=1):
@@ -231,3 +236,66 @@ def test_inheritable_newest_first_and_unfiltered(monkeypatch):
         {"job_id": "j2", "status": "failed"},  # newest first（created_at 降序）
         {"job_id": "j1", "status": "succeeded"},
     ]
+
+
+# ── get_platform_job_logs（#159 §2，切片④）───────────────────────────────
+
+
+class TestGetPlatformJobLogs:
+    def _patch(self, monkeypatch, *, status="running", logs="line"):
+        fake = FakeClient(jobs=[{"id": "job-1", "status": status, "created_at": 1}])
+
+        def fake_logs(job_id, tail_lines):
+            fake.calls.append(("logs", tail_lines))
+            return logs
+
+        fake.get_job_logs = fake_logs
+        fake.calls = []
+        monkeypatch.setattr(tools, "_platform_client", lambda: fake)
+        return fake
+
+    def test_merged_return_non_terminal(self, monkeypatch):
+        from mflowy.mcp import tools as t
+
+        self._patch(monkeypatch, status="running", logs="partial")
+        result = t.get_platform_job_logs("job-1", 100)
+        assert result == {
+            "job_id": "job-1",
+            "status": "running",
+            "terminal": False,
+            "tail_lines": 100,
+            "logs": "partial",
+        }
+
+    @pytest.mark.parametrize("status", ["succeeded", "failed", "lost", "canceled"])
+    def test_terminal_states(self, monkeypatch, status):
+        from mflowy.mcp import tools as t
+
+        self._patch(monkeypatch, status=status)
+        assert t.get_platform_job_logs("job-1")["terminal"] is True
+
+    @pytest.mark.parametrize("bad", [0, -1, 10001])
+    def test_tail_lines_bounds_local_fail_loud(self, monkeypatch, bad):
+        """1–10000 越界本地拒绝——不发出请求（上游 <=0→500 是其容错非我方语义）。"""
+        from mflowy.mcp import tools as t
+
+        fake = self._patch(monkeypatch)
+        with pytest.raises(ValueError, match="1–10000"):
+            t.get_platform_job_logs("job-1", bad)
+        assert fake.calls == []  # 未触网
+
+
+def test_logs_unscheduled_pod_returns_empty_logs(monkeypatch):
+    """S4 实测边界：pod 未调度期上游 logs 端点 404——job 在场即瞬态，logs 空串（job 缺仍 fail-loud）。"""
+    from mflowy.mcp import tools as t
+    from mflowy.model.job_provider.platform_client import PlatformNotFoundError
+
+    fake = FakeClient(jobs=[{"id": "job-1", "status": "queued", "created_at": 1}])
+
+    def not_scheduled(job_id, tail_lines):
+        raise PlatformNotFoundError(f"GET /api/v1/jobs/{job_id}/logs", "http://gw", "HTTP 404: job pods not found yet")
+
+    monkeypatch.setattr(fake, "get_job_logs", not_scheduled)
+    monkeypatch.setattr(tools, "_platform_client", lambda: fake)
+    result = t.get_platform_job_logs("job-1")
+    assert result == {"job_id": "job-1", "status": "queued", "terminal": False, "tail_lines": 500, "logs": ""}

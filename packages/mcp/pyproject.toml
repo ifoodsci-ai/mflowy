@@ -49,8 +49,11 @@ get_run = "mflowy.mcp.tools:get_run"
 sessions_gc = "mflowy.mcp.tools:sessions_gc"
 login = "mflowy.mcp.tools:login"
 ensure_platform_experiment = "mflowy.mcp.tools:ensure_platform_experiment"
+get_platform_job_logs = "mflowy.mcp.tools:get_platform_job_logs"
 
 [project.scripts]
 # 双入口重命名：mflowy = CLI（JSON runner，原 cmd）；mflowy-mcp = MCP server（原 mcpSrv）
+# mflowy-job = 远程任务容器入口（#158：wrap 提交面 + zip 往返）
 mflowy = "mflowy.mcp.runner:main"
 mflowy-mcp = "mflowy.mcp.server:main"
+mflowy-job = "mflowy.mcp.jobwrap:main"

@@ -105,6 +105,8 @@ def test_hyperparameters_search_storage_path_reuses_history(tmp_path, monkeypatc
         result = asyncio.run(
             provider.hyperparameters_search(modeling_steps=steps, name="t", desc="t", study_storage_path=str(db))
         )
-        assert result.status == "finished", result.error
+        assert result.status == "finished" and result.dag_result is not None, (
+            result.dag_result and result.dag_result.error
+        )
     study = optuna.load_study(study_name=db.stem, storage=f"sqlite:///{db}")
     assert len(study.trials) == 2  # 增量续跑：两轮各 1 trial 累计，不从头

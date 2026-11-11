@@ -866,9 +866,14 @@ def _final_train_test(ss, o, m, board, log, params: dict) -> None:
             desc=f"会话 {m['session_id']} combo {key} 终训（终训即 plan 执行）",
         )
     )
-    if result.status != "finished":
-        raise RuntimeError(f"终训 DAG 未完成（status={result.status}）：{result.error}")
-    nodes = [r for r in result.runs if r.node == f"model__{family}"]
+    # JobOutcome 受理面（#156）：会话终训恒 local 形态（submitted 无 DAG 可消费——
+    # remote 终训属 remote 工作流，会话 replay 不受理）
+    if result.status != "finished" or result.dag_result is None:
+        raise RuntimeError(f"终训受理面非本地完成形态（status={result.status}）——会话 replay 仅消费 finished")
+    dag = result.dag_result
+    if dag.status != "finished":
+        raise RuntimeError(f"终训 DAG 未完成（status={dag.status}）：{dag.error}")
+    nodes = [r for r in dag.runs if r.node == f"model__{family}"]
     node = next((r for r in nodes if r.status == "FINISHED" and r.run_id), None)
     if node is None:
         raise RuntimeError(f"终训 DAG 无完成的 model__{family} 节点（runs：{[(r.node, r.status) for r in nodes]}）")

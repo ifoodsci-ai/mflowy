@@ -14,11 +14,12 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from mflowy.driver.dag import DAGResult
 from mflowy.utils.path import anchor_task_dir
 from pydantic import Field
 
 from .job_provider import get_job_provider as _get_job_provider
+from .job_provider import set_job_provider as _set_job_provider
+from .job_provider.protocol import JobOutcome
 from .taxonomy import KNOWN_FINDING_KINDS
 from .templates import MODELING_TEMPLATE, count_model_steps, parse_steps_fragment
 
@@ -91,21 +92,39 @@ async def hyperparameters_search(
             description="optuna study 落库 sqlite 路径（可选）——非空时同一路径重复搜索增量续跑（复用前史）；对同一模型多次 HPO 时传入同一持久路径"
         ),
     ] = None,
+    platform_experiment_id: Annotated[
+        str | None,
+        Field(description="平台实验 ID（remote 模式必填；local 模式忽略）——先调 ensure_platform_experiment 取得"),
+    ] = None,
+    inherit_platform_job_id: Annotated[
+        str | None,
+        Field(
+            description="继承源任务 job_id（可选）——解包其可继承 zip 恢复前序追踪态与数据；引用前序 run（model/experiment_id）时必填；local 模式忽略"
+        ),
+    ] = None,
     ctx: Context | None = None,
-) -> DAGResult:
-    """提交超参搜索任务并等待完成（search-only：model 步只碰 inner CV，不终训不碰 holdout）。
+) -> JobOutcome:
+    """提交超参搜索任务（search-only：model 步只碰 inner CV，不终训不碰 holdout）。
 
     何时使用 hyperparameters_search：
     - 候选扫描期：多族/多空间并排出 θ* 与 u_inner 证据（交付集外不白付终训）
     - 扫描后用 modeling 工具传全 pin 参数（θ* 落地）做终训交付
     - 对同一模型迭代多轮 HPO：传同一 study_storage_path——后轮复用前轮搜索历史
       （增量续跑，不从头采样）
+
+
+    受理面（JobOutcome）：local 完成等待（finished 内嵌 DAGResult）；remote 受理即返
+    （submitted + job_id——先 ensure_platform_experiment 就绪实验）。在途观察走
+    get_platform_job_logs 轮询（terminal=true 即停）；产物经 download_platform_job_artifacts
+    拉取（outputs 下 ``{job_id}.zip``）。
     """
     return await _get_job_provider().hyperparameters_search(
         modeling_steps=modeling_steps,
         name=name,
         desc=desc,
         study_storage_path=study_storage_path,
+        platform_experiment_id=platform_experiment_id,
+        inherit_platform_job_id=inherit_platform_job_id,
         headers=ctx.request_context.meta if ctx else None,
     )
 
@@ -125,13 +144,29 @@ async def modeling(
         Field(description="resume 模式 — 从指定 MLflow 实验加载已训练模型"),
     ] = None,
     prune_missing: Annotated[bool, Field(description="配合 experiment_id — 未命中 model 剪枝不重训")] = False,
+    platform_experiment_id: Annotated[
+        str | None,
+        Field(description="平台实验 ID（remote 模式必填；local 模式忽略）——先调 ensure_platform_experiment 取得"),
+    ] = None,
+    inherit_platform_job_id: Annotated[
+        str | None,
+        Field(
+            description="继承源任务 job_id（可选）——解包其可继承 zip 恢复前序追踪态与数据；引用前序 run（model/experiment_id）时必填；local 模式忽略"
+        ),
+    ] = None,
     ctx: Context | None = None,
-) -> DAGResult:
-    """提交 mflowy 终训任务并等待完成（training 行为：model 步全 pin → 全量拟合 + holdout 终评）。
+) -> JobOutcome:
+    """提交 mflowy 终训任务（training 行为：model 步全 pin → 全量拟合 + holdout 终评）。
 
     何时使用 modeling：
     - hyperparameters_search 扫出 θ* 后，把 best_params 全 pin 进 model 步再终训交付
     - 传 experiment_id 复用已训模型，配 prune_missing 跳过重训
+
+
+    受理面（JobOutcome）：local 完成等待（finished 内嵌 DAGResult）；remote 受理即返
+    （submitted + job_id——先 ensure_platform_experiment 就绪实验）。在途观察走
+    get_platform_job_logs 轮询（terminal=true 即停）；产物经 download_platform_job_artifacts
+    拉取（outputs 下 ``{job_id}.zip``）。
     """
     return await _get_job_provider().modeling(
         modeling_steps=modeling_steps,
@@ -139,6 +174,8 @@ async def modeling(
         desc=desc,
         experiment_id=experiment_id,
         prune_missing=prune_missing,
+        platform_experiment_id=platform_experiment_id,
+        inherit_platform_job_id=inherit_platform_job_id,
         headers=ctx.request_context.meta if ctx else None,
     )
 
@@ -155,12 +192,28 @@ async def explanation(
     name: Annotated[str, Field(description="任务名称")],
     desc: Annotated[str, Field(description="任务描述")],
     lowess_frac: Annotated[float, Field(description="LOWESS 平滑比例")] = 0.3,
+    platform_experiment_id: Annotated[
+        str | None,
+        Field(description="平台实验 ID（remote 模式必填；local 模式忽略）——先调 ensure_platform_experiment 取得"),
+    ] = None,
+    inherit_platform_job_id: Annotated[
+        str | None,
+        Field(
+            description="继承源任务 job_id（可选）——解包其可继承 zip 恢复前序追踪态与数据；引用前序 run（model/experiment_id）时必填；local 模式忽略"
+        ),
+    ] = None,
     ctx: Context | None = None,
-) -> DAGResult:
-    """提交 SHAP 解释性分析 Job 并等待完成。
+) -> JobOutcome:
+    """提交 SHAP 解释性分析任务。
 
     何时使用 explanation：
     - 训练完成后解释特征贡献与依赖关系
+
+
+    受理面（JobOutcome）：local 完成等待（finished 内嵌 DAGResult）；remote 受理即返
+    （submitted + job_id——先 ensure_platform_experiment 就绪实验）。在途观察走
+    get_platform_job_logs 轮询（terminal=true 即停）；产物经 download_platform_job_artifacts
+    拉取（outputs 下 ``{job_id}.zip``）。
     """
     return await _get_job_provider().explanation(
         modeling_steps=modeling_steps,
@@ -168,6 +221,8 @@ async def explanation(
         name=name,
         desc=desc,
         lowess_frac=lowess_frac,
+        platform_experiment_id=platform_experiment_id,
+        inherit_platform_job_id=inherit_platform_job_id,
         headers=ctx.request_context.meta if ctx else None,
     )
 
@@ -176,14 +231,35 @@ async def explanation(
 async def predict(
     data: Annotated[str, Field(description="预测数据绝对路径（csv/xlsx/parquet，或 py 文件 'path:func' 引用）")],
     model: Annotated[str, Field(description="训练 run 的 id（从训练输出 RunInfo 或 get_experiment 获取）")],
+    platform_experiment_id: Annotated[
+        str | None,
+        Field(description="平台实验 ID（remote 模式必填；local 模式忽略）——先调 ensure_platform_experiment 取得"),
+    ] = None,
+    inherit_platform_job_id: Annotated[
+        str | None,
+        Field(
+            description="继承源任务 job_id（可选）——解包其可继承 zip 恢复前序追踪态与数据；引用前序 run（model/experiment_id）时必填；local 模式忽略"
+        ),
+    ] = None,
     ctx: Context | None = None,
-) -> DAGResult:
+) -> JobOutcome:
     """加载已训练模型对新数据做预测。
 
     何时使用 predict：
     - 用已训模型(run_id)对新增数据出预测值
+
+    受理面（JobOutcome）：local 完成等待（finished 内嵌 DAGResult）；remote 受理即返
+    （submitted + job_id——先 ensure_platform_experiment 就绪实验）。在途观察走
+    get_platform_job_logs 轮询（terminal=true 即停）；产物经 download_platform_job_artifacts
+    拉取（outputs 下 ``{job_id}.zip``）。
     """
-    return await _get_job_provider().predict(data=data, model=model, headers=ctx.request_context.meta if ctx else None)
+    return await _get_job_provider().predict(
+        data=data,
+        model=model,
+        platform_experiment_id=platform_experiment_id,
+        inherit_platform_job_id=inherit_platform_job_id,
+        headers=ctx.request_context.meta if ctx else None,
+    )
 
 
 @anchor_task_dir("data")  # 入口路由据此推锚（#95 裁定 B）——元数据不包函数
@@ -203,12 +279,27 @@ async def inverse_optimization(
     cross_rules: Annotated[str | None, Field(description="交叉规则表达式")] = None,
     n_trials: Annotated[int, Field(description="优化试验次数（默认 10000，与旧 CLI 一致）")] = 10000,
     seed: Annotated[int, Field(description="随机种子")] = 42,
+    platform_experiment_id: Annotated[
+        str | None,
+        Field(description="平台实验 ID（remote 模式必填；local 模式忽略）——先调 ensure_platform_experiment 取得"),
+    ] = None,
+    inherit_platform_job_id: Annotated[
+        str | None,
+        Field(
+            description="继承源任务 job_id（可选）——解包其可继承 zip 恢复前序追踪态与数据；引用前序 run（model/experiment_id）时必填；local 模式忽略"
+        ),
+    ] = None,
     ctx: Context | None = None,
-) -> DAGResult:
+) -> JobOutcome:
     """基于已训练模型逆向设计最优输入特征组合。
 
     何时使用 inverse_optimization：
     - 回答"什么输入让输出最优/满足约束"
+
+    受理面（JobOutcome）：local 完成等待（finished 内嵌 DAGResult）；remote 受理即返
+    （submitted + job_id——先 ensure_platform_experiment 就绪实验）。在途观察走
+    get_platform_job_logs 轮询（terminal=true 即停）；产物经 download_platform_job_artifacts
+    拉取（outputs 下 ``{job_id}.zip``）。
     """
     return await _get_job_provider().inverse_optimization(
         data=data,
@@ -218,6 +309,8 @@ async def inverse_optimization(
         cross_rules=cross_rules,
         n_trials=n_trials,
         seed=seed,
+        platform_experiment_id=platform_experiment_id,
+        inherit_platform_job_id=inherit_platform_job_id,
         headers=ctx.request_context.meta if ctx else None,
     )
 
@@ -440,3 +533,83 @@ def modeling_abandon(
     from . import session
 
     return session.abandon_session(session_id, reason=reason)
+
+
+# ── 执行模式切换（#156 §4：local / remote 等价受理形态，进程级开关）──────────
+
+
+def switch_job_provider(
+    provider: Annotated[
+        str | None,
+        Field(
+            description="目标执行模式名（缺省 = 查询当前态与可切换列表）——可选值见查询返回；不接受任意 module:Class 入参（agent 可控 import = 任意代码执行面）"
+        ),
+    ] = None,
+) -> dict:
+    """切换 compute 工具的执行模式（local = 本地完成 / remote = 平台任务受理），或查询可切换列表。
+
+    何时使用 switch_job_provider：
+    - 本地算力不足时切到 remote（先 ensure_platform_experiment 就绪实验与文件）
+    - 查询当前 active 模式与可切换集（remote 的受理网关等 reason 信息）
+
+    可切换集合 = {local, remote} ∪ {env MFLOWY_JOB_PROVIDER 已配置的 module:Class}；
+    切换为进程级单例（不影响在途调用），幂等。
+    """
+    import os
+
+    from .job_provider import _load_provider_class, get_job_provider
+
+    active = type(get_job_provider()).__name__
+    active_name = {"LocalJobProvider": "local", "RemoteJobProvider": "remote"}.get(
+        active, os.environ.get("MFLOWY_JOB_PROVIDER", active)
+    )
+
+    env_spec = os.environ.get("MFLOWY_JOB_PROVIDER", "")
+    entries: list[dict] = [
+        {"name": "local", "available": True, "reason": "完全体直调（默认）", "active": active_name == "local"},
+        {
+            "name": "remote",
+            "available": True,
+            "reason": f"平台任务受理（base_url={_remote_base_reason()}；preset 经 MFLOWY_PLATFORM_JOB_PRESET 指定）",
+            "active": active_name == "remote",
+        },
+    ]
+    if env_spec and env_spec not in ("local", "remote"):
+        try:
+            _load_provider_class(env_spec)
+            entries.append(
+                {
+                    "name": env_spec,
+                    "available": True,
+                    "reason": "env MFLOWY_JOB_PROVIDER 自定义 provider",
+                    "active": active_name == env_spec,
+                }
+            )
+        except ValueError as e:
+            entries.append({"name": env_spec, "available": False, "reason": f"不可用：{e}", "active": False})
+
+    if provider is None:
+        return {"active": active_name, "providers": entries}
+
+    if provider == "local":
+        from .job_provider.local import LocalJobProvider
+
+        _set_job_provider(LocalJobProvider())
+    elif provider == "remote":
+        from .job_provider.remote import RemoteJobProvider
+
+        _set_job_provider(RemoteJobProvider())
+    elif provider == env_spec and env_spec:
+        _set_job_provider(_load_provider_class(env_spec)())
+    else:
+        names = [e["name"] for e in entries]
+        raise ValueError(
+            f"未知执行模式 {provider!r}——可选：{names}（module:Class 仅经 env MFLOWY_JOB_PROVIDER 预配置，不收工具入参）"
+        )
+    return {"active": provider, "switched": True}
+
+
+def _remote_base_reason() -> str:
+    from mflowy.utils.auth import resolve_base_url
+
+    return resolve_base_url(None)

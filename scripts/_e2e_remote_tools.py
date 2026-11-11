@@ -9,6 +9,7 @@ cwd 置于临时目录（通道纪律断言依赖真实 MCP 通道）。
 
 import asyncio
 import json
+import re
 import shutil
 import sys
 import tempfile
@@ -16,6 +17,10 @@ from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+
+_WHL_VERSION = re.search(
+    r'^version = "(.*)"$', Path(__file__).resolve().parent.parent.joinpath("pyproject.toml").read_text(), re.M
+).group(1)
 
 NPASS = 0
 NFAIL = 0
@@ -162,17 +167,183 @@ async def run_s2(session: ClientSession, stage: Path) -> str:
 async def main() -> None:
     with tempfile.TemporaryDirectory(prefix="mflowy_e2e_tools_") as td:
         stage = Path(td)
-        # 遥测常设 off（runbook S0：验收流量不进遥测池；S8 被动断言零 elicitation）
+        # 遥测常设 off（runbook S0）；preset 名常设（remote 提交面；#157 配置面）
         params = StdioServerParameters(
-            command=_server_cmd()[0], args=_server_cmd()[1:], cwd=str(stage), env={"MFLOWY_TELEMETRY": "off"}
+            command=_server_cmd()[0],
+            args=_server_cmd()[1:],
+            cwd=str(stage),
+            env={"MFLOWY_TELEMETRY": "off", "MFLOWY_PLATFORM_JOB_PRESET": "cpu-standard"},
         )
         async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 await run_s2(session, stage)
+                await run_s3_s4(session, stage)
 
     print(f"\n== 汇总: PASS={NPASS} FAIL={NFAIL} ==")
     sys.exit(1 if NFAIL else 0)
+
+
+async def run_s3_s4(session: ClientSession, stage: Path) -> None:
+    """S3 提交受理 + S4 在途观察（切片④）。前置：MFLOWY_PLATFORM_JOB_PRESET 已注入 server env。"""
+    print("== S3 提交与受理 ==")
+    # ensure 建实验 + 上传 diabetes.py（hpo 载荷的数据/脚本源）
+    diabetes = Path(__file__).resolve().parent.parent / "examples" / "diabetes" / "diabetes.py"
+    result, text = await call(session, "ensure_platform_experiment", {"name": "e2e-s3", "files": [str(diabetes)]})
+    assert isinstance(result, dict), text[:300]
+    eid = result["platform_experiment_id"]
+
+    # switch_job_provider 查询/切换
+    result, _ = await call(session, "switch_job_provider", {})
+    providers = {e["name"]: e for e in result["providers"]}
+    if not (result["active"] == "local" and providers["local"]["active"] and providers["remote"]["available"]):
+        bad("switch 查询态", str(result))
+    else:
+        ok("switch 查询：local(active) + remote(available)")
+    result, _ = await call(session, "switch_job_provider", {"provider": "remote"})
+    ok("切 remote") if result.get("active") == "remote" else bad("切 remote", str(result))
+
+    steps = (
+        "- load__python:\n    name: 加载\n    params:\n      source: /user-data/uploads/diabetes.py:load\n"
+        "- clean__python:\n    name: 清洗\n    params:\n      source: /user-data/uploads/diabetes.py:clean\n"
+        "- x_y:\n    name: 拆分\n    params:\n      target: target\n"
+        "- cv__split:\n    name: 划分\n    params:\n      test_size: 0.2\n"
+        "- model__XGB:\n    name: 搜索\n    params:\n      n_estimators: 30\n      n_trials: 2\n      scoring: mae\n"
+    )
+    hpo_args = {"modeling_steps": steps, "name": "e2e-s3-hpo", "desc": "S3 受理面", "platform_experiment_id": eid}
+
+    # 负向（先于正向——不消耗集群算力）：缺 platform_experiment_id / inherit 无 zip / 128KiB
+    await expect_error(
+        session,
+        "remote 缺实验 id",
+        "hyperparameters_search",
+        {k: v for k, v in hpo_args.items() if k != "platform_experiment_id"},
+        "ensure_platform_experiment",
+    )
+    await expect_error(
+        session, "inherit 无 zip", "modeling", {**hpo_args, "inherit_platform_job_id": "job-no-zip"}, "job-no-zip"
+    )
+    await expect_error(session, "128KiB 预检", "modeling", {**hpo_args, "modeling_steps": "x" * (128 * 1024)}, "128KiB")
+
+    # geesefs 可见性沉淀：外部 PUT 后挂载视图目录列示有 TTL 竞态（平台已知陷阱家族
+    # ——runbook 已记），提交前留 15s；失败若为 FileNotExisted 系再单次重提
+    import time
+
+    await asyncio.sleep(15)
+    t0 = time.monotonic()
+    result, text = await call(session, "hyperparameters_search", hpo_args)
+    elapsed = time.monotonic() - t0
+    if (
+        isinstance(result, dict)
+        and result.get("status") == "submitted"
+        and result.get("platform_experiment_id") == eid
+        and result.get("dag_result") is None
+    ):
+        ok(f"受理面 submitted（{elapsed:.1f}s 即返，job={result['job_id']}）")
+    else:
+        bad("受理面 submitted", text[:300])
+        raise SystemExit(2)
+    j1 = result["job_id"]
+
+    # job 面形状（平台 HTTP 面——CLI token 经 #46 扩容路）
+    face = _job_face(eid, j1)
+    if (
+        face
+        and face["cmd"] == "mflowy-job"
+        and face["args"][:3] == ["wrap", "--tool", "hyperparameters_search"]
+        and face["args"][3] == "--kwargs-json"
+        and "--inherit-from" not in face["args"]
+    ):
+        ok("job 面：mflowy-job wrap 单 argv JSON、无 --inherit-from")
+    else:
+        bad("job 面形状", str(face))
+
+    print("== S4 在途观察 ==")
+    # tail_lines 边界（本地 fail-loud，不发出请求）
+    for bad_tail in (0, -1, 10001):
+        await expect_error(
+            session,
+            f"tail_lines={bad_tail}",
+            "get_platform_job_logs",
+            {"job_id": j1, "tail_lines": bad_tail},
+            "1–10000",
+        )
+
+    # 轮询至终态
+
+    terminal = await _poll_terminal(session, j1)
+    if terminal and terminal["terminal"] and terminal["status"] == "succeeded":
+        ok("S4 轮询终态 succeeded")
+    elif terminal and "FileNotExisted" in terminal.get("logs", ""):
+        # geesefs 可见性竞态单次重提（已知陷阱，runbook S3 注记）
+        print("  … FileNotExisted 竞态——沉淀 20s 后单次重提")
+        await asyncio.sleep(20)
+        result, text = await call(session, "hyperparameters_search", hpo_args)
+        if isinstance(result, dict) and result.get("status") == "submitted":
+            j1 = result["job_id"]
+            terminal = await _poll_terminal(session, j1)
+        ok("竞态重提后终态 succeeded") if terminal and terminal.get("status") == "succeeded" else bad(
+            "竞态重提后仍失败", str(terminal)[:200]
+        )
+    else:
+        bad("S4 轮询终态", str(terminal)[:200])
+    shape_ok = set(terminal or {}) >= {"job_id", "status", "terminal", "tail_lines", "logs"}
+    ok("logs 合并返回五键") if shape_ok else bad("logs 返回形状", str(set(terminal or {})))
+    logs = (terminal or {}).get("logs", "")
+    ok(f"wrap 版本回显（mflowy {_WHL_VERSION}）") if f"mflowy {_WHL_VERSION}" in logs else bad(
+        "wrap 版本回显缺", logs[:200]
+    )
+    ok("wrap zip 打包回显") if "zip packed" in logs else bad("zip packed 缺", logs[-200:])
+
+    # J1 产出 → ensure inheritable 出现该 job（S2 延后断言在此收口）
+    result, _ = await call(session, "ensure_platform_experiment", {"platform_experiment_id": eid})
+    inheritable = {e["job_id"]: e["status"] for e in result["inheritable"]}
+    ok("inheritable 出现 J1") if inheritable.get(j1) == "succeeded" else bad(
+        "inheritable 缺 J1", str(result["inheritable"])
+    )
+
+    # local 等价：切回 local 带模式专属参数 → 忽略且恒 finished
+    result, _ = await call(session, "switch_job_provider", {"provider": "local"})
+    small_steps = steps.replace("n_estimators: 30", "n_estimators: 10")
+    result, text = await call(
+        session,
+        "hyperparameters_search",
+        {
+            "modeling_steps": small_steps,
+            "name": "e2e-s3-local",
+            "desc": "local 等价",
+            "platform_experiment_id": eid,
+            "inherit_platform_job_id": j1,
+        },
+    )
+    if isinstance(result, dict) and result.get("status") == "finished" and result.get("dag_result"):
+        ok("local 模式忽略平台参数恒 finished")
+    else:
+        bad("local 模式等价", text[:200])
+
+
+def _job_face(experiment_id: str, job_id: str) -> dict | None:
+    """平台 HTTP 面查 job 的 cmd/args（CLI token；驱动进程直接消费 client）。"""
+    try:
+        from mflowy.model.job_provider.platform_client import RemoteExperimentClient
+
+        job = RemoteExperimentClient().get_job(job_id)
+        return {"cmd": job.cmd, "args": job.args}
+    except Exception as e:
+        bad("job 面查询", f"{type(e).__name__}: {e}")
+        return None
+
+
+async def _poll_terminal(session: ClientSession, job_id: str, *, rounds: int = 100) -> dict | None:
+    """轮询至终态（terminal=true 即停）。"""
+    result = None
+    for _ in range(rounds):
+        result, text = await call(session, "get_platform_job_logs", {"job_id": job_id, "tail_lines": 200})
+        assert isinstance(result, dict), text[:300]
+        if result["terminal"]:
+            return result
+        await asyncio.sleep(6)
+    return result
 
 
 if __name__ == "__main__":

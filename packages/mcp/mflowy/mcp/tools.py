@@ -475,3 +475,43 @@ def ensure_platform_experiment(
         "files": files_result,
         "inheritable": _inheritable(client, experiment.id),
     }
+
+
+def get_platform_job_logs(
+    job_id: Annotated[
+        str, Field(description="平台任务 ID（从 compute 工具的 JobOutcome.submitted 或 ensure 的 inheritable 取得）")
+    ],
+    tail_lines: Annotated[int, Field(description="日志尾行数（1–10000；默认 500）——越界本地拒绝，不发出请求")] = 500,
+) -> dict:
+    """查平台任务状态与日志尾（stateless 轮询——agent 唯一在途状态面）。
+
+    何时使用 get_platform_job_logs：
+    - compute 工具返回 JobOutcome(submitted) 后轮询任务进度：``terminal=true`` 即停
+      （终态 = succeeded | failed | lost | canceled），否则继续轮询
+    - 任务失败时取日志尾定位（zip 拉取走 download_platform_job_artifacts）
+
+    返回 ``{job_id, status, terminal, tail_lines, logs}``——status/terminal/logs
+    合并返回（一次调用即全貌）；``tail_lines`` 上游容错（<=0→500）非我方语义，
+    本工具 1–10000 fail-loud。pod 未调度期上游 logs 端点 404（"job pods not
+    found yet"）——job 在场（get_job 通过）即瞬态，logs 取空串继续轮询；job
+    本身不存在仍 404 fail-loud。
+    """
+    if not 1 <= tail_lines <= 10000:
+        raise ValueError(f"tail_lines 须在 1–10000（got {tail_lines}）——上游 <=0→500 是其容错非本工具语义")
+    from mflowy.model.job_provider.platform_client import PlatformNotFoundError
+
+    client = _platform_client()
+    job = client.get_job(job_id)  # job 不存在 → 404 fail-loud
+    try:
+        logs = client.get_job_logs(job_id, tail_lines)
+    except PlatformNotFoundError:
+        logs = ""  # 瞬态：pod 未调度（S4 实测）——合并视图继续轮询
+    from mflowy.model.job_provider.platform_client import JOB_TERMINAL_STATUSES
+
+    return {
+        "job_id": job_id,
+        "status": job.status,
+        "terminal": job.status in JOB_TERMINAL_STATUSES,
+        "tail_lines": tail_lines,
+        "logs": logs,
+    }

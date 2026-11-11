@@ -44,6 +44,12 @@ def get_job_provider() -> JobProvider:
         from .local import LocalJobProvider
 
         _default_provider = LocalJobProvider()
+    elif spec == "remote":
+        # 内置远程形态（#153：MFLOWY_JOB_PROVIDER=remote 启用——RemoteJobProvider
+        # 住 model 包 mflowy.model.job_provider.remote）
+        from .remote import RemoteJobProvider
+
+        _default_provider = RemoteJobProvider()
     else:
         _default_provider = _load_provider_class(spec)()
 

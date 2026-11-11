@@ -80,9 +80,12 @@ MY_MODEL.mdp_family = {
 
 ## JobProvider：compute 工具的执行委派
 
-五个 compute 工具（hyperparameters_search / modeling / explanation / predict /
-inverse_optimization）经 JobProvider 委派执行：内置 `local` 实现（LocalJobProvider，
-本包内直调 driver 编排），远程实现接管执行环境。MFlowy 不内置绑定任何远程执行平台——
+compute 五工具（hyperparameters_search / modeling / explanation / predict /
+inverse_optimization）经 JobProvider 委派执行，受理面 = **JobOutcome**（finished 内嵌
+DAGResult / submitted 提交凭据，互斥不变量构造期 fail-loud）：内置 `local`（本包直调
+driver 编排，忽略模式专属参数）与 `remote`（RemoteJobProvider——`MFLOWY_JOB_PROVIDER=remote`
+启用；提交面 `mflowy-job wrap`，受理即返回，`platform_experiment_id` 必填、`inherit_platform_job_id`
+作跨 Job 继承）两种等价形态；`switch_job_provider` 工具做进程级切换。MFlowy 不内置绑定任何远程执行平台——
 实现 `JobProvider` 协议（`job_provider/protocol.py`）的 **5 个类型化方法**（与五工具同名，
 每个方法带 `headers: Mapping[str, str] | None` 透传请求元数据，MCP 客户端经
 `call_tool(meta={...})` 携带），即可把建模工具委派到任意执行环境——K8s Job、远程集群、

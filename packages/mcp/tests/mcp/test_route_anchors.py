@@ -47,7 +47,9 @@ class TestCliRunnerAnchoring:
         _patch_eps(monkeypatch, probe_tool=probe)
         monkeypatch.setenv("MFLOWY_TASK_DIR", "/pinned/taskdir")
         monkeypatch.setattr("sys.argv", ["mflowy", "probe_tool", '{"data": "/abs/dir/x.csv"}'])
-        runner.main()
+        with pytest.raises(SystemExit) as ei:
+            runner.main()
+        assert ei.value.code == 0
         out = json.loads(capsys.readouterr().out)
         assert out == "/pinned/taskdir"
         from mflowy.utils.path import task_dir_pinned
@@ -65,7 +67,9 @@ class TestCliRunnerAnchoring:
         _patch_eps(monkeypatch, probe_tool=probe)
         monkeypatch.delenv("MFLOWY_TASK_DIR", raising=False)
         monkeypatch.setattr("sys.argv", ["mflowy", "probe_tool", '{"data": "/abs/gen.py:load"}'])
-        runner.main()
+        with pytest.raises(SystemExit) as ei:
+            runner.main()
+        assert ei.value.code == 0
         assert json.loads(capsys.readouterr().out) == "/abs"
 
     def test_cwd_fallback_when_no_anchor(self, monkeypatch, capsys, tmp_path):
@@ -79,7 +83,9 @@ class TestCliRunnerAnchoring:
         monkeypatch.delenv("MFLOWY_TASK_DIR", raising=False)
         monkeypatch.chdir(tmp_path)
         monkeypatch.setattr("sys.argv", ["mflowy", "probe_tool"])
-        runner.main()
+        with pytest.raises(SystemExit) as ei:
+            runner.main()
+        assert ei.value.code == 0
         assert Path(json.loads(capsys.readouterr().out)) == tmp_path
         assert task_dir_or_none() is None  # 绑定作用域限调用内（非钉住用毕即还）
 

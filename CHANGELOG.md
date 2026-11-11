@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 远程执行切片④：RemoteJobProvider + mflowy-job wrap + JobOutcome（#197，feat·BREAKING 随 0.2.0 门禁）
+
+系列主菜（#156/#158/#187 决议）——compute 受理面协议演进与远程执行形态落地。
+
+- **BREAKING：JobOutcome 协议**（`job_provider/protocol.py`，pydantic）：五种 compute
+  （工具面 + JobProvider 协议）返回值 DAGResult → **JobOutcome**（`finished` 内嵌
+  DAGResult / `submitted` 提交凭据二联，互斥不变量构造期 fail-loud；失败语义不进
+  outcome——提交/执行失败直接 raise，remote 永不阻塞）。CLI runner 退出码改读
+  `outcome.dag_result.status`（容器内恒 local 形态）；既有断言面经 `.status` 巧合兼容，
+  全量测试零改动过。
+- **compute 参数面**：五工具 + 协议增 `platform_experiment_id`（remote 必填，缺 → 提示
+  先调 ensure）/ `inherit_platform_job_id`（引用前序状态必填——`model` 与 mlflow
+  `experiment_id` 给定而缺 → 提交侧静态门）；**local 模式忽略**（模式专属参数原则，
+  先例 `headers`，真跑用例钉住）。
+- **RemoteJobProvider**（`job_provider/remote.py`，`MFLOWY_JOB_PROVIDER=remote` 启用）：
+  校验 → `create_job(cmd="mflowy-job", args=["wrap","--tool",…,"--kwargs-json",<单 argv
+  JSON>])` → 受理即返回。preset 名经 `MFLOWY_PLATFORM_JOB_PRESET` 每次提交 fresh 解析
+  （append-only 版本链不缓存），未设/不命中 fail-loud 附候选；inherit 给定则核验该实验
+  outputs 下 `{job_id}.zip` 在场（Job 实体无 experiment_id 面——zip 在场即归属证明）；
+  `--kwargs-json` >128KiB 预检拒绝。
+- **`mflowy-job wrap` console script**（`mcp/jobwrap.py`）：版本首行回显（#187）→
+  `--inherit-from` 解包（滚雪球合并；坏 zip fail-loud 附同实验候选）→ 经 runner 分发面
+  执行（`run_tool` 从 runner.main 抽出共用单源）→ **无条件 pack** task_dir 全量 →
+  `outputs/{MFLOWY_JOB_ID}.zip`（tmp+replace；失败不覆写工具 rc——参照模式 `pack || true`）→
+  工具 rc 退出。三陷阱结构性消失（转义/0666/mkdir）。
+- **新工具**：`get_platform_job_logs`（mcp 平台组——status/terminal/logs 合并返回、
+  tail_lines 1–10000 本地 fail-loud；pod 未调度期上游 404 瞬态 → logs 空串继续轮询，
+  S4 实测边界）+ `switch_job_provider`（model 包——local/remote 进程级切换与查询，
+  可切换集 = {local, remote} ∪ env 自定义，不接受任意 module:Class 入参）。
+- **wire 硬化**：proto3 JSON 零值字段整体省略（S3 实测 `gpu_count: 0` 的 CPU 档不带该
+  字段）——语义可为零的标量补缺省（gpu_count/size/args/created_at 族）。
+- E2E：S2+S3+S4 工具面驱动扩展（switch/受理/job 面/负向族/tail 边界/轮询/inheritable
+  J1 收口/local 等价）；geesefs 外部 PUT 后目录可见性竞态入 runbook 已知陷阱（驱动侧
+  15s 沉淀 + FileNotExisted 单次重提）。
+
+
 ### 远程执行切片③：ensure_platform_experiment 实验就绪工具（#196，feat）
 
 remote 系列工具面第一件（#156/#159 决议）：查建平台实验 + 文件清单增量同步 +
