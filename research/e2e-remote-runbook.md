@@ -11,7 +11,7 @@
 
 ## 契约单源
 
-本 runbook 只断言**可观察行为**，契约细节以各决议票为准：协议与参数面（[#156](https://github.com/ifoodsci-ai/mflowy/issues/156)）、client 与错误族（[#157](https://github.com/ifoodsci-ai/mflowy/issues/157)）、包装器与 zip 往返（[#158](https://github.com/ifoodsci-ai/mflowy/issues/158)）、工具组与观察面（[#159](https://github.com/ifoodsci-ai/mflowy/issues/159)，含 [单参推导回填](https://github.com/ifoodsci-ai/mflowy/issues/159#issuecomment-6771610683)）、产物清单（[#155](https://github.com/ifoodsci-ai/mflowy/issues/155)）、词汇（[#160](https://github.com/ifoodsci-ai/mflowy/issues/160)）、基座事实（[#161](https://github.com/ifoodsci-ai/mflowy/issues/161)）。
+本 runbook 只断言**可观察行为**，契约细节以各决议票为准：协议与参数面（[#156](https://github.com/ifoodsci-ai/mflowy/issues/156)）、client 与错误族（[#157](https://github.com/ifoodsci-ai/mflowy/issues/157)）、包装器与 zip 往返（[#158](https://github.com/ifoodsci-ai/mflowy/issues/158)）、工具组与观察面（[#159](https://github.com/ifoodsci-ai/mflowy/issues/159)，含 [单参推导回填](https://github.com/ifoodsci-ai/mflowy/issues/159#issuecomment-6771610683)）、产物清单（[#155](https://github.com/ifoodsci-ai/mflowy/issues/155)）、词汇（[#160](https://github.com/ifoodsci-ai/mflowy/issues/160)）、基座事实（[#161](https://github.com/ifoodsci-ai/mflowy/issues/161)）、遥测适用性（[#186](https://github.com/ifoodsci-ai/mflowy/issues/186)）。
 注：runbook 票题面写「本地两参查询（tracking_uri + artifact_root_local）」——已被 #160 收敛为**单参 tracking_uri 推导式**，本文按终稿执行。
 
 ## S0 前置与基座（每轮执行，🟢 现在即可跑）
@@ -21,7 +21,7 @@
 - gateway `http://localhost:30080`（`MFLOWY_BASE_URL`，本地 NodePort）
 - `MFLOWY_PLATFORM_JOB_PRESET=cpu-standard`（种子 **v2**，id `c0000004-0000-0000-0000-000000000004`：training-job:latest 8c/8Gi / workspace 1024Mi / 3600s）
 - CLI 凭据 `~/.mflowy/credentials.json`（`cli-acceptance@mflowy.dev`）；OTP 验收账号 `mflowy-base@mflowy.dev`
-- `MFLOWY_TELEMETRY=off`（自动化绕 elicitation 同意门；正式适用面 = 遥测票，未决）
+- `MFLOWY_TELEMETRY=off`（常设：无交互自动化的唯一入口，单源 = PRIVACY.md 同意模型表 on/off 行；验收流量不进产品遥测池——[遥测适用性票](https://github.com/ifoodsci-ai/mflowy/issues/186) 转正裁定）
 
 **每轮步骤**：
 
@@ -116,7 +116,7 @@
 ## S8 横切负向（🟢 实现后即测）
 
 - 平台不可达：`MFLOWY_BASE_URL` 指向死端口 → `PlatformApiError`，message 含 base_url 与 NodePort 可达性提示
-- 遥测门：`MFLOWY_TELEMETRY=off` 下全链零 elicitation
+- 遥测门（被动断言）：驱动全程收到任何 elicitation 请求即判失败（off 常设下零 elicitation；单测 `test_main_off_is_clean` 已钉，此处不重复编排）
 - 401 强刷单次重放 / 坏 zip 候选清单 / 128KiB 上限边界：单测覆盖项，E2E 不重复编排
 
 ## 汇总：PR 切片 → 必过阶段（建议，实际切片由实现侧定）
