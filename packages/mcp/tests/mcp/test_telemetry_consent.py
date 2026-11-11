@@ -163,6 +163,9 @@ def test_gate_asks_once_persists_accept_and_wires_agentcat(tmp_path, monkeypatch
     assert options.enable_report_missing is True
     assert options.enable_tool_call_context is True  # 调用意图采集（user_intent）——同意范围内有意注入
     assert options.disable_diagnostics is True
+    # 脱敏双钩子随接线挂上（#189）：事件级字段剔除 + 字符串级 UUID 掩码
+    assert options.redact_event is telemetry.redact_fields
+    assert options.redact_sensitive_information is telemetry.redact_uuids
 
 
 def test_gate_decline_persists_off_and_never_asks_again(tmp_path, monkeypatch):
@@ -315,17 +318,10 @@ def test_main_off_is_clean(monkeypatch):
     assert calls["wire"] == [] and calls["install"] == []
 
 
-def test_real_agentcat_otlp_includes_tool_io(tmp_path, monkeypatch):
-    """真实 agentcat → 本地 OTLP sink：span 必须携带 mcp.parameters / mcp.response（全量 I/O 契约）。"""
-    import importlib.util
+def _otlp_sink(recorded: list[str]):
+    """本地 OTLP sink：真实 agentcat 端到端用例共用脚手架（POST 体全收，200 空应答）。"""
     import threading
-    import time as time_mod
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-
-    if importlib.util.find_spec("agentcat") is None:
-        pytest.skip("agentcat 未安装")
-
-    recorded: list[str] = []
 
     class Node(BaseHTTPRequestHandler):
         def do_POST(self):
@@ -339,6 +335,45 @@ def test_real_agentcat_otlp_includes_tool_io(tmp_path, monkeypatch):
 
     sink = ThreadingHTTPServer(("127.0.0.1", 0), Node)
     threading.Thread(target=sink.serve_forever, daemon=True).start()
+    return sink
+
+
+def _wait_spans(recorded: list[str], names: set[str]) -> dict[str, dict]:
+    """轮询 sink 收到的 OTLP 体直至目标工具 span 齐（agentcat 批量窗口 5-10s，留裕量）。"""
+    import time as time_mod
+
+    def _walk() -> dict[str, dict]:
+        found_all: dict[str, dict] = {}
+        for body in recorded:
+            parsed = json.loads(body)
+            if "resourceSpans" not in parsed:
+                continue  # 同桩注册请求（/device/register）体，非 OTLP
+            for rs in parsed["resourceSpans"]:
+                for ss in rs["scopeSpans"]:
+                    for sp in ss["spans"]:
+                        found = {a["key"]: a["value"].get("stringValue", "") for a in sp.get("attributes", [])}
+                        if "mcp.resource_name" in found:
+                            found_all[found["mcp.resource_name"]] = found
+        return found_all
+
+    deadline = time_mod.monotonic() + 25
+    spans: dict[str, dict] = {}
+    while time_mod.monotonic() < deadline and not names <= spans.keys():
+        spans = _walk()
+        if not names <= spans.keys():
+            time_mod.sleep(0.5)
+    return spans
+
+
+def test_real_agentcat_otlp_includes_tool_io(tmp_path, monkeypatch):
+    """真实 agentcat → 本地 OTLP sink：span 必须携带 mcp.parameters / mcp.response（全量 I/O 契约）。"""
+    import importlib.util
+
+    if importlib.util.find_spec("agentcat") is None:
+        pytest.skip("agentcat 未安装")
+
+    recorded: list[str] = []
+    sink = _otlp_sink(recorded)
     try:
         monkeypatch.setenv("MFLOWY_TELEMETRY", "on")
         monkeypatch.setattr(telemetry, "DEFAULT_ENDPOINT", f"http://127.0.0.1:{sink.server_address[1]}")
@@ -353,21 +388,8 @@ def test_real_agentcat_otlp_includes_tool_io(tmp_path, monkeypatch):
         result = asyncio.run(_call(server, None, tool="echo", args={"x": "diag", "context": "回归测试意图自述"}))
         assert result[0].is_error is False
 
-        deadline = time_mod.monotonic() + 25  # agentcat 批量窗口 5-10s，留裕量
-        attrs = None
-        while time_mod.monotonic() < deadline and attrs is None:
-            for body in recorded:
-                parsed = json.loads(body)
-                if "resourceSpans" not in parsed:
-                    continue  # 同桩注册请求（/device/register）体，非 OTLP
-                for rs in parsed["resourceSpans"]:
-                    for ss in rs["scopeSpans"]:
-                        for sp in ss["spans"]:
-                            found = {a["key"]: a["value"].get("stringValue", "") for a in sp.get("attributes", [])}
-                            if found.get("mcp.resource_name") == "echo":
-                                attrs = found
-            if attrs is None:
-                time_mod.sleep(0.5)
+        spans = _wait_spans(recorded, {"echo"})
+        attrs = spans.get("echo")
         assert attrs is not None, f"未捕获 echo span，posts={len(recorded)}"
         # context/session_id 为 agentcat 注入项：前者落 user_intent，后者有专属属性，均不入参
         assert json.loads(attrs["mcp.parameters"]) == {"x": "diag"}
@@ -375,5 +397,87 @@ def test_real_agentcat_otlp_includes_tool_io(tmp_path, monkeypatch):
         assert "diag" in attrs["mcp.response"]
         assert attrs.get("mcp.result_type") == "complete"  # 新增诊断属性（真值才出现）
         assert "mcp.is_error" not in attrs  # 成功调用不携带错误标记
+    finally:
+        sink.shutdown()
+
+
+def test_real_agentcat_otlp_redacts_uuids_and_login_fields(tmp_path, monkeypatch):
+    """真实 agentcat → 本地 OTLP sink：UUID 掩码覆盖参数/响应/意图三面 + login 标识字段剔除。
+
+    双钩子（事件级 redact_event + 字符串级 redact_uuids）经 wire_agentcat 接线后的
+    端到端契约：遥测副本脱敏、工具真实返回零影响（#189）。
+    """
+    import importlib.util
+    import uuid as uuid_mod
+
+    if importlib.util.find_spec("agentcat") is None:
+        pytest.skip("agentcat 未安装")
+
+    recorded: list[str] = []
+    marker = str(uuid_mod.uuid4())  # 每用例新鲜 UUID，杜绝历史 sink 残留误判
+    run_id = "0193a2c5f8b64d7e9c2a1b3f4d5e6f70"  # mlflow run_id 形态：32 位无连字符 hex
+
+    sink = _otlp_sink(recorded)
+    try:
+        monkeypatch.setenv("MFLOWY_TELEMETRY", "on")
+        monkeypatch.setattr(telemetry, "DEFAULT_ENDPOINT", f"http://127.0.0.1:{sink.server_address[1]}")
+
+        server = MCPServer(name="t")
+
+        @server.tool()
+        def trace(platform_experiment_id: str, mlflow_run_id: str) -> dict:
+            return {"echo_id": platform_experiment_id, "run_id": mlflow_run_id}
+
+        @server.tool()
+        def login(device_name: str | None = None) -> dict:
+            return {
+                "status": "ok",
+                "user_id": "auth0|dev",
+                "device_session_id": marker,
+                "device_name": device_name or "ws-01 (Linux)",
+            }
+
+        telemetry.wire_agentcat(server)
+        asyncio.run(
+            _call(
+                server,
+                None,
+                tool="trace",
+                args={
+                    "platform_experiment_id": marker,
+                    "mlflow_run_id": run_id,
+                    "context": f"关联实验 {marker} 的意图自述",
+                },
+            )
+        )
+        login_result = asyncio.run(_call(server, None, tool="login", args={"device_name": "ws-01 (Linux)"}))
+        # 工具真实返回零影响：标识字段原样到达调用方
+        assert json.loads(cast(mcp_types.TextContent, login_result[0].content[0]).text)["user_id"] == "auth0|dev"
+
+        spans = _wait_spans(recorded, {"trace", "login"})
+        assert {"trace", "login"} <= spans.keys(), f"未捕获双 span，posts={len(recorded)}"
+
+        # UUID 全局掩码：参数 / 响应 / 意图三面全中，run_id（无连字符 hex）不中枪
+        trace_attrs = spans["trace"]
+        assert marker not in json.dumps(trace_attrs, ensure_ascii=False)
+        assert trace_attrs["mcp.parameters"] == json.dumps(
+            {"platform_experiment_id": "<uuid>", "mlflow_run_id": run_id}, ensure_ascii=False
+        )
+        assert trace_attrs["mcp.user_intent"] == "关联实验 <uuid> 的意图自述"
+        # 裸 dict 返回：mcp.response = content 文本块（JSON dump）——剥壳后断言掩码面
+        assert json.loads(json.loads(trace_attrs["mcp.response"])[0]["text"]) == {
+            "echo_id": "<uuid>",
+            "run_id": run_id,
+        }
+
+        # login 字段剔除：响应与入参两面的标识字段全缺，业务字段照常
+        login_attrs = spans["login"]
+        # device_name 入参被剔除 → 空参（导出器空参不发 mcp.parameters，与无参工具同形）
+        assert not login_attrs.get("mcp.parameters")
+        response_text = login_attrs["mcp.response"]
+        assert "user_id" not in response_text and "device_session_id" not in response_text
+        assert "device_name" not in response_text and "ws-01" not in response_text
+        assert "auth0|dev" not in response_text and marker not in response_text
+        assert json.loads(json.loads(response_text)[0]["text"])["status"] == "ok"
     finally:
         sink.shutdown()

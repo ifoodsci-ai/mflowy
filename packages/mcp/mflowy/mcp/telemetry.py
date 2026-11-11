@@ -15,12 +15,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import secrets
 import threading
 from collections.abc import Callable
 from functools import cache
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal, get_args
 
 from mflowy.utils.wraps import silence, synchronized, synchronized_once
 from pydantic import BaseModel
@@ -28,6 +29,9 @@ from pydantic import BaseModel
 from mcp.server.context import CallNext, HandlerResult, ServerRequestContext
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ElicitResult
+
+if TYPE_CHECKING:
+    from agentcat.types import Event
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +42,78 @@ DEFAULT_ENDPOINT = "https://telemetry.ifoodsci.com"  # 官方遥测网关；自�
 TOKEN_HEADER = "X-Telemetry-Token"
 
 Mode = Literal["on", "off", "ask"]
+
+# ── 遥测脱敏（#189：只作用于遥测副本，工具真实返回与入参零影响）
+
+RedactAction = Literal["drop"]  # 已实现动作集（单源）；logs 桩（#186 §1）随 get_platform_job_logs PR 扩
+SUPPORTED_REDACT_ACTIONS: tuple[RedactAction, ...] = get_args(RedactAction)
+
+TELEMETRY_FIELD_RULES: dict[str, list[tuple[str, RedactAction]]] = {
+    # login 返回 user_id / device_session_id / device_name（缺省 hostname (OS) = 机器标识）——
+    # 遥测副本按字段名剔除（不赌 JWT sub 是 UUID 形态）。表键 ⊆ 已注册工具、字段 ⊆ 返回
+    # 形状，镜像契约钉在 tests/mcp/test_telemetry_field_rules.py（改名孤儿测试期 fail-loud）。
+    "login": [("user_id", "drop"), ("device_session_id", "drop"), ("device_name", "drop")],
+}
+
+# canonical UUID（8-4-4-4-12 带连字符 hex）；mlflow run_id（32 位无连字符 hex）刻意不中枪
+_UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+
+def redact_uuids(value: str) -> str:
+    """字符串级钩子：全事件字符串中的 canonical UUID → ``<uuid>``（平台 experiment/job
+    标识不可关联到平台账号；本地 mlflow run_id 关联保持）。"""
+    return _UUID_RE.sub("<uuid>", value)
+
+
+def redact_fields(event: Event) -> Event:
+    """事件级钩子：按字段规则表剔除工具遥测副本的标识字段（login 的入参与返回双面）。
+
+    agentcat 契约：改入参并原样返回；raise = 整事件丢弃（fail-closed，绝不发原文）。
+    剔除面 = ``parameters.arguments`` + ``response``（structured_content 与 content 文本
+    块 JSON——裸 dict 返回只有后者承载）；规则表外工具零改动直通。
+    """
+    rules = TELEMETRY_FIELD_RULES.get(event.resource_name or "")
+    if not rules:
+        return event
+    unknown = [action for _, action in rules if action not in SUPPORTED_REDACT_ACTIONS]
+    if unknown:
+        raise ValueError(f"未实现的遥测剔除动作：{unknown}（先扩 RedactAction 并落钩子分支）")
+    drop = [field for field, _ in rules]
+    arguments = event.parameters.get("arguments", None) if isinstance(event.parameters, dict) else None
+    if isinstance(arguments, dict):
+        _drop_keys(arguments, drop)
+    if isinstance(event.response, dict):
+        _drop_response_fields(event.response, drop)
+    return event
+
+
+def _drop_keys(mapping: dict, drop: list[str]) -> None:
+    for field in drop:
+        mapping.pop(field, None)
+
+
+def _drop_response_fields(response: dict, drop: list[str]) -> None:
+    """response 面 = CallToolResult dump：structured_content 与 content 文本块 JSON 双承载。
+
+    裸 dict 返回（login 形态）只有 content 文本块的 JSON dump——只剔 structured_content
+    即漏面；文本块非 JSON（错误串）原样保留（UUID 掩码兜底）。
+    """
+    structured = response.get("structured_content", None)
+    if isinstance(structured, dict):
+        _drop_keys(structured, drop)
+    blocks = response.get("content", None)
+    if not isinstance(blocks, list):
+        return
+    for block in blocks:
+        if not (isinstance(block, dict) and block.get("type", None) == "text"):
+            continue
+        try:
+            parsed = json.loads(block["text"])
+        except (KeyError, TypeError, json.JSONDecodeError):
+            continue
+        if isinstance(parsed, dict):
+            _drop_keys(parsed, drop)
+            block["text"] = json.dumps(parsed, ensure_ascii=False, indent=2)
 
 
 def telemetry_endpoint() -> str:
@@ -191,6 +267,8 @@ def wire_agentcat(server: MCPServer):
         enable_report_missing=True,
         enable_tool_call_context=True,  # 调用意图采集（user_intent）——同意范围内有意注入
         disable_diagnostics=True,
+        redact_event=redact_fields,  # 事件级：字段规则表剔除（先于字符串级，agentcat 保证次序）
+        redact_sensitive_information=redact_uuids,  # 字符串级：UUID 全局掩码（两钩子均 fail-closed）
         exporters={
             "otlp": OTLPExporterConfig(
                 type="otlp",
@@ -212,7 +290,7 @@ def _patch_otlp_exporter() -> None:
     """
     from agentcat.modules import event_queue
     from agentcat.modules.exporters.otlp import OTLPExporter
-    from agentcat.types import Event, OTLPExporterConfig
+    from agentcat.types import OTLPExporterConfig  # Event 注解面由模块级 TYPE_CHECKING 导入承担
 
     class PatchedOTLPExporter(OTLPExporter):
         """span 属性追加 mcp.parameters / mcp.response，并携带设备密钥（401/403 重签重试一次）。"""

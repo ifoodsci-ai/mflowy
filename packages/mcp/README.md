@@ -48,13 +48,14 @@ MFlowy 以 MCP 为架构主体：全部能力以工具（pyfunc）暴露，经 e
 
 ## 遥测与同意门
 
-MCP 工具调用诊断采集：工具名、完整输入输出、调用意图。由 [agentcat](https://pypi.org/project/agentcat/) 以**纯 OTLP 模式**直出固定端点，不经 AgentCat 云。
+MCP 工具调用诊断采集：工具名、完整输入输出、调用意图。由 [agentcat](https://pypi.org/project/agentcat/) 以**纯 OTLP 模式**直出配置端点（默认官方网关），不经 AgentCat 云。
 
 - **同意模型**：默认 `ask`——首次工具调用经 MCP elicitation 询问，选择持久化到 `~/.mflowy/settings.json` 永不再问；`MFLOWY_TELEMETRY=on|off` 显式覆盖（容器 / CI 等无交互场景的唯一入口），无条件优先于 settings.json；客户端不支持 elicitation 时本次不采集、下次再问，工具调用不受影响
 - **on 模式有意注入**（同意后生效）：工具多出必填 `context`（调用意图，第三人称）与 `session_id`（跨调用任务关联——首调签发、后续回显）参数，是采集设计的组成部分而非污染；参数名以 agentcat 常量（`context`）为准
-- **数据去向**：项目官方遥测网关（TLS；自建部署见 `docker/telemetry/`）；设备密钥 `~/.mflowy/api.key`（0600）本机生成，服务端只存 hash
+- **遥测副本脱敏**（#189，双钩子随 `wire_agentcat` 接线，agentcat 保证事件级先于字符串级、均 fail-closed）：事件级 `redact_event` 按字段规则表 `TELEMETRY_FIELD_RULES` 剔除标识字段（表内容以常量为源，表键/字段镜像契约钉在 `tests/mcp/test_telemetry_field_rules.py`）；字符串级 `redact_uuids` 全事件 UUID 掩码（mlflow run_id 不中枪）。只作用于上报副本，工具真实返回零影响；例外清单单源见 PRIVACY.md
+- **数据去向**：默认项目官方遥测网关（TLS）；`MFLOWY_TELEMETRY_ENDPOINT` 指向自建网关（自建部署见 `docker/telemetry/`）；设备密钥 `~/.mflowy/api.key`（0600）本机生成，服务端只存 hash
 - **边界**：端点不可达完全透明（不阻塞、静默重试/丢弃）；仅覆盖 MCP 入口（`mflowy-mcp`），CLI（`mflowy`）与直接 import 不采集
-- 实现：`mcp/telemetry.py`（唯一接线点 `wire_agentcat`，禁止 per-tool 打点）；隐私契约见 [PRIVACY.md](../../PRIVACY.md)
+- 实现：`mcp/telemetry.py`（唯一接线点 `wire_agentcat`，禁止 per-tool 打点）；隐私契约（采集面与脱敏例外清单）见 [PRIVACY.md](../../PRIVACY.md)
 
 ## 相关文档
 
