@@ -171,9 +171,40 @@ id_columns——显式 > card 背景分层缺省），CVCard.build 仍是四类�
 命名按内容不按过程；换协议 = board 作废 + test 重触，只能 abort 开新 episode。
 _Avoid_: ExperimentCard、ModelBrief、ModelingCard（协议卡禁用别名）
 
-> 占位：远程执行词条（平台实验 / 追踪实验 / 平台任务 / 执行模式 / 模式专属参数 /
-> 受理面 / 继承 / 可继承 zip / 继承源任务 / 实验就绪——十词已终审，#160）随首个
-> remote 实现 PR 落本节（#153）。
+**平台实验（platform experiment）**:
+上游实验服务的实验容器，远程文件与平台任务的宿主。
+_Avoid_: 远程实验、云实验（实体归属 ≠ 执行模式）
+
+**追踪实验（mlflow experiment）**:
+任务产出的 mlflow 追踪记录集合，观察面以 experiment_id 寻址。
+_Avoid_: 裸词「实验」（与平台实验并现的语境）
+
+**平台任务（platform job）**:
+平台实验受理的一次任务执行，受理凭据 job_id。
+_Avoid_: 远程任务（模式 ≠ 实体）
+
+**执行模式（local / remote）**:
+同一 compute 能力的两种等价受理形态：本地完成 / 远程受理。
+_Avoid_: 后端、backend
+
+**模式专属参数**:
+仅一种执行模式有意义的工具参数，另一种模式下忽略。
+
+**受理面（JobOutcome）**:
+任务受理的结果契约：本地完成形态（内嵌执行结果 DAGResult）或远程提交形态（提交凭据），二居其一。
+
+**继承（inherit）**:
+后继任务从前序任务恢复追踪态与数据的机制，载体是可继承 zip。
+
+**可继承 zip（inheritable）**:
+任务收尾时打包追踪态与数据的自描述工件，供后继任务解包恢复。
+_Avoid_: 快照、checkpoint
+
+**继承源任务（inherit_platform_job_id）**:
+后继任务声明的恢复起点平台任务。
+
+**实验就绪（ensure）**:
+查建平台实验、同步文件清单并回报可继承面的前置动作。
 
 ### 贝叶斯优化推荐子系统（BO）
 
