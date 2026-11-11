@@ -31,6 +31,9 @@ RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debia
     apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     graphviz \
+    # 远程任务 zip 往返（产物打包/继承解包，任务包装器与调用方参考模式共用）
+    zip \
+    unzip \
     # Noto Sans/Serif CJK 字体
     fonts-noto-cjk \
     # 包含 Tinos (与 Times New Roman 兼容) [reference:0]
@@ -44,9 +47,19 @@ RUN fc-cache -fv
 WORKDIR /app
 COPY --from=builder --chown=nobody:nogroup /app/.venv /app/.venv
 USER nobody
+# HOME 必须可写（镜像契约，#161 研究回填）：nobody 缺省 HOME 不可写，而
+# mflowy/utils/mlflow.py setup() 急切 mkdir $HOME/.mflowy、mlflow 遥测自写
+# $HOME/.config/mlflow——指向 /tmp（per-pod 临时，不占 workspace 配额、不进 zip）。
+# 远程任务面（平台 Job 容器入口）：三挂载烧 ENV——task_dir 即 workspace
+# （emptyDir scratch），mlflow 走库内 sqlite（mlflow.db 与 .mlruns/ 同根，
+# zip 往返契约可推导）。本地/MCP 部署不受影响：ENV 缺省值语义不变，显式
+# 覆盖（run -e）优先。workspace 为 emptyDir 0777，nobody 可写（k3s 实测）。
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     MPLBACKEND=Agg \
     MPLCONFIGDIR=/tmp/matplotlib \
-    XDG_CACHE_HOME=/tmp
+    XDG_CACHE_HOME=/tmp \
+    HOME=/tmp \
+    MFLOWY_TASK_DIR=/user-data/workspace \
+    MLFLOW_TRACKING_URI=sqlite:////user-data/workspace/mlflow.db
 CMD ["mflowy"]
