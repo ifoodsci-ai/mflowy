@@ -10,7 +10,8 @@ loopback 单通道；token 端点走 **JSON 体**（非 RFC 6749 form）；refre
 （``ensure_access_token`` / ``LoginRequiredError`` 接线点）。零第三方依赖。
 
 测试缝（预商定）：``_http_json``（HTTP transport 单点）、``credentials_path``
-（凭据根目录，telemetry ``api_key_path`` 同款）。
+（凭据根目录，telemetry ``api_key_path`` 同款）、``_load``（force 钮的等锁轮换
+场景需要状态化读桩——``test_auth.py`` 状态化两读模拟，#195）。
 """
 
 from __future__ import annotations
@@ -272,7 +273,12 @@ def _http_json(url: str, payload: dict | None = None, *, method: str | None = No
         ) from e
 
 
-def _resolve_base_url(base_url: str | None) -> str:
+def resolve_base_url(base_url: str | None) -> str:
+    """平台地址解析链：显式传参 > ``MFLOWY_BASE_URL`` env > 本地 NodePort 缺省。
+
+    公开单源——auth（login/token）与 model 域平台 client（#157 决议：与 auth
+    同链同缺省，不另立 PLATFORM var）共用；两处各写一份 = 同一事实两处定义。
+    """
     return base_url or os.environ.get(ENV_BASE_URL) or DEFAULT_BASE_URL
 
 
@@ -344,7 +350,7 @@ def login(
     串台）/ ``TimeoutError``（浏览器流程超时）/ ``OAuthHttpError``（端点非 2xx）/
     ``RuntimeError``（无法拉起浏览器——附手动 URL，首版需本机浏览器）。
     """
-    base = _resolve_base_url(base_url)
+    base = resolve_base_url(base_url)
     try:
         existing = _load()
     except CorruptCredentialsError as e:
@@ -414,11 +420,15 @@ def login(
     return creds.summary("logged_in")
 
 
-def ensure_access_token(base_url: str | None = None) -> str:
+def ensure_access_token(base_url: str | None = None, *, force: bool = False) -> str:
     """取效 access token：未过期直返；过期 → 持锁 → 双检 → refresh grant。
 
     refresh 为轮换制（每次返回新 refresh token，旧值立即作废）——整文件原子替换，
     且临界区持文件锁：并发二次提交旧值会触发服务端复用检测（账号全端下线）。
+
+    ``force``（#157 决议，平台 client 401 强刷用）：绕过未过期快路径直接走锁内
+    刷新——服务端已判 token 无效（本地时钟漂移/服务端吊销）时，本地 exp 判断不可信。
+    例外：等锁期间凭据已被并发轮换（access token 变了）则直接复用新值，不空刷。
 
     失败面：无凭据 / 环境不符 / refresh 失效 → ``LoginRequiredError``（invalid_grant
     时已清本地凭据，文案含全端下线风险提示）；端点其他错误 → ``OAuthHttpError``。
@@ -428,15 +438,18 @@ def ensure_access_token(base_url: str | None = None) -> str:
         raise LoginRequiredError(_NOT_LOGGED_IN)
     if base_url is not None and base_url != creds.base_url:
         raise LoginRequiredError(f"本地凭据属于 {creds.base_url}，与请求环境 {base_url} 不符——请用对应环境重新 login")
-    if time.time() < creds.expires_at - _EXPIRY_SKEW_SECONDS:
+    if not force and time.time() < creds.expires_at - _EXPIRY_SKEW_SECONDS:
         return creds.access_token
+    stale_access = creds.access_token
 
     with _credentials_lock():
         creds = _load()  # 双检：等锁期间他人已刷新则直接复用
         if creds is None:
             raise LoginRequiredError(_NOT_LOGGED_IN)
-        if time.time() < creds.expires_at - _EXPIRY_SKEW_SECONDS:
+        if not force and time.time() < creds.expires_at - _EXPIRY_SKEW_SECONDS:
             return creds.access_token
+        if force and creds.access_token != stale_access:
+            return creds.access_token  # 并发轮换已发生——新 token 即所求，不空刷
         try:
             token = _token_request(
                 creds.base_url,

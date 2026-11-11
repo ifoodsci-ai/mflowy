@@ -377,6 +377,49 @@ def test_ensure_access_token_concurrent_refresh_single_network_call(monkeypatch,
     assert json.loads((tmp_path / "credentials.json").read_text())["refresh_token"] == "rf-rotated"
 
 
+# ── force 强刷钮（#157 决议，平台 client 401 重放消费）─────────────────────
+
+
+def test_ensure_access_token_force_bypasses_unexpired_fast_path(monkeypatch, tmp_path):
+    """force=True：token 本地未过期也直接走锁内刷新——服务端已判无效时 exp 不可信（时钟漂移/吊销）。"""
+    _seed_credentials(monkeypatch, tmp_path)  # expires_at = now+900：未过期
+    rotated = _token_response(_token_payload(exp=int(time.time()) + 900), refresh="rf-rotated")
+    _fake_transport(monkeypatch, token=rotated)
+
+    token = auth.ensure_access_token(force=True)
+
+    assert token == rotated["access_token"]
+    assert json.loads((tmp_path / "credentials.json").read_text())["refresh_token"] == "rf-rotated"
+
+
+def test_ensure_access_token_force_reuses_concurrent_rotation_without_refresh(monkeypatch, tmp_path):
+    """force=True 但等锁期间他人已轮换（access 变了）→ 直接复用新值，不空刷。"""
+    stored = _seed_credentials(monkeypatch, tmp_path)
+    # exp 偏移制造与种子不同的 JWT 串（同秒生成会得到相同串，复用分支无从分辨）
+    rotated = _token_response(_token_payload(exp=int(time.time()) + 950), refresh="rf-rotated")
+
+    def _http_json(url, payload=None, *, method=None, timeout=30.0):
+        pytest.fail("并发轮换已发生——不应再触发网络刷新")
+
+    monkeypatch.setattr(auth, "_http_json", _http_json)
+    # 状态化 _load 桩：锁外首读见旧值（将 401 的 stale），锁内重读见轮换后新值
+    # ——等价于「等锁期间持锁者完成了轮换」
+    reads = {"n": 0}
+
+    def _load():
+        reads["n"] += 1
+        d = dict(stored)
+        if reads["n"] >= 2:
+            d["access_token"] = rotated["access_token"]
+            d["refresh_token"] = "rf-rotated"
+        return auth.Credentials.from_dict(d)
+
+    monkeypatch.setattr(auth, "_load", _load)
+
+    assert auth.ensure_access_token(force=True) == rotated["access_token"]
+    assert reads["n"] == 2
+
+
 # ── 真 transport 线上契约（本地 socket 桩——不替换 _http_json，钉 JSON 体语义）──
 
 
