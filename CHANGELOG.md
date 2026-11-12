@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 远程执行切片⑤：download 工具 + 观察面单参 tracking_uri（#198，feat）
+
+拉取与本地查询面（#159 §3/§4 + #160 单参推导终稿）——远程任务产物的取回闭环。
+
+- **`download_platform_job_artifacts`**（mcp 两站注册，三必填）：下载 outputs 下
+  `{job_id}.zip` → 解压进 `target_dir/{job_id}/`（zip 根 = workspace 根），**原子替换**
+  （tmp 解压 → 双 rename 换位 → 删旧；子目录为工具自有领地，重下载幂等无残留）；
+  zip 本体即弃；`target_dir` 缺失 fail-loud、MCP 通道相对路径拒收（不接
+  `@anchor_task_dir`——目录型参数不适配锚推导）。返回
+  `{job_id, platform_experiment_id, local_task_dir, file_count, mlflow_db}`。
+- **观察面单参**：`get_experiment` / `get_run` 增可选 `tracking_uri`——逐调用
+  `MlflowClient(tracking_uri=...)` 零全局态；工件 URI 命中字面常量
+  `REMOTE_TASK_DIR = "/user-data/workspace"`（镜像契约单源、非 env 读取）→ 改写为
+  tracking db 所在目录下的本地路径（zip 契约保证 mlflow.db 与 `.mlruns/` 同根——db
+  目录即工件根，run 工件与 logged models 双形态均覆盖）；不匹配前缀原样透传
+  （`artifact_root_local` 取消，#160 终稿）。
+- presigned 下载段经切片② `download_presigned`（tmp+rename 原子写 + 凭据不变量）。
+
+
 ### 远程执行切片④：RemoteJobProvider + mflowy-job wrap + JobOutcome（#197，feat·BREAKING 随 0.2.0 门禁）
 
 系列主菜（#156/#158/#187 决议）——compute 受理面协议演进与远程执行形态落地。

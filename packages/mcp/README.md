@@ -29,10 +29,11 @@ MFlowy 以 MCP 为架构主体：全部能力以工具（pyfunc）暴露，经 e
 | YAML 预检 | `validate_modeling_steps` | 始终本地（结构化 `{valid: false, error}` 错误契约） |
 | 建模 compute | `modeling` / `hyperparameters_search` / `explanation` / `predict` / `inverse_optimization`（受理面 = JobOutcome：finished 内嵌 DAGResult / submitted 提交凭据） | **JobProvider 委派**（local / remote） |
 | 执行模式 | `switch_job_provider`（model 包，local↔remote 进程级切换） | 本地 |
-| mlflow 观测 | `get_experiment` / `get_run` | 始终本地（工件后端为本地文件树） |
+| mlflow 观测 | `get_experiment` / `get_run`（可选 `tracking_uri` 单参——远程产物下载库查询，工件路径自动改写） | 始终本地（工件后端为本地文件树） |
 | 平台 | `login`（OAuth 2.1 浏览器授权）/ `sessions_gc`（TTL 回收） | 本地 |
 | 平台·remote | `ensure_platform_experiment`（实验就绪：查建 + 文件增量同步 + 可继承面） | 平台 API（经 model 包 platform_client，懒加载） |
 | 平台·remote | `get_platform_job_logs`（stateless 轮询：status/terminal/logs 合并返回） | 平台 API（经 model 包 platform_client，懒加载） |
+| 平台·remote | `download_platform_job_artifacts`（产物拉取：zip 解压 `target_dir/{job_id}/` 原子替换；mlflow.db 供观察面 `tracking_uri` 单参查询） | 平台 API + 本地落盘 |
 
 建模类经 JobProvider 委派（内置 `local` / 自定义 `module:Class`）——协议与自定义执行环境接入见 [mflowy-model README](../builtin_plugins/model/README.md)「JobProvider」节（预测模型训练子系统）。
 
