@@ -81,12 +81,14 @@ def test_mcp_extra_is_optional_not_hard():
 
 def test_aggregate_extras_are_domain_selectors():
     """聚合包 extras = 域选择器（0.2.0）：data / model / mcp / deep——
-    [stats]/[modeling] 退役，装哪个域包即得哪个域（重栈为域包硬依赖）"""
+    [stats]/[modeling] 退役，装哪个域包即得哪个域（重栈为域包硬依赖）。
+    [mcp] 增随 mflowy-model（#159 §5 落地，切片③）：remote 平台工具引擎住 model 包
+    platform_client——server 分发形态必须可用（懒加载 + 零降级：缺则调用 fail-loud）"""
     extras = _pkg_meta("pyproject.toml")["optional-dependencies"]
     assert set(extras) == {"data", "model", "mcp", "deep"}
     assert extras["data"] == ["mflowy-data"]
     assert extras["model"] == ["mflowy-model"]
-    assert extras["mcp"] == ["mflowy-mcp[mcp]"]
+    assert extras["mcp"] == ["mflowy-mcp[mcp]", "mflowy-model"]
     assert extras["deep"] == ["mflowy-model[deep]"]
     # 唯一可选 extra 在 model 包；data 全栈硬依赖
     assert set(_pkg_meta("packages/builtin_plugins/data/pyproject.toml").get("optional-dependencies", {})) == set()
@@ -94,11 +96,13 @@ def test_aggregate_extras_are_domain_selectors():
 
 
 def test_console_scripts():
-    """双入口重命名：恰好两条命令——mflowy=CLI（runner）、mflowy-mcp=MCP server；旧名（cmd/mcpSrv）消亡"""
+    """入口面：mflowy=CLI（runner）、mflowy-mcp=MCP server（双入口重命名，旧名消亡）；
+    mflowy-job=远程任务容器入口（#158 wrap 提交面，切片④）"""
     scripts = _pkg_meta("packages/mcp/pyproject.toml")["scripts"]
     assert scripts == {
         "mflowy": "mflowy.mcp.runner:main",
         "mflowy-mcp": "mflowy.mcp.server:main",
+        "mflowy-job": "mflowy.mcp.jobwrap:main",
     }
 
 
