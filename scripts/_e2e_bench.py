@@ -9,6 +9,8 @@
 - steel_defect：类不平衡质检分类（onehot → 三树族，f1）
 - soft_sensor ：传感器缺失脏表清洗（fill_median）→ onehot → XGB/RF 回归（mae）
 - 会话链  ：iris/RF 分类会话 start → select_model → run_hpo → final_train_test（B2 执行位）
+- 应用面  ：终训 run_id 寻址跑 explanation/predict/inverse_optimization（#167——判据 =
+  三工具可调 + shap_values/prediction/search_results parquet 落 run 工件树，无指标下限）
 
 判据 = 节点全绿 + 每任务指标下限（防「绿但退化」；下限 = benchmark_readiness_report.md
 实测折 + 工业三链实测折，见 THRESHOLDS 注释）。越限/未完成 → FAIL 行 + 非零退出。
@@ -109,7 +111,7 @@ def dag_chains(provider, tmp: str) -> None:
             _check_evidence(task, family, hit.value, floor)
 
 
-def session_chain(tmp: str) -> None:
+def session_chain(tmp: str) -> tuple[str, str]:
     """B2 执行位：分类会话最小链（run_hpo → final_train_test）。会话根强制临时（一次性；
     #207 锚定链——锚 tmp，根 = tmp/modeling_sessions，一次性脚本不还锚）。"""
     csv = os.path.join(tmp, "iris.csv")
@@ -141,6 +143,50 @@ def session_chain(tmp: str) -> None:
         u_inner is not None and u_final is not None,
         f"session/RF 分类链 u_inner={u_inner} holdout_u={u_final}（B2 执行位）",
     )
+    return sid, sessions_root
+
+
+def application_face(provider, tmp: str, sid: str, sessions_root: str) -> None:
+    """#81/#167 应用面三工具冒烟：以会话终训 run_id 寻址（跨 run 消费恰是应用面形态）。
+
+    判据 = 三工具可调 + 工件落 run artifact 树（shap_values / prediction /
+    search_results parquet）；不设指标下限（发布门保可调性，语义面归 make e2e 人判）。
+    """
+    csv = os.path.join(tmp, "iris.csv")
+    board = json.loads((pathlib.Path(sessions_root) / sid / "board.json").read_text(encoding="utf-8"))
+    entry = board["models"]["RF|passthrough|passthrough"]
+    run_id = entry["run_id"]  # 终训 run（name='final' 模型 + 副产物——应用面寻址源）
+    plan_text = sorted((pathlib.Path(sessions_root) / sid / "plans").glob("final_*.yaml"))[-1].read_text(
+        encoding="utf-8"
+    )
+
+    def _art_hit(result, filename: str):
+        if result.status != "finished" or result.dag_result is None:
+            return None
+        return next((r for r in result.dag_result.runs if filename in r.artifacts), None)
+
+    r1 = asyncio.run(
+        provider.explanation(
+            modeling_steps=plan_text, model=run_id, name="e2e-bench:explanation", desc="应用面冒烟 SHAP"
+        )
+    )
+    _report(
+        _art_hit(r1, "shap_values.parquet") is not None,
+        f"application/explanation shap_values.parquet 落 run（终训 {run_id[:8]} 寻址，status={r1.status}）",
+    )
+    r2 = asyncio.run(provider.predict(data=csv, model=run_id))
+    _report(
+        _art_hit(r2, "prediction.parquet") is not None,
+        f"application/predict prediction.parquet 落 run（model={run_id[:8]}）",
+    )
+    # n_trials=50 控时长（#77 后 n_trials 真实生效——冒烟不需深搜）
+    r3 = asyncio.run(
+        provider.inverse_optimization(data=csv, model=run_id, direction={"target": "maximize"}, n_trials=50)
+    )
+    _report(
+        _art_hit(r3, "search_results.parquet") is not None,
+        "application/inverse_optimization search_results.parquet 落 run（n_trials=50）",
+    )
 
 
 def main() -> int:
@@ -150,8 +196,10 @@ def main() -> int:
     os.environ.setdefault("MLFLOW_TRACKING_URI", f"sqlite:///{tmp}/bench.db")
     from mflowy.model.job_provider import get_job_provider
 
-    dag_chains(get_job_provider(), tmp)
-    session_chain(tmp)
+    provider = get_job_provider()
+    dag_chains(provider, tmp)
+    sid, sessions_root = session_chain(tmp)
+    application_face(provider, tmp, sid, sessions_root)
     print(f"\ne2e-bench: {'FAIL ' + str(len(failures)) + ' 项' if failures else '全绿'}", flush=True)
     return 1 if failures else 0
 
