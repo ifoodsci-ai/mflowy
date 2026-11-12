@@ -2,7 +2,9 @@
 
 与 DomainCard（数据先验，mflowy.data.types）对称——两卡都是 episode 内冻结的
 POMDP 输入：先验卡管"数据是什么"，协议卡管"对局怎么打"（task/metric/CV/预算/
-结构化候选）。换协议 = board 作废 + test 重触，只能弃局开新 episode。
+结构化候选）。「先验」为两卡通用家族（#169/#170）：先验卡 = 数据域先验；
+协议卡的 external_baseline = 建模域先验（前沿研究的领域先验知识——结构化对标）。
+换协议 = board 作废 + test 重触，只能弃局开新 episode。
 
 candidates = ``[{family, baseline: bool, space_hints: {param: 值 | [lo, hi]}, seed}]``
 （research-review 剧本产物）：baseline 恰一（propose 时第一）；space_hints ⊆ 族
@@ -36,6 +38,53 @@ _TASK_METRICS: dict[str, set[str]] = {
         "ece",
     },
 }
+
+# 外部基线权威度白名单（#169/#170——同构 #112 DomainCard.source 三值白名单）
+_EXTERNAL_BASELINE_SOURCES = ("literature", "internal_history", "manual")
+
+
+def _validate_external_baseline(eb, task: TASKTYPE) -> dict | None:
+    """外部基线对标结构校验（#169/#170——建模域先验）：数值 value + 口径 metric
+    （须与本任务指标同域）+ 出处 source_text + 权威度 source 白名单，fail-loud。
+    None = 未对标（空 dict 走缺键 fail-loud——宁可拒绝，不静默归一）；自由文本
+    str 已退役（BREAKING，见 CHANGELOG）。"""
+    if eb is None:
+        return None
+    if not isinstance(eb, dict):
+        raise ValueError(
+            f"external_baseline 须为结构化 dict {{value, metric, source_text, source}}"
+            f"（#170 起自由文本退役，BREAKING），got {type(eb).__name__}: {eb!r}"
+        )
+    required = {"value", "metric", "source_text", "source"}
+    missing = sorted(required - set(eb))
+    if missing:
+        raise ValueError(
+            f"external_baseline 缺键 {missing}（结构化对标 = 数值 value + 口径 metric + 出处 source_text + 权威度 source）"
+        )
+    unknown = sorted(set(eb) - required)
+    if unknown:
+        raise ValueError(f"external_baseline 未知键 {unknown}（可用：{sorted(required)}）")
+    import math
+
+    value = eb["value"]
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ValueError(f"external_baseline.value 须为有限数值，got {value!r}")
+    allowed = _TASK_METRICS[task]
+    if str(eb["metric"]) not in allowed:
+        raise ValueError(
+            f"external_baseline.metric `{eb['metric']}` 与任务 {task.name.lower()} 不相容"
+            f"（可用: {sorted(allowed)}）——对照口径须与本任务指标同域"
+        )
+    if not str(eb["source_text"]).strip():
+        raise ValueError("external_baseline.source_text 须非空（出处——文献引用 / 内部实验记录）")
+    if eb["source"] not in _EXTERNAL_BASELINE_SOURCES:
+        raise ValueError(f"external_baseline.source 须为 {'/'.join(_EXTERNAL_BASELINE_SOURCES)}，得到 {eb['source']!r}")
+    return {
+        "value": float(value),
+        "metric": str(eb["metric"]),
+        "source_text": str(eb["source_text"]),
+        "source": eb["source"],
+    }
 
 
 def _validate_hints(family: str, hints) -> dict:
@@ -82,7 +131,9 @@ class CVCard:
     metric: MetricName | None = None  # None = 任务自动选（infer_metric）
     candidates: tuple[dict, ...] = ()  # 空 = 全部已声明族开放（首个 baseline）
     goal: str = ""  # 建模成功判据（业务口径，区别于 survey 的研究目标）
-    external_baseline: str = ""  # 外部基线对标（自由文本，board 对照面）
+    # 外部基线对标（建模域先验面，#169/#170）：结构化 dict {value, metric, source_text,
+    # source}——校验单源 _validate_external_baseline；渲染面等「波动主导差距」挂层
+    external_baseline: dict | None = None
 
     def as_dict(self) -> dict:
         return {
@@ -92,7 +143,7 @@ class CVCard:
             "max_steps": self.max_steps,
             "candidates": [dict(c) for c in self.candidates],
             "goal": self.goal,
-            "external_baseline": self.external_baseline,
+            "external_baseline": dict(self.external_baseline) if self.external_baseline is not None else None,
         }
 
     @classmethod
@@ -107,7 +158,7 @@ class CVCard:
         max_steps: int = 10,
         candidates=None,
         goal: str = "",
-        external_baseline: str = "",
+        external_baseline: dict | None = None,
     ) -> CVCard:
         """问卷答案 → 协议卡（四类相容校验 fail-loud 的单一事实源）。
 
@@ -116,6 +167,9 @@ class CVCard:
         ③ cv↔数据事实（2–10 折；分类时 cv ≤ 最小类计数）；
         ④ 预算与候选机械校验（max_steps ≥ 1；候选 ⊆ 已声明族目录、baseline 恰一、
         hints ⊆ 签名声明空间）——引擎不判断先验的科学性。
+
+        external_baseline 结构化对标（#169/#170 建模域先验）由
+        `_validate_external_baseline` 校验（口径同域 + 权威度白名单 fail-loud）。
         """
         import pandas as pd
 
@@ -196,5 +250,5 @@ class CVCard:
             max_steps=max_steps,
             candidates=tuple(normalized),
             goal=goal,
-            external_baseline=external_baseline,
+            external_baseline=_validate_external_baseline(external_baseline, t),
         )

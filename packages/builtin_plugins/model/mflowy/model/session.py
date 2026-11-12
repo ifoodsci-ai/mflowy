@@ -236,7 +236,7 @@ def start_session(
     max_steps: int | None = None,
     id_columns: list[str] | None = None,
     goal: str = "",
-    external_baseline: str = "",
+    external_baseline: dict | None = None,
     card: dict | None = None,
 ) -> Observation:
     """开局建模会话（cv_card = cv.split 配置 yaml 明文，必填，唯一主通道）：
