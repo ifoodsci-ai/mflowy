@@ -14,10 +14,12 @@ from mflowy.driver.pomdp import FinishVerdict
 
 
 @pytest.fixture
-def sessions_root(tmp_path, monkeypatch):
-    root = tmp_path / "sessions"
-    monkeypatch.setenv("MFLOWY_CLEAN_SESSIONS", str(root))
-    return root
+def sessions_root(tmp_path):
+    from mflowy.utils.path import pin_task_dir, reset_task_dir
+
+    token = pin_task_dir(str(tmp_path))  # #207 锚定链：会话根 = anchor/clean_sessions
+    yield tmp_path / "clean_sessions"
+    reset_task_dir(token)
 
 
 @pytest.fixture

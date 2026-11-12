@@ -67,8 +67,12 @@ BOARD_FILE = "board.json"
 
 
 def _root() -> Path:
-    """会话 root（env MFLOWY_MODELING_SESSIONS，域自管）。"""
-    return Path(os.environ.get("MFLOWY_MODELING_SESSIONS", str(Path.home() / ".mflowy" / "modeling_sessions")))
+    """会话 root（#207 锚定链）：``task_anchor()/modeling_sessions``——链序单源住
+    task_anchor（无绑定落 ~/.mflowy，缺省路径与旧版逐字相同）。env
+    MFLOWY_MODELING_SESSIONS 已退役（BREAKING，见 CHANGELOG）。"""
+    from mflowy.utils.path import task_anchor
+
+    return task_anchor() / "modeling_sessions"
 
 
 def _counts_step(action: str) -> bool:

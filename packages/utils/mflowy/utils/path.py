@@ -49,6 +49,14 @@ def task_dir_or_none() -> Path | None:
     return _TaskDir.get()
 
 
+def task_anchor() -> Path:
+    """当前任务锚（#207 单源链）：task_dir 绑定（MCP 恒有——钉住/锚参数推导/
+    路由缺省）> 机器缺省 ``~/.mflowy``（直接 import 无绑定时）。任务工件消费
+    （两域会话根 ``anchor/{domain}_sessions``、sessions_gc 缺省扫描面）；每调用
+    现读零缓存（线程级无状态不变量）。"""
+    return task_dir_or_none() or Path.home() / ".mflowy"
+
+
 def task_dir_pinned() -> bool:
     """env 钉住态（CLI 显式指定 MFLOWY_TASK_DIR 时 True——推导不可覆盖）。"""
     return _TaskDirPinned.get()
