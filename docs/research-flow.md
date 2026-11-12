@@ -143,7 +143,7 @@ min_row_retention: 0.9      # 过激动作会被引擎拒绝
 
 **U**：目标是**替代三分之二的验证实验**——模型筛掉没希望的工艺组合，只做 promising 的。要可解释，组会要向导师解释每个结论。数据不到 500 行，神经网络就别上了。实验室有个经验公式，R² 大概 0.6。
 
-**A**：协议冻结——`modeling_session_start` 以 cv_card（`cv: 5\ntest_size: 0.2` 的 split 配置明文）+ 显式协议参数开局：`task=regression, metric=r2, candidates=[{XGB: baseline 锚定}, {LGBM}, {CAT}, {RF}]`（MLP 出局——你的「神经网络就别上了」），`max_steps=8, external_baseline="经验公式 R²≈0.6"`。开局即四门校验：task↔目标 dtype、metric↔task、cv↔数据规模、预算与候选——任何一门不过，fail-loud，现在改比开局后改便宜。**test 集在这一刻已被切出、封存**——此后它只被 `final_train_test` 触碰一次（律一）。
+**A**：协议冻结——`modeling_session_start` 以 cv_card（`cv: 5\ntest_size: 0.2` 的 split 配置明文）+ 显式协议参数开局：`task=regression, metric=r2, candidates=[{XGB: baseline 锚定}, {LGBM}, {CAT}, {RF}]`（MLP 出局——你的「神经网络就别上了」），`max_steps=8, external_baseline={value: 0.6, metric: r2, source_text: 实验室经验公式, source: internal_history}`（建模域先验，四件套结构化）。开局即四门校验：task↔目标 dtype、metric↔task、cv↔数据规模、预算与候选——任何一门不过，fail-loud，现在改比开局后改便宜。**test 集在这一刻已被切出、封存**——此后它只被 `final_train_test` 触碰一次（律一）。
 
 ---
 

@@ -60,7 +60,11 @@ unit_hints:
 suspects:                       # 疑似 ≠ 确定——待证据裁决，不入规则
   - {column: 粒径_um, issue: 目估/激光两种口径混录}
 row_budget: {min_retention: 0.9, reason: 每组实验人工成本高}
-external_baseline: 实验室经验公式 R² ≈ 0.6
+external_baseline:             # 建模域先验（#170 结构化——开局建模随 start 入参）
+  value: 0.6
+  metric: r2
+  source_text: 实验室经验公式（内部报告 2024-05）
+  source: internal_history
 ```
 
 ## 2. 缺陷检测算子矩阵

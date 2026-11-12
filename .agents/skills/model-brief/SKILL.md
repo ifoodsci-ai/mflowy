@@ -20,7 +20,10 @@ POMDP 回合里的事（model skill）。
 2. **指标偏好**：按任务预填（回归 MAE / 分类 F1），用户可改（如筛查场景改 recall）；
 3. **预算**：max_steps（缺省 10——只有计算动作吃步：run_hpo / final_train_test；
    配置编辑零步费，π 在回合里自由参数化）；
-4. **外部基线**（external_baseline）：有无既有基准分数要对标（没有则空）。
+4. **外部基线**（external_baseline，建模域先验）：有无既有基准分数要对标——有则
+   问四件套 `{value: 分数, metric: 口径（须与本任务指标同域）, source_text: 出处
+   （文献引用/内部实验记录）, source: literature/internal_history/manual}`（权威度
+   白名单外 start 会 fail-loud），没有则空。
 
 候选面（candidates）来自 **research-review skill**（文献证据：相似问题→结构化模型
 候选 `[{family, baseline, space_hints, seed}]`）——本问卷不重复出题，用户直接确认
