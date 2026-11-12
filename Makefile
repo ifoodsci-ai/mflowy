@@ -18,7 +18,7 @@ help:
 	@echo "  make precommit        安装 pre-commit 钩子（commit 时自动 lint + UT）"
 	@echo "  make clean            清理临时文件"
 	@echo "  make e2e              三入口分发冒烟（CLI/stdio 真实进程 + diabetes 全链，发布前人肉跑）"
-	@echo "  make e2e-bench        六基准冒烟门（iris/digits/titanic + 工业三链 + 分类会话链，判据含指标下限）"
+	@echo "  make e2e-bench        六基准冒烟门（iris/digits/titanic + 工业三链 + 分类会话链 + 应用面三工具，判据含指标下限）"
 	@echo "  make e2e-remote       S0/S1 平台契约回归（remote 系列 PR 门禁，需本地 k3s dev 集群）"
 	@echo "  make e2e-remote-tools  S2+ 工具面门禁（MCP stdio 通道，需已登录 + k3s 集群）"
 	@echo "  make ui [P=]          启动 MLflow UI 查看实验记录"
@@ -119,7 +119,8 @@ e2e-mcp:
 
 # 六基准冒烟门（#75 三基准 + 工业三链）：iris 五族 / digits MLP+XGB / titanic 清洗链
 # 三树族 + bearing_rul RUL 回归 / steel_defect 不平衡分类 / soft_sensor 传感器缺失清洗
-# + 分类会话最小链。发布前人肉门 = 先 make lint && make typecheck 再 make e2e
+# + 分类会话最小链 + 应用面三工具（#167：终训 run_id 寻址 explanation/predict/inverse
+# ——工件存在性判据，无指标下限）。发布前人肉门 = 先 make lint && make typecheck 再 make e2e
 # （三入口分发）再 make e2e-bench（#107 教训：切版对账漏 typecheck，债务直通 release PR）；
 # 判据含指标下限（防绿但退化），越限 FAIL 行 + 非零退出。
 # 越限自证：BENCH_FLOOR_BUMP='iris|RF|99' make e2e-bench

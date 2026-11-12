@@ -25,6 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   此 tag → 点值输出零变化。
 - roadmap「评估不确定性量化」② 转已实现（同 PR）；CV+/jackknife+ 升级路径保留
   （同一落盘原料，#190 雾区）。
+### e2e-bench 扩应用面 + JobOutcome 受理面对齐（#167/#209，feat·fix）
+
+- **fix(#209)**：`dag_chains` 对齐 #204 起的 JobOutcome 受理面（`runs` 经 `dag_result`
+  下钻）——修复 dev 顶 `make e2e-bench` 崩（`JobOutcome.runs` AttributeError）。
+- **feat(#167)**：会话链后接**应用面三工具**冒烟（终训 run_id 寻址）——
+  `explanation` / `predict` / `inverse_optimization`（n_trials=50 控时长）；判据 =
+  可调 + 工件落 run artifact 树（shap_values / prediction / search_results
+  parquet），无指标下限——发布门长期覆盖应用面（#81 裁定：验收 runbook =
+  Makefile 门，不建独立文档）。
 
 ### external_baseline 先验化：CVCard 结构化对标（#169/#170，feat·BREAKING）
 
