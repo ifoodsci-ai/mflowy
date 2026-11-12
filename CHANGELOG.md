@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### OOF 证据四面落盘 + predict 回归区间（#80/#164，feat）
+
+「可预测」路线落地（#80 裁定）：OOF 残差分位区间——BO 侧预测范围对带 / 配对反馈
+分母的原料就位。
+
+- **OOF 证据四面**：run_hpo θ* 的 `oof_y_pred.parquet`（工件名沿用）从单预测面
+  增强为并排四面——`y_{t}` / `y_pred_{t}` / `error_{t}`（回归 = 残差 y−y_pred；
+  分类 = 误判指示 0/1）/ `y_proba_{cls}`（单目标）| `y_proba_{t}__{cls}`（多目标，
+  仅分类——分类区间日后零返工）。
+- **predict 回归区间**：回归目标输出加 `y_pred_lo/hi` 两列（单目标裸名、多目标
+  `{t}_y_pred_lo/hi`），半宽 = |OOF 残差| 的 1−α 分位，α=0.1 常量单源
+  （`PREDICT_INTERVAL_ALPHA`）。**分类 v0.x 零变化**（无区间列）。
+- **残差源寻址（复制面）**：半宽以 run tag `mflowy.oof_half_width` 随 run_hpo run
+  落、final_train_test 复制（证据 parquet 同随终训 run 复制）——predict 单 run_id
+  入参可用（loader 恢复时附带 `ModelLoader.oof_half_width`）；DAG 训练直产物无
+  此 tag → 点值输出零变化。
+- roadmap「评估不确定性量化」② 转已实现（同 PR）；CV+/jackknife+ 升级路径保留
+  （同一落盘原料，#190 雾区）。
+
 ### external_baseline 先验化：CVCard 结构化对标（#169/#170，feat·BREAKING）
 
 「先验」升两卡通用家族（#169 裁定）：先验卡 DomainCard = 数据域先验；协议卡

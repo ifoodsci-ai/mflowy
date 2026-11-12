@@ -169,6 +169,11 @@ class ModelLoader:
     ``holdout``（#66）：training 行为的终评快照（``u``/``metrics``——u = 代表指标
     直取，``terminal_u`` 单源）——final_train_test 经 DAGResult 回读的数值面
     （指标权威源，报告不重算）。
+
+    ``oof_half_width``（#80/#164）：回归区间半宽（目标名 → |OOF 残差| 的 1−α
+    分位）——值级可选：run 带 OOF 证据 tag（run_hpo 会话链 → final 复制）时
+    loader 恢复附带，predict 出 ``y_pred_lo/hi``；DAG 训练直产物无此面（None →
+    点值输出）。分类恒 None（v0.x 无区间）。
     """
 
     name: str
@@ -177,6 +182,7 @@ class ModelLoader:
     u_inner: float | None = None
     search: dict | None = None
     holdout: dict | None = None
+    oof_half_width: dict[str, float] | None = None
 
     @property
     def pipe(self) -> ModelPipeline:

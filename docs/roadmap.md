@@ -19,7 +19,7 @@
 
 | 方向              | 说明                                                |
 | ----------------- | --------------------------------------------------- |
-| **评估不确定性量化** | 选参指标的折间 std 已随训练落 run（`{scoring}_std`，来自 inner CV 分数）；待补：① 全指标折间离散度（终评后补一轮 multi-metric CV，或以 holdout bootstrap 置信区间替代）；② `predict` 输出预测不确定性（单一最终模型下需换来源：conformal prediction 或训练时落盘的 OOF 残差分布）；③ 差距小于折间波动时标记"无显著差异"。证据链：科学审计 P0（排名决策无显著性证据）+ P1（预测无不确定性）。亦是贝叶斯优化推荐子系统（BO，#171）的 Model→BO 接口上游依赖（uncertainty——依赖链评论见 #76） |
+| **评估不确定性量化** | 选参指标的折间 std 已随训练落 run（`{scoring}_std`，来自 inner CV 分数）；② predict 区间已落地（#164：OOF 残差分位半宽 α=0.1——run_hpo 四面证据 `oof_y_pred.parquet` 即升级原料，CV+/jackknife+ 平滑升级路径见 #190 雾区）；待补：① 全指标折间离散度（终评后补一轮 multi-metric CV，或以 holdout bootstrap 置信区间替代）；③ 差距小于折间波动时标记"波动主导差距"（语义已裁 #80，挂层未决）。证据链：科学审计 P0（排名决策无显著性证据）+ P1（预测无不确定性）。亦是贝叶斯优化推荐子系统（BO，#171）的 Model→BO 接口上游依赖（uncertainty——依赖链评论见 #76；OOF 四面已落 = BO 预测范围对带/配对反馈分母的原料就位） |
 | **逆向搜索可信度约束** | 三项防护随 [#82](https://github.com/ifoodsci-ai/mflowy/issues/82) 划归 BO 图 [#171](https://github.com/ifoodsci-ai/mflowy/issues/171)（2026-11-11 起进图内消化）：① 置信度约束——[#174](https://github.com/ifoodsci-ai/mflowy/issues/174) 已裁：BO v1 置信度列 not_available，上游请求 CV+ 逐点区间 + OOD 标记（依赖链评论见 #76）；② 密度感知——原拟 GPSampler 后验天性承接，随 [#175](https://github.com/ifoodsci-ai/mflowy/issues/175) TPE 单引擎裁定失去载体（待真实需求再议）；③ 收敛证据——#171 雾区（毕业条件 = 首版 e2e 验收）。one-shot `inverse_optimization` 维持现状待 BO 图统一重构 |
 | **效应量检验严谨化** | `effect_size`：① 多重比较 BH 校正（当前按 min p 挑 top-3 无校正）；② η²→ω²、Cramér's V→bias-corrected 版本；③ 方差不齐时 Welch ANOVA。证据链：科学审计 P1；效应量为主 p 为辅的定位不变，校正只影响 p 的使用可信度 |
 | **任务推理硬化** | `infer_task_type_by_statistic` 工具与 x_y 内部 `_infer_task` 两处：① unique_ratio 阈值附样本量依赖说明（小样本 r≥0.5 判回归、大样本 r<5% 判分类，同一变量结论随 n 漂移）；② r<5% 短路提前于等距整数甄别——真实整数量（计数/年龄）大样本下误判分类，短路前增加等距整数检查。证据链：科学审计 P1 |
