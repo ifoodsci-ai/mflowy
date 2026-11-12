@@ -214,6 +214,48 @@ def _local_path(uri: str) -> str:
     return str(Path(unquote(parsed.path))) if parsed.scheme == "file" else uri
 
 
+# 远程镜像契约字面常量（#159 §4：**非 env 读取**——本地同名 env 属 MCP 路由缺省语义，
+# 与远端镜像烧 ENV 契约无关；镜像面见 docker/Dockerfile 烧 ENV、容器面见 jobwrap）。
+# 观察面单参推导（#160 终稿）：工件 URI 命中此前缀 → 改写为 tracking db 同根本地路径。
+REMOTE_TASK_DIR = "/user-data/workspace"
+
+
+def _rewrite_remote_artifact(value: str, local_root: Path | None) -> str:
+    """远程工件路径改写（get_experiment/get_run 共用纯函数）。
+
+    命中 ``REMOTE_TASK_DIR`` 前缀（file:// URI 或裸路径、精确或子路径）→ 替换为
+    ``local_root``（= tracking db 所在目录——zip 契约保证 mlflow.db 与 ``.mlruns/``
+    同根，db 目录即工件根，#155）；不匹配或 ``local_root`` 缺席（非 sqlite 库/本地
+    缺省查询）原样透传（Default 实验路径实证从未写入远端前缀）。
+    """
+    if local_root is None:
+        return value
+    stripped = _local_path(value)
+    marker = REMOTE_TASK_DIR
+    if stripped == marker:
+        return str(local_root)
+    if stripped.startswith(marker + "/"):
+        return str(local_root) + stripped[len(marker):]
+    return value
+
+
+def _tracking_client(tracking_uri: str | None):
+    """观察面 client 解析：缺省 = 机器默认库（全局 _mlflow_client）；给定 = 逐调用
+    构造（零全局态，#159 §4），并推导工件根改写（sqlite 库文件所在目录）。"""
+    if tracking_uri is None:
+        return _mlflow_client(), None
+    from urllib.parse import unquote, urlparse
+
+    from mlflow.tracking import MlflowClient
+
+    parsed = urlparse(tracking_uri)
+    if parsed.scheme == "sqlite":
+        # sqlite:////abs（四斜杠绝对路径）经 urlparse 出 "//x" 形态——前导斜杠归一
+        db_path = Path("/" + unquote(parsed.path).lstrip("/"))
+        return MlflowClient(tracking_uri=tracking_uri), db_path.parent
+    return MlflowClient(tracking_uri=tracking_uri), None  # http 等远程库：无同根推导，透传
+
+
 def get_experiment(
     experiment_id: Annotated[str, Field(description="实验 ID（从任务输出 ExperimentInfo 获取）")],
     filter_steps: Annotated[
@@ -222,6 +264,10 @@ def get_experiment(
     ] = None,
     max_results: Annotated[int, Field(description="每页最大数量")] = 10,
     page_token: Annotated[str | None, Field(description="翻页令牌（仅未过滤时有效）")] = None,
+    tracking_uri: Annotated[
+        str | None,
+        Field(description="可选，逐调用追踪库 URI（如 sqlite:///<download 目录>/{job_id}/mlflow.db）——远程任务产物下载后本地查询用；工件路径随之改写为同根本地路径"),
+    ] = None,
 ) -> dict:
     """实验仪表盘：实验本体（name/描述 tag/tags 含结构图/工件根/时间戳）+ run 状态目录。
 
@@ -231,9 +277,9 @@ def get_experiment(
     - 查实验级 tags（workflow 指纹、mflowy.graph 结构图）与工件根
     详情（params/metrics/tags/artifacts）经 get_run 下钻。
     """
-    client = _mlflow_client()
+    client, artifact_root = _tracking_client(tracking_uri)
     exp = client.get_experiment(experiment_id)
-    location = _local_path(exp.artifact_location)
+    location = _rewrite_remote_artifact(_local_path(exp.artifact_location), artifact_root)
     # run 状态目录（list_runs 吸收）：NodeResult 目录五元组投影 + start_time；
     # status 恒为 mlflow 原生（FINISHED/FAILED/RUNNING）——无引擎 skipped/"" 哨兵
     if filter_steps:
@@ -284,20 +330,34 @@ def get_experiment(
     }
 
 
-def get_run(run_id: Annotated[str, Field(description="Run ID（从任务输出 RunInfo 或 get_experiment 获取）")]) -> dict:
+def get_run(
+    run_id: Annotated[str, Field(description="Run ID（从任务输出 RunInfo 或 get_experiment 获取）")],
+    tracking_uri: Annotated[
+        str | None,
+        Field(description="可选，逐调用追踪库 URI（如 sqlite:///<download 目录>/{job_id}/mlflow.db）——远程任务产物下载后本地查询用；工件路径随之改写为同根本地路径"),
+    ] = None,
+) -> dict:
     """查询单个 run 的详情：params/metrics/tags/artifacts 产物目录。
 
     何时使用 get_run：
     - 已有 run_id 时读取指标与参数
     - 查看 run 落盘的产物清单（图表/模型文件路径）；工件后端为本地文件树，文件本体可直接访问
+    - 远程任务产物：download_platform_job_artifacts 拉取后传 tracking_uri
+      （``sqlite:///{target_dir}/{job_id}/mlflow.db``）查该继承链的 run——工件路径
+      自动从 ``/user-data/workspace`` 改写为解压根的本地路径（run 工件与 logged
+      models 双形态均覆盖）
     """
-    client = _mlflow_client()
+    client, artifact_root = _tracking_client(tracking_uri)
     run = client.get_run(run_id)
     d = run.to_dictionary()
-    d["info"]["artifact_uri"] = run.info.artifact_uri
+    d["info"]["artifact_uri"] = _rewrite_remote_artifact(run.info.artifact_uri, artifact_root)
     root = run.info.artifact_uri
     d["artifacts"] = [
-        {"path": _local_path(f"{root}/{a.path}"), "is_dir": a.is_dir, "file_size": a.file_size}
+        {
+            "path": _rewrite_remote_artifact(_local_path(f"{root}/{a.path}"), artifact_root),
+            "is_dir": a.is_dir,
+            "file_size": a.file_size,
+        }
         for a in client.list_artifacts(run_id)
     ]
     return d
@@ -514,4 +574,60 @@ def get_platform_job_logs(
         "terminal": job.status in JOB_TERMINAL_STATUSES,
         "tail_lines": tail_lines,
         "logs": logs,
+    }
+
+def download_platform_job_artifacts(
+    job_id: Annotated[str, Field(description="平台任务 ID（JobOutcome.submitted 的 job_id 或 ensure inheritable 面）")],
+    platform_experiment_id: Annotated[str, Field(description="平台实验 ID（任务 zip 所在实验——outputs 面寻址）")],
+    target_dir: Annotated[str, Field(description="解压根目录（须已存在；MCP 通道须绝对路径）——解压进 target_dir/{job_id}/，原子替换可重复调用")],
+) -> dict:
+    """拉取平台任务产物：下载 outputs 下 ``{job_id}.zip`` → 解压进 ``target_dir/{job_id}/``（zip 根 = workspace 根）。
+
+    何时使用 download_platform_job_artifacts：
+    - get_platform_job_logs 轮询到终态后拉取产物（重下载 = 原子替换，幂等）
+    - 拉取后本地查询：get_run/get_experiment 传 ``tracking_uri=sqlite:///{target_dir}/{job_id}/mlflow.db``
+      （mlflow.db 与 .mlruns 同根——db 目录即工件根，观察面自动改写为本地路径）
+
+    zip 本体即弃（不落 target_dir）；子目录 ``{job_id}/`` 是本工具自有领地。
+    返回 ``{job_id, platform_experiment_id, local_task_dir, file_count, mlflow_db}``。
+    """
+    import shutil
+    import tempfile
+    import zipfile
+
+    from mflowy.utils.path import resolve_input_path
+
+    target = resolve_input_path(target_dir)
+    if not target.is_dir():
+        raise FileNotFoundError(f"target_dir 不存在或非目录：{target_dir}（解析为 {target}）——先创建再调用")
+    client = _platform_client()
+    url, _meta = client.get_download_url(platform_experiment_id, "outputs", f"{job_id}.zip")
+    from mflowy.model.job_provider.platform_client import download_presigned
+
+    with tempfile.TemporaryDirectory(prefix="mflowy_download_") as td:
+        zip_path = Path(td) / f"{job_id}.zip"
+        download_presigned(url, zip_path)  # zip 本体即弃——临时目录退场即删
+        try:
+            with zipfile.ZipFile(zip_path) as zf:
+                names = [n for n in zf.namelist() if not n.endswith("/")]
+                staged = Path(td) / "unpacked"
+                zf.extractall(staged)
+        except zipfile.BadZipFile as e:
+            raise ValueError(f"平台产物 zip 损坏（job={job_id}）：{e}——上游 outputs 面异常，重试或报平台") from e
+        dest = target / job_id
+        replacing = target / f".{job_id}.replacing"
+        retired = target / f".{job_id}.retired"
+        shutil.rmtree(retired, ignore_errors=True)  # 上轮残留即清
+        staged.rename(replacing)  # 同盘 rename：tmp 解压 → 换位
+        if dest.exists():
+            dest.rename(retired)
+        replacing.rename(dest)
+        shutil.rmtree(retired, ignore_errors=True)
+    mlflow_db = dest / "mlflow.db"
+    return {
+        "job_id": job_id,
+        "platform_experiment_id": platform_experiment_id,
+        "local_task_dir": str(dest),
+        "file_count": len(names),
+        "mlflow_db": str(mlflow_db) if mlflow_db.is_file() else None,
     }

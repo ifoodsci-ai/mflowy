@@ -50,6 +50,7 @@ sessions_gc = "mflowy.mcp.tools:sessions_gc"
 login = "mflowy.mcp.tools:login"
 ensure_platform_experiment = "mflowy.mcp.tools:ensure_platform_experiment"
 get_platform_job_logs = "mflowy.mcp.tools:get_platform_job_logs"
+download_platform_job_artifacts = "mflowy.mcp.tools:download_platform_job_artifacts"
 
 [project.scripts]
 # 双入口重命名：mflowy = CLI（JSON runner，原 cmd）；mflowy-mcp = MCP server（原 mcpSrv）

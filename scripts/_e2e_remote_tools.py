@@ -179,6 +179,7 @@ async def main() -> None:
                 await session.initialize()
                 await run_s2(session, stage)
                 await run_s3_s4(session, stage)
+                await run_s5(session, stage, eid, j1)
 
     print(f"\n== 汇总: PASS={NPASS} FAIL={NFAIL} ==")
     sys.exit(1 if NFAIL else 0)
@@ -344,6 +345,75 @@ async def _poll_terminal(session: ClientSession, job_id: str, *, rounds: int = 1
             return result
         await asyncio.sleep(6)
     return result
+
+
+
+async def run_s5(session: ClientSession, stage: Path, eid: str, j1: str) -> str | None:
+    """S5 拉取与本地查询（切片⑤）：download 落位/原子替换 + 观察面单参 tracking_uri。
+
+    返回 J1 的模型步 run_id（S6 续跑源）。"""
+    print("== S5 拉取与本地查询 ==")
+    target = stage / "artifacts"
+    target.mkdir()
+    result, text = await call(session, "download_platform_job_artifacts",
+                              {"job_id": j1, "platform_experiment_id": eid, "target_dir": str(target)})
+    if not isinstance(result, dict) or result.get("local_task_dir") != str(target / j1):
+        bad("download 落位 target_dir/{job_id}/", text[:300])
+        raise SystemExit(2)
+    dest = target / j1
+
+    def _has(*names: str) -> bool:
+        return all((dest / n).is_file() for n in names)
+
+    ok("解压落位 + file_count") if isinstance(result["file_count"], int) and result["file_count"] > 0 else bad("file_count", str(result))
+    ok("zip 含 mlflow.db") if _has("mlflow.db") else bad("mlflow.db 缺", str(sorted(p.name for p in dest.rglob("*"))[:10]))
+    ok("zip 含 .mlruns/ 树") if any(dest.glob(".mlruns/**")) else bad(".mlruns 缺", "")
+    ok("mlflow_db 路径回传") if result["mlflow_db"] == str(dest / "mlflow.db") else bad("mlflow_db", str(result["mlflow_db"]))
+    ok("zip 本体即弃") if not list(target.glob("*.zip")) else bad("zip 残留", str(list(target.glob("*.zip"))))
+
+    result2, _ = await call(session, "download_platform_job_artifacts",
+                            {"job_id": j1, "platform_experiment_id": eid, "target_dir": str(target)})
+    ok("重下载幂等") if result2 == result else bad("重下载应等值", f"{result2} vs {result}")
+    ok("换位无残留") if not list(target.glob(f".{j1}*")) else bad("换位残留", str(list(target.glob(f".{j1}*"))))
+
+    # 观察面单参：tracking_uri 指到下载库 → 查 run + 工件路径改写为本地；顺带取模型步 run_id
+    uri = f"sqlite:///{dest}/mlflow.db"
+    model_run_id = None
+    exp_hits = None
+    for probe in ("1", "0"):
+        result, text = await call(session, "get_experiment", {"experiment_id": probe, "tracking_uri": uri})
+        if isinstance(result, dict) and result.get("runs"):
+            exp_hits = (probe, result)
+            break
+    if exp_hits and exp_hits[1]["runs"]:
+        probe, exp_view = exp_hits
+        ok(f"get_experiment(tracking_uri) 命中实验 {probe}（runs={len(exp_view['runs'])}）")
+        model_runs = [r for r in exp_view["runs"] if str(r.get("node", "")).startswith("model__")]
+        if model_runs:
+            model_run_id = model_runs[0]["run_id"]
+            ok(f"模型步 run 就位（{model_runs[0]['node']}={model_run_id[:8]}…）")
+        loc = str(exp_view.get("artifact_location", ""))
+        ok("工件根已改写为本地") if loc.startswith(str(dest)) and "/user-data" not in loc else bad("artifact_location 改写", loc)
+        if model_run_id:
+            result, text = await call(session, "get_run", {"run_id": model_run_id, "tracking_uri": uri})
+            if isinstance(result, dict):
+                paths = [result["info"]["artifact_uri"]] + [a["path"] for a in result.get("artifacts", [])]
+                ok("run 工件路径双改写（uri+清单）") if all("/user-data" not in p2 for p2 in paths) and any(str(p2).startswith(str(dest)) for p2 in paths) else bad("run 工件改写", str(paths[:3]))
+            else:
+                bad("get_run(tracking_uri)", text[:200])
+    else:
+        bad("get_experiment(tracking_uri) 未命中任何实验", text[:200])
+
+    # 缺省查询回归（不传 tracking_uri → 机器默认库）
+    result, text = await call(session, "get_experiment", {"experiment_id": "0"})
+    ok("缺省查询回归（Default 实验在）") if isinstance(result, dict) and result.get("experiment_id") == "0" else bad("缺省回归", text[:200])
+
+    # 负向
+    await expect_error(session, "target_dir 不存在", "download_platform_job_artifacts",
+                       {"job_id": j1, "platform_experiment_id": eid, "target_dir": str(stage / "nope")}, "target_dir")
+    await expect_error(session, "MCP 相对 target_dir", "download_platform_job_artifacts",
+                       {"job_id": j1, "platform_experiment_id": eid, "target_dir": "rel/dir"}, "绝对路径")
+    return model_run_id
 
 
 if __name__ == "__main__":
