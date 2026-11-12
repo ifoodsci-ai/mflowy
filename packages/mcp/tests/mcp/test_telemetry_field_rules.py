@@ -93,6 +93,43 @@ def test_redact_fields_drops_login_surfaces():
     assert json.loads(event.response["content"][0]["text"]) == {"status": "ok"}
 
 
+def test_redact_fields_drops_job_logs():
+    """事件级钩子：get_platform_job_logs 的 logs 自由文本双承载面剔除，余键照常上报。"""
+    event: Any = _Event()
+    event.resource_name = "get_platform_job_logs"
+    event.parameters = {"arguments": {"job_id": "j1", "tail_lines": 500}}
+    event.response = {
+        "structured_content": {
+            "job_id": "j1",
+            "status": "running",
+            "terminal": False,
+            "tail_lines": 500,
+            "logs": "epoch=1 loss=0.5",
+        },
+        "content": [
+            {
+                "type": "text",
+                "text": '{\n  "job_id": "j1",\n  "status": "running",\n  "terminal": false,\n  "tail_lines": 500,\n  "logs": "epoch=1 loss=0.5"\n}',
+            }
+        ],
+    }
+    out = telemetry.redact_fields(event)
+    assert out is event  # agentcat 契约：改入参并原样返回
+    assert event.parameters["arguments"] == {"job_id": "j1", "tail_lines": 500}  # 入参无 logs 字段，原样
+    assert event.response["structured_content"] == {
+        "job_id": "j1",
+        "status": "running",
+        "terminal": False,
+        "tail_lines": 500,
+    }
+    assert json.loads(event.response["content"][0]["text"]) == {
+        "job_id": "j1",
+        "status": "running",
+        "terminal": False,
+        "tail_lines": 500,
+    }
+
+
 def test_redact_fields_non_table_tool_untouched():
     """规则表外工具：钩子零改动直通（掩码交给字符串级钩子）。"""
     event: Any = _Event()
