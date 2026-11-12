@@ -170,7 +170,7 @@ board（inner CV，均值−std）:
 
 **U**：过。
 
-**A**：`final_train_test` → **holdout R² = 0.76**，MAE 3.1（百分单位）。收局剧本三步走完再收编：泰勒图对比误差结构（`draw_taylor_diagram`，多终训 run 才有对比面）→ 报告素材（`modeling_report_skeleton`——表格数字抄账本，叙事归我写）→ 报告落盘后 `modeling_finish(pdf)` 收局，交付：
+**A**：`final_train_test` → **holdout R² = 0.76**，MAE 3.1（百分单位）。收局剧本固定序走完（素材两工具 → 撰写 → 收编 → 交付）：泰勒图对比误差结构（`draw_taylor_diagram`，多终训 run 才有对比面）→ 报告素材（`modeling_report_skeleton`——表格数字抄账本，叙事归我写）→ 报告落盘后 `modeling_finish(pdf)` 收局 → 问址交付（清单现写），交付：
 
 - **holdout R² = 0.76**，MAE 3.1（百分单位）；
 - 对照系：经验公式 0.60 → **模型 +0.16**；四个族同场排名，LGBM 胜出可归因（同折同种子，律二/律四）；

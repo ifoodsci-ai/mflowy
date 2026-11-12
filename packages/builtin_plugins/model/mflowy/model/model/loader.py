@@ -11,6 +11,7 @@ from typing import Annotated
 
 from mflowy.driver.node import node
 
+from ._pipeline import OOF_HALF_WIDTH_TAG
 from .types import ModelLoader
 
 
@@ -22,7 +23,13 @@ def loader(
 
     五 flavor 共用同一路径（产物格式单一：恒 sklearn Pipeline，分界是 pipeline 组成而非 flavor）；
     身份取自 run 的 ``mflowy.step`` tag（如 ``model.XGB`` → "XGB"）。模型按需惰性加载。
+
+    #80/#164 回归区间原料：run 带 ``mflowy.oof_half_width`` tag（run_hpo 会话链 →
+    final 复制）时随门面附带（``oof_half_width``），predict 出 ``y_pred_lo/hi``；
+    无 tag（DAG 训练直产物 / 分类）= None，predict 点值输出。
     """
+    import json
+
     import mlflow
 
     run = mlflow.get_run(run_id)
@@ -38,4 +45,5 @@ def loader(
             "旧 fold 产物（{flavor}_{i} 命名模型）已随 v0.2 契约废弃——请用原 YAML 重训后再引用。"
         )
     name = run.data.tags.get("mflowy.step", "model").removeprefix("model.") or "model"
-    return ModelLoader(name=name, _model_uri=models[0].model_uri)
+    w = run.data.tags.get(OOF_HALF_WIDTH_TAG)
+    return ModelLoader(name=name, _model_uri=models[0].model_uri, oof_half_width=json.loads(w) if w else None)
