@@ -221,3 +221,73 @@ def test_defaults_held_only_by_build_signature():
     assert fields["max_steps"].default is dataclasses.MISSING
     params = inspect.signature(CVCard.build).parameters
     assert params["cv"].default == 5 and params["max_steps"].default == 10
+
+
+# ── 外部基线对标结构化（#169/#170——建模域先验：数值+口径+出处+权威度） ────────
+
+_EB = {"value": 0.6, "metric": "r2", "source_text": "实验室经验公式（内部报告 2024-05）", "source": "internal_history"}
+
+
+def test_external_baseline_structured_into_card(reg_csv):
+    df = pd.read_csv(reg_csv)
+    d = CVCard.build(df, **_cv_card(external_baseline=_EB)).as_dict()
+    assert d["external_baseline"] == _EB
+
+
+def test_external_baseline_none_default(reg_csv):
+    df = pd.read_csv(reg_csv)
+    assert CVCard.build(df, **_cv_card()).as_dict()["external_baseline"] is None
+
+
+def test_external_baseline_source_whitelist_fail_loud(reg_csv):
+    df = pd.read_csv(reg_csv)
+    with pytest.raises(ValueError, match="source 须为 literature/internal_history/manual"):
+        CVCard.build(df, **_cv_card(external_baseline={**_EB, "source": "chatgpt"}))
+
+
+def test_external_baseline_metric_same_domain_fail_loud(reg_csv):
+    """口径须与本任务指标同域：回归卡给分类口径 f1 → 拒（对照面同尺才可标）。"""
+    df = pd.read_csv(reg_csv)
+    with pytest.raises(ValueError, match="不相容"):
+        CVCard.build(df, **_cv_card(external_baseline={**_EB, "metric": "f1"}))
+
+
+def test_external_baseline_value_numeric_fail_loud(reg_csv):
+    df = pd.read_csv(reg_csv)
+    with pytest.raises(ValueError, match="value 须为有限数值"):
+        CVCard.build(df, **_cv_card(external_baseline={**_EB, "value": "0.6"}))
+    for bad in (float("nan"), float("inf")):  # NaN/Inf 基线会让未来对照面静默失效
+        with pytest.raises(ValueError, match="value 须为有限数值"):
+            CVCard.build(df, **_cv_card(external_baseline={**_EB, "value": bad}))
+
+
+def test_external_baseline_keys_fail_loud(reg_csv):
+    df = pd.read_csv(reg_csv)
+    with pytest.raises(ValueError, match="缺键"):
+        CVCard.build(df, **_cv_card(external_baseline={"value": 0.6, "metric": "r2"}))
+    with pytest.raises(ValueError, match="缺键"):  # 空 dict 不静默归一为「未对标」（红线 1）
+        CVCard.build(df, **_cv_card(external_baseline={}))
+    with pytest.raises(ValueError, match="未知键"):
+        CVCard.build(df, **_cv_card(external_baseline={**_EB, "note": "x"}))
+
+
+def test_external_baseline_str_retired_fail_loud(reg_csv):
+    """#170 BREAKING 钉：自由文本 str 入参退役——结构化 dict 是唯一表达形态。"""
+    df = pd.read_csv(reg_csv)
+    with pytest.raises(ValueError, match="结构化"):
+        CVCard.build(df, **_cv_card(external_baseline="经验公式 R²≈0.6"))
+
+
+def test_start_external_baseline_frozen_into_protocol(sessions_root, reg_csv):
+    """开局透传冻结：external_baseline 进 prior.protocol（渲染面等「波动主导差距」
+    挂层毕业——现状纯存档）。"""
+    s = ms.start_session(
+        reg_csv,
+        CV_CARD,
+        card={"domain": "t", "target": "target"},
+        task="regression",
+        metric="mae",
+        external_baseline=_EB,
+    )
+    assert s.prior is not None
+    assert s.prior["protocol"]["external_baseline"] == _EB

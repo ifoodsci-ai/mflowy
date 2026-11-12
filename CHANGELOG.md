@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### external_baseline 先验化：CVCard 结构化对标（#169/#170，feat·BREAKING）
+
+「先验」升两卡通用家族（#169 裁定）：先验卡 DomainCard = 数据域先验；协议卡
+CVCard.external_baseline = 建模域先验（前沿研究的领域先验知识）。
+
+- **BREAKING**：`external_baseline`（`modeling_session_start` 工具参 / `start_session`
+  / `CVCard.build`）自由文本 str 退役——唯一形态为结构化 dict
+  `{value: 数值, metric: 口径, source_text: 出处, source: literature/internal_history/manual}`。
+- 校验单源 `CVCard.build`（`protocol.py` `_validate_external_baseline`）：口径须与
+  本任务指标同域（metric 任务域白名单）、source 权威度三值白名单（同构 #112
+  DomainCard.source）、未知/缺键/value 非数值均 fail-loud。
+- 渲染面（board 对照/显著性标注）随「波动主导差距」挂层雾区毕业，本变更纯存档
+  （`prior.protocol.external_baseline` 结构化落盘）；DomainCard 数据域先验面零改动。
+
 ### 两域会话根接 task_dir 锚定链（#207/#208，feat·BREAKING）
 
 「数据在哪、任务工件跟到哪」落地会话根（#180 BO 侧 study 状态载体 task_dir 优先的

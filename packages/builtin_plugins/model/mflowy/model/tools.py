@@ -347,7 +347,13 @@ def modeling_session_start(
         list[str] | None, Field(description="ID 列（从 X 剔除防泄漏——显式参数 > card 背景；划分/搜索/终训同一数据面）")
     ] = None,
     goal: Annotated[str, Field(description="建模成功判据（业务口径）")] = "",
-    external_baseline: Annotated[str, Field(description="外部基线对标（自由文本，board 对照面）")] = "",
+    external_baseline: Annotated[
+        dict | None,
+        Field(
+            description="外部基线对标（建模域先验，#170 结构化）：{value: 数值, metric: 口径（须与本任务"
+            "指标同域）, source_text: 出处, source: literature/internal_history/manual}——白名单外 fail-loud"
+        ),
+    ] = None,
     card: Annotated[
         dict | None, Field(description="DomainCard（survey 产物）背景：target/task/id_columns 的兜底层")
     ] = None,

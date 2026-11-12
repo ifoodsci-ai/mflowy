@@ -110,6 +110,16 @@ Handle。可观测性以域观测函数覆盖面为界（清洗 = 检测算子�
 （凭据/遥测恒 `~/.mflowy`）。
 _Avoid_: 环境引擎（与 runner 混淆）；MDP（0.2.0 起的旧称——prose 统一 POMDP）；SessionContext（Context 一词归 DAG 任务节点，持久会话不以瞬态作用域命名——#89）
 
+**先验（prior）家族**:
+两卡通用概念（#169/#170 扩义）：episode 内冻结、开局校验门后不可改的知识注入面。
+数据域先验住**先验卡 DomainCard**（列语义/ID 分级/范围 + source 权威度，#112）；
+建模域先验住**协议卡 CVCard.external_baseline**（前沿研究的领域先验知识——结构化
+对标 {value, metric, source_text, source}，口径须与本任务指标同域 + 权威度白名单
+literature/internal_history/manual）。先验的具体科学性引擎不判断——校验门只管
+机械合法性（fail-loud）；对照面渲染与显著性标注等「波动主导差距」挂层毕业（现状
+纯存档）。
+_Avoid_: 把「先验」当 DomainCard 专有词（0.2.0 语境——两域各承一面）；propose/菜单（退役词）
+
 **会话基座（POMDPSession）/ 业务接口（POMDPSessionHandle）**:
 机制与策略的分层名：`POMDPSession`（`driver/session.py`）= 统一机制——六个操作
 （start/observe/apply/rollback/finish 上下文 + abandon 方法）承载业务流程骨架，
@@ -137,9 +147,10 @@ _Avoid_: Activation / 菜单 / 候选（#113/#120 退役——菜单是不完整
 ### 数据清洗子系统（Clean）
 
 **先验卡（DomainCard）**:
-清洗 POMDP 的冻结输入：数据域先验（target/ID 分级字段（pk/fk/known_id/
-composite/known_non_id/hinted）/单位/范围/protected + source 权威度——#112 PriorKnowledge
-并入卡；never_drop 收缩为 target/protected/time，ID 列处置归 π，survey 剧本编译）。
+清洗 POMDP 的冻结输入：数据域先验（先验家族的数据域成员，#169/#170 扩义——
+target/ID 分级字段（pk/fk/known_id/composite/known_non_id/hinted）/单位/范围/
+protected + source 权威度——#112 PriorKnowledge 并入卡；never_drop 收缩为
+target/protected/time，ID 列处置归 π，survey 剧本编译）。
 
 #### 缺陷与判定（0.2.x）
 
@@ -169,11 +180,15 @@ _Avoid_: 菜单/候选生成（#113 退役——菜单是不完整过滤器，�
 
 **协议卡（CVCard）**:
 建模 POMDP 的冻结输入：建模域对局规则（task/metric/CV/预算/约束，
-model-brief 问卷编译）。协议卡的引擎入参形态（#66）：cv_card = cv.split 配置 yaml
+model-brief 问卷编译）+ 建模域先验面（#169/#170——external_baseline 结构化对标
+{value, metric, source_text, source}，先验家族的建模域成员，自由文本已退役）。
+协议卡的引擎入参形态（#66）：cv_card = cv.split 配置 yaml
 明文（划分构建参数）+ start 显式参数（target/task/metric/candidates/max_steps/
-id_columns——显式 > card 背景分层缺省），CVCard.build 仍是四类校验的单一事实源。
+id_columns/external_baseline；其中 target/task/id_columns 显式 > card 背景分层
+缺省），CVCard.build 仍是四类相容校验 + external_baseline 结构校验（口径同域 +
+权威度白名单 fail-loud）的单一事实源。
 命名按内容不按过程；换协议 = board 作废 + test 重触，只能 abort 开新 episode。
-_Avoid_: ExperimentCard、ModelBrief、ModelingCard（协议卡禁用别名）
+_Avoid_: ExperimentCard、ModelBrief、ModelingCard（协议卡禁用别名）；external_baseline 自由文本（#170 BREAKING——结构化 dict 是唯一形态）
 
 **平台实验（platform experiment）**:
 上游实验服务的实验容器，远程文件与平台任务的宿主。
