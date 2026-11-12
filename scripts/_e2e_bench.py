@@ -98,15 +98,16 @@ def dag_chains(provider, tmp: str) -> None:
         result = asyncio.run(
             provider.modeling(modeling_steps=steps, name=f"e2e-bench:{task}", desc=f"基准冒烟门 {task} 链")
         )
-        if result.status != "finished":
+        if result.status != "finished" or result.dag_result is None:
             _report(False, f"{task} DAG status={result.status} error={getattr(result, 'error', None)}")
             continue
-        finished = [r for r in result.runs if r.status == "FINISHED"]
-        _report(len(finished) == len(result.runs), f"{task} 节点全绿（{len(finished)}/{len(result.runs)}）")
+        runs = result.dag_result.runs  # #204 起 modeling 受理面 = JobOutcome（DAG 目录内嵌 finished）
+        finished = [r for r in runs if r.status == "FINISHED"]
+        _report(len(finished) == len(runs), f"{task} 节点全绿（{len(finished)}/{len(runs)}）")
         for family, floor in floors.items():
             hit = next((r for r in finished if r.node == f"model__{family}"), None)
             if hit is None:
-                _report(False, f"{task}/{family} 无 FINISHED run（候选 {[r.node for r in result.runs]}）")
+                _report(False, f"{task}/{family} 无 FINISHED run（候选 {[r.node for r in runs]}）")
                 continue
             _check_evidence(task, family, hit.value, floor)
 
