@@ -10,10 +10,12 @@ from mflowy.model import session as ms
 
 
 @pytest.fixture
-def sessions_root(tmp_path, monkeypatch):
-    root = tmp_path / "modeling_sessions"
-    monkeypatch.setenv("MFLOWY_MODELING_SESSIONS", str(root))
-    return root
+def sessions_root(tmp_path):
+    from mflowy.utils.path import pin_task_dir, reset_task_dir
+
+    token = pin_task_dir(str(tmp_path))  # #207 锚定链：会话根 = anchor/modeling_sessions
+    yield tmp_path / "modeling_sessions"
+    reset_task_dir(token)
 
 
 @pytest.fixture

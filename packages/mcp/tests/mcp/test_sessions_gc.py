@@ -1,7 +1,9 @@
-"""sessions_gc 平台工具：约定扫描（~/.mflowy/*_sessions）+ 薄委托 driver SessionStore.gc。
+"""sessions_gc 平台工具：约定扫描（当前任务锚 anchor/*_sessions，#207）+ 薄委托 driver SessionStore.gc。
 
 分层裁定：driver=机制（按 root 清理），mcp=平台约定（哪些 root）——driver 对用户
 home 零知识。审计面：dry_run 只列不删（安全缺省），执行后回 deleted 清单。
+缺省扫描面 = task_dir 锚（无锚落 ~/.mflowy——旧扫描路径逐字相同）；显式 root
+参数保留救场（跨锚回收旧根）。
 """
 
 import os
@@ -63,3 +65,21 @@ class TestConventionScan:
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         report = sessions_gc()
         assert report["scanned_roots"] == [] and report["would_delete"] == [] and report["ignored"] == []
+
+    def test_bound_anchor_scans_under_task_dir(self, tmp_path):
+        """task_dir 绑定（钉住/锚参数推导同机制）时缺省扫 <anchor>/*_sessions——
+        task_dir 下会话根可被回收（#207 缺省扫描面对齐）。"""
+        from mflowy.mcp.tools import sessions_gc
+        from mflowy.utils.path import pin_task_dir, reset_task_dir
+
+        anchor = tmp_path / "workspace"
+        _mk_session(anchor / "clean_sessions", "s1", 40)
+        _mk_session(anchor / "unrelated", "s2", 40)  # 不匹配 *_sessions 约定，不入扫描
+        token = pin_task_dir(str(anchor))
+        try:
+            report = sessions_gc()
+        finally:
+            reset_task_dir(token)
+        assert report["scanned_roots"] == [str(anchor / "clean_sessions")]
+        assert [e["session_id"] for e in report["would_delete"]] == ["s1"]
+        assert (anchor / "clean_sessions" / "s1").is_dir()

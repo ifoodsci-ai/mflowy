@@ -27,7 +27,6 @@ rollback/finish/abandon 是记录不是删行——截断在接口层不存在�
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -63,8 +62,12 @@ from mflowy.driver.discover import CatalogMiss, get_node  # noqa: E402 —— �
 
 
 def _root() -> Path:
-    """会话 root（env MFLOWY_CLEAN_SESSIONS，域自管）。"""
-    return Path(os.environ.get("MFLOWY_CLEAN_SESSIONS", str(Path.home() / ".mflowy" / "clean_sessions")))
+    """会话 root（#207 锚定链）：``task_anchor()/clean_sessions``——链序单源住
+    task_anchor（无绑定落 ~/.mflowy，缺省路径与旧版逐字相同）。env
+    MFLOWY_CLEAN_SESSIONS 已退役（BREAKING，见 CHANGELOG）。"""
+    from mflowy.utils.path import task_anchor
+
+    return task_anchor() / "clean_sessions"
 
 
 def _open(session_id: str) -> POMDPSession:

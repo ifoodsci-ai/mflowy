@@ -17,11 +17,13 @@ from mflowy.driver.pomdp import FinishVerdict, Observation
 
 @pytest.fixture
 def sessions_root(tmp_path, monkeypatch):
-    root = tmp_path / "sessions"
-    monkeypatch.setenv("MFLOWY_CLEAN_SESSIONS", str(root))
+    from mflowy.utils.path import pin_task_dir, reset_task_dir
+
+    token = pin_task_dir(str(tmp_path))  # #207 锚定链：会话根 = anchor/clean_sessions
     # ②片起 apply 走单步流 DAG（mlflow 观测/血缘）——隔离到 tmp sqlite，不碰用户库
     monkeypatch.setenv("MLFLOW_TRACKING_URI", f"sqlite:///{tmp_path}/tracking.db")
-    return root
+    yield tmp_path / "clean_sessions"
+    reset_task_dir(token)
 
 
 def _obs(sessions_root, sid) -> dict:

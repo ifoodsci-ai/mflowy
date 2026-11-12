@@ -30,12 +30,13 @@ _K2 = "XGB|passthrough|passthrough"
 @pytest.fixture(scope="module")
 def sessions_root(tmp_path_factory):
     """模块级会话根（#92）：重栈会话只建一遍——function 作用域曾致 9 用例 × 4 管线
-    线性重建、单文件峰值 10GB（全量 ~20GB）。"""
-    root = tmp_path_factory.mktemp("modeling_sessions")
-    mp = pytest.MonkeyPatch()
-    mp.setenv("MFLOWY_MODELING_SESSIONS", str(root))
-    yield root
-    mp.undo()
+    线性重建、单文件峰值 10GB（全量 ~20GB）。#207 锚定链：会话根 = anchor/modeling_sessions。"""
+    from mflowy.utils.path import pin_task_dir, reset_task_dir
+
+    anchor = tmp_path_factory.mktemp("mflowy_anchor")
+    token = pin_task_dir(str(anchor))
+    yield anchor / "modeling_sessions"
+    reset_task_dir(token)
 
 
 @pytest.fixture(scope="module")

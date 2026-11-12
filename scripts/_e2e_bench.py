@@ -110,12 +110,15 @@ def dag_chains(provider, tmp: str) -> None:
 
 
 def session_chain(tmp: str) -> None:
-    """B2 执行位：分类会话最小链（run_hpo → final_train_test）。会话根强制临时（一次性）。"""
+    """B2 执行位：分类会话最小链（run_hpo → final_train_test）。会话根强制临时（一次性；
+    #207 锚定链——锚 tmp，根 = tmp/modeling_sessions，一次性脚本不还锚）。"""
     csv = os.path.join(tmp, "iris.csv")
     _iris_df().to_csv(csv, index=False)
-    sessions_root = os.path.join(tmp, "sessions")
-    os.environ["MFLOWY_MODELING_SESSIONS"] = sessions_root
     from mflowy.model import session as ms
+    from mflowy.utils.path import pin_task_dir
+
+    pin_task_dir(tmp)
+    sessions_root = os.path.join(tmp, "modeling_sessions")
 
     s = ms.start_session(
         csv,

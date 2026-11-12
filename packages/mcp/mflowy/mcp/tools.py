@@ -89,23 +89,27 @@ def _requires(namespace: str, node_name: str) -> str | None:
 def sessions_gc(
     root: Annotated[
         str | None,
-        Field(description="显式会话根目录（env 自定义 root 时指定；缺省扫描 ~/.mflowy/*_sessions）"),
+        Field(description="显式会话根目录（跨锚回收旧根时指定；缺省扫当前任务锚 anchor/*_sessions——无锚落 ~/.mflowy）"),
     ] = None,
     ttl_days: Annotated[int, Field(description="过期天数（mtime 锚 manifest.json；缺省 30）")] = 30,
     dry_run: Annotated[bool, Field(description="只列不删（缺省 True——agent 手里的删除工具安全缺省）")] = True,
 ) -> dict:
     """回收 POMDP 会话目录（clean/modeling 会话共用的生命周期基座；状态无关，按龄清理）。
 
+    缺省扫描面 = 当前任务锚下 ``*_sessions``（#207：会话根跟 task_dir 走，回收
+    面同锚；无锚直接 import 落 ~/.mflowy——与旧扫描路径逐字相同）。
+
     何时使用 sessions_gc：
     - 回收泄漏的弃置会话（活/死/损坏一律按 mtime 龄期，不读 manifest 内容）
     - 审计删除范围：先缺省 dry_run 看清单，确认后再 dry_run=false 执行
     """
     from mflowy.driver.session import SessionStore, gc_report_key
+    from mflowy.utils.path import task_anchor
 
     if root is not None:
         roots = [Path(root)]
     else:
-        base = Path.home() / ".mflowy"  # 平台约定：全部 POMDP 会话 root 住 ~/.mflowy/*_sessions
+        base = task_anchor()  # #207：扫当前锚——task_dir 下会话根不被回收的缺口闭合
         roots = sorted(p for p in base.glob("*_sessions") if p.is_dir())
     action_key = gc_report_key(dry_run)
     report: dict[str, list] = {"scanned_roots": [str(r) for r in roots], action_key: [], "ignored": []}
