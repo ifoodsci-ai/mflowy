@@ -67,7 +67,7 @@ modeling_session_start(final_path, cv_card=<cv.split 配置 yaml 明文>,
   回退——append-only 审计面）；
 - `modeling_report_findings(key, findings)`：人读诊断落账本（kind ⊆ 词表、severity
   ∈ [0,1]；决策日志审计）——规则算子覆盖不了的判断走这里；
-- **收局剧本固定序**（素材两工具 → 撰写 → 收编）：
+- **收局剧本固定序**（素材两工具 → 撰写 → 收编 → 交付）：
   1. `draw_taylor_diagram(session_id, run_ids)`：多终训 run 副产物画泰勒图（误差结构
      对比——终局排名的证据面；各模型 y_test 不一致会拒绝出图）；
   2. `modeling_report_skeleton(session_id)`：报告素材样板——表格数字从账本渲染
@@ -78,6 +78,17 @@ modeling_session_start(final_path, cv_card=<cv.split 配置 yaml 明文>,
      人看的）+ verdict（u/findings/rank_consistency）；**pdf 必须在报告就绪后
      调用**（文件缺失 fail-loud）；重入 = 幂等重导出（交付报告不可变更——重写须弃局
      重开）；
+  4. **交付幕**（收编后、对话内完成——消费方 = 对话内的你与人；交付地址是当次裁量，
+     不是引擎事实）：
+     - **问址**：问用户交付地址（目录或路径，每人每局不同；用户不需要交付即止步）；
+     - **整理交付物**：把报告 pdf（modeling_finish 收编进 deliverables 的产物）与
+       泰勒图（taylor_diagram.png）等会话工件复制/整理到该地址——路径以
+       modeling_finish / draw_taylor_diagram 响应与 deliverables 清单为准；交付物
+       已逃逸会话目录，会话本体仍是可按龄清理的工作态（sessions_gc 语义不动）；
+     - **现写交付清单**：在该地址落一页清单（交付物逐件绝对路径 + verdict 摘要：
+       终训 run_id / findings / rank / 各模型 u）——素材 = modeling_finish 响应里的
+       verdict，**现写**而非依赖额外落盘机制；下游（含 #78 回流交棒）按清单顺藤
+       摸瓜寻址。
 - `modeling_abandon(reason=...)`：用户中止/改协议重开前显式终局（不留僵尸）。
 
 ## 纪律
