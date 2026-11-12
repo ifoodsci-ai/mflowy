@@ -15,9 +15,9 @@ MFlowy 的 MCP 遥测遵循「**默认询问、明确同意、数据只发往配
 
 1. **UUID 全局掩码**：事件内全部字符串（参数 / 响应 / 意图 / 错误串）中的 canonical UUID（带连字符）替换为 `<uuid>`——平台 experiment / job 等标识符不可关联到平台账号；mlflow run_id（32 位无连字符 hex）不受影响，本地关联保持。
 2. **login 标识字段剔除**：`login` 工具遥测副本的入参与返回中剔除 `user_id` / `device_session_id` / `device_name`（缺省值为 hostname，属机器标识）。
-3. **logs 文本剔除**：`get_platform_job_logs`（随该工具上线生效）遥测副本中 `logs` 替换为行数/字节数桩。
+3. **logs 文本剔除**：`get_platform_job_logs` 遥测副本中整字段剔除 `logs`（日志自由文本可能含路径/数据样本片段/任意标识）——`{job_id, status, terminal, tail_lines}` 照常上报。
 
-不采集：`mflowy` JSON runner 与直接 import 入口（不经 MCP 协议）；文件内容读取；身份标识符——机器标识、用户标识按构造不进遥测（例外 1 的 UUID 掩码 + 例外 2 的字段剔除兜住已知标识面，自由文本措辞风险见「风险边界」）。设备身份例外披露：上报密钥绑定的 `actor_id` 由 machine-id 派生（见「设备密钥」节）——密钥绑定身份，非工具调用内容。
+不采集：`mflowy` JSON runner 与直接 import 入口（不经 MCP 协议）；文件内容读取；身份标识符——机器标识、用户标识按构造不进遥测（例外 1 的 UUID 掩码 + 例外 2/3 的字段剔除兜住已知标识面，自由文本措辞风险见「风险边界」）。设备身份例外披露：上报密钥绑定的 `actor_id` 由 machine-id 派生（见「设备密钥」节）——密钥绑定身份，非工具调用内容。
 
 ## 数据去哪里
 
