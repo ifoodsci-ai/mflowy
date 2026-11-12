@@ -18,6 +18,11 @@ def _registered_tools() -> set[str]:
     return {ep.name for ep in entry_points(group="mflowy.tools")}
 
 
+def _load_tool(name: str):
+    """按名加载已注册工具函数（entry points 真源，与 server.register 同一加载面）。"""
+    return next(ep.load() for ep in entry_points(group="mflowy.tools") if ep.name == name)
+
+
 def test_rule_table_keys_are_registered_tools():
     orphans = set(telemetry.TELEMETRY_FIELD_RULES) - _registered_tools()
     assert not orphans, f"字段规则表指向未注册工具（改名孤儿？）: {sorted(orphans)}"
@@ -52,12 +57,37 @@ def test_login_rule_fields_in_visible_surfaces():
         obtained_at=0.0,
         expires_at=0.0,
     ).summary("ok")
-    login_fn = next(ep.load() for ep in entry_points(group="mflowy.tools") if ep.name == "login")
+    login_fn = _load_tool("login")
     params = set(inspect.signature(login_fn).parameters)
     for field, _ in telemetry.TELEMETRY_FIELD_RULES["login"]:
         assert field in summary or field in params, (
             f"login 剔除字段 {field!r} 不在返回形状与入参签名任一面（改名孤儿？）"
         )
+
+
+def test_get_platform_job_logs_rule_fields_in_return_schema(monkeypatch):
+    """剔除字段必须咬合 get_platform_job_logs 返回面，否则改名孤儿静默失效。
+
+    返回面单源 = 函数真实返回（裸 dict）——经 ``_platform_client`` 工厂缝（#159 §8）
+    替假 client 取键，不取 docstring（文档可漂移）。
+    """
+    from mflowy.mcp import tools
+
+    class _Job:
+        status = "running"
+
+    class _StubClient:
+        def get_job(self, job_id):
+            return _Job()
+
+        def get_job_logs(self, job_id, tail_lines):
+            return ""
+
+    monkeypatch.setattr(tools, "_platform_client", lambda: _StubClient())
+    fn = _load_tool("get_platform_job_logs")
+    result = fn(job_id="j1")
+    for field, _ in telemetry.TELEMETRY_FIELD_RULES["get_platform_job_logs"]:
+        assert field in result, f"get_platform_job_logs 剔除字段 {field!r} 不在返回形状（改名孤儿？）"
 
 
 def test_redact_uuids_masks_canonical_only():
@@ -91,6 +121,43 @@ def test_redact_fields_drops_login_surfaces():
     assert event.parameters["arguments"] == {"force": True}
     assert event.response["structured_content"] == {"status": "ok"}
     assert json.loads(event.response["content"][0]["text"]) == {"status": "ok"}
+
+
+def test_redact_fields_drops_job_logs():
+    """事件级钩子：get_platform_job_logs 的 logs 自由文本双承载面剔除，余键照常上报。"""
+    event: Any = _Event()
+    event.resource_name = "get_platform_job_logs"
+    event.parameters = {"arguments": {"job_id": "j1", "tail_lines": 500}}
+    event.response = {
+        "structured_content": {
+            "job_id": "j1",
+            "status": "running",
+            "terminal": False,
+            "tail_lines": 500,
+            "logs": "epoch=1 loss=0.5",
+        },
+        "content": [
+            {
+                "type": "text",
+                "text": '{\n  "job_id": "j1",\n  "status": "running",\n  "terminal": false,\n  "tail_lines": 500,\n  "logs": "epoch=1 loss=0.5"\n}',
+            }
+        ],
+    }
+    out = telemetry.redact_fields(event)
+    assert out is event  # agentcat 契约：改入参并原样返回
+    assert event.parameters["arguments"] == {"job_id": "j1", "tail_lines": 500}  # 入参无 logs 字段，原样
+    assert event.response["structured_content"] == {
+        "job_id": "j1",
+        "status": "running",
+        "terminal": False,
+        "tail_lines": 500,
+    }
+    assert json.loads(event.response["content"][0]["text"]) == {
+        "job_id": "j1",
+        "status": "running",
+        "terminal": False,
+        "tail_lines": 500,
+    }
 
 
 def test_redact_fields_non_table_tool_untouched():

@@ -45,7 +45,7 @@ Mode = Literal["on", "off", "ask"]
 
 # ── 遥测脱敏（#189：只作用于遥测副本，工具真实返回与入参零影响）
 
-RedactAction = Literal["drop"]  # 已实现动作集（单源）；logs 桩（#186 §1）随 get_platform_job_logs PR 扩
+RedactAction = Literal["drop"]  # 已实现动作集（单源）
 SUPPORTED_REDACT_ACTIONS: tuple[RedactAction, ...] = get_args(RedactAction)
 
 TELEMETRY_FIELD_RULES: dict[str, list[tuple[str, RedactAction]]] = {
@@ -53,6 +53,9 @@ TELEMETRY_FIELD_RULES: dict[str, list[tuple[str, RedactAction]]] = {
     # 遥测副本按字段名剔除（不赌 JWT sub 是 UUID 形态）。表键 ⊆ 已注册工具、字段 ⊆ 返回
     # 形状，镜像契约钉在 tests/mcp/test_telemetry_field_rules.py（改名孤儿测试期 fail-loud）。
     "login": [("user_id", "drop"), ("device_session_id", "drop"), ("device_name", "drop")],
+    # logs 自由文本（路径/数据样本片段/任意标识——UUID 掩码只覆盖 canonical 形态）整字段
+    # 剔除；{job_id, status, terminal, tail_lines} 照常上报（#186 §1，#189 缺陷记录裁定 drop）。
+    "get_platform_job_logs": [("logs", "drop")],
 }
 
 # canonical UUID（8-4-4-4-12 带连字符 hex）；mlflow run_id（32 位无连字符 hex）刻意不中枪
@@ -66,7 +69,7 @@ def redact_uuids(value: str) -> str:
 
 
 def redact_fields(event: Event) -> Event:
-    """事件级钩子：按字段规则表剔除工具遥测副本的标识字段（login 的入参与返回双面）。
+    """事件级钩子：按字段规则表剔除工具遥测副本的标识字段（login 入参/返回双面 + get_platform_job_logs 的 logs 文本）。
 
     agentcat 契约：改入参并原样返回；raise = 整事件丢弃（fail-closed，绝不发原文）。
     剔除面 = ``parameters.arguments`` + ``response``（structured_content 与 content 文本
