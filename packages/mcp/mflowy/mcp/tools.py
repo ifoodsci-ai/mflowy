@@ -235,7 +235,7 @@ def _rewrite_remote_artifact(value: str, local_root: Path | None) -> str:
     if stripped == marker:
         return str(local_root)
     if stripped.startswith(marker + "/"):
-        return str(local_root) + stripped[len(marker):]
+        return str(local_root) + stripped[len(marker) :]
     return value
 
 
@@ -266,7 +266,9 @@ def get_experiment(
     page_token: Annotated[str | None, Field(description="翻页令牌（仅未过滤时有效）")] = None,
     tracking_uri: Annotated[
         str | None,
-        Field(description="可选，逐调用追踪库 URI（如 sqlite:///<download 目录>/{job_id}/mlflow.db）——远程任务产物下载后本地查询用；工件路径随之改写为同根本地路径"),
+        Field(
+            description="可选，逐调用追踪库 URI（如 sqlite:///<download 目录>/{job_id}/mlflow.db）——远程任务产物下载后本地查询用；工件路径随之改写为同根本地路径"
+        ),
     ] = None,
 ) -> dict:
     """实验仪表盘：实验本体（name/描述 tag/tags 含结构图/工件根/时间戳）+ run 状态目录。
@@ -334,7 +336,9 @@ def get_run(
     run_id: Annotated[str, Field(description="Run ID（从任务输出 RunInfo 或 get_experiment 获取）")],
     tracking_uri: Annotated[
         str | None,
-        Field(description="可选，逐调用追踪库 URI（如 sqlite:///<download 目录>/{job_id}/mlflow.db）——远程任务产物下载后本地查询用；工件路径随之改写为同根本地路径"),
+        Field(
+            description="可选，逐调用追踪库 URI（如 sqlite:///<download 目录>/{job_id}/mlflow.db）——远程任务产物下载后本地查询用；工件路径随之改写为同根本地路径"
+        ),
     ] = None,
 ) -> dict:
     """查询单个 run 的详情：params/metrics/tags/artifacts 产物目录。
@@ -350,11 +354,11 @@ def get_run(
     client, artifact_root = _tracking_client(tracking_uri)
     run = client.get_run(run_id)
     d = run.to_dictionary()
-    d["info"]["artifact_uri"] = _rewrite_remote_artifact(run.info.artifact_uri, artifact_root)
+    d["info"]["artifact_uri"] = _rewrite_remote_artifact(run.info.artifact_uri or "", artifact_root)
     root = run.info.artifact_uri
     d["artifacts"] = [
         {
-            "path": _rewrite_remote_artifact(_local_path(f"{root}/{a.path}"), artifact_root),
+            "path": _rewrite_remote_artifact(_local_path(f"{root or ''}{a.path}"), artifact_root),
             "is_dir": a.is_dir,
             "file_size": a.file_size,
         }
@@ -576,10 +580,16 @@ def get_platform_job_logs(
         "logs": logs,
     }
 
+
 def download_platform_job_artifacts(
     job_id: Annotated[str, Field(description="平台任务 ID（JobOutcome.submitted 的 job_id 或 ensure inheritable 面）")],
     platform_experiment_id: Annotated[str, Field(description="平台实验 ID（任务 zip 所在实验——outputs 面寻址）")],
-    target_dir: Annotated[str, Field(description="解压根目录（须已存在；MCP 通道须绝对路径）——解压进 target_dir/{job_id}/，原子替换可重复调用")],
+    target_dir: Annotated[
+        str,
+        Field(
+            description="解压根目录（须已存在；MCP 通道须绝对路径）——解压进 target_dir/{job_id}/，原子替换可重复调用"
+        ),
+    ],
 ) -> dict:
     """拉取平台任务产物：下载 outputs 下 ``{job_id}.zip`` → 解压进 ``target_dir/{job_id}/``（zip 根 = workspace 根）。
 

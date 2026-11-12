@@ -139,3 +139,16 @@ def test_wrap_with_inherit_end_to_end(stage, monkeypatch, capsys):
     monkeypatch.setattr("mflowy.mcp.runner.run_tool", fake_run_tool)
     rc = jobwrap._wrap(["--tool", "modeling", "--kwargs-json", "{}", "--inherit-from", "job-prev"])
     assert rc == 0 and seen["db"] == b"prev-db"
+
+
+def test_unpack_inherit_works_before_contextvar_pin(stage, monkeypatch):
+    """S6 全链实测回归：继承解包先于 run_tool 钉锚——ContextVar 恒空，env 契约锚生效。"""
+    import os
+
+    outputs, task = stage
+    monkeypatch.delenv("MFLOWY_TASK_DIR", raising=False)  # env 也缺 → cwd 缺省
+    _make_zip(outputs / "job-prev.zip", {"mlflow.db": b"db"})
+    monkeypatch.chdir(task)
+    jobwrap._unpack_inherit("job-prev")  # 不经 ContextVar——不炸
+    assert (Path.cwd() / "mlflow.db").read_bytes() == b"db"
+    os.chdir("/")  # 还原（tmp cwd 已由 pytest 管理，防御性）

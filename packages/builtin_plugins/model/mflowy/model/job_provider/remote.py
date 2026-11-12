@@ -123,16 +123,17 @@ class RemoteJobProvider:
         modeling_steps: str,
         name: str,
         desc: str,
-        study_storage_path: str | None = None,
+        resume_study_from: str | None = None,
         platform_experiment_id: str | None = None,
         inherit_platform_job_id: str | None = None,
         headers: Headers = None,
     ) -> JobOutcome:
         return await self._submit(
             "hyperparameters_search",
-            {"modeling_steps": modeling_steps, "name": name, "desc": desc, "study_storage_path": study_storage_path},
+            {"modeling_steps": modeling_steps, "name": name, "desc": desc, "resume_study_from": resume_study_from},
             platform_experiment_id=platform_experiment_id,
             inherit_platform_job_id=inherit_platform_job_id,
+            prior_state_refs=("resume_study_from",),  # #158：resume ⇒ inherit 必填（提交侧静态门）
         )
 
     async def modeling(

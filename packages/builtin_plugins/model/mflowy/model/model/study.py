@@ -47,16 +47,37 @@ type ParameterSearchSpace = ContinuousSpace | DiscreteSpace
 # 续跑（复用前史）；一库一 study（名 = 路径词干）。会话域内直连路径
 # （_open_study，study_name = 结构键）不经此锚——两路径命名约定各自自洽。
 _study_storage: ContextVar[str | None] = ContextVar("mflowy_study_storage", default=None)
+# run 作用域活写开关（#158 §3：hyperparameters_search 流程置位——study 落
+# ``{task_dir}/.mflowy/study/{run_id}.db``，zip 往返带出、失败 run 也有活文件兜底）
+_study_live: ContextVar[bool] = ContextVar("mflowy_study_live", default=False)
+# 本次 search 实际落库路径（供搜索尾 log_artifact 以 ``study.db`` 名落 run——
+# 单线程 DAG 内「search() → 落工件」紧邻，无交错）
+_study_db_path_used: ContextVar[str | None] = ContextVar("mflowy_study_db_path_used", default=None)
 
 
 def set_study_storage(path: str | None) -> Token[str | None]:
-    """锚定 search() 的 study 落库位置（job_provider 线程内 set，用毕 reset——
-    token 语义同 set_task_dir）。"""
+    """锚定 search() 的 study 落库位置（显式路径——续跑经 ``download_run_artifact``
+    取回的 study.db 即锚此；job_provider 线程内 set，用毕 reset——token 语义同
+    set_task_dir）。"""
     return _study_storage.set(path)
 
 
 def reset_study_storage(token: Token[str | None]) -> None:
     _study_storage.reset(token)
+
+
+def set_study_live(flag: bool) -> Token[bool]:
+    """置位 run 作用域活写（无显式锚时 search() 落 run 级 dot-dir）。"""
+    return _study_live.set(flag)
+
+
+def reset_study_live(token: Token[bool]) -> None:
+    _study_live.reset(token)
+
+
+def study_db_path_used() -> str | None:
+    """最近一次 search() 的实际落库 sqlite 路径（未落库/内存态 = None）。"""
+    return _study_db_path_used.get()
 
 
 def suggest_params(trial: Trial, param_space: dict[str, ParameterSearchSpace]) -> dict[str, Any]:
@@ -113,11 +134,22 @@ def search[T: float | tuple[float, ...]](
 
     import optuna
 
-    if path := _study_storage.get():
-        # 落库锚生效（#89 ①修正）：sqlite + load_if_exists——同路径重复搜索复用
-        # 前史（对同一模型多次 HPO 的增量续跑）；一库一 study，名 = 路径词干。
+    path = _study_storage.get()
+    if path is None and _study_live.get():
+        # run 作用域活写（#158 §3）：run 窗口内锚到 task_dir dot-dir——单 job 单
+        # model 步实践规范，多模型走多 job；zip 全量带出供跨 Job 续跑
+        import mlflow
+        from mflowy.utils.path import task_dir
+
+        if (run := mlflow.active_run()) is not None:
+            path = str(task_dir() / ".mflowy" / "study" / f"{run.info.run_id}.db")
+    if path:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        # 落库锚生效（#89 ①修正 / #158 续跑）：sqlite + load_if_exists——同库重复
+        # 搜索复用前史（增量续跑）。study 名 = 链上恒名 "study"（#158：活文件以
+        # run_id 区分于磁盘，名随文件词干漂移会让续跑 load_if_exists 落空）
         study = optuna.create_study(
-            study_name=Path(path).stem,
+            study_name="study",
             storage=f"sqlite:///{path}",
             load_if_exists=True,
             sampler=sampler,
@@ -125,6 +157,7 @@ def search[T: float | tuple[float, ...]](
             direction=direction,
             directions=directions,
         )
+        _study_db_path_used.set(path)
     else:
         study = optuna.create_study(
             sampler=sampler,

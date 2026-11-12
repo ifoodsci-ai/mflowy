@@ -72,7 +72,7 @@ class JobProvider(Protocol):
         modeling_steps: str,
         name: str,
         desc: str,
-        study_storage_path: str | None = None,
+        resume_study_from: str | None = None,
         platform_experiment_id: str | None = None,
         inherit_platform_job_id: str | None = None,
         headers: Headers = None,

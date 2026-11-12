@@ -85,13 +85,15 @@ def _wrap(args: list[str]) -> int:
     return rc
 
 
-def _task_dir() -> Path:
-    from mflowy.utils.path import task_dir_or_none
+def _wrap_task_dir() -> Path:
+    """wrap 的 task_dir 锚：容器契约 env（镜像烧 MFLOWY_TASK_DIR）优先，缺省 cwd。
 
-    d = task_dir_or_none()
-    if d is None:
-        raise ValueError("task_dir 未绑定——run_tool 前置 env（MFLOWY_TASK_DIR）或锚推导缺失")
-    return d
+    不经 ContextVar——继承解包发生在 run_tool 钉锚**之前**，ContextVar 此时恒空
+    （S6 全链实测：unpack 先于 pin 必炸 ValueError）。
+    """
+    import os
+
+    return Path(os.environ.get("MFLOWY_TASK_DIR", Path.cwd()))
 
 
 def _unpack_inherit(job_id: str) -> None:
@@ -102,7 +104,7 @@ def _unpack_inherit(job_id: str) -> None:
     candidates = sorted(p.name for p in OUTPUTS_DIR.glob("*.zip")) if OUTPUTS_DIR.is_dir() else []
     if not src.is_file():
         raise FileNotFoundError(f"继承源 zip 不存在：{src}——同实验候选：{candidates or '无'}")
-    dest = _task_dir()
+    dest = _wrap_task_dir()
     try:
         with zipfile.ZipFile(src) as zf:
             zf.extractall(dest)  # 滚雪球合并：mlflow.db/.mlruns/ 前序态就地覆写
@@ -127,7 +129,7 @@ def _pack_outputs() -> None:
     dest = OUTPUTS_DIR / f"{job_id}.zip"
     tmp = dest.with_name(dest.name + ".part")
     try:
-        src_dir = _task_dir()  # try 内——任何失败只降级为 pack 警告，不覆写工具 rc
+        src_dir = _wrap_task_dir()  # try 内——任何失败只降级为 pack 警告，不覆写工具 rc
         with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
             for p in sorted(src_dir.rglob("*")):
                 zf.write(p, p.relative_to(src_dir).as_posix())

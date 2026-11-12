@@ -10,7 +10,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from mflowy.mcp import tools
 from mflowy.utils.path import _EntryChannel
 
@@ -107,7 +106,10 @@ class TestRewriteRemoteArtifact:
         [
             ("file:///user-data/workspace/.mlruns", "/local/dl/job-9/.mlruns"),  # 精确（file:// 形态）
             ("/user-data/workspace/.mlruns", "/local/dl/job-9/.mlruns"),  # 裸路径形态
-            ("file:///user-data/workspace/.mlruns/r1/artifacts/x.parquet", "/local/dl/job-9/.mlruns/r1/artifacts/x.parquet"),
+            (
+                "file:///user-data/workspace/.mlruns/r1/artifacts/x.parquet",
+                "/local/dl/job-9/.mlruns/r1/artifacts/x.parquet",
+            ),
             ("file:///user-data/workspace/models/m-uuid", "/local/dl/job-9/models/m-uuid"),  # logged model 双形态
             ("file:///home/other/.mlruns", "file:///home/other/.mlruns"),  # 不匹配前缀原样透传
             ("http://remote:5000/r1", "http://remote:5000/r1"),
@@ -117,11 +119,17 @@ class TestRewriteRemoteArtifact:
         assert tools._rewrite_remote_artifact(value, self.ROOT) == expected
 
     def test_none_root_passthrough(self):
-        assert tools._rewrite_remote_artifact("file:///user-data/workspace/.mlruns", None) == "file:///user-data/workspace/.mlruns"
+        assert (
+            tools._rewrite_remote_artifact("file:///user-data/workspace/.mlruns", None)
+            == "file:///user-data/workspace/.mlruns"
+        )
 
     def test_prefix_not_partial_match(self):
         # /user-data/workspace-evil 不得误命中（精确 or 子路径才算）
-        assert tools._rewrite_remote_artifact("file:///user-data/workspace-evil/x", self.ROOT) == "file:///user-data/workspace-evil/x"
+        assert (
+            tools._rewrite_remote_artifact("file:///user-data/workspace-evil/x", self.ROOT)
+            == "file:///user-data/workspace-evil/x"
+        )
 
 
 # ── 观察面单参：逐调用 client（零全局态）─────────────────────────────────
@@ -129,8 +137,6 @@ class TestRewriteRemoteArtifact:
 
 def test_tracking_client_per_call_no_global_pollution(tmp_path, monkeypatch):
     """给定 tracking_uri → 逐调用 MlflowClient(tracking_uri=...)，模块级 _client 不动。"""
-    import mlflow
-
     db = tmp_path / "remote" / "mlflow.db"
     db.parent.mkdir(parents=True)
     tools._client = None
@@ -145,5 +151,4 @@ def test_tracking_client_per_call_no_global_pollution(tmp_path, monkeypatch):
         default_client, default_root = tools._tracking_client(None)
         assert default_root is None
     finally:
-        mlflow.set_tracking_uri(None)
         tools._client = None

@@ -86,10 +86,10 @@ async def hyperparameters_search(
     ],
     name: Annotated[str, Field(description="任务名称")],
     desc: Annotated[str, Field(description="任务描述")],
-    study_storage_path: Annotated[
+    resume_study_from: Annotated[
         str | None,
         Field(
-            description="optuna study 落库 sqlite 路径（可选）——非空时同一路径重复搜索增量续跑（复用前史）；对同一模型多次 HPO 时传入同一持久路径"
+            description="续跑源模型步 run_id（可选）——取回该 run 的 study.db 增量续跑（复用前史不从头采样）；remote 模式须同时传 inherit_platform_job_id（前史经继承解包寻址）"
         ),
     ] = None,
     platform_experiment_id: Annotated[
@@ -109,8 +109,8 @@ async def hyperparameters_search(
     何时使用 hyperparameters_search：
     - 候选扫描期：多族/多空间并排出 θ* 与 u_inner 证据（交付集外不白付终训）
     - 扫描后用 modeling 工具传全 pin 参数（θ* 落地）做终训交付
-    - 对同一模型迭代多轮 HPO：传同一 study_storage_path——后轮复用前轮搜索历史
-      （增量续跑，不从头采样）
+    - 对同一模型迭代多轮 HPO：传 resume_study_from=<前轮模型步 run_id>——增量续跑
+      不从头采样（run 级 study 落工件 study.db，缺省每次新 study）
 
 
     受理面（JobOutcome）：local 完成等待（finished 内嵌 DAGResult）；remote 受理即返
@@ -122,7 +122,7 @@ async def hyperparameters_search(
         modeling_steps=modeling_steps,
         name=name,
         desc=desc,
-        study_storage_path=study_storage_path,
+        resume_study_from=resume_study_from,
         platform_experiment_id=platform_experiment_id,
         inherit_platform_job_id=inherit_platform_job_id,
         headers=ctx.request_context.meta if ctx else None,

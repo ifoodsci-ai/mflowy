@@ -149,10 +149,28 @@ def test_prior_state_requires_inherit_static_gate(preset_env):
                 modeling_steps=STEPS, name="n", desc="d", experiment_id="mlflow-1", platform_experiment_id="e"
             )
         )
-    # hpo + study_storage_path 不强制（#156：不继承 = 新 study）
+    # hpo 无前史引用（不 resume）不强制 inherit（#156：不继承 = 新 study）
+    asyncio.run(provider.hyperparameters_search(modeling_steps=STEPS, name="n", desc="d", platform_experiment_id="e"))
+
+
+def test_resume_study_requires_inherit_static_gate(preset_env):
+    """#158 §3：resume_study_from ⇒ inherit_platform_job_id 必填（remote 蕴含——前史
+    run 只在继承链 mlflow.db 里可寻址）；同传两参即过门。"""
+    provider = RemoteJobProvider(client=FakeClient(outputs=["job-old.zip"]))
+    with pytest.raises(ValueError, match=r"resume_study_from.*inherit_platform_job_id"):
+        asyncio.run(
+            provider.hyperparameters_search(
+                modeling_steps=STEPS, name="n", desc="d", resume_study_from="run-9", platform_experiment_id="e"
+            )
+        )
     asyncio.run(
         provider.hyperparameters_search(
-            modeling_steps=STEPS, name="n", desc="d", study_storage_path="/tmp/s.db", platform_experiment_id="e"
+            modeling_steps=STEPS,
+            name="n",
+            desc="d",
+            resume_study_from="run-9",
+            platform_experiment_id="e",
+            inherit_platform_job_id="job-old",
         )
     )
 
