@@ -285,7 +285,7 @@ uvx --from "mflowy[mcp,model]" --with mflowy-extra mflowy-mcp
 - **投影类型（pydantic 封闭模型，#89）**：`Observation`（七键 + 终态双旗，`extra="forbid"`——域尾巴归位 `prior`/`state_digest`，拼错键 fail-loud）/ `FinishVerdict`（拒收必附 reason 的模型级硬规则）——契约即校验（红线 2 同一台 pydantic 机器），`verify_*` 手写校验器、`Candidate` 与 `Activation`（菜单候选，#120）已退役
 - **决策权地图**：引擎=事实（合法走法/转移/守卫/预算），π=选择（选动作/回滚时机/收局时机/弃局）；守卫拦"事实不成立"不拦"程序下一步"；引擎不出菜单、不发停止信号（#113/#120——π 可见面 = 动作词表全集，收局时机 π 从观测自决）；结算可拒收且拒收后可续局
 - **`POMDPSessionHandle`**：业务接口的类型锚点（无状态 sid 寻址，"具名核心 + `*args` 域尾巴"——各域实现自己的 Handle，用同一套机制）；**`POMDPSession`**（`session.py`，#89 会话壳）：统一机制——六个操作（`start_ctx`/`observe_ctx`（水化 + 投影，只读零写、终态照常可观测）/`apply_ctx(action)`/`rollback_ctx`/`finish_ctx` + `abandon` 方法）承载全部业务流程骨架：终态/预算门（步数口径 `counts_step` 域声明）、prior 冻结牙齿、append-only 决策日志（追加即 commit 点）、统一盘上写序（工件→日志→观测投影）、open 撕裂检测。盘上两件：`observation.json`（观测摘要，整读改写）/ `decision.log`（JSONL，接口无删除面）——`rules.pkl` 随规则引擎退役（存量遗留文件不读不迁，GC 自然回收）；域状态文件域自定（model 的 `board.json`）。`SessionStore` 降为存量 manifest 面向的内部件（`gc` 锚 observation.json 回退 manifest.json）
-- **活参考**：mflowy-data / mflowy-model 两域的会话模块（Handle 的两个真 adapter——结构等价由「真实响应即契约模型」钉测；对称于两包之于插件 SDK 的地位）；回收面 = mcp 平台工具 `sessions_gc`（约定扫描 `~/.mflowy/*_sessions` + mtime TTL + dry-run 安全缺省——平台约定住 mcp，driver 对用户 home 零知识）
+- **活参考**：mflowy-data / mflowy-model 两域的会话模块（Handle 的两个真 adapter——结构等价由「真实响应即契约模型」钉测；对称于两包之于插件 SDK 的地位）；回收面 = mcp 平台工具 `sessions_gc`（缺省扫当前任务锚 `anchor/*_sessions`——#207，无锚落 `~/.mflowy`；mtime TTL + dry-run 安全缺省——扫描面约定住 mcp，driver 对锚/home 零知识）
 - SDK 面受 CHANGELOG 语义化版本约束（对齐 node 装饰器措辞）
 
 ## 相关文档

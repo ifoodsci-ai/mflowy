@@ -104,6 +104,10 @@ Handle。可观测性以域观测函数覆盖面为界（清洗 = 检测算子�
 回合步数（`Observation.steps`/`max_steps`）是会话预算计数，步数口径由域经
 `counts_step(action)` 谓词声明（预算 = 什么动作吃步，域语义）；与 flow 词条的退役词
 "steps"（YAML 控制结构旧称）不同物。
+落位域线（#207）：会话状态工件跟任务走（根 = task_dir 锚
+`anchor/{clean,modeling}_sessions`——env 覆盖 MFLOWY_*_SESSIONS 退役，缺省锚
+`~/.mflowy` 下路径与旧版相同；旧会话按绝对路径直开仍可达）× 平台状态跟人走
+（凭据/遥测恒 `~/.mflowy`）。
 _Avoid_: 环境引擎（与 runner 混淆）；MDP（0.2.0 起的旧称——prose 统一 POMDP）；SessionContext（Context 一词归 DAG 任务节点，持久会话不以瞬态作用域命名——#89）
 
 **会话基座（POMDPSession）/ 业务接口（POMDPSessionHandle）**:

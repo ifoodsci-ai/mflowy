@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 两域会话根接 task_dir 锚定链（#207/#208，feat·BREAKING）
+
+「数据在哪、任务工件跟到哪」落地会话根（#180 BO 侧 study 状态载体 task_dir 优先的
+同构对齐）。
+
+- **BREAKING**：`MFLOWY_CLEAN_SESSIONS` / `MFLOWY_MODELING_SESSIONS` 两 env 退役——
+  设值不再生效（CHANGELOG 即迁移说明）。
+- 两域 `_root()` 接锚定链：`anchor/{clean,modeling}_sessions`，anchor =
+  task_dir 绑定（`MFLOWY_TASK_DIR` 钉住 > MCP 锚参数推导 > server 缺省 `~/.mflowy`），
+  无绑定（直接 import）落 `~/.mflowy`——**缺省场景路径与旧版逐字相同**；每调用现读
+  零缓存（MCP 工具线程级无状态不变量维持）。
+- `sessions_gc` 缺省扫描面对齐：扫当前锚下 `*_sessions`（无锚落 `~/.mflowy`——与旧
+  扫描面逐字相同）；显式 `root` 参数保留（跨锚回收旧根的救场口）。
+- 零迁移零回退：不做旧根回退查找/迁移；旧会话按绝对路径 `POMDPSession.open` 直开
+  仍可达（#78 回流交棒 = 交付清单带绝对路径，零破坏）；`session_id` 发现限当前锚定
+  语境。平台级状态（凭据/遥测 `settings.json`/`api.key`/`credentials.json`）跟人不
+  跟任务，恒 `~/.mflowy` 不动。
+
 ### 远程执行切片⑥：resume_study_from 机制（#199，feat·BREAKING 随 0.2.0 门禁）
 
 study 续跑从「路径寻址」转向「run 寻址」（#158 §3，`study_storage_path` 退役）。
