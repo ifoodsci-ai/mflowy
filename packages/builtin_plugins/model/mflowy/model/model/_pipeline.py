@@ -283,6 +283,54 @@ def terminal_u(metrics: Metrics, scoring: MetricName) -> float:
 # X_test 随落——SHAP 解释等下游按 run_id 同时引用测试集与模型（mlflow final 模型）
 HOLDOUT_BYPRODUCTS = {"X_test": "X_test.parquet", "y_test": "y_test.parquet", "y_pred": "y_pred.parquet"}
 
+# predict 回归区间常量（#80 裁定：α=0.1 → 90% 区间，代码单源——出现真实可调
+# 需求再升 Annotated 默认参数）；半宽 tag 键（run 面——loader 读、final 复制）
+PREDICT_INTERVAL_ALPHA: float = 0.1
+OOF_HALF_WIDTH_TAG = "mflowy.oof_half_width"
+
+
+def oof_evidence_table(
+    y_true: pd.DataFrame, y_pred: pd.DataFrame, y_proba: np.ndarray | list[np.ndarray] | None, task: TASKTYPE
+) -> pd.DataFrame:
+    """OOF 证据四面表（#80/#164——BO 消费面：预测范围对带 + 配对反馈分母）。
+
+    列 schema（目标 t 逐列并排）：``y_{t}``（真值）/ ``y_pred_{t}`` / ``error_{t}``
+    （回归 = 残差 y−y_pred；分类 = 误判指示 0/1）/ ``y_proba_{cls}``（单目标）或
+    ``y_proba_{t}__{cls}``（多目标 list 形态；仅分类，proba 列序 = sorted classes——
+    与 report.oof_proba_long_df 同一假设）。行序 ≡ y_true（log_table 不保索引，
+    与 holdout 副产物同契）。工件名沿用 ``oof_y_pred.parquet``——四面增强零寻址变更。
+    """
+    out = pd.DataFrame(index=y_true.index)
+    for t in y_true.columns:
+        yt = y_true[t].to_numpy()
+        yp = y_pred[t].to_numpy()
+        out[f"y_{t}"] = yt
+        out[f"y_pred_{t}"] = yp
+        out[f"error_{t}"] = yt - yp if task == TASKTYPE.REGRESSION else (yt != yp).astype(int)
+    if y_proba is not None:
+        probas = y_proba if isinstance(y_proba, list) else [y_proba]
+        for t, proba in zip(y_true.columns, probas, strict=True):
+            proba = np.asarray(proba)
+            classes = np.unique(y_true[t].to_numpy())  # proba 列序 = sorted classes
+            for j, cls in enumerate(classes):
+                name = f"y_proba_{cls}" if len(y_true.columns) == 1 else f"y_proba_{t}__{cls}"
+                out[name] = proba[:, j]
+    return out
+
+
+def oof_half_widths(y_true: pd.DataFrame, y_pred: pd.DataFrame) -> dict[str, float]:
+    """回归区间半宽（#80/#164）：|y − y_pred| 的 1−α 分位，逐目标。
+
+    仅回归面（分类无区间——predict 契约 v0.x 零变化）；写 run tag
+    （OOF_HALF_WIDTH_TAG）与账本 ``oof.half_width``，final_train_test 复制到终训
+    run——loader 恢复时随 ModelLoader 附带，predict 出 ``y_pred_lo/hi``。
+    """
+    out: dict[str, float] = {}
+    for t in y_true.columns:
+        err = np.abs(y_true[t].to_numpy() - y_pred[t].to_numpy())
+        out[t] = float(np.quantile(err, 1 - PREDICT_INTERVAL_ALPHA))
+    return out
+
 
 # ========== 超参搜索（单路径 objective）==========
 

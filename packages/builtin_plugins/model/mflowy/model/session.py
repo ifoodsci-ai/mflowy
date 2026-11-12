@@ -48,10 +48,17 @@ import pickle
 from pathlib import Path
 
 import pandas as pd
+from mflowy.data.types import TASKTYPE
 from mflowy.driver.pomdp import FinishVerdict, Observation
 from mflowy.driver.session import POMDPSession
 from mflowy.model import registry
-from mflowy.model.model._pipeline import oof_predictions, u_inner_of
+from mflowy.model.model._pipeline import (
+    OOF_HALF_WIDTH_TAG,
+    oof_evidence_table,
+    oof_half_widths,
+    oof_predictions,
+    u_inner_of,
+)
 from mflowy.model.model.study import ContinuousSpace, DiscreteSpace
 from mflowy.model.model.types import MetricName
 from mflowy.model.model.utils import MACHINERY_SKIP, infer_metric, normalize_space, space_from_json, space_to_json
@@ -730,16 +737,24 @@ def _run_hpo(ss, o, m, board, log, params: dict) -> None:
             )
             theta = {**base, **study.best_trial.params}
             y_oof, y_proba = oof_predictions(ts, make_pipe, theta)
+            # OOF 真值面按 y_oof 索引对齐：K 折模式 = y_train 全量恒等；holdout-val 模式
+            # （≥HOLDOUT_MIN_ROWS）OOF 只覆盖 val 段——全量 y_true 会行数失配（证据/半宽/
+            # 图集/诊断四消费方同一对齐面）
+            y_true_oof = ts.y_train.loc[y_oof.index]
             # #64 OOF 观察面指向 OOF 源（cross_val_predict × train 侧 y_true）；#95 项4：
             # 工件挂父 run 工件树（log_table/log_figure 经落盘壳，run_id 寻址）——
             # session 镜像目录 runs/<run_id>/ 退役，真源 = run 工件树
             from mflowy.utils.mlflow import log_file, log_table
 
-            # log_table 不保索引（与 #66 holdout 副产物同契）：OOF 行序 ≡ y_train 行序，按位对齐
-            log_table(y_oof, "oof_y_pred.parquet")
+            # log_table 不保索引（与 #66 holdout 副产物同契）：OOF 行序 ≡ y_true_oof 行序，按位对齐；
+            # #164 四面证据（y/y_pred/y_proba/error——BO 消费面 + predict 区间原料），工件名沿用
+            log_table(oof_evidence_table(y_true_oof, y_oof, y_proba, _task(m)), "oof_y_pred.parquet")
+            half_width = oof_half_widths(y_true_oof, y_oof) if _task(m) == TASKTYPE.REGRESSION else None
+            if half_width is not None:
+                mlflow.set_tag(OOF_HALF_WIDTH_TAG, json.dumps(half_width))  # loader/final 复制面
             from mflowy.model.report import oof_plot_album
 
-            plots = oof_plot_album(m["task"], ts.y_train, y_oof, y_proba)
+            plots = oof_plot_album(m["task"], y_true_oof, y_oof, y_proba)
             # #95 项5：study storage 随父 run 落工件（只读投影——盘上真源不变，账本 append-only）
             log_file(_root() / m["session_id"] / _study_db_name(key))
             # 段1 体征证据：θ* 单次代表拟合——得分对（同尺同拟合）+ 曲线（OOB 族 → None 降级）
@@ -762,8 +777,8 @@ def _run_hpo(ss, o, m, board, log, params: dict) -> None:
         {"source": "rule", **f}
         for f in diagnose_oof(
             m["task"],
-            ts.X_train,
-            ts.y_train,
+            ts.X_train.loc[y_oof.index],  # OOF 对齐面（holdout-val 模式 = val 段；K 折恒等）
+            y_true_oof,
             y_oof[y_oof.columns[0]].to_numpy() if isinstance(y_oof, pd.DataFrame) else y_oof,
             best_params=dict(best.params),
             space=space,
@@ -790,6 +805,7 @@ def _run_hpo(ss, o, m, board, log, params: dict) -> None:
             "oof": {
                 "run_id": run.info.run_id,
                 "y_pred": "oof_y_pred.parquet",  # run 工件名（run_id 在本面——寻址 = (run_id, name)）
+                "half_width": half_width,  # 回归区间半宽（#164；分类 None 无面）
                 "plots": plots,  # 工件名清单（log_figure 落父 run 工件树）
             },
             # 规则 findings 随每次搜索刷新；LLM findings（#36）保留
@@ -897,11 +913,24 @@ def _final_train_test(ss, o, m, board, log, params: dict) -> None:
     byproducts = dict(HOLDOUT_BYPRODUCTS)
     y_pred = pd.read_parquet(download_run_artifact(node.run_id, HOLDOUT_BYPRODUCTS["y_pred"]))
 
-    # 血缘认证 post-hoc 补打（DAG run 窗口外）
+    # 血缘认证 post-hoc 补打（DAG run 窗口外）+ #164 残差源寻址（复制面）：
+    # OOF 证据 parquet + 半宽 tag 随终训 run 复制——predict 单 run_id 入参可用
+    # （loader 读终训 run 即得区间原料，final 不再回指 run_hpo run）
     import mlflow
 
+    client = mlflow.MlflowClient()
     for k, v in _lineage_tags(m, action="final_train_test", key=key, family=family).items():
-        mlflow.MlflowClient().set_tag(node.run_id, k, v)
+        client.set_tag(node.run_id, k, v)
+    oof = entry.get("oof") or {}
+    if (oof_name := oof.get("y_pred")) and (oof_src := oof.get("run_id")):
+        src_arts = run_artifacts(oof_src)
+        if oof_name not in src_arts:
+            raise RuntimeError(
+                f"OOF 证据工件 {oof_name} 不在 run_hpo run {oof_src} 工件树（{src_arts}）——账本与 run 面不一致，请反馈"
+            )
+        client.log_artifact(node.run_id, download_run_artifact(oof_src, oof_name))
+    if (w := oof.get("half_width")) is not None:
+        client.set_tag(node.run_id, OOF_HALF_WIDTH_TAG, json.dumps(w))
 
     # findings：会话 split（≡ DAG 按引用复用的划分）+ 副产物 y_pred + u_inner
     ts = _load_split(m)
