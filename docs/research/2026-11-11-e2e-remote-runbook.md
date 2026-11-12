@@ -132,6 +132,8 @@
 | ⑤ download 工具 + 观察面单参改造 | S5 S7 | 无 |
 | ⑥ resume_study_from 机制 + 系列收尾 | 全链 S1–S8 | 无（#46 已解除） |
 
+**已知陷阱（切片④实测追加）**：geesefs 外部 PUT 后挂载视图目录列示有可见性竞态——ensure 上传后**立即**提交的 Job 可能读到 `FileNotExisted`（对象在 S3 在场、同实验绑定无误）。驱动面 15s 沉淀 + FileNotExisted 单次重提；上游若可修（挂载列示失效面）另记漂移票。
+
 **通过判据**：所涉阶段断言全绿。每轮留档（附 PR 描述）：分支 sha、镜像 tar 路径、experiment id、全部 job id、每 job 日志尾、zip 清单（`unzip -l`）、驱动脚本输出。
 
 ## 附录：#161 基座载荷（已实证）

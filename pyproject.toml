@@ -33,7 +33,12 @@ Documentation = "https://github.com/ifoodsci-ai/mflowy#readme"
 # [deep] = torch 栈（仅 MLP flavor，uvx 需 CPU 索引）；[stats]/[modeling] 已退役
 data = ["mflowy-data"]
 model = ["mflowy-model"]
-mcp = ["mflowy-mcp[mcp]"]
+# model 随行（#159 §5 落地）：remote 平台工具（ensure/logs/download）的引擎住 model 包
+# platform_client——server 形态必须可用（懒加载 + 零降级：缺则调用 fail-loud）
+mcp = [
+    "mflowy-mcp[mcp]",
+    "mflowy-model",
+]
 deep = ["mflowy-model[deep]"]
 
 [tool.uv.workspace]

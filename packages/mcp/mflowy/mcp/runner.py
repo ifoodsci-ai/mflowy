@@ -44,7 +44,15 @@ def main() -> None:
     if not isinstance(kwargs, dict):
         print(f"Invalid arguments for {tool_name}: 非 JSON 对象（{type(kwargs).__name__}）\n  {hint}", file=sys.stderr)
         sys.exit(2)
+    sys.exit(run_tool(tool_name, kwargs))
 
+
+def run_tool(tool_name: str, kwargs: dict) -> int:
+    """按名分发一次工具调用，返回进程退出码（0/1/2——jobwrap 共用单源，#158）。
+
+    CLI 路由锚定（#95 裁定 B）：MFLOWY_TASK_DIR env 钉住（优先级最高，推导不覆写）；
+    未钉时工具经 route_task_dir 中间件按声明锚参数推锚，推不出缺省 cwd。
+    """
     # 分发表 = mflowy.tools 组（平台 + 域包静态声明，与 server.register 同一真源）
     from .tools import _tool_entry_points
 
@@ -52,24 +60,22 @@ def main() -> None:
         eps = _tool_entry_points()
     except RuntimeError as e:  # 撞名 fail-loud（守卫单源住 tools.py）
         print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
-    # CLI 路由锚定（#95 裁定 B）：MFLOWY_TASK_DIR env 钉住（优先级最高，推导不覆写）；
-    # 未钉时工具经 route_task_dir 中间件按声明锚参数推锚，推不出缺省 cwd
+        return 1
     from mflowy.utils.path import pin_task_dir, route_task_dir
 
     if env_dir := os.environ.get("MFLOWY_TASK_DIR"):
         pin_task_dir(env_dir)
-    table = {ep.name: route_task_dir(Path.cwd())(ep.load()) for ep in eps}
+    table = {ep.name: route_task_dir(Path.cwd(), channel="cli")(ep.load()) for ep in eps}
     func = table.get(tool_name)
     if func is None:
         print(f"Unknown tool: {tool_name}", file=sys.stderr)
-        sys.exit(1)
+        return 1
 
     try:
         inspect.signature(func).bind(**kwargs)
     except TypeError as e:
         print(f"Invalid arguments for {tool_name}: {e}", file=sys.stderr)
-        sys.exit(1)
+        return 1
 
     # 建模类工具（返回 DAGResult）的输出由 DAG 实时 print 上屏，不重复回显；
     # info/查询类工具的返回值即输出，回显 JSON
@@ -80,19 +86,34 @@ def main() -> None:
             result = func(**kwargs)
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
+        return 1
 
     if result is not None:
         from mflowy.driver.dag import DAGResult
 
         if isinstance(result, DAGResult):
             # DAG 执行失败装在 status/error 正常返回（工具层不抛）——退出码必须反映，
-            # 否则 e2e/CI 断链（prior bug：SHAP 5/8 中止而 make e2e exit=0）
+            # 否则 e2e/CI 断链（prior bug：SHAP 5/8 中止而 make e2e exit=0）。
+            # 输出由 DAG 实时 print 上屏，不重复回显
             if result.status != "finished":
                 print(f"Error: {result.error}", file=sys.stderr)
-                sys.exit(1)
+                return 1
         else:
-            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+            from mflowy.model.job_provider.protocol import JobOutcome
+
+            if isinstance(result, JobOutcome):
+                # 受理面（#156）：容器内恒 local 形态（finished 内嵌 DAGResult）——退出码
+                # 读 dag_result.status，输出沿用「DAG 实时上屏不重复回显」约定
+                dag = result.dag_result
+                if dag is not None:
+                    if dag.status != "finished":
+                        print(f"Error: {dag.error}", file=sys.stderr)
+                        return 1
+                else:
+                    print(json.dumps(result, ensure_ascii=False, indent=2, default=str))  # submitted 防御回显
+            else:
+                print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+    return 0
 
 
 if __name__ == "__main__":

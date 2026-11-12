@@ -40,7 +40,9 @@ def test_hyphen_normalized_to_underscore(monkeypatch):
     sentinel = object()
     monkeypatch.setattr("sys.argv", ["cmd", "some-tool"])
     _patch_eps(monkeypatch, some_tool=lambda: sentinel)
-    runner.main()  # 不抛 SystemExit 即命中
+    with pytest.raises(SystemExit) as ei:  # 成功路径恒退出（main = sys.exit(run_tool(...))）
+        runner.main()
+    assert ei.value.code == 0
 
 
 def test_invalid_arguments_reported_as_invalid(monkeypatch, capsys):
@@ -81,7 +83,9 @@ def test_info_tool_result_echoed(monkeypatch, capsys):
     """info/查询类工具的返回值即输出，回显 JSON（cmd 作为三入口之一可独立使用）"""
     monkeypatch.setattr("sys.argv", ["cmd", "query_tool"])
     _patch_eps(monkeypatch, query_tool=lambda: [{"step": "load", "modules": ["csv"]}])
-    runner.main()
+    with pytest.raises(SystemExit) as ei:
+        runner.main()
+    assert ei.value.code == 0
     out = capsys.readouterr().out
     assert '"step": "load"' in out
 
@@ -92,7 +96,9 @@ def test_workflow_result_not_echoed(monkeypatch, capsys):
 
     monkeypatch.setattr("sys.argv", ["cmd", "modeling_tool"])
     _patch_eps(monkeypatch, modeling_tool=lambda: DAGResult("1", "finished", "", [], "graph"))
-    runner.main()
+    with pytest.raises(SystemExit) as ei:
+        runner.main()
+    assert ei.value.code == 0
     assert capsys.readouterr().out == ""
 
 
@@ -151,3 +157,35 @@ def test_failed_dag_result_exits_nonzero(monkeypatch, capsys):
         runner.main()
     assert ei.value.code == 1
     assert "DAG aborted" in capsys.readouterr().err
+
+
+def test_job_outcome_failed_dag_exits_nonzero(monkeypatch, capsys):
+    """JobOutcome 受理面（#156）：finished 内嵌 DAG 失败 → 退出码反映（容器 wrap 契约）。"""
+    from mflowy.driver.dag import DAGResult
+    from mflowy.model.job_provider.protocol import JobOutcome
+
+    monkeypatch.setattr("sys.argv", ["cmd", "modeling_tool"])
+    _patch_eps(
+        monkeypatch,
+        modeling_tool=lambda: JobOutcome.finished(dag_result=DAGResult("1", "failed", "boom", [], "g")),
+    )
+    with pytest.raises(SystemExit) as ei:
+        runner.main()
+    assert ei.value.code == 1
+    assert "boom" in capsys.readouterr().err
+
+
+def test_job_outcome_finished_ok_exit_zero_no_echo(monkeypatch, capsys):
+    """finished 内嵌成功 DAG → exit 0 且不重复回显（DAG 实时上屏约定延续）。"""
+    from mflowy.driver.dag import DAGResult
+    from mflowy.model.job_provider.protocol import JobOutcome
+
+    monkeypatch.setattr("sys.argv", ["cmd", "modeling_tool"])
+    _patch_eps(
+        monkeypatch,
+        modeling_tool=lambda: JobOutcome.finished(dag_result=DAGResult("1", "finished", "", [], "g")),
+    )
+    with pytest.raises(SystemExit) as ei:
+        runner.main()
+    assert ei.value.code == 0
+    assert capsys.readouterr().out == ""

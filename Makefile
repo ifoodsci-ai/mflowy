@@ -1,4 +1,4 @@
-.PHONY: install build build-whl test test-cov typecheck lint fmt precommit clean help e2e-info e2e-statistic e2e-mcp e2e-bench e2e-remote e2e ui
+.PHONY: install build build-whl test test-cov typecheck lint fmt precommit clean help e2e-info e2e-statistic e2e-mcp e2e-bench e2e-remote e2e-remote-tools e2e ui
 
 # 默认目标
 help:
@@ -20,6 +20,7 @@ help:
 	@echo "  make e2e              三入口分发冒烟（CLI/stdio 真实进程 + diabetes 全链，发布前人肉跑）"
 	@echo "  make e2e-bench        六基准冒烟门（iris/digits/titanic + 工业三链 + 分类会话链，判据含指标下限）"
 	@echo "  make e2e-remote       S0/S1 平台契约回归（remote 系列 PR 门禁，需本地 k3s dev 集群）"
+	@echo "  make e2e-remote-tools  S2+ 工具面门禁（MCP stdio 通道，需已登录 + k3s 集群）"
 	@echo "  make ui [P=]          启动 MLflow UI 查看实验记录"
 	@echo ""
 	@echo "镜像覆盖（可选，tag 缺省 = 版本钉 training-job:\$$(WHL_VERSION)，latest 已退役）:"
@@ -132,6 +133,12 @@ e2e-bench:
 # 镜像前置（S0.1）：make build（版本钉 training-job:$(WHL_VERSION)）→ docker save → k3s 导入
 e2e-remote:
 	bash scripts/_e2e_remote_platform.sh
+
+# S2+ 工具面 E2E（remote 系列门禁的工具段）：MCP stdio 真实通道，cwd 置临时目录。
+# 需本地 k3s dev 集群 + ~/.mflowy/credentials.json 已登录（access 过期自动 refresh）；
+# 断言面随切片生长（S2=ensure / S3+=提交·观察·拉取），人肉门
+e2e-remote-tools:
+	uv run python scripts/_e2e_remote_tools.py
 
 e2e: e2e-info e2e-statistic e2e-mcp
 	@set -e; \

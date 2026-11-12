@@ -139,3 +139,60 @@ class TestAnchorTaskDirDecorator:
             assert task_dir() == Path("/prior")  # 调用后还原既有绑定（作用域限本次）
         finally:
             reset_task_dir(token)
+
+
+# ── 入口通道标识 + 路径形态通道纪律（#159 §6，切片③）──────────────────────
+
+
+class TestEntryChannelDiscipline:
+    def test_channel_scoped_and_reset(self):
+        """channel 随 route 中间件调用作用域绑定，用毕还原（并发调用互不串道）。"""
+        from mflowy.utils.path import entry_channel, route_task_dir
+
+        @route_task_dir("/tmp/x", channel="mcp")
+        def tool():
+            return entry_channel()
+
+        assert entry_channel() is None
+        assert tool() == "mcp"
+        assert entry_channel() is None
+
+    def test_channel_visible_even_when_pinned(self, monkeypatch):
+        """钉住态（CLI MFLOWY_TASK_DIR）免锚推导但不免通道纪律——channel 仍可见。"""
+        from mflowy.utils import path as P
+
+        token = P.pin_task_dir("/tmp/pinned")
+        try:
+
+            @P.route_task_dir("/tmp/x", channel="cli")
+            def tool():
+                return P.entry_channel()
+
+            assert tool() == "cli"
+        finally:
+            P.reset_task_dir(token)
+
+    def test_resolve_input_path_channel_rules(self, tmp_path, monkeypatch):
+        """绝对路径两通道原样；相对路径 MCP 拒收 fail-loud、CLI/未知按 cwd。"""
+        import os
+
+        from mflowy.utils import path as P
+
+        abs_p = tmp_path / "a.csv"
+        token = P._EntryChannel.set("mcp")
+        try:
+            assert P.resolve_input_path(str(abs_p)) == abs_p
+            with pytest.raises(ValueError, match="绝对路径"):
+                P.resolve_input_path("rel/a.csv")
+        finally:
+            P._EntryChannel.reset(token)
+
+        monkeypatch.chdir(tmp_path)
+        token = P._EntryChannel.set("cli")
+        try:
+            assert P.resolve_input_path("rel/a.csv") == tmp_path / "rel" / "a.csv"
+        finally:
+            P._EntryChannel.reset(token)
+        # 通道未知（直接 import 宿主）按 CLI 语义
+        assert P.resolve_input_path("rel/a.csv") == tmp_path / "rel" / "a.csv"
+        assert os.path.isabs(str(P.resolve_input_path("x")))

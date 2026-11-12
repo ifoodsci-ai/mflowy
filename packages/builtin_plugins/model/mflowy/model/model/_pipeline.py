@@ -20,6 +20,7 @@ import json
 import logging
 from collections.abc import Callable
 from contextvars import ContextVar
+from pathlib import Path
 from typing import cast
 
 import numpy as np
@@ -48,6 +49,7 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import GroupShuffleSplit, cross_val_score, train_test_split
 
+from . import study as study_module
 from ._evaluation_plots import _Part, plot_evaluation
 from ._loss_curve import plot_loss_curve
 from ._model import fit_with_eval
@@ -417,6 +419,10 @@ def hyperparameters_search(
     if len(scores):
         metrics[f"{scoring}_std"] = float(np.std(scores))
     mlflow_util.log_metrics(metrics, graceful=True)  # 直调形态（窗外）降级——不散守 active_run
+    # #158 §3：搜索终把活 study 落该模型步 run（名 study.db——run 已分模型）。
+    # 续跑链：download_run_artifact(run_id, "study.db") → set_study_storage → 增量
+    if (db := study_module.study_db_path_used()) is not None:
+        mlflow_util.log_file(Path(db), artifact_file="study.db", graceful=True)
     std_repr = f"{np.std(scores):.4f}" if len(scores) else "n/a"
     print(f"best_{scoring}={study.best_value:.4f}, trial={best.number}, std={std_repr}, params={best.params}")
     return study

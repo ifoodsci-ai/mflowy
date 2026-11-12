@@ -7,6 +7,7 @@ MFlowy 以 MCP 为架构主体：全部能力以工具（pyfunc）暴露，经 e
 | **CLI 通道** | `mflowy <tool> '<json args>'` | 命令行、K8s Job 容器、subprocess；裸装即用（零 SDK）——`DAGResult.status != finished` 以**非零退出码**外传失败，不吞 |
 | **MCP 通道** | `mflowy-mcp` | stdio server，MCP 客户端 / agent（Claude Code、Cursor 等）接入；SDK+遥测住 `[mcp]` extra |
 | 直接 import | `mflowy.{mcp,data,model}.tools` pyfunc | 宿主程序内嵌调用 |
+| **容器入口** | `mflowy-job wrap --tool <t> --kwargs-json <j> [--inherit-from <job>]` | 平台 Job 容器（#158：继承解包 → 执行 → 无条件 zip 归档，工具 rc 透传） |
 
 **工件锚定（task_dir）双路由**（#95）：两入口路由到同一工具函数，锚由入口中间件（`route_task_dir`）决定——工具以 `@anchor_task_dir("<参数名>")` 声明锚参数（纯元数据，签名/schema 零影响），从业务路径参数推父目录为任务目录（实验工件根 = `task_dir/.mlruns`）。CLI：`MFLOWY_TASK_DIR` env **钉住**（推导不覆写）→ 未设时推导 → 缺省 `cwd`；MCP：推导 → 缺省 `~/.mflowy`（server 无业务 CWD 语义）。MCP 侧数据路径须绝对（相对路径不推锚，解析处 fail-loud）。
 
@@ -14,6 +15,7 @@ MFlowy 以 MCP 为架构主体：全部能力以工具（pyfunc）暴露，经 e
 > 经 entry points 组 `mflowy.tools` 注册；本包为**零域依赖 host**——平台工具（词表/mlflow
 > 观测/工件/指纹/登录）由 mflowy-mcp pyproject **同组静态声明**（与域包同构，server/runner
 > 同一真源消费，镜像契约钉在 `tests/mcp/test_platform_tools_registry.py`），域工具发现即用。
+> remote 系列平台工具（`ensure_platform_experiment` 等）的引擎住 model 包 platform_client，**函数体内懒加载**——注册无条件、执行随安装形态（裸 host 缺 model 时调用 fail-loud ImportError；`mflowy[mcp]` 聚合 extra 已含 model）。
 > 装哪个域包多哪批工具（`tools/list` = 已安装能力）。
 
 ## 工具分组（执行位置）
@@ -25,13 +27,17 @@ MFlowy 以 MCP 为架构主体：全部能力以工具（pyfunc）暴露，经 e
 | POMDP 会话 | `clean_*` 六操作 + `modeling_*` 七操作（含 `report_findings`） | 始终本地（会话态在本地盘上工件） |
 | 报告素材 | `draw_taylor_diagram` / `modeling_report_skeleton` | 始终本地 |
 | YAML 预检 | `validate_modeling_steps` | 始终本地（结构化 `{valid: false, error}` 错误契约） |
-| 建模 compute | `modeling` / `hyperparameters_search` / `explanation` / `predict` / `inverse_optimization` | **JobProvider 委派** |
-| mlflow 观测 | `get_experiment` / `get_run` | 始终本地（工件后端为本地文件树） |
+| 建模 compute | `modeling` / `hyperparameters_search` / `explanation` / `predict` / `inverse_optimization`（受理面 = JobOutcome：finished 内嵌 DAGResult / submitted 提交凭据） | **JobProvider 委派**（local / remote） |
+| 执行模式 | `switch_job_provider`（model 包，local↔remote 进程级切换） | 本地 |
+| mlflow 观测 | `get_experiment` / `get_run`（可选 `tracking_uri` 单参——远程产物下载库查询，工件路径自动改写） | 始终本地（工件后端为本地文件树） |
 | 平台 | `login`（OAuth 2.1 浏览器授权）/ `sessions_gc`（TTL 回收） | 本地 |
+| 平台·remote | `ensure_platform_experiment`（实验就绪：查建 + 文件增量同步 + 可继承面） | 平台 API（经 model 包 platform_client，懒加载） |
+| 平台·remote | `get_platform_job_logs`（stateless 轮询：status/terminal/logs 合并返回） | 平台 API（经 model 包 platform_client，懒加载） |
+| 平台·remote | `download_platform_job_artifacts`（产物拉取：zip 解压 `target_dir/{job_id}/` 原子替换；mlflow.db 供观察面 `tracking_uri` 单参查询） | 平台 API + 本地落盘 |
 
 建模类经 JobProvider 委派（内置 `local` / 自定义 `module:Class`）——协议与自定义执行环境接入见 [mflowy-model README](../builtin_plugins/model/README.md)「JobProvider」节（预测模型训练子系统）。
 
-**错误契约二分**：官方 MCP SDK 对非 ToolError 异常脱敏（客户端只收裸 `Error executing tool <name>`）。`validate_modeling_steps` 的领域结果本就是"不合法 + 原因"——全部失败路径（缺文件/片段格式/YAML 语法/DAG 构建）走结构化 `{valid: false, error}` 返回，agent 拿到详情自我纠正；其余工具的 operational error（路径/run 不存在等）维持 crash 通道（runner 侧非零退出码）。
+**错误契约**：结构化失败面（`validate_modeling_steps` 的 `{valid: false, error}`）之外，工具的 fail-loud 报错（红线 1 的候选清单式文案——路径/run 不存在、参数冲突等）在 MCP 通道经 `server._fail_loud` 统一转 `ToolError` 透传（消息带异常类名；SDK 的多租户脱敏缺省对本地工具无益，CLI/runner 通道本就全量打印 + 非零退出码）；crash 的完整 traceback 仍在 server stderr。
 
 ## 平台登录（login）
 

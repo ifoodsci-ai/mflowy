@@ -380,15 +380,25 @@ def log_model(pipe, name: str = "final", **kwargs) -> str | None:
     return _artifact_shell(name, _write, graceful=True)
 
 
-def log_file(src, *, graceful: bool = False):
+def log_file(src, *, artifact_file: str | None = None, graceful: bool = False):
     """本地文件原样挂 run 工件树（mlflow.log_artifact 经落盘壳）——原始文件面
-    （如 study sqlite 的只读投影，#95 项5）；工件名 = 源文件名。"""
+    （如 study sqlite 的只读投影，#95 项5）；工件名 = 源文件名，``artifact_file``
+    可改挂载名（#158：活文件 ``{run_id}.db`` 以 ``study.db`` 名落 run——续跑链按名
+    寻址；mlflow.log_artifact 无改名参数，经 tmp 拷贝换名挂载）。"""
+    import shutil
+    import tempfile
     from pathlib import Path
 
     import mlflow
 
-    name = Path(src).name
-    return _artifact_shell(name, lambda _: mlflow.log_artifact(str(src)), graceful=graceful)
+    src_path = Path(src)
+    dest = artifact_file or src_path.name
+    if dest == src_path.name:
+        return _artifact_shell(dest, lambda _: mlflow.log_artifact(str(src)), graceful=graceful)
+    with tempfile.TemporaryDirectory(prefix="mflowy_log_file_") as td:
+        staged = Path(td) / dest
+        shutil.copyfile(src, staged)
+        return _artifact_shell(dest, lambda _: mlflow.log_artifact(str(staged)), graceful=graceful)
 
 
 def run_artifacts(run_id: str) -> list[str]:

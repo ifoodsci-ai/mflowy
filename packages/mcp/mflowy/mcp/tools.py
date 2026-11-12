@@ -2,7 +2,10 @@
 
 域工具（数据/建模）不住此层：域包自持 ``tools.py`` 并经 entry points 组
 ``mflowy.tools`` 注册，server/runner 发现即用（安装形态即通道——裸 host 只有
-平台工具，装哪个域包多哪批工具）。本模块保持零域包导入。
+平台工具，装哪个域包多哪批工具）。本模块保持零域包导入：remote 系列平台工具
+（ensure/logs/download，#153）消费 model 包 platform_client，**函数体内懒加载**
+——注册无条件（entry points 静态），执行随安装形态（裸 host 无 model 时
+fail-loud ImportError，不设降级机器，#159 §5）。
 
 模块公有面即平台工具函数面（镜像契约钉在 tests/mcp/）；非工具 helper 必须
 ``_`` 前缀——server/runner 共用的注册辅助件 ``_tool_entry_points`` 即此形态。
@@ -211,6 +214,48 @@ def _local_path(uri: str) -> str:
     return str(Path(unquote(parsed.path))) if parsed.scheme == "file" else uri
 
 
+# 远程镜像契约字面常量（#159 §4：**非 env 读取**——本地同名 env 属 MCP 路由缺省语义，
+# 与远端镜像烧 ENV 契约无关；镜像面见 docker/Dockerfile 烧 ENV、容器面见 jobwrap）。
+# 观察面单参推导（#160 终稿）：工件 URI 命中此前缀 → 改写为 tracking db 同根本地路径。
+REMOTE_TASK_DIR = "/user-data/workspace"
+
+
+def _rewrite_remote_artifact(value: str, local_root: Path | None) -> str:
+    """远程工件路径改写（get_experiment/get_run 共用纯函数）。
+
+    命中 ``REMOTE_TASK_DIR`` 前缀（file:// URI 或裸路径、精确或子路径）→ 替换为
+    ``local_root``（= tracking db 所在目录——zip 契约保证 mlflow.db 与 ``.mlruns/``
+    同根，db 目录即工件根，#155）；不匹配或 ``local_root`` 缺席（非 sqlite 库/本地
+    缺省查询）原样透传（Default 实验路径实证从未写入远端前缀）。
+    """
+    if local_root is None:
+        return value
+    stripped = _local_path(value)
+    marker = REMOTE_TASK_DIR
+    if stripped == marker:
+        return str(local_root)
+    if stripped.startswith(marker + "/"):
+        return str(local_root) + stripped[len(marker) :]
+    return value
+
+
+def _tracking_client(tracking_uri: str | None):
+    """观察面 client 解析：缺省 = 机器默认库（全局 _mlflow_client）；给定 = 逐调用
+    构造（零全局态，#159 §4），并推导工件根改写（sqlite 库文件所在目录）。"""
+    if tracking_uri is None:
+        return _mlflow_client(), None
+    from urllib.parse import unquote, urlparse
+
+    from mlflow.tracking import MlflowClient
+
+    parsed = urlparse(tracking_uri)
+    if parsed.scheme == "sqlite":
+        # sqlite:////abs（四斜杠绝对路径）经 urlparse 出 "//x" 形态——前导斜杠归一
+        db_path = Path("/" + unquote(parsed.path).lstrip("/"))
+        return MlflowClient(tracking_uri=tracking_uri), db_path.parent
+    return MlflowClient(tracking_uri=tracking_uri), None  # http 等远程库：无同根推导，透传
+
+
 def get_experiment(
     experiment_id: Annotated[str, Field(description="实验 ID（从任务输出 ExperimentInfo 获取）")],
     filter_steps: Annotated[
@@ -219,6 +264,12 @@ def get_experiment(
     ] = None,
     max_results: Annotated[int, Field(description="每页最大数量")] = 10,
     page_token: Annotated[str | None, Field(description="翻页令牌（仅未过滤时有效）")] = None,
+    tracking_uri: Annotated[
+        str | None,
+        Field(
+            description="可选，逐调用追踪库 URI（如 sqlite:///<download 目录>/{job_id}/mlflow.db）——远程任务产物下载后本地查询用；工件路径随之改写为同根本地路径"
+        ),
+    ] = None,
 ) -> dict:
     """实验仪表盘：实验本体（name/描述 tag/tags 含结构图/工件根/时间戳）+ run 状态目录。
 
@@ -228,9 +279,9 @@ def get_experiment(
     - 查实验级 tags（workflow 指纹、mflowy.graph 结构图）与工件根
     详情（params/metrics/tags/artifacts）经 get_run 下钻。
     """
-    client = _mlflow_client()
+    client, artifact_root = _tracking_client(tracking_uri)
     exp = client.get_experiment(experiment_id)
-    location = _local_path(exp.artifact_location)
+    location = _rewrite_remote_artifact(_local_path(exp.artifact_location), artifact_root)
     # run 状态目录（list_runs 吸收）：NodeResult 目录五元组投影 + start_time；
     # status 恒为 mlflow 原生（FINISHED/FAILED/RUNNING）——无引擎 skipped/"" 哨兵
     if filter_steps:
@@ -281,20 +332,36 @@ def get_experiment(
     }
 
 
-def get_run(run_id: Annotated[str, Field(description="Run ID（从任务输出 RunInfo 或 get_experiment 获取）")]) -> dict:
+def get_run(
+    run_id: Annotated[str, Field(description="Run ID（从任务输出 RunInfo 或 get_experiment 获取）")],
+    tracking_uri: Annotated[
+        str | None,
+        Field(
+            description="可选，逐调用追踪库 URI（如 sqlite:///<download 目录>/{job_id}/mlflow.db）——远程任务产物下载后本地查询用；工件路径随之改写为同根本地路径"
+        ),
+    ] = None,
+) -> dict:
     """查询单个 run 的详情：params/metrics/tags/artifacts 产物目录。
 
     何时使用 get_run：
     - 已有 run_id 时读取指标与参数
     - 查看 run 落盘的产物清单（图表/模型文件路径）；工件后端为本地文件树，文件本体可直接访问
+    - 远程任务产物：download_platform_job_artifacts 拉取后传 tracking_uri
+      （``sqlite:///{target_dir}/{job_id}/mlflow.db``）查该继承链的 run——工件路径
+      自动从 ``/user-data/workspace`` 改写为解压根的本地路径（run 工件与 logged
+      models 双形态均覆盖）
     """
-    client = _mlflow_client()
+    client, artifact_root = _tracking_client(tracking_uri)
     run = client.get_run(run_id)
     d = run.to_dictionary()
-    d["info"]["artifact_uri"] = run.info.artifact_uri
+    d["info"]["artifact_uri"] = _rewrite_remote_artifact(run.info.artifact_uri or "", artifact_root)
     root = run.info.artifact_uri
     d["artifacts"] = [
-        {"path": _local_path(f"{root}/{a.path}"), "is_dir": a.is_dir, "file_size": a.file_size}
+        {
+            "path": _rewrite_remote_artifact(_local_path(f"{root or ''}{a.path}"), artifact_root),
+            "is_dir": a.is_dir,
+            "file_size": a.file_size,
+        }
         for a in client.list_artifacts(run_id)
     ]
     return d
@@ -333,3 +400,244 @@ def login(
         force=force,
         device_name=device_name,
     )
+
+
+# ── remote 系列（#153）：平台实验就绪。client 详测住 model 包（#157），
+# 本层只做编排；经 ``_platform_client`` 工厂缝替换假 client（#159 §8）。
+
+
+def _platform_client():
+    """平台 client 工厂缝（懒加载 model 包——见模块头「安装形态即通道」）。"""
+    from mflowy.model.job_provider.platform_client import RemoteExperimentClient
+
+    return RemoteExperimentClient()
+
+
+def _md5_hex(path: Path) -> str:
+    """本地指纹（#157 §4）：MD5 hex，与远端 etag 裸字符串全等比对。"""
+    import hashlib
+
+    h = hashlib.md5()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _validate_file_manifest(files: list[str]) -> list[Path]:
+    """清单预检（agent 显式声明，不做 YAML basename 推断）：全量 fail-loud 后再同步。"""
+    from mflowy.utils.path import resolve_input_path
+
+    resolved: list[Path] = []
+    seen: dict[str, Path] = {}
+    for raw in files:
+        p = resolve_input_path(raw)  # 通道纪律：MCP 拒收相对路径（#159 §6）
+        if p.name.startswith("."):
+            raise ValueError(
+                f"清单含 dotfile（{raw}）——上游 list 面不显示隐藏文件，逐次同步将判缺失死循环重传，整次拒绝"
+            )
+        if p.is_dir():
+            raise ValueError(f"清单项是目录（{raw}）——只收文件（不做目录展开）")
+        if not p.is_file():
+            raise FileNotFoundError(f"清单项不存在：{raw}（解析为 {p}）")
+        if p.name in seen:
+            raise ValueError(
+                f"清单内撞名：{seen[p.name]} 与 {p} 同 basename——远端名 /user-data/uploads/{p.name} 将互覆"
+            )
+        seen[p.name] = p
+        resolved.append(p)
+    return resolved
+
+
+def _diff_entry(p: Path) -> dict:
+    """同步 diff 条目单源（#156 §3 返回 shape：``{local, remote}``——size 不进
+    返回面：不参与判定，agent 对本地文件自知 size，远端侧无需第二份复述）。"""
+    return {"local": str(p), "remote": f"/user-data/uploads/{p.name}"}
+
+
+def _sync_uploads(client, experiment_id: str, paths: list[Path]) -> dict:
+    """增量同步（#156/#157）：查询 → 补缺 → 覆盖更新；不删除远端未列文件。
+
+    指纹 = 本地 MD5 hex ↔ 远端 etag 裸字符串全等——「裸」= 剥 S3 引号后的串
+    （网关/minio 恒带引号下发，不剥则永不相等、幂等面失效；S2 E2E 实证）；
+    multipart etag（含 ``-``）与 MD5 hex 永不相等 → 自然落入重传分支（fail-safe）。
+    """
+    import mimetypes
+
+    from mflowy.model.job_provider.platform_client import upload_presigned
+
+    remote = {f.filename: f for f in client.list_files(experiment_id, "uploads")}
+    result: dict[str, list[dict]] = {"uploaded": [], "updated": [], "skipped": []}
+    for p in paths:
+        entry = remote.get(p.name)
+        if entry is not None and entry.etag.strip('"') == _md5_hex(p):
+            result["skipped"].append(_diff_entry(p))
+            continue
+        content_type = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
+        url, headers = client.get_upload_url(experiment_id, "uploads", p.name, content_type)
+        upload_presigned(url, headers=headers, source=p)
+        result["updated" if entry is not None else "uploaded"].append(_diff_entry(p))
+    return result
+
+
+def _inheritable(client, experiment_id: str) -> list[dict]:
+    """可继承面：outputs 根下存在 ``{job_id}.zip`` 的 job（status 不过滤——失败
+    HPO 的部分 study db 可续跑；newest first；完整性校验在继承时做，#158 护栏）。"""
+    entries = client.list_files(experiment_id, "outputs")
+    job_ids = [e.filename[: -len(".zip")] for e in entries if e.filename.endswith(".zip") and "/" not in e.filename]
+    jobs = [client.get_job(j) for j in job_ids]
+    jobs.sort(key=lambda j: j.created_at, reverse=True)
+    return [{"job_id": j.id, "status": j.status} for j in jobs]
+
+
+def ensure_platform_experiment(
+    platform_experiment_id: Annotated[
+        str | None,
+        Field(
+            description="平台实验 ID：传入=查询模式（校验存在，不存在 fail-loud，绝不静默转创建）；不传=创建模式（name 必填）"
+        ),
+    ] = None,
+    files: Annotated[
+        list[str] | None,
+        Field(
+            description="本地文件清单（绝对路径；MCP 通道拒收相对路径）——增量同步到 uploads："
+            "MD5↔etag 全等跳过、不等覆盖更新；不删除远端未列文件"
+        ),
+    ] = None,
+    name: Annotated[
+        str | None, Field(description="新实验名（创建模式必填；与 platform_experiment_id 同传=参数来源冲突拒绝）")
+    ] = None,
+    desc: Annotated[str | None, Field(description="新实验描述（仅创建模式）")] = None,
+) -> dict:
+    """实验就绪（remote 系列前置动作）：查建平台实验、增量同步文件清单、回报可继承面。
+
+    何时使用 ensure_platform_experiment：
+    - 远程 compute 工具（hyperparameters_search / modeling / explanation / …）提交前：
+      拿到 platform_experiment_id 并把本地数据/脚本同步到 uploads
+    - 续跑场景：查该实验的可继承 zip 面（inheritable，newest first），取继承源 job_id
+    - 重复调用幂等：同清单全部 skipped（MD5↔etag）；改动过的文件恰好落 updated
+
+    返回 ``{platform_experiment_id, files: {uploaded/updated/skipped: [{local, remote}]},
+    inheritable: [{job_id, status}]}``——远端名恒为 ``/user-data/uploads/<basename>``。
+    """
+    if platform_experiment_id is not None and (name is not None or desc is not None):
+        raise ValueError(
+            f"参数来源冲突：platform_experiment_id 与 name/desc 同传——查询模式不带创建参数（id={platform_experiment_id}）"
+        )
+    client = _platform_client()
+    if platform_experiment_id is not None:
+        experiment = client.get_experiment(platform_experiment_id)  # 404 → PlatformNotFoundError，绝不静默转创建
+    elif name is None or not name.strip():
+        raise ValueError("不传 platform_experiment_id 时 name 必填（创建模式）——两参全缺无从定位实验")
+    else:
+        experiment = client.create_experiment(name, desc or "")
+    files_result: dict[str, list[dict]] = {"uploaded": [], "updated": [], "skipped": []}
+    if files:
+        files_result = _sync_uploads(client, experiment.id, _validate_file_manifest(files))
+    return {
+        "platform_experiment_id": experiment.id,
+        "files": files_result,
+        "inheritable": _inheritable(client, experiment.id),
+    }
+
+
+def get_platform_job_logs(
+    job_id: Annotated[
+        str, Field(description="平台任务 ID（从 compute 工具的 JobOutcome.submitted 或 ensure 的 inheritable 取得）")
+    ],
+    tail_lines: Annotated[int, Field(description="日志尾行数（1–10000；默认 500）——越界本地拒绝，不发出请求")] = 500,
+) -> dict:
+    """查平台任务状态与日志尾（stateless 轮询——agent 唯一在途状态面）。
+
+    何时使用 get_platform_job_logs：
+    - compute 工具返回 JobOutcome(submitted) 后轮询任务进度：``terminal=true`` 即停
+      （终态 = succeeded | failed | lost | canceled），否则继续轮询
+    - 任务失败时取日志尾定位（zip 拉取走 download_platform_job_artifacts）
+
+    返回 ``{job_id, status, terminal, tail_lines, logs}``——status/terminal/logs
+    合并返回（一次调用即全貌）；``tail_lines`` 上游容错（<=0→500）非我方语义，
+    本工具 1–10000 fail-loud。pod 未调度期上游 logs 端点 404（"job pods not
+    found yet"）——job 在场（get_job 通过）即瞬态，logs 取空串继续轮询；job
+    本身不存在仍 404 fail-loud。
+    """
+    if not 1 <= tail_lines <= 10000:
+        raise ValueError(f"tail_lines 须在 1–10000（got {tail_lines}）——上游 <=0→500 是其容错非本工具语义")
+    from mflowy.model.job_provider.platform_client import PlatformNotFoundError
+
+    client = _platform_client()
+    job = client.get_job(job_id)  # job 不存在 → 404 fail-loud
+    try:
+        logs = client.get_job_logs(job_id, tail_lines)
+    except PlatformNotFoundError:
+        logs = ""  # 瞬态：pod 未调度（S4 实测）——合并视图继续轮询
+    from mflowy.model.job_provider.platform_client import JOB_TERMINAL_STATUSES
+
+    return {
+        "job_id": job_id,
+        "status": job.status,
+        "terminal": job.status in JOB_TERMINAL_STATUSES,
+        "tail_lines": tail_lines,
+        "logs": logs,
+    }
+
+
+def download_platform_job_artifacts(
+    job_id: Annotated[str, Field(description="平台任务 ID（JobOutcome.submitted 的 job_id 或 ensure inheritable 面）")],
+    platform_experiment_id: Annotated[str, Field(description="平台实验 ID（任务 zip 所在实验——outputs 面寻址）")],
+    target_dir: Annotated[
+        str,
+        Field(
+            description="解压根目录（须已存在；MCP 通道须绝对路径）——解压进 target_dir/{job_id}/，原子替换可重复调用"
+        ),
+    ],
+) -> dict:
+    """拉取平台任务产物：下载 outputs 下 ``{job_id}.zip`` → 解压进 ``target_dir/{job_id}/``（zip 根 = workspace 根）。
+
+    何时使用 download_platform_job_artifacts：
+    - get_platform_job_logs 轮询到终态后拉取产物（重下载 = 原子替换，幂等）
+    - 拉取后本地查询：get_run/get_experiment 传 ``tracking_uri=sqlite:///{target_dir}/{job_id}/mlflow.db``
+      （mlflow.db 与 .mlruns 同根——db 目录即工件根，观察面自动改写为本地路径）
+
+    zip 本体即弃（不落 target_dir）；子目录 ``{job_id}/`` 是本工具自有领地。
+    返回 ``{job_id, platform_experiment_id, local_task_dir, file_count, mlflow_db}``。
+    """
+    import shutil
+    import tempfile
+    import zipfile
+
+    from mflowy.utils.path import resolve_input_path
+
+    target = resolve_input_path(target_dir)
+    if not target.is_dir():
+        raise FileNotFoundError(f"target_dir 不存在或非目录：{target_dir}（解析为 {target}）——先创建再调用")
+    client = _platform_client()
+    url, _meta = client.get_download_url(platform_experiment_id, "outputs", f"{job_id}.zip")
+    from mflowy.model.job_provider.platform_client import download_presigned
+
+    with tempfile.TemporaryDirectory(prefix="mflowy_download_") as td:
+        zip_path = Path(td) / f"{job_id}.zip"
+        download_presigned(url, zip_path)  # zip 本体即弃——临时目录退场即删
+        try:
+            with zipfile.ZipFile(zip_path) as zf:
+                names = [n for n in zf.namelist() if not n.endswith("/")]
+                staged = Path(td) / "unpacked"
+                zf.extractall(staged)
+        except zipfile.BadZipFile as e:
+            raise ValueError(f"平台产物 zip 损坏（job={job_id}）：{e}——上游 outputs 面异常，重试或报平台") from e
+        dest = target / job_id
+        replacing = target / f".{job_id}.replacing"
+        retired = target / f".{job_id}.retired"
+        shutil.rmtree(retired, ignore_errors=True)  # 上轮残留即清
+        staged.rename(replacing)  # 同盘 rename：tmp 解压 → 换位
+        if dest.exists():
+            dest.rename(retired)
+        replacing.rename(dest)
+        shutil.rmtree(retired, ignore_errors=True)
+    mlflow_db = dest / "mlflow.db"
+    return {
+        "job_id": job_id,
+        "platform_experiment_id": platform_experiment_id,
+        "local_task_dir": str(dest),
+        "file_count": len(names),
+        "mlflow_db": str(mlflow_db) if mlflow_db.is_file() else None,
+    }
