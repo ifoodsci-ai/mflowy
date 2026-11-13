@@ -29,6 +29,22 @@ except ImportError:  # pragma: no cover — 无 [mcp] extra 的 runner/import �
     from typing import Any as Context  # 注解占位：``Context | None`` 可被 get_type_hints 求值；永不实例化
 
 
+def _session():
+    """建模会话引擎惰性导入（瘦装降级面，#216 裁定/#217）：session 顶层重栈 import
+    （sklearn/optuna 等 [local] extra 依赖）在瘦装环境失败——fail-loud 带安装提示，
+    不裸抛 ModuleNotFoundError（会话 provider 化落地后保留为瘦装+local provider 的
+    永久降级路径）。importlib 相对导入 = 测试缝位（全栈环境注入缺依赖替身）。"""
+    import importlib
+
+    try:
+        return importlib.import_module(".session", __package__)
+    except ModuleNotFoundError as e:
+        raise RuntimeError(
+            f"建模会话引擎依赖本地建模栈（{e}）——安装：pip install 'mflowy-model[local]'"
+            "（聚合形态 mflowy[local]；瘦装 server 的计算动作请走 remote provider）"
+        ) from e
+
+
 def validate_modeling_steps(
     modeling_steps: Annotated[
         str,
@@ -364,7 +380,7 @@ def modeling_session_start(
     - model-brief 问卷（含 research-review 结构化候选）编译出 cv_card（split yaml
       明文）+ 显式协议参数后开局回合循环；多目标 = 每目标各开一个会话（三层循环）
     """
-    from . import session
+    session = _session()
 
     return session.start_session(
         file_path,
@@ -393,7 +409,7 @@ def modeling_observe(session_id: Annotated[str, Field(description="会话 ID")])
     - 每步决策前读决策面；续局 / 上下文丢失后重新定位（无副作用）
     - 终态会话同样可观测（finished/abandoned 旗即收局事实）
     """
-    from . import session
+    session = _session()
 
     return session.observe_session(session_id).model_dump()
 
@@ -426,7 +442,7 @@ def modeling_apply(
     - select_model 定光标候选 → run_hpo 出首条账本 → final_train_test 终训交付
     - 加深/收窄/pin/换 FE 都是合法走法（配置编辑不吃预算）
     """
-    from . import session
+    session = _session()
 
     return session.apply_action(session_id, node, params).model_dump()
 
@@ -437,7 +453,7 @@ def modeling_rollback(session_id: Annotated[str, Field(description="会话 ID")]
     何时使用 modeling_rollback：
     - 配置编辑走错（pin/收窄/FE 换档）时弹回上一光标版本
     """
-    from . import session
+    session = _session()
 
     return session.rollback(session_id).model_dump()
 
@@ -463,7 +479,7 @@ def modeling_finish(
       pdf 必须在报告文件就绪后调用——文件缺失 fail-loud，不会带着空交付物进终态
     """
 
-    from . import session
+    session = _session()
 
     return session.finish_session(session_id, pdf=pdf).model_dump()
 
@@ -484,7 +500,7 @@ def draw_taylor_diagram(
     - 各模型 y_test 不一致时拒绝出图（不同 holdout 的预测不进同一张对比图）；
       单模型不出图（多模型对比图）；run 不在终训面 fail-loud 带可用清单
     """
-    from . import session
+    session = _session()
 
     return session.taylor_report(session_id, run_ids)
 
@@ -499,7 +515,7 @@ def modeling_report_skeleton(
     何时使用 modeling_report_skeleton：
     - 写终局报告前拿素材：宿主多模态读图清单后按叙事槽撰写，写完 finish(pdf) 收局
     """
-    from . import session
+    session = _session()
 
     return session.report_skeleton(session_id)
 
@@ -521,7 +537,7 @@ def modeling_report_findings(
     何时使用 modeling_report_findings：
     - 读 OOF 图集/产物清单后形成的人读诊断（规则算子覆盖不了的判断）落盘供观测与审计
     """
-    from . import session
+    session = _session()
 
     return session.report_findings(session_id, key, findings).model_dump()
 
@@ -536,7 +552,7 @@ def modeling_abandon(
     - 用户中止建模 / 改协议开新 episode 前，显式终局旧会话（不留僵尸——要么 finish 要么 abandon）
     - 返回 ack：{session_id, abandoned, reason, steps}（steps = 弃局时已走步数）
     """
-    from . import session
+    session = _session()
 
     return session.abandon_session(session_id, reason=reason)
 

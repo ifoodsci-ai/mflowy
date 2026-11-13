@@ -56,11 +56,13 @@ jobs:
           path: coverage.xml
           if-no-files-found: error
 
-  # 无 torch 环境证据（M6 验收/#43）：[deep] 隔离的环境级验证——显式 extras 不带
-  # deep（dev 组自带 mcp 面）；list_nodes 词表降级（引擎侧降级已由 #49 钉测，此处
-  # 验证真环境）+ RF 建模会话全链冒烟（MLP 用例 importorskip 自跳过）
-  no-torch:
-    name: no-torch (model extras without [deep])
+  # 瘦装门（#216 Q6.3/#217）：[mcp] 单 extra = 纯远程瘦装 server——零本地建模重栈
+  # （重栈全进 model 包 [local] 后，no-torch 门随 [deep] 真合并消亡）。环境级验证：
+  # 零重栈自证 + 词表降级标注（model ns requires→local + 条目 upstream=null）+
+  # get_node_info 降级面（available=false + 安装提示）+ remote 提交路径（mock
+  # provider 受理即返）+ server stdio 冒烟；全量重栈环境见 test/typecheck 门（--all-extras）
+  thin:
+    name: thin (mcp-only server, remote-ready)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -68,29 +70,64 @@ jobs:
         with:
           python-version: "3.12"
           enable-cache: true
-      - name: Install deps without [deep]
-        run: uv sync --all-groups --extra data --extra model
+      - name: Install deps (mcp extra only)
+        run: uv sync --all-groups --extra mcp
         env:
           UV_DEFAULT_INDEX: https://pypi.org/simple
-      - name: 词表降级断言（MLP 条目 upstream=null + requires 标注 + RF 健康复核）
+      - name: 瘦装断言（零重栈 + 词表 requires→local 降级 + get_node_info 降级面）
         run: |
-          uv run mflowy list_nodes '{"namespace": "model"}' > "$RUNNER_TEMP/nodes.json"
-          uv run python - "$RUNNER_TEMP/nodes.json" <<'PY'
-          import json, sys
-          data = json.load(open(sys.argv[1]))
-          ns = next(n for n in data if n["namespace"] == "model")
-          mlp = next(e for e in ns["nodes"] if e["name"] == "model__MLP")
-          rf = next(e for e in ns["nodes"] if e["name"] == "model__RF")
-          assert mlp["upstream"] is None, f"MLP 须降级 upstream=null（缺 [deep] extra），得到 {mlp['upstream']}"
-          assert ns.get("requires") == {"MLP": "deep"}, f"requires 标注须为 MLP→deep，得到 {ns.get('requires')}"
-          assert isinstance(rf["upstream"], list) and rf["upstream"], "RF 条目须可内省（防整体 import 崩溃的假阳性）"
-          print(f"词表降级契约成立：model ns 共 {len(ns['nodes'])} 节点，MLP 降级 + RF 健康")
+          uv run python - <<'PY'
+          import importlib.util
+
+          # sklearn 不在清单：mlflow（utils 硬依赖）传递随行——但五族模块统一 import
+          # shap，缺 shap 即全族降级（RF 亦然），不依赖 sklearn 在缺的假设
+          for mod in ("lightgbm", "xgboost", "catboost", "shap", "optuna", "torch"):
+              assert importlib.util.find_spec(mod) is None, f"瘦装环境不应装重栈 {mod}"
+          from mflowy.mcp.tools import get_node_info, list_nodes
+
+          ns = next(n for n in list_nodes(namespace="model") if n["namespace"] == "model")
+          xgb = next(e for e in ns["nodes"] if e["name"] == "model__XGB")
+          assert xgb["upstream"] is None, f"瘦装 model 条目须降级 upstream=null，得到 {xgb}"
+          requires = ns.get("requires", {})
+          assert requires.get("XGB") == "local", f"requires 标注须 XGB→local，得到 {requires}"
+          info = get_node_info("model", "XGB")
+          assert info.get("available") is False and info.get("requires") == "local", info
+          assert "mflowy[local]" in info.get("reason", ""), info
+          degraded = sum(1 for e in ns["nodes"] if e["upstream"] is None)
+          print(f"瘦装降级契约成立：model ns {len(ns['nodes'])} 节点中 {degraded} 降级 + requires→local")
           PY
-      - name: RF 建模会话冒烟（start→apply→finish 全链）
-        run: uv run pytest packages/builtin_plugins/model/tests/test_modeling_session.py
+      - name: remote 提交路径（mock provider 受理——零重栈提交自证）
+        run: |
+          mkdir -p "$RUNNER_TEMP/mockprov"
+          cat > "$RUNNER_TEMP/mockprov/mock_provider.py" <<'PY'
+          """瘦装门 mock provider：受理即返（remote 提交路径自证——零本地重栈依赖）。"""
+
+
+          class MockProvider:
+              async def hyperparameters_search(
+                  self,
+                  *,
+                  modeling_steps: str,
+                  name: str,
+                  desc: str,
+                  resume_study_from: str | None = None,
+                  platform_experiment_id: str | None = None,
+                  inherit_platform_job_id: str | None = None,
+                  headers=None,
+              ):
+                  from mflowy.model.job_provider.protocol import JobOutcome
+
+                  return JobOutcome.submitted(job_id="mock-job", platform_experiment_id="mock-exp")
+          PY
+          out=$(MFLOWY_JOB_PROVIDER=mock_provider:MockProvider PYTHONPATH="$RUNNER_TEMP/mockprov" \
+            uv run mflowy hyperparameters_search '{"modeling_steps": "- name: 冒烟\n  namespace: load\n  node_name: python\n  params:\n    source: thin:gate", "name": "thin-gate", "desc": "mock submit"}')
+          printf '%s\n' "$out"
+          printf '%s\n' "$out" | grep -q submitted
+      - name: server stdio 冒烟（瘦装可启）
+        run: uv run python scripts/_e2e_mcp.py
 
   # 类型门（#42 决议→#91）：pyright basic 全仓（packages+tests），error 阻断、
-  # warning 不挡；全量依赖安装（import 解析需要 model/deep extras）；runner 预装 Node
+  # warning 不挡；全量依赖安装（import 解析需要 mcp/local extras）；runner 预装 Node
   typecheck:
     name: typecheck (pyright)
     runs-on: ubuntu-latest

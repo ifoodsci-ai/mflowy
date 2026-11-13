@@ -65,8 +65,9 @@ def file_hash(
 def _requires(namespace: str, node_name: str) -> str | None:
     """缺依赖标注：域包 extras 的可用性声明（知识随域居住，host 惰性取用）。
 
-    0.2.0 唯一可选 extra = model 包 ``[deep]``（torch）；其余能力为域包硬依赖零标注。
-    域包未安装时其节点本就不在目录（词表=已安装能力），无需标注。
+    标注清单单源 = 域包 ``extras.py``（#216/#217 起唯一可选面 = model 包 ``[local]``
+    本地建模重栈；data 硬依赖零标注）。标注 = import 失败时的安装提示，装好的环境
+    照常内省、无害；域包未安装时其节点本就不在目录（词表=已安装能力），无需标注。
     """
     from mflowy.driver.config import node_key
     from mflowy.driver.discover import GROUPS, entry
@@ -131,7 +132,8 @@ def list_nodes(
     何时使用 list_nodes：
     - 编写 modeling YAML 前盘点可用模块
     - 确认某 namespace 下有哪些节点可选
-    - 查看 requires 标注——当前环境缺 extra 时先装（如 `uv pip install "mflowy[modeling]"`）
+    - 查看 requires 标注——当前环境缺 extra 时先装（如 `uv pip install "mflowy[local]"`——
+      model/cv/x_transformer/plot 四目录随 [local]）
 
     缺 extra 依赖的节点降级为 ``bindings=None`` 条目（不可内省）并附 requires
     标注——装好 extra 再查即得参数边依赖。

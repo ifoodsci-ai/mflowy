@@ -1,4 +1,4 @@
-"""LocalJobProvider — 完全体直调（[modeling] extra 环境）。
+"""LocalJobProvider — 完全体直调（[local] extra 本地建模栈环境）。
 
 编排逻辑原 lib/cmd/args/*.py 全部迁入此处（lib/cmd/ 已消除）。
 模板随建模域包居住（mflowy/model/templates/）。每个方法对应 Protocol 中的一个 compute 工具。
@@ -102,7 +102,7 @@ def _build_modeling_steps(
 
 
 class LocalJobProvider:
-    """完全体直调：编排逻辑 + compute 全部原地执行（[modeling] extra 环境）。
+    """完全体直调：编排逻辑 + compute 全部原地执行（[local] extra 本地建模栈环境）。
 
     headers / platform_experiment_id / inherit_platform_job_id 形参满足 Protocol
     契约但本地模式不消费（模式专属参数原则，#156——先例 headers）；结果恒
