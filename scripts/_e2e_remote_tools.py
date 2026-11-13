@@ -499,7 +499,6 @@ async def run_s6(session: ClientSession, stage: Path, eid: str, j1: str, model_r
 
     study_dbs = sorted(j2_dir.glob(".mlruns/*/artifacts/study.db"))
     counts = [sqlite3.connect(db).execute("select count(*) from trials").fetchone()[0] for db in study_dbs]
-    j2_model_run = None
     if max(counts, default=0) >= 4:
         ok(f"J2 study 增量（study.db trials={counts}，前史 2 + 本轮 2）")
     else:
@@ -511,6 +510,15 @@ async def run_s6(session: ClientSession, stage: Path, eid: str, j1: str, model_r
     has_j1 = any(r["run_id"] == model_run_id for r in runs2)
     ok("J2 mlflow.db 含 J1 runs（继承滚雪球）") if has_j1 else bad(
         "J1 run 不在 J2 库", str([r["run_id"][:8] for r in runs2])
+    )
+    # J2 模型步 run（续跑新写——run_id 不同于继承带入的 J1 model_run_id）；S7 消费
+    # 其 study.db 工件改写断言（#221 修复：此前 None 恒假，断言永不执行）
+    j2_model_run = next(
+        (r["run_id"] for r in runs2 if str(r.get("node", "")).startswith("model__") and r["run_id"] != model_run_id),
+        None,
+    )
+    ok(f"J2 续跑模型步 run（{str(j2_model_run)[:8]}…）") if j2_model_run else bad(
+        "J2 模型步 run 缺", str([r.get("node") for r in runs2])
     )
 
     # J3 = modeling 终训，inherit J2（终训 steps = 全 pin——搜索空间缺省即空间、

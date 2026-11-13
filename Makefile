@@ -125,7 +125,7 @@ e2e-mcp:
 # 判据含指标下限（防绿但退化），越限 FAIL 行 + 非零退出。
 # 越限自证：BENCH_FLOOR_BUMP='iris|RF|99' make e2e-bench
 e2e-bench:
-	uv run --extra model --extra deep python scripts/_e2e_bench.py
+	uv run --extra mcp --extra local python scripts/_e2e_bench.py
 
 # S0/S1 平台契约回归（remote 实现系列 PR 合并门禁——docs/research/2026-11-11-e2e-remote-runbook.md）：
 # 平台面 curl 驱动（OTP 登录 → 建实验 → 上传 → CreateJob cmd=sh → 轮询 → 断言），
@@ -146,20 +146,24 @@ e2e: e2e-info e2e-statistic e2e-mcp
 	stage=$$(mktemp -d /tmp/mflowy_e2e_stage_XXXXXX); \
 	trap 'rm -rf "$$stage"' EXIT; \
 	export MLFLOW_TRACKING_URI="$${MLFLOW_TRACKING_URI:-$(E2E_TRACKING)}"; \
-	uv run --extra model --extra deep mflowy modeling "$$($(PAYLOAD) "$(DIABETES_STEPS)" --stage "$$stage" 'name=糖尿病多模型对比' 'desc=standard_scaler → cv(8:1:1) → XGBoost/LightGBM/CatBoost/RF/MLP')"; \
+	uv run --extra mcp --extra local mflowy modeling "$$($(PAYLOAD) "$(DIABETES_STEPS)" --stage "$$stage" 'name=糖尿病多模型对比' 'desc=standard_scaler → cv(8:1:1) → XGBoost/LightGBM/CatBoost/RF/MLP')"; \
 	out=$$(uv run python scripts/_e2e_gen.py); \
 	exp_id=$$(printf '%s\n' "$$out" | sed -n 1p); \
 	run_id=$$(printf '%s\n' "$$out" | sed -n 2p | cut -d= -f2); \
-	echo "== mlflow 查询（experiment=$$exp_id, MLP=$$run_id）=="; \
-	uv run mflowy list_runs '{"experiment_id": "'$$exp_id'", "filter_steps": ["model.MLP"], "max_results": 3}'; \
+	echo "== mlflow 查询（experiment=$$exp_id, MLP=$$run_id；观察面 = get_experiment/get_run，ec0ad1f7 双工具收敛后形态）=="; \
+	uv run mflowy get_experiment '{"experiment_id": "'$$exp_id'", "filter_steps": ["model__MLP"], "max_results": 3}'; \
 	uv run mflowy get_run '{"run_id": "'$$run_id'"}'; \
-	uv run mflowy list_run_artifacts '{"run_id": "'$$run_id'"}'; \
 	echo "== SHAP 解释（MLP=$$run_id）=="; \
-	uv run --extra model --extra deep mflowy explanation "$$($(PAYLOAD) "$(DIABETES_STEPS)" --stage "$$stage" "model=$$run_id" 'name=糖尿病 SHAP 解释' 'desc=MLP SHAP 全量样本')"; \
-	echo "== 预测（全量 X 442 行）=="; \
-	uv run --extra model --extra deep mflowy predict '{"data": "'$$stage/diabetes.py:load_X'", "model": "'$$run_id'"}'; \
-	echo "== 逆向设计（target minimize, 200 trials）=="; \
-	uv run --extra model --extra deep mflowy inverse_optimization '{"data": "'$$stage/diabetes.py:load_X'", "model": "'$$run_id'", "direction": {"target": "minimize"}, "n_trials": 200}'
+	uv run --extra mcp --extra local mflowy explanation "$$($(PAYLOAD) "$(DIABETES_STEPS)" --stage "$$stage" "model=$$run_id" 'name=糖尿病 SHAP 解释' 'desc=MLP SHAP 全量样本')"; \
+	echo "== 预测（全量 X 442 行，行数断言）=="; \
+	pred=$$(uv run --extra mcp --extra local mflowy predict '{"data": "'$$stage/diabetes.py:load_X'", "model": "'$$run_id'"}' 2>&1); \
+	printf '%s\n' "$$pred" | tail -3; \
+	printf '%s\n' "$$pred" | grep -q 'Predicted: 442 rows' || { echo 'FAIL: predict 输出缺 "Predicted: 442 rows"'; exit 1; }; \
+	echo "== 逆向设计（target minimize, 200 trials，trials/best 断言）=="; \
+	inv=$$(uv run --extra mcp --extra local mflowy inverse_optimization '{"data": "'$$stage/diabetes.py:load_X'", "model": "'$$run_id'", "direction": {"target": "minimize"}, "n_trials": 200}' 2>&1); \
+	printf '%s\n' "$$inv" | grep -E 'complete trials|^best ' ; \
+	printf '%s\n' "$$inv" | grep -q 'complete trials' || { echo 'FAIL: inverse 输出缺 trials 计数'; exit 1; }; \
+	printf '%s\n' "$$inv" | grep -q '^best ' || { echo 'FAIL: inverse 输出缺 best 行'; exit 1; }
 
 # 启动 MLflow UI
 DB_PATH := $(HOME)/.mflowy/mlflow.db

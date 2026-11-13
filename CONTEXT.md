@@ -83,7 +83,7 @@ MCP 遥测的同意机制：`ask`（默认，首次工具调用 elicitation 询�
 按 POMDP 域切分的能力包：`mflowy-data`（load/statistic/detect/clean + 清洗会话）、
 `mflowy-model`（x_y/cv/x_transformer/model + 建模会话——cv 族 = cv.split 参数构建 /
 cv.load 引用加载，下游经 `cv` namespace 参数消费）。依赖单向
-data ← model；安装形态即域选择（`mflowy[data]` / `mflowy[model]`）。两包住分组目录
+data ← model；域包直装（`mflowy-data` / `mflowy-model`），聚合 extras 选形态（`mflowy[mcp]` server / `mflowy[local]` 本地建模栈）。两包住分组目录
 `packages/builtin_plugins/`（与 entry points 组 `mflowy.builtin_plugins` 对齐），
 distribution 名与 extras 不含分组路径。
 _Avoid_: builtin_plugins 指代**单个能力包**（1.x 单发行版结构退役——域包仍称域包，

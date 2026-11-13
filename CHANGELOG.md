@@ -66,6 +66,34 @@ CVCard.external_baseline = 建模域先验（前沿研究的领域先验知识�
   仍可达（#78 回流交棒 = 交付清单带绝对路径，零破坏）；`session_id` 发现限当前锚定
   语境。平台级状态（凭据/遥测 `settings.json`/`api.key`/`credentials.json`）跟人不
   跟任务，恒 `~/.mflowy` 不动。
+### model 域 [local] extra 化 + e2e 断链修复（#217/#221，feat·BREAKING 随 0.2.0 门禁）
+
+落地 [#216 裁定](https://github.com/ifoodsci-ai/mflowy/issues/216)：本地建模重栈可选化，
+`mflowy[mcp]` = 纯远程瘦装 server（瘦装动机即刻兑现 bo 三件套）。
+
+- **BREAKING**：聚合 extras `[data]`/`[model]`/`[deep]` 删除——终态 = 形态选择器
+  `{mcp, local}`：`mcp = [mflowy-mcp[mcp], mflowy-data, mflowy-model]`（server 形态、
+  纯远程瘦装；bo 就绪后随 #210 追加）、`local = [mflowy-model[local]]`；域包直装
+  （`mflowy-data` / `mflowy-model`）。
+- **BREAKING**：mflowy-model 硬依赖面收窄——sklearn / lightgbm / xgboost-cpu / catboost /
+  shap / optuna / torch / pytorch-lightning 八项进包级 `[local]`（**[deep] 真合并**：torch
+  随一切本地安装，uvx 陷阱从「仅 [deep] 必需 CPU 索引」扩为 [local]/[mcp,local] 必需）；
+  `mflowy[mcp]` 语义变瘦装 server。注：sklearn 经 mlflow（utils 硬依赖）传递随行——
+  瘦装降级锚在五族模块统一 import 的 shap，不依赖 sklearn 在缺的假设。
+- 词表标注：`extras.py` 表改写——model/cv/x_transformer/plot 四顶层目录全标 local
+  （目录全标：标注 = import 失败时的安装提示，瘦装实可用节点不触发降级、无害）；
+  modeling_* 会话工具瘦装 fail-loud 带「装 mflowy-model[local]」提示（会话 provider 化
+  #218 落地后保留为瘦装+local provider 的永久降级路径）；`list_nodes` docstring 退役
+  extra 名 `mflowy[modeling]` 漂移顺带修正。
+- CI no-torch 门随 [deep] 真合并消亡 → **瘦装门**（`uv sync --extra mcp`：零重栈自证 +
+  词表 requires→local 降级断言 + get_node_info 降级面 + remote 提交路径 mock provider +
+  server stdio 冒烟）；dev/CI 全量环境（`make install`）`--all-extras` 照旧含 local。
+- **e2e 断链修复（#221）**：`make e2e` 观察段迁移 `get_experiment`/`get_run` 新面
+  （`list_runs`/`list_run_artifacts` 已随 ec0ad1f7 退役——`set -e` 下 explanation/
+  predict/inverse 尾段不可达，旗舰发布门实际失效）；remote S7 死断言复活（S6 记录 J2
+  续跑模型步 run_id 供 S7 工件改写断言消费——此前 `j2_model_run = None` 恒假）；e2e 尾段
+  最小断言（predict `Predicted: 442 rows` 行数 / inverse `complete trials` + `best` 行）；
+  Makefile/脚本安装面统一 `mflowy[mcp,local]`。
 
 ### 远程执行切片⑥：resume_study_from 机制（#199，feat·BREAKING 随 0.2.0 门禁）
 

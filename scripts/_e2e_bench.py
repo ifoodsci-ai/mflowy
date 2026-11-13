@@ -16,9 +16,9 @@
 实测折 + 工业三链实测折，见 THRESHOLDS 注释）。越限/未完成 → FAIL 行 + 非零退出。
 数据全部来自 examples/<task>/<task>.py 生成器（#74 决议），无网络、无仓外依赖；
 追踪默认落临时 file store（零仓库产物，M10），已设 MLFLOW_TRACKING_URI 则尊重。
-需 ``--extra deep``（digits 链含 MLP）。
+需 ``--extra local``（digits 链含 MLP，torch 随 [local] 真合并随行）。
 
-越限自证（验收标准 2）：``BENCH_FLOOR_BUMP='iris|RF|99' uv run --extra model --extra deep python scripts/_e2e_bench.py``
+越限自证（验收标准 2）：``BENCH_FLOOR_BUMP='iris|RF|99' uv run --extra mcp --extra local python scripts/_e2e_bench.py``
 ——人为抬下限应得 FAIL 行与非零退出。
 """
 

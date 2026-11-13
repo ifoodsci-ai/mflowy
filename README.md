@@ -59,7 +59,7 @@ Person(dev, "能力作者", "写 @node 插件的开发者")
 System_Boundary(sys, "MFlowy —— uv workspace · PEP 420 namespace · 六 distribution 锁步") {
     Container(mcp, "mflowy-mcp", "MCP 层", "工具注册面（平台工具 + 域工具发现）· mflowy-mcp stdio server · mflowy JSON runner · 平台登录 · 遥测")
     Container(data, "mflowy-data", "数据域", "清洗 POMDP 动作域：load/statistic/detect/clean + plot(data_analysis)；数据栈硬依赖，装包即得完整数据域")
-    Container(model, "mflowy-model", "建模域", "建模 POMDP 动作域：x_y/cv/x_transformer/model + plot(evaluation/interpretability) · compute 工具与 JobProvider 执行策略；CPU 建模栈硬依赖，torch 栈隔离 [deep]")
+    Container(model, "mflowy-model", "建模域", "建模 POMDP 动作域：x_y/cv/x_transformer/model + plot(evaluation/interpretability) · compute 工具与 JobProvider 执行策略；本地建模重栈（CPU 六件 + torch）住 [local] extra，瘦装 = 纯远程 server")
     Container(driver, "mflowy-driver", "DAG 内核", "Builder YAML 增量编译（平铺叙事·编译即校验）· Context 血缘 DAG · LIFO 拓扑调度 + 失败血缘剪枝 · discover 插件目录（零 import 查询/惰性加载）· @node/@edge 插件 SDK + mlflow 默认尾链")
     Container(utils, "mflowy-utils", "共享工具", "mlflow 封装 · jinja 沙箱 · 日志与 stdout 捕获 · 文件指纹 · 脚本安全门")
 }
@@ -87,10 +87,10 @@ Rel(model, remote, "compute 工具执行委派", "JobProvider 协议")
 
 | distribution | 角色 | 职责 |
 | ------------ | ---- | ---- |
-| `mflowy` | 聚合包（PyPI 入口） | extras = 域选择器：`[data]` / `[model]` / `[mcp]` / `[deep]`——`mflowy[mcp]` 起 server、`mflowy[data|model]` 直接走 runner；`[stats]`/`[modeling]` 已退役 |
+| `mflowy` | 聚合包（PyPI 入口） | extras = 形态选择器：`[mcp]` / `[local]`——域包直装（`mflowy-data` / `mflowy-model`），`mflowy[mcp]` 起 server（纯远程瘦装）、`mflowy[mcp,local]` = server + 本地建模重栈；聚合 `[data]`/`[model]`/`[deep]` 已退役 |
 | `mflowy-mcp` | 用户面 | 工具注册面（平台工具 + 域工具发现）与三种入口、平台登录、遥测与同意门 |
 | `mflowy-data` | 数据域 | 清洗 POMDP 动作域（load/statistic/detect/clean + EDA 图）；数据栈硬依赖 |
-| `mflowy-model` | 建模域 | 建模 POMDP 动作域（x_y/cv/x_transformer/model + 评估/解释图）+ compute 工具执行策略（JobProvider）；CPU 建模栈硬依赖，torch 栈住 `[deep]`；两域包同为第三方插件的活参考（抄走 pyproject + hook，改 entry points 组即成插件包） |
+| `mflowy-model` | 建模域 | 建模 POMDP 动作域（x_y/cv/x_transformer/model + 评估/解释图）+ compute 工具执行策略（JobProvider）；本地建模重栈（sklearn/lightgbm/xgboost/catboost/shap/optuna/torch）住 `[local]` extra；两域包同为第三方插件的活参考（抄走 pyproject + hook，改 entry points 组即成插件包） |
 | `mflowy-driver` | 内核 | 编译与调度，不实现任何业务能力；插件 SDK 与词表校验所在 |
 | `mflowy-utils` | 底座 | 无业务语义的共享工具层 |
 
@@ -99,7 +99,7 @@ Rel(model, remote, "compute 工具执行委派", "JobProvider 协议")
 | 入口 | 命令 | 场景 |
 | ---- | ---- | ---- |
 | **CLI 通道** | `mflowy <tool> '<json args>'` | 命令行、K8s Job 容器、subprocess；裸装即用（零 SDK） |
-| **MCP 通道** | `mflowy-mcp` | stdio server，MCP 客户端 / agent 接入；SDK+遥测住 `[mcp]` extra，常与能力 extras 组合（如 `mflowy[mcp,model]`） |
+| **MCP 通道** | `mflowy-mcp` | stdio server，MCP 客户端 / agent 接入；SDK+遥测住 `[mcp]` extra，本地建模组合 `mflowy[mcp,local]`（纯 `mflowy[mcp]` = 远程瘦装 server） |
 | 直接 import | `mflowy.{mcp,data,model}.tools` pyfunc | 宿主程序内嵌调用 |
 
 > CLI（`mflowy`）是 MCP 工具层的命令行通道，与 MCP server 共享同一套工具实现与 JobProvider 委派，不是独立架构。
@@ -115,21 +115,24 @@ Rel(model, remote, "compute 工具执行委派", "JobProvider 协议")
 > ⚠️ **PyPI 当前为 0.1.2（2026-08-23，Alpha）——参数边 / @edge BREAKING 重构之前的旧架构**，与本仓库文档描述的能力集不一致。0.2.0 发布前请用方式二（源码）安装；届时本节恢复推荐位。
 
 ```bash
-# MCP server (stdio) — 完全体（数据分析 + 建模）；国内镜像参数可省（网络可达 PyPI 时）
+# MCP server (stdio) — 完全体（数据分析 + 本地建模重栈）；国内镜像参数可省（网络可达 PyPI 时）
 uvx --index-strategy unsafe-best-match \
     --default-index https://mirrors.aliyun.com/pypi/simple/ \
     --index https://download.pytorch.org/whl/cpu \
-    --from "mflowy[mcp,model]" \
+    --from "mflowy[mcp,local]" \
     mflowy-mcp
 
-# 轻量分析（仅 [data]，无 torch，无需 CPU 索引参数）
-uvx --from "mflowy[data]" mflowy data_profile '{"file_path": "..."}'
+# 纯远程瘦装 server（零建模重栈；计算走 remote provider，需平台登录）
+uvx --from "mflowy[mcp]" mflowy-mcp
+
+# 轻量分析（数据域随 [mcp] 随行，无建模重栈，无需 CPU 索引参数）
+uvx --from "mflowy[mcp]" mflowy data_profile '{"file_path": "..."}'
 
 # 挂载第三方插件包（安装即注册）
-uvx --from "mflowy[mcp,model]" --with mflowy-extra mflowy-mcp
+uvx --from "mflowy[mcp,local]" --with mflowy-extra mflowy-mcp
 
 # 或常规安装（pip / uv pip）
-pip install "mflowy[mcp,model]"
+pip install "mflowy[mcp,local]"
 ```
 
 MCP 客户端配置（stdio）——[`.mcp.json.example`](.mcp.json.example) 为模板：
@@ -143,8 +146,8 @@ MCP 客户端配置（stdio）——[`.mcp.json.example`](.mcp.json.example) 为
       "args": [
         "--index-strategy", "unsafe-best-match",  // torch CPU 索引必需（见下方「启动说明」）
         "--default-index", "https://mirrors.aliyun.com/pypi/simple/",  // 可选：镜像
-        "--index", "https://download.pytorch.org/whl/cpu",  // [deep] 需要（仅 MLP）
-        "--from", "mflowy[mcp,model]",
+        "--index", "https://download.pytorch.org/whl/cpu",  // [local] 需要（torch 真合并随行）
+        "--from", "mflowy[mcp,local]",
         "mflowy-mcp"
       ]
     }
@@ -178,8 +181,8 @@ uv run mflowy-mcp                                             # MCP server（std
 
 - **入口名 `mflowy-mcp`**：刻意避开 mcp SDK 自带的同名 `mcp` CLI（`mcp.cli:app`）——uvx 解析 `mcp` 命令时可能命中 SDK 侧导致启动失败
 - **extras 内联在 `--from` spec**：uvx 的 `--extra` 需新版 uv，内联写法兼容性最好
-- **离线分发用 wheels**：`make build-whl` 产出六 wheel（`dist/*.whl`，六 distribution 锁步），`uv pip install --find-links <dist目录> "mflowy[model]"` 安装（K8s 镜像构建 / 内网场景；Dockerfile 即此形态，支持 `--build-arg MFLOWY_EXTRA_MODULES=...` 定制插件）
-- **torch CPU 索引**（`--index` pytorch-cpu + `--index-strategy unsafe-best-match`）为 [deep] 必需（仅 MLP；`mflowy[model]` CPU 建模栈干净安装无需索引）：uvx 不读 pyproject 的 `[tool.uv.sources]`，缺省时 torch 解析为 CUDA 全家桶（2–3GB）；`unsafe-best-match` 须与 pytorch 索引同用，否则 first-index 策略会因该索引上的旧版 requests 解析失败
+- **离线分发用 wheels**：`make build-whl` 产出六 wheel（`dist/*.whl`，六 distribution 锁步），`uv pip install --find-links <dist目录> "mflowy[mcp,local]"` 安装（K8s 镜像构建 / 内网场景；Dockerfile 即此形态，支持 `--build-arg MFLOWY_EXTRA_MODULES=...` 定制插件）
+- **torch CPU 索引**（`--index` pytorch-cpu + `--index-strategy unsafe-best-match`）为 [local] 必需（`mflowy[local]` / `mflowy[mcp,local]`——torch 随 [local] 真合并随行；纯 `mflowy[mcp]` 瘦装不装 torch 无需索引）：uvx 不读 pyproject 的 `[tool.uv.sources]`，缺省时 torch 解析为 CUDA 全家桶（2–3GB）；`unsafe-best-match` 须与 pytorch 索引同用，否则 first-index 策略会因该索引上的旧版 requests 解析失败
 
 ## 遥测（Telemetry）
 
