@@ -14,10 +14,9 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
-from .study import ATTR_LABEL, ATTR_SIGNAL, ATTR_SOURCE
+from .study import ATTR_LABEL, ATTR_SIGNAL, ATTR_SOURCE, params_key
 
 
 def _recommendation_units(study: Any, *, epoch_start: int) -> list[dict[str, Any]]:
@@ -32,7 +31,7 @@ def _recommendation_units(study: Any, *, epoch_start: int) -> list[dict[str, Any
         label = attrs.get(ATTR_LABEL)
         if label not in ("close", "severe_mismatch"):
             continue  # 无标签 / not_counted / 操作事故不计
-        key = json.dumps(trial.params, sort_keys=True, separators=(",", ":"), default=str)
+        key = params_key(trial.params)
         unit = units.setdefault(key, {"close": 0, "severe": 0, "last_number": trial.number})
         if label == "close":
             unit["close"] += 1

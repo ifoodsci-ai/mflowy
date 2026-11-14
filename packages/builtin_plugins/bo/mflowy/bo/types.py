@@ -158,7 +158,6 @@ type Rule = Union[AllRule, AnyRule, NotRule, AtomRule]
 
 # 判别联合按 op 键判别（各 op 值域不相交）
 type DiscriminatedRule = Annotated[_Rule, Field(discriminator="op")]
-type DiscriminatedDim = SpaceDim
 
 
 class SignalWindow(BaseModel):
@@ -187,7 +186,7 @@ class BOCard(BaseModel):
     # ── 空间组（同一性：变更 = 重建 study）────────────────────────────────────
     target_column: str = Field(min_length=1)
     direction: Literal["maximize", "minimize", "match"]
-    search_space: dict[str, DiscriminatedDim] = Field(min_length=1)
+    search_space: dict[str, SpaceDim] = Field(min_length=1)
 
     # ── 策略组（变更不重建、不升版本号）──────────────────────────────────────
     # 业务目标带：match 必填；max/min 可选作业务门。软约束唯一形态 = 此标量（构造性隔离）

@@ -1714,6 +1714,7 @@ name = "mflowy-bo"
 version = "0.2.0"
 source = { editable = "packages/builtin_plugins/bo" }
 dependencies = [
+    { name = "mflowy-driver" },
     { name = "mflowy-model" },
     { name = "mflowy-utils" },
     { name = "numpy" },
@@ -1726,6 +1727,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "mflowy-driver", editable = "packages/driver" },
     { name = "mflowy-model", editable = "packages/builtin_plugins/model" },
     { name = "mflowy-utils", editable = "packages/utils" },
     { name = "numpy", specifier = ">=2.0.0" },

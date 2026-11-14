@@ -333,6 +333,9 @@ def rebind_model(study: Any, *, new_run_id: str) -> dict[str, Any]:
     archive = dict(attrs.get(ATTR_SIGNAL_ARCHIVE) or {})
     if ATTR_SIGNAL in attrs:
         archive[old_run_id] = attrs[ATTR_SIGNAL]
+    # 重绑已归档 run_id（回滚旧模型，#182 R3）：覆盖该键归档、重新计数——旧纪元
+    # 归档清出，本纪元关闭时以新计数覆写该键
+    archive.pop(new_run_id, None)
     last_number = max((t.number for t in study.get_trials(deepcopy=False)), default=-1)
     fresh = {
         "epoch_start": last_number + 1,
@@ -348,7 +351,9 @@ def rebind_model(study: Any, *, new_run_id: str) -> dict[str, Any]:
     return {"archived_run_id": old_run_id, "reset": fresh}
 
 
-def _params_key(params: dict[str, Any]) -> str:
+def params_key(params: dict[str, Any]) -> str:
+    """trial 参数 → 分组键（在途去重与推荐归组共用单源——排序键 + ensure_ascii 保持
+    非类别值取值聚合稳定）。"""
     return json.dumps(params, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
 
 

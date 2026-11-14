@@ -52,9 +52,11 @@ def _open_with_dims(study_db: str) -> tuple[Any, dict[str, SpaceDim], Path]:
 
 def _running_trial(st: Any, number: int) -> Any:
     """按号取在途 trial；不存在/已终态 fail-loud 带现终态与 attrs（#180 R5）。"""
+    import optuna
+
     for t in st.get_trials(deepcopy=False):
         if t.number == number:
-            if not str(t.state).endswith("RUNNING"):
+            if t.state != optuna.trial.TrialState.RUNNING:
                 raise ValueError(
                     f"trial#{number} 已终态 {t.state}（attrs={dict(t.user_attrs)}）"
                     "——两路回填先到为准、无覆盖入口（#181 R3）"
@@ -88,11 +90,11 @@ def _parse_band(band: list[float] | None) -> tuple[float, float] | None:
     return float(band[0]), float(band[1])
 
 
-def _write_csv_atomic(df: pd.DataFrame, path: Path) -> None:
-    """tmp+rename 原子落盘（红线 3）。"""
+def _write_atomic(path: Path, writer: Any) -> None:
+    """tmp+rename 原子落盘（红线 3）——writer 收 tmp 路径（to_csv/to_parquet 共用形状）。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    df.to_csv(tmp, index=False)
+    writer(tmp)
     os.replace(tmp, path)
 
 
@@ -110,7 +112,7 @@ def bo_load_or_init(
     ] = None,
     db: Annotated[
         str | None,
-        Field(description="既有 study db 绝对路径（开局锚二：续用或迁移式重建的源；其他五工具的 study_db 即此路径"),
+        Field(description="既有 study db 绝对路径（开局锚二：续用或迁移式重建的源；其他五工具的 study_db 即此路径）"),
     ] = None,
     target_column: Annotated[str | None, Field(description="目标列名（direction 键目标列；data 锚开局必填）")] = None,
     direction: Annotated[
@@ -193,12 +195,7 @@ def bo_load_or_init(
             raise ValueError(
                 "db 锚续用不收 data（意图不明）——续用只传 db；特征空间变更重建请一并传 search_space + direction（data 可作新增维补值源）"
             )
-        _study.assert_min_history(sum(1 for t in st.get_trials(deepcopy=False) if str(t.state).endswith("COMPLETE")))
-        out: dict[str, Any] = {"action": "continue", "study_db": str(source_path)}
-        if st.user_attrs[_study.ATTR_MODEL]["run_id"] != model_run_id:
-            out["run_id_rebind"] = _study.rebind_model(st, new_run_id=model_run_id)
-        out["signal"] = st.user_attrs.get(ATTR_SIGNAL)
-        return out
+        return _continue_study(st, source_path, model_run_id=model_run_id)
 
     # 指纹比对（同一性 = 空间组 + direction + seed，#178 M1）
     if direction is None:
@@ -209,12 +206,7 @@ def bo_load_or_init(
     if fingerprint == st.user_attrs[_study.ATTR_FINGERPRINT]:
         if data is not None:
             raise ValueError("指纹相符（续用）不收 data——续用只传 db；重建场景指纹必不符，请核对空间组/direction/seed")
-        _study.assert_min_history(sum(1 for t in st.get_trials(deepcopy=False) if str(t.state).endswith("COMPLETE")))
-        out = {"action": "continue", "study_db": str(source_path)}
-        if st.user_attrs[_study.ATTR_MODEL]["run_id"] != model_run_id:
-            out["run_id_rebind"] = _study.rebind_model(st, new_run_id=model_run_id)
-        out["signal"] = st.user_attrs.get(ATTR_SIGNAL)
-        return out
+        return _continue_study(st, source_path, model_run_id=model_run_id)
 
     # ── rebuild：迁移式重建（特征空间变更，#180 R4）─────────────────────────
     return _study.rebuild_from_db(
@@ -263,6 +255,20 @@ def _require_identity_attrs(st: Any) -> None:
         raise ValueError(f"study db 缺身份键 {missing}——非 bo_load_or_init 产物（db = 全部状态的唯一真源）")
 
 
+def _continue_study(st: Any, source_path: Path, *, model_run_id: str) -> dict[str, Any]:
+    """续用既有 study：db 锚 20 门 + run_id 换绑（信号归档重置一气呵成）+ 信号快照。"""
+    import optuna
+
+    _study.assert_min_history(
+        sum(1 for t in st.get_trials(deepcopy=False) if t.state == optuna.trial.TrialState.COMPLETE)
+    )
+    out: dict[str, Any] = {"action": "continue", "study_db": str(source_path)}
+    if st.user_attrs[_study.ATTR_MODEL]["run_id"] != model_run_id:
+        out["run_id_rebind"] = _study.rebind_model(st, new_run_id=model_run_id)
+    out["signal"] = st.user_attrs.get(ATTR_SIGNAL)
+    return out
+
+
 # ── ② 推荐：ask（完整 schema 候选 csv，无预测列——#179 R1）──────────────────
 
 
@@ -293,7 +299,7 @@ def bo_ask(
     st, dims, path = _open_with_dims(study_db)
     dists = _study.distributions_of(dims)
     running: set[str] = {
-        _study._params_key(t.params) for t in st.get_trials(deepcopy=False, states=(optuna.trial.TrialState.RUNNING,))
+        _study.params_key(t.params) for t in st.get_trials(deepcopy=False, states=(optuna.trial.TrialState.RUNNING,))
     }
     schema: list[str] = list(st.user_attrs[ATTR_SCHEMA])
 
@@ -303,7 +309,7 @@ def bo_ask(
     while len(picked) < n_candidates and attempts < max_attempts:
         attempts += 1
         trial = st.ask(fixed_distributions=dists)
-        key = _study._params_key(trial.params)
+        key = _study.params_key(trial.params)
         if key in running:
             _study.set_trial_attrs_before_tell(st, trial.number, {ATTR_REASON: "diversity_rejected"})
             st.tell(trial.number, state=optuna.trial.TrialState.FAIL)
@@ -319,7 +325,7 @@ def bo_ask(
             [{"trial": number, **{c: None for c in schema}, **dict(params)} for number, params in picked]
         )
         csv_path = str(path.parent / f"ask_{picked[0][0]}_{picked[-1][0]}.csv")
-        _write_csv_atomic(ask_df, Path(csv_path))
+        _write_atomic(Path(csv_path), lambda tmp: ask_df.to_csv(tmp, index=False))
     return {
         "study_db": str(path),
         "n_asked": len(picked),
@@ -546,10 +552,7 @@ def _apply_tell_row(
                 attrs[ATTR_LABEL] = "severe_mismatch"
                 attrs[ATTR_SOURCE] = "recommended"
             _study.set_trial_attrs_before_tell(st, number, attrs)
-            st.tell(
-                number,
-                state=getattr(optuna.trial.TrialState, state_name),
-            )
+            st.tell(number, state=optuna.trial.TrialState[state_name])
             return {"trial": number, "status": "failed", "state": state_name}
         if status == "abandoned":
             _study.set_trial_attrs_before_tell(st, number, {ATTR_REASON: "abandoned"})
@@ -656,8 +659,5 @@ def bo_export_dataset(
         rows.append(row)
     df = pd.DataFrame(rows).reindex(columns=[*schema, "measured_value", "round", "replicate_of", "source"])
     out = Path(output_path)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    tmp = out.with_suffix(out.suffix + ".tmp")
-    df.to_parquet(tmp, index=False)
-    os.replace(tmp, out)
+    _write_atomic(out, lambda tmp: df.to_parquet(tmp, index=False))
     return {"output_path": str(out), "n_rows": len(df), "columns": list(df.columns)}

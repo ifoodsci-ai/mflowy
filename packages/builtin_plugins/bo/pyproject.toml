@@ -9,6 +9,7 @@ requires-python = ">=3.12"
 # 血统 + ModelLoader 引用合法）；零 extra 面（#184：bo 无独占依赖栈，不设 mflowy[bo]）
 dependencies = [
     "mflowy-model",
+    "mflowy-driver",  # search_input @node/log_search_input 直用 driver（import 即声明，红线 6）
     "mflowy-utils",
     # TPE 单引擎硬依赖（#175 Q1：multivariate+constant_liar 显式开；torch 全线离开 bo）
     "optuna>=4.8",
@@ -50,4 +51,5 @@ include = ["mflowy", "pyproject.toml"]
 
 [tool.uv.sources]
 mflowy-model = { workspace = true }
+mflowy-driver = { workspace = true }
 mflowy-utils = { workspace = true }

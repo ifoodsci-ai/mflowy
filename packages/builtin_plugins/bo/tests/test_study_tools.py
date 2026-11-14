@@ -73,25 +73,25 @@ def test_init_name_collision_fails_loud(tmp_path, study):
         tools.bo_load_or_init(
             study_name="s1",
             model_run_id="r",
-            data=study_study_parquet(tmp_path),
+            data=_history_parquet(tmp_path),
             target_column="yield",
             direction="maximize",
             search_space=SPACE,
         )
 
 
-def study_study_parquet(tmp_path) -> str:
+def _history_parquet(tmp_path) -> str:
     return str(tmp_path / "wet_history.parquet")
 
 
 def test_init_requires_space_direction_target(tmp_path, history):
     with pytest.raises(ValueError, match="必填"):
-        tools.bo_load_or_init(study_name="s3", model_run_id="r", data=study_study_parquet(tmp_path))
+        tools.bo_load_or_init(study_name="s3", model_run_id="r", data=_history_parquet(tmp_path))
     with pytest.raises(ValueError, match="schema 同构"):
         tools.bo_load_or_init(
             study_name="s3",
             model_run_id="r",
-            data=study_study_parquet(tmp_path),
+            data=_history_parquet(tmp_path),
             target_column="yield",
             direction="maximize",
             search_space={"pressure": {"kind": "continuous", "low": 0, "high": 5}},
@@ -103,7 +103,7 @@ def test_match_init_requires_band(tmp_path, history):
         tools.bo_load_or_init(
             study_name="s4",
             model_run_id="r",
-            data=study_study_parquet(tmp_path),
+            data=_history_parquet(tmp_path),
             target_column="yield",
             direction="match",
             search_space=SPACE,
@@ -111,7 +111,7 @@ def test_match_init_requires_band(tmp_path, history):
     out = tools.bo_load_or_init(
         study_name="s4",
         model_run_id="r",
-        data=study_study_parquet(tmp_path),
+        data=_history_parquet(tmp_path),
         target_column="yield",
         direction="match",
         search_space=MATCH_SPACE,
@@ -335,9 +335,16 @@ def test_signal_run_id_rebind_archives_epoch(study):
     assert re["action"] == "continue"
     assert re["run_id_rebind"]["archived_run_id"] == "run-A"
     assert re["run_id_rebind"]["reset"]["positive"] == 0  # 清零一气呵成
-    # 重绑已归档 run_id（回滚旧模型）= 覆盖该键归档、重新计数
+    # 重绑已归档 run_id（回滚旧模型）= 覆盖该键归档、重新计数（#182 R3——A→B→A：
+    # B 纪元归档进 archive[B]，A 的旧归档被清出待本纪元关闭覆写）
     re2 = tools.bo_load_or_init(study_name="s1", model_run_id="run-A", db=study["study_db"])
     assert re2["run_id_rebind"]["archived_run_id"] == "run-B"
+    from mflowy.bo import study as study_mod
+
+    st = study_mod.open_study(__import__("pathlib").Path(study["study_db"]))
+    archive = st.user_attrs[study_mod.ATTR_SIGNAL_ARCHIVE]
+    assert "run-A" not in archive and "run-B" in archive  # 覆盖该键归档 + 旧纪元落账
+    assert st.user_attrs[study_mod.ATTR_SIGNAL]["positive"] == 0  # 重新计数
 
 
 # ── 导出（#182 R1）────────────────────────────────────────────────────────────
