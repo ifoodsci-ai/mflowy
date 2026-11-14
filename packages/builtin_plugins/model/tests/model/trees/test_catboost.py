@@ -2,29 +2,16 @@
 
 import numpy as np
 import pandas as pd
-import pytest
 from mflowy.model.model._catboost import model_cls
 from mflowy.model.model.types import TASKTYPE
 
 
-@pytest.fixture
-def sample_data():
-    X = pd.DataFrame(
-        {
-            "feature1": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-            "feature2": [10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
-        }
-    )
-    y_reg = pd.DataFrame({"target": [1.1, 2.2, 3.3, 4.4, 5.5, 6.6, 7.7, 8.8, 9.9, 11.0]})
-    y_clf = pd.DataFrame({"target": [0, 0, 0, 0, 1, 1, 1, 1, 1, 1]})
-    return X, y_reg, y_clf
-
-
+# sample_data 夹具收敛单源住本目录 conftest.py（#224 P3）
 def _make_est(task, **params):
     return model_cls[task](**params)
 
 
-def test_catboost_regression(sample_data):
+def test_catboost_regression(sample_data, fit_floors):
     X, y_reg, _ = sample_data
 
     est = _make_est(TASKTYPE.REGRESSION, iterations=10, verbose=False)
@@ -32,9 +19,10 @@ def test_catboost_regression(sample_data):
 
     y_pred = est.predict(X)
     assert len(y_pred) == len(y_reg)
+    fit_floors.reg(y_pred, y_reg)
 
 
-def test_catboost_classification(sample_data):
+def test_catboost_classification(sample_data, fit_floors):
     X, _, y_clf = sample_data
 
     est = _make_est(TASKTYPE.CLASSIFICATION, iterations=10, verbose=False)
@@ -42,9 +30,10 @@ def test_catboost_classification(sample_data):
 
     y_pred = est.predict(X)
     assert set(y_pred).issubset({0, 1})
+    fit_floors.clf(y_pred, y_clf)
 
 
-def test_catboost_predict_proba(sample_data):
+def test_catboost_predict_proba(sample_data, fit_floors):
     X, _, y_clf = sample_data
 
     est = _make_est(TASKTYPE.CLASSIFICATION, iterations=10, verbose=False)
@@ -54,7 +43,7 @@ def test_catboost_predict_proba(sample_data):
     assert y_proba.shape == (len(X), 2)
 
 
-def test_catboost_feature_importance(sample_data):
+def test_catboost_feature_importance(sample_data, fit_floors):
     X, y_reg, _ = sample_data
 
     est = _make_est(TASKTYPE.REGRESSION, iterations=10, verbose=False)
@@ -66,7 +55,7 @@ def test_catboost_feature_importance(sample_data):
     assert (importance.iloc[0] >= 0).all()
 
 
-def test_catboost_multiclass(sample_data):
+def test_catboost_multiclass(sample_data, fit_floors):
     """fit override 增量设 loss_function=MultiClass"""
     X = sample_data[0]
     y_multi = pd.DataFrame({"target": [0, 0, 1, 1, 1, 2, 2, 2, 2, 2]})
@@ -79,7 +68,7 @@ def test_catboost_multiclass(sample_data):
     assert set(y_pred_flat).issubset({0, 1, 2})
 
 
-def test_catboost_multioutput_regression_sets_multirmse(sample_data):
+def test_catboost_multioutput_regression_sets_multirmse(sample_data, fit_floors):
     """多目标回归必须显式 MultiRMSE（防 silent 错训——SubTask 契约）"""
     X = sample_data[0]
     y_multi = pd.DataFrame(
@@ -94,7 +83,7 @@ def test_catboost_multioutput_regression_sets_multirmse(sample_data):
     assert est.get_params()["loss_function"] == "MultiRMSE"
 
 
-def test_catboost_with_validation_set(sample_data):
+def test_catboost_with_validation_set(sample_data, fit_floors):
     X, y_reg, _ = sample_data
 
     est = _make_est(

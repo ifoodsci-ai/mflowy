@@ -175,6 +175,14 @@ def _builtin_keys(*, edges: bool) -> list[str]:
     return sorted(key for key, ep in discover().items() if ep.group == GROUPS[0] and key.startswith("edges__") == edges)
 
 
+def test_builtin_catalog_nonempty():
+    """收集非空守卫（#224 P1）：对账 parametrize 的收集面在 entry points 缺失环境
+    下会收集 0 例整体静默假绿（同文件 :81 toolkit_hits 先例）——目录规模地板钉住
+    「收集真的吃到了目录」（当前 83 节点 / 5 边，地板取审计时点下界）。"""
+    assert len(_builtin_keys(edges=False)) >= 79
+    assert len(_builtin_keys(edges=True)) >= 1
+
+
 def _load(loader, key: str):
     try:
         return loader(key)

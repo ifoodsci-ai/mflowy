@@ -171,6 +171,47 @@ class TestHappyPath:
         assert len(result) == 2
 
 
+class TestDirectionality:
+    """方向性（#224 P3）：单调 predict 下 maximize/minimize 真选了更优输入——
+    恒常量 mock 无梯度，argmax/argmin 语义从未被验证（directions 写反也绿）。"""
+
+    @staticmethod
+    def _monotonic_loader():
+        """y ≡ x 的恒等门面：predict(x) = x（方向语义的唯一信号源）"""
+        from mflowy.model.model.types import ModelLoader
+
+        pipe = MagicMock()
+        pipe.y_names = ["y"]
+        pipe.x_names = ["x"]
+        pipe.predict.side_effect = lambda X: np.array([float(X["x"].iloc[0])])
+        return ModelLoader(name="XGB", _pipe=pipe)
+
+    def test_maximize_pushes_x_to_upper_bound(self):
+        result = search_input(
+            model=self._monotonic_loader(),
+            load=pd.DataFrame({"x": [0.5]}),
+            directions={"y": "maximize"},
+            columns={"x": ContinuousSpace(0.0, 1.0)},
+            n_trials=40,
+            random_seed=42,
+        )
+        # y ≡ x 恒等（predict 接线正确）+ best 靠上界（argmax 真选更优）
+        np.testing.assert_allclose(result["y"].to_numpy(), result["x"].to_numpy())
+        assert result["y"].max() >= 0.85
+
+    def test_minimize_pushes_x_to_lower_bound(self):
+        result = search_input(
+            model=self._monotonic_loader(),
+            load=pd.DataFrame({"x": [0.5]}),
+            directions={"y": "minimize"},
+            columns={"x": ContinuousSpace(0.0, 1.0)},
+            n_trials=40,
+            random_seed=42,
+        )
+        np.testing.assert_allclose(result["y"].to_numpy(), result["x"].to_numpy())
+        assert result["y"].min() <= 0.15
+
+
 class TestCrossRules:
     def test_validate_returns_false_prunes_trial(self, mock_loader, tmp_path):
         """validate(X_row) 返回 False → trial 被 PRUNED，不在输出里"""

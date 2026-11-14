@@ -38,8 +38,8 @@ class TestExcelLoader:
 
         loaded_df = excel(source=str(excel_file), sheet_name="Sheet2")
 
-        assert "X" in loaded_df.columns
-        assert "Y" in loaded_df.columns
+        assert list(loaded_df.columns) == ["X", "Y"]
+        assert loaded_df["X"].tolist() == [5, 6] and loaded_df["Y"].tolist() == [7, 8]  # 值级：确是 Sheet2
 
     def test_load_multiple_sheets(self, tmp_path):
         """测试分别加载不同工作表"""
@@ -56,8 +56,8 @@ class TestExcelLoader:
 
         assert isinstance(result1, pd.DataFrame)
         assert isinstance(result2, pd.DataFrame)
-        assert "A" in result1.columns
-        assert "B" in result2.columns
+        assert result1["A"].tolist() == [1, 2]  # 值级（#224 P3）：Sheet1/Sheet2 各自命中
+        assert result2["B"].tolist() == [3, 4]
 
     def test_file_not_found(self, tmp_path):
         """绝对路径不存在 → FileNotExisted"""
@@ -95,6 +95,8 @@ class TestExcelLoader:
 
         assert "Name" in loaded_df.columns
         assert "Age" in loaded_df.columns
+        assert loaded_df["Name"].tolist() == ["Alice", "Bob"]  # 值级（#224 P3）
+        assert loaded_df["Age"].tolist() == [25, 30]
 
     def test_load_without_header(self, tmp_path):
         """测试不带标题行的文件"""
@@ -105,6 +107,7 @@ class TestExcelLoader:
         loaded_df = excel(source=str(excel_file), header=None)
 
         assert loaded_df.shape == (2, 2)
+        assert loaded_df[0].tolist() == [1, 3] and loaded_df[1].tolist() == [2, 4]  # 值级（#224 P3）
 
     def test_load_with_specific_columns(self, tmp_path):
         """测试加载指定列"""
@@ -116,6 +119,7 @@ class TestExcelLoader:
 
         assert list(loaded_df.columns) == ["A", "C"]
         assert loaded_df.shape == (2, 2)
+        assert loaded_df["A"].tolist() == [1, 2] and loaded_df["C"].tolist() == [5, 6]  # 值级（#224 P3）
 
     def test_load_with_skiprows(self, tmp_path):
         """测试跳过行"""
@@ -126,6 +130,11 @@ class TestExcelLoader:
         loaded_df = excel(source=str(excel_file), skiprows=1)
 
         assert loaded_df.shape[0] == 3
+        assert loaded_df.iloc[:, 0].tolist() == [
+            1,
+            2,
+            3,
+        ]  # 值级（#224 P3）：skiprows 吃原表头后首数据行成新表头，剩余 = [1,2,3]
 
     def test_load_with_nrows(self, tmp_path):
         """测试限制读取行数"""
@@ -136,6 +145,7 @@ class TestExcelLoader:
         loaded_df = excel(source=str(excel_file), nrows=10)
 
         assert loaded_df.shape[0] == 10
+        assert loaded_df["A"].tolist() == list(range(10))  # 值级（#224 P3）：前 10 行且从 0 起
 
     def test_load_with_dtype(self, tmp_path):
         """测试指定数据类型"""
@@ -146,6 +156,7 @@ class TestExcelLoader:
         loaded_df = excel(source=str(excel_file), dtype={"int_col": "int64"})
 
         assert loaded_df["int_col"].dtype == "int64"
+        assert loaded_df["str_col"].tolist() == ["a", "b", "c"]  # 值级（#224 P3）：dtype 之外内容不串
 
     def test_unicode_content(self, tmp_path):
         """测试 Unicode 内容"""

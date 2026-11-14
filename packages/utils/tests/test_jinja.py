@@ -1,5 +1,7 @@
 """测试 utils/jinja.py 模块"""
 
+import pytest
+from jinja2 import UndefinedError
 from mflowy.utils.jinja import JinjaEnvRegistry, get_yaml_template_env
 
 
@@ -18,17 +20,20 @@ class TestJinjaEnvRegistry:
         assert registry._initialized is True
         assert isinstance(registry._yaml_envs, dict)
 
-    def test_get_yaml_env(self, tmp_path):
-        """测试获取 YAML 环境"""
+    def test_get_yaml_env_renders_sibling_template_strictly(self, tmp_path):
+        """render 消费契约（#224 P3：``env is not None``/hasAttr 同义反复退役）：
+        同目录模板可取可渲染 + StrictUndefined（未定义变量报错而非静默空串）"""
         registry = JinjaEnvRegistry()
 
         config_file = tmp_path / "config.yaml"
         config_file.write_text("test: data")
+        (tmp_path / "t.j2").write_text("hello {{ who }}")
 
         env = registry.get_yaml_env(config_file)
 
-        assert env is not None
-        assert hasattr(env, "globals")
+        assert env.get_template("t.j2").render(who="mflowy") == "hello mflowy"
+        with pytest.raises(UndefinedError):
+            env.get_template("t.j2").render()  # StrictUndefined 契约
 
     def test_yaml_env_cached(self, tmp_path):
         """测试 YAML 环境缓存"""
@@ -59,9 +64,12 @@ class TestConvenienceFunctions:
     """测试便捷函数"""
 
     def test_get_yaml_template_env(self, tmp_path):
-        """测试获取 YAML 模板环境"""
+        """便捷函数 = 注册表单源（缓存同 env），render 消费可用（#224 P3）"""
         config_file = tmp_path / "config.yaml"
         config_file.write_text("test: data")
+        (tmp_path / "t.j2").write_text("hi {{ x }}")
 
         env = get_yaml_template_env(config_file)
-        assert env is not None
+
+        assert env is JinjaEnvRegistry().get_yaml_env(config_file)  # 同一缓存实例
+        assert env.get_template("t.j2").render(x=1) == "hi 1"

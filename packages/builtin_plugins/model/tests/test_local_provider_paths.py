@@ -2,6 +2,8 @@
 
 predict / inverse_optimization 的 data 可带 :func 后缀（经 load.file → python_loader），
 exists/set_task_dir 必须作用在拆掉后缀的路径上，报错信息不得包含 :func 残留。
+#224 P4：predict / inverse_optimization 成功链正路径（此前仅错误路径，正路径只有
+人肉 make e2e 兜底）。
 """
 
 import asyncio
@@ -102,3 +104,80 @@ class TestAnchorTaskDir:
             assert self._anchor(steps) == _P("/pinned/dir")
         finally:
             reset_task_dir(token)
+
+
+class TestPredictInversePositivePath:
+    """#224 P4：成功链正路径——tmp gen.py + 真 mlflow（root conftest autouse 已把
+    tracking 隔离进本用例 tmp sqlite）落 name='final' 已训模型，断言 JobOutcome.finished
+    与节点值契约（py:func 加载 → model__loader 真取回 → predict/search_input 真算）。"""
+
+    @pytest.fixture(autouse=True)
+    def _task_dir(self, tmp_path):
+        """DAG 中间件的实验工件根锚进 tmp（ensure_experiment 取 task_dir/.mlruns）。"""
+        from mflowy.utils.path import reset_task_dir, set_task_dir
+
+        token = set_task_dir(tmp_path / "gen.py")
+        yield
+        reset_task_dir(token)
+
+    @pytest.fixture
+    def trained_run(self, tmp_path):
+        import mlflow
+        import numpy as np
+        import pandas as pd
+        from mflowy.model.model._model import build_pipeline
+        from mflowy.model.model._random_forest import model_cls
+        from mflowy.model.model.types import TASKTYPE
+        from mflowy.utils.mlflow import setup
+
+        setup()  # tracking = autouse 注入的本用例 tmp sqlite
+        from mlflow.tracking import MlflowClient
+
+        client = MlflowClient()
+        exp_id = client.create_experiment("p4-positive", artifact_location=(tmp_path / "arts").as_uri())
+        X = pd.DataFrame({"f1": np.arange(20, dtype=float), "f2": np.arange(20, dtype=float) * 2})
+        y = pd.DataFrame({"target": X.f1 * 3 + 1.0})
+        pipe = build_pipeline(
+            TASKTYPE.REGRESSION, model_cls, None, {"n_estimators": 30, "random_state": 0, "n_jobs": 1}
+        )
+        pipe.fit(X, y)
+        pipe.set_names(y.columns.tolist())
+        from mflowy.utils.mlflow import log_model
+
+        with mlflow.start_run(experiment_id=exp_id) as run:
+            mlflow.set_tags({"mflowy.step": "model.RF"})
+            # 生产同款（_pipeline.py save 单源）：pickle 格式——skops 默认拒自定义类型
+            log_model(pipe, name="final", input_example=X.head(1), serialization_format="pickle")
+
+        gen = tmp_path / "gen.py"
+        gen.write_text(
+            "import pandas as pd\n"
+            "def load() -> pd.DataFrame:\n"
+            "    return pd.DataFrame({'f1': [1.0, 2.0, 3.0, 4.0, 5.0], 'f2': [2.0, 4.0, 6.0, 8.0, 10.0]})\n",
+            encoding="utf-8",
+        )
+        return run.info.run_id, gen
+
+    def test_predict_then_inverse_roundtrip(self, trained_run):
+        run_id, gen = trained_run
+
+        outcome = asyncio.run(LocalJobProvider().predict(data=f"{gen}:load", model=run_id))
+        assert outcome.status == "finished" and outcome.dag_result is not None
+        dag = outcome.dag_result
+        assert dag.status == "finished", dag.error
+        pred = next(r for r in dag.runs if r.node == "predict")
+        df = pred.value
+        assert list(df.columns) == ["target"] and len(df) == 5
+        # 值级下限：y=f1*3+1 单调可拟合（同 #224 P3 容差口径）
+        import numpy as np
+
+        np.testing.assert_allclose(df["target"].to_numpy(), [4.0, 7.0, 10.0, 13.0, 16.0], rtol=0.25)
+
+        outcome2 = asyncio.run(
+            LocalJobProvider().inverse_optimization(
+                data=f"{gen}:load", model=run_id, direction={"target": "maximize"}, n_trials=4, seed=7
+            )
+        )
+        assert outcome2.status == "finished" and outcome2.dag_result is not None
+        si = next(r for r in outcome2.dag_result.runs if r.node == "search_input")
+        assert len(si.value) >= 1 and "target" in si.value.columns  # complete trials 带目标列

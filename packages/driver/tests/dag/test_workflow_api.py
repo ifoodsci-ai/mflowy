@@ -2,37 +2,55 @@
 
 from mflowy.driver.config import Conf
 from mflowy.driver.dag import DAG, DAGResult
-from mflowy.driver.discover import entry
-from mflowy.driver.discover import get_node as discover_get_node
 from mflowy.driver.node import node
 
 
 class TestDAGAPI:
     """测试 DAG 的公开 API 设计"""
 
-    def test_run_is_only_public_interface(self):
-        """验证只有 run() 是公开接口"""
+    def test_public_surface_is_pinned(self):
+        """公开面钉死（#224 P1：原「only public interface」hasattr 反射无负例）：
+        执行通道唯 run，投影 = walk/to_graph/mermaid，数据面 = nodes 属性——
+        扩公开面须改本测（API 面即契约面）"""
         workflow = DAG(
             conf=Conf(name="test"),
             nodes=[],
         )
-
-        # 公开接口
-        assert hasattr(workflow, "run")
+        public_methods = {n for n in dir(workflow) if not n.startswith("_") and callable(getattr(workflow, n))}
+        assert public_methods == {"run", "walk", "to_graph", "mermaid"}
         assert callable(workflow.run)
-
-        # 全节点表
-        assert hasattr(workflow, "nodes")
+        assert hasattr(workflow, "nodes")  # 数据面（属性，非执行通道）
 
     def test_run_returns_workflow_result(self):
         """run() 的返回契约是结构化 DAGResult"""
         assert DAG.run.__annotations__["return"] is DAGResult
 
-    def test_run_executes_handlers(self):
-        """测试 DAG.run() 执行已注册的 node"""
-        # csv 已在 load 模块中注册，直接验证
-        assert discover_get_node("load__csv") is not None
-        assert entry("load__csv") is not None
+    def test_run_executes_handlers(self, fake_plugins, fake_tracking, tmp_path):
+        """DAG.run() 真执行已注册 node（#224 P1：原版只验目录在场、名不副实，且
+        真插件键 load__csv 无 driver-only skip 守卫）——值经数据边到达 consumer，
+        NodeResult.value 可断言"""
+        from mflowy.driver.builder import Builder
+
+        @node()
+        def _producer(**kw) -> int:
+            return 41
+
+        @node()
+        def _consumer(load, **_):
+            return sum(load) + 1  # 组寻址（load ns）收集形态 = 声明序迭代器（context 注入契约）
+
+        fake_plugins.setdefault("load", {})["producer"] = _producer
+        fake_plugins.setdefault("model", {})["consumer"] = _consumer
+
+        yaml_file = tmp_path / "w.yaml"
+        yaml_file.write_text(
+            "name: run_test\ndescription: ''\nflow:\n- load__producer:\n    name: A\n- model__consumer:\n    name: B\n",
+            encoding="utf-8",
+        )
+        result = Builder(yaml_file).build().run()
+
+        assert result.status == "finished"
+        assert [r.value for r in result.runs] == [41, 42]
 
 
 class TestPreviewParamRemoved:
