@@ -2,7 +2,7 @@
 
 安装形态即用法::
 
-    uvx --from "mflowy[mcp,model]" mflowy-mcp          # MCP server
+    uvx --from "mflowy[mcp,local]" mflowy-mcp          # MCP server
     uvx --from "mflowy[stats]" mflowy data_profile '...'  # CLI
 
 SDK 与遥测三依赖是 ``[mcp]`` extra（非硬依赖）——CLI/裸装路径零 SDK 可用。

@@ -1,9 +1,11 @@
 # mflowy-model（建模域）
 
 MFlowy 建模域包：建模训练 POMDP 的动作域——x_y / cv / x_transformer / model /
-plot(model_evaluation + model_interpretability)。CPU 建模栈为硬依赖；torch 栈在 `[deep]`
-extra（uvx 安装需 `--index https://download.pytorch.org/whl/cpu`，仅 MLP flavor 需要——
-缺它时 `list-nodes` 降级标注，不影响其余能力）。
+plot(model_evaluation + model_interpretability)。本地建模重栈（sklearn/lightgbm/xgboost/
+catboost/shap/optuna + torch，[deep] 真合并）住 `[local]` extra（uvx 安装需
+`--index https://download.pytorch.org/whl/cpu`）；瘦装（裸装 / 聚合 `[mcp]`）= 纯远程形态——
+`list-nodes` 对 model/cv/x_transformer/plot 四目录降级标注 `requires→local`，compute 走
+remote provider，modeling_* 会话工具 fail-loud 带安装提示。
 
 ## 会话 POMDP 元素表（O/S/A/P·T/R）
 
@@ -29,7 +31,7 @@ findings 是真态的多对一投影——同聚合不同病灶不可分；u_inn
 - 共享件：`middlewares/`（log_cv / log_prediction / log_search_input / log_shap_explanation / log_task_evidence——
   副产物统一走中间件落 mlflow 工件）、`plot/`（评估/解释图，主题门面复用 `mflowy.utils.plot`）
 - 类型：`model/types.py`（MetricName / ModelPipeline / ModelLoader；TASKTYPE 再导出自 data）
-- 标注：`extras.py`（`model/mlp → [deep]`，0.2.0 起唯一可选 extra）
+- 标注：`extras.py`（model/cv/x_transformer/plot 四顶层目录 → `[local]`——目录全标，标注 = import 失败时的安装提示，实可用节点不触发降级、无害）
 - 判据：镜像路径有对应测试（`tests/`），`uv sync` 后 `list-nodes` 可见（新模块须重跑 `uv sync`）
 
 ## 族节点两行为派生（#62：extract_search_spaces 空否即判据）
@@ -97,7 +99,7 @@ Serverless 均可。方法签名以 protocol.py 为准（本文不复述，防�
 ```bash
 PYTHONPATH=/srv/my-provider \
 MFLOWY_JOB_PROVIDER=my_pkg.job_provider:MyRemoteProvider \
-uvx --from "mflowy[mcp,model]" mflowy-mcp
+uvx --from "mflowy[mcp,local]" mflowy-mcp
 ```
 
 - `MFLOWY_JOB_PROVIDER`：`local`（默认）或 `module:Class`；模块经宿主 `sys.path` 解析，provider 以标准 Python 包交付

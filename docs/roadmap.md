@@ -9,7 +9,7 @@
 | 能力域 | 覆盖 | 代码位置 |
 | ------ | ---- | -------- |
 | **数据清洗子系统（Clean）** | 数据载入（CSV/Excel/Parquet/HTTP/Python 脚本）、画像与 EDA、缺陷检测算子族（DefectType 封闭枚举）、清洗算子族（词表开放、entry points 注册）、清洗 POMDP 会话（六操作、版本树、终局 U + θ 门、决策日志、可重放清洗计划）、DomainCard 先验分级（survey 剧本编译） | [data 域 README](../packages/builtin_plugins/data/README.md) |
-| **预测模型训练子系统（Model）** | CV 策略（split / SplitSpec）、特征工程、模型族（XGBoost / LightGBM / CatBoost / RandomForest / MLP，torch 栈 `[deep]`）、评估与解释、建模 POMDP 会话（八动作面、combo 冻结、OOF 观察面、diagnose、findings、finish 收编）、compute 工具（modeling / hyperparameters_search / explanation / predict / inverse_optimization，JobProvider 委派）、model-brief / research-review 剧本 | [model 域 README](../packages/builtin_plugins/model/README.md) |
+| **预测模型训练子系统（Model）** | CV 策略（split / SplitSpec）、特征工程、模型族（XGBoost / LightGBM / CatBoost / RandomForest / MLP，本地建模重栈住 model 包 `[local]`）、评估与解释、建模 POMDP 会话（八动作面、combo 冻结、OOF 观察面、diagnose、findings、finish 收编）、compute 工具（modeling / hyperparameters_search / explanation / predict / inverse_optimization，JobProvider 委派）、model-brief / research-review 剧本 | [model 域 README](../packages/builtin_plugins/model/README.md) |
 | **引擎（driver）** | YAML→DAG 增量编译（编译即校验）、平铺键控叙事、参数边三层寻址、LIFO 调度 + 失败血缘剪枝、@node/@edge 插件 SDK、POMDP 会话基座（壳 = 机制，域 Handle = 业务接口） | [driver README](../packages/driver/README.md) |
 | **平台（mcp）** | MCP server（stdio）/ JSON runner / 直接 import 三入口、平台工具组、遥测与同意门、mlflow 观测、OAuth 2.1 登录、会话回收 | [mcp README](../packages/mcp/README.md) |
 | **底座（utils）** | mlflow 封装、jinja 沙箱、脚本安全门、stdout 捕获、原子写；实验追踪（MLflow 全量记录 + 数据血缘 tag） | [utils README](../packages/utils/README.md) |

@@ -1659,17 +1659,12 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-data = [
-    { name = "mflowy-data" },
-]
-deep = [
-    { name = "mflowy-model", extra = ["deep"] },
+local = [
+    { name = "mflowy-model", extra = ["local"] },
 ]
 mcp = [
+    { name = "mflowy-data" },
     { name = "mflowy-mcp", extra = ["mcp"] },
-    { name = "mflowy-model" },
-]
-model = [
     { name = "mflowy-model" },
 ]
 
@@ -1689,16 +1684,15 @@ jupyter = [
 
 [package.metadata]
 requires-dist = [
-    { name = "mflowy-data", marker = "extra == 'data'", editable = "packages/builtin_plugins/data" },
+    { name = "mflowy-data", marker = "extra == 'mcp'", editable = "packages/builtin_plugins/data" },
     { name = "mflowy-driver", editable = "packages/driver" },
     { name = "mflowy-mcp", editable = "packages/mcp" },
     { name = "mflowy-mcp", extras = ["mcp"], marker = "extra == 'mcp'", editable = "packages/mcp" },
     { name = "mflowy-model", marker = "extra == 'mcp'", editable = "packages/builtin_plugins/model" },
-    { name = "mflowy-model", marker = "extra == 'model'", editable = "packages/builtin_plugins/model" },
-    { name = "mflowy-model", extras = ["deep"], marker = "extra == 'deep'", editable = "packages/builtin_plugins/model" },
+    { name = "mflowy-model", extras = ["local"], marker = "extra == 'local'", editable = "packages/builtin_plugins/model" },
     { name = "mflowy-utils", editable = "packages/utils" },
 ]
-provides-extras = ["data", "model", "mcp", "deep"]
+provides-extras = ["mcp", "local"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1793,47 +1787,47 @@ name = "mflowy-model"
 version = "0.2.0"
 source = { editable = "packages/builtin_plugins/model" }
 dependencies = [
-    { name = "catboost" },
     { name = "httpx2" },
-    { name = "lightgbm" },
     { name = "mflowy-data" },
     { name = "mflowy-utils", extra = ["plot"] },
     { name = "numpy" },
-    { name = "optuna" },
     { name = "pandas" },
     { name = "pydantic" },
-    { name = "scikit-learn" },
     { name = "scipy" },
-    { name = "shap" },
-    { name = "xgboost-cpu" },
 ]
 
 [package.optional-dependencies]
-deep = [
+local = [
+    { name = "catboost" },
+    { name = "lightgbm" },
+    { name = "optuna" },
     { name = "pytorch-lightning" },
+    { name = "scikit-learn" },
+    { name = "shap" },
     { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "platform_machine != 'x86_64' and sys_platform == 'darwin'" },
     { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "platform_machine == 'x86_64' or sys_platform != 'darwin'" },
+    { name = "xgboost-cpu" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "catboost", specifier = ">=1.2" },
+    { name = "catboost", marker = "extra == 'local'", specifier = ">=1.2" },
     { name = "httpx2", specifier = ">=2.12" },
-    { name = "lightgbm", specifier = ">=4.6.0" },
+    { name = "lightgbm", marker = "extra == 'local'", specifier = ">=4.6.0" },
     { name = "mflowy-data", editable = "packages/builtin_plugins/data" },
     { name = "mflowy-utils", extras = ["plot"], editable = "packages/utils" },
     { name = "numpy", specifier = ">=2.0.0" },
-    { name = "optuna", specifier = ">=4.8.0" },
+    { name = "optuna", marker = "extra == 'local'", specifier = ">=4.8.0" },
     { name = "pandas", specifier = ">=2.2,<3" },
     { name = "pydantic", specifier = ">=2.13.4" },
-    { name = "pytorch-lightning", marker = "extra == 'deep'", specifier = ">=2.6.5" },
-    { name = "scikit-learn", specifier = ">=1.9.0" },
+    { name = "pytorch-lightning", marker = "extra == 'local'", specifier = ">=2.6.5" },
+    { name = "scikit-learn", marker = "extra == 'local'", specifier = ">=1.9.0" },
     { name = "scipy", specifier = ">=1.17.0" },
-    { name = "shap", specifier = ">=0.52.0" },
-    { name = "torch", marker = "extra == 'deep'", specifier = ">=2.12.0", index = "https://download.pytorch.org/whl/cpu" },
-    { name = "xgboost-cpu", specifier = ">=3.0.0" },
+    { name = "shap", marker = "extra == 'local'", specifier = ">=0.52.0" },
+    { name = "torch", marker = "extra == 'local'", specifier = ">=2.12.0", index = "https://download.pytorch.org/whl/cpu" },
+    { name = "xgboost-cpu", marker = "extra == 'local'", specifier = ">=3.0.0" },
 ]
-provides-extras = ["deep"]
+provides-extras = ["local"]
 
 [[package]]
 name = "mflowy-utils"

@@ -29,17 +29,18 @@ Issues = "https://github.com/ifoodsci-ai/mflowy/issues"
 Documentation = "https://github.com/ifoodsci-ai/mflowy#readme"
 
 [project.optional-dependencies]
-# extras = 域选择器（2.0.0 起）：装哪个域包即得哪个域，重栈为域包硬依赖；
-# [deep] = torch 栈（仅 MLP flavor，uvx 需 CPU 索引）；[stats]/[modeling] 已退役
-data = ["mflowy-data"]
-model = ["mflowy-model"]
-# model 随行（#159 §5 落地）：remote 平台工具（ensure/logs/download）的引擎住 model 包
-# platform_client——server 形态必须可用（懒加载 + 零降级：缺则调用 fail-loud）
+# extras = 形态选择器（#216 裁定/#217 落地）：域包直装（mflowy-data / mflowy-model），
+# 聚合 extras 只选形态——[mcp] = server 形态（SDK+遥测+双域完整词表；remote 平台
+# 工具的引擎住 model 包 platform_client，server 分发形态必须可用——懒加载 + 零降级：
+# 缺则调用 fail-loud；纯远程瘦装 server，零本地建模重栈）；[local] = 本地建模重栈
+# （model 包 [local]，[deep] 真合并）。聚合 [data]/[model]/[deep] 已退役（BREAKING）；
+# bo 就绪后随 #210 追加 mflowy-bo 进 [mcp]
 mcp = [
     "mflowy-mcp[mcp]",
+    "mflowy-data",
     "mflowy-model",
 ]
-deep = ["mflowy-model[deep]"]
+local = ["mflowy-model[local]"]
 
 [tool.uv.workspace]
 members = ["packages/utils", "packages/driver", "packages/builtin_plugins/*", "packages/mcp"]

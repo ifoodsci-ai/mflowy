@@ -1,7 +1,7 @@
 """mflowy MCP server 入口（stdio）。
 
 启动方式::
-    uvx --from "mflowy[mcp,model] @ file://$(pwd)" mflowy-mcp  # 完全体（Local dispatch）
+    uvx --from "mflowy[mcp,local] @ file://$(pwd)" mflowy-mcp  # 完全体（Local dispatch）
 
 环境变量::
 

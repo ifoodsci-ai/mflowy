@@ -5,17 +5,14 @@ description = "MFlowy model domain — x_y / cross_validation / x_transformer / 
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
-# CPU 建模栈为硬依赖；torch 栈隔离进 [deep]（uvx 需 CPU 索引，仅装 MLP 时需要）
+# 本地建模重栈（CPU 六件 + torch 两件）隔离进 [local]（#216 裁定 Q1/Q2：与
+# LocalJobProvider / MFLOWY_JOB_PROVIDER=local 词表对齐——extra 语义即 provider
+# 对偶的 local 半边；[deep] 真合并：torch 随一切本地安装，uvx 需 CPU 索引）。
+# 瘦装（裸装 / [mcp] server）= 纯远程形态：词表 requires→local 降级标注 + compute 走 remote provider
 dependencies = [
     "mflowy-data",
     # 图表主题门面（plot 子树共享 mflowy.utils.plot）
     "mflowy-utils[plot]",
-    "scikit-learn>=1.9.0",
-    "lightgbm>=4.6.0",
-    "xgboost-cpu>=3.0.0",
-    "catboost>=1.2",
-    "optuna>=4.8.0",
-    "shap>=0.52.0",
     # 直用科学栈（session/diagnose/report；import 即声明——不靠 sklearn 传递侥幸）
     "numpy>=2.0.0",
     "pandas>=2.2,<3",
@@ -28,7 +25,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-deep = [
+local = [
+    "scikit-learn>=1.9.0",
+    "lightgbm>=4.6.0",
+    "xgboost-cpu>=3.0.0",
+    "catboost>=1.2",
+    "optuna>=4.8.0",
+    "shap>=0.52.0",
     "torch>=2.12.0",
     "pytorch-lightning>=2.6.5",
 ]

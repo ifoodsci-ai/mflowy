@@ -18,7 +18,7 @@ Requirements: Python 3.12+ and [uv](https://docs.astral.sh/uv/).
 ```bash
 git clone https://github.com/ifoodsci-ai/mflowy.git
 cd mflowy
-uv sync --all-extras --all-groups   # all deps (stats + modeling + dev)
+uv sync --all-extras --all-groups   # all deps (mcp + local + dev)
 make test                           # full test suite
 make lint                           # ruff check
 make fmt                            # ruff format
@@ -42,7 +42,7 @@ make fmt                            # ruff format
    - New compute entities register via the `@node` decorator — no manual wiring.
    - Keep new dependencies out of `base` unless truly needed; data-stack
      stacks go into the owning domain package (data/model) or its extras (e.g. model's
-     `[deep]`); aggregate-package extras are domain selectors (`[data]`/`[model]`/`[mcp]`/`[deep]`).
+     `[local]`); aggregate-package extras are form selectors (`[mcp]`/`[local]`).
 3. **Test** — add tests mirroring the code path (`tests/` mirrors `mflowy/`).
    Run `make test` before pushing.
 4. **Lint** — `make lint && make fmt`.

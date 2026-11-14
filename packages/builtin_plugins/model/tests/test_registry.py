@@ -27,7 +27,7 @@ def test_valid_structure_matrix():
 def test_family_mdp_family_declarations_complete():
     """builtin 五族 .mdp_family 声明齐备（尾巴三并一：structure 直书 + regularizers 并入）。
 
-    M6（#49）：缺 [deep] extra 时 MLP 优雅跳过——期望集随 torch 可用性二分。"""
+    M6（#49）：缺 [local] extra（torch）时 MLP 优雅跳过——期望集随 torch 可用性二分。"""
     fams = registry.families()
     expected = {"XGB", "LGBM", "CAT", "RF"}
     try:
@@ -35,7 +35,7 @@ def test_family_mdp_family_declarations_complete():
     except ImportError:
         pass
     else:
-        expected.add("MLP")  # [deep] extra 在位才装载（families() 缺依赖降级跳过）
+        expected.add("MLP")  # [local] extra（torch）在位才装载（families() 缺依赖降级跳过）
     assert set(fams) == expected
     for fam, entry in fams.items():
         meta = entry["mdp_family"]

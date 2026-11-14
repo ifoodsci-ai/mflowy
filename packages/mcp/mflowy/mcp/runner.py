@@ -6,7 +6,7 @@
     python -m mflowy.mcp.runner list_nodes '{"ns": "model"}'
 
 [project.scripts] ``mflowy`` 指向此模块的 main()（CLI 通道）。
-Job 容器内默认 LocalJobProvider（[modeling] extra），直调 compute。
+Job 容器内默认 LocalJobProvider（[local] extra 本地建模栈），直调 compute。
 
 环境变量::
 

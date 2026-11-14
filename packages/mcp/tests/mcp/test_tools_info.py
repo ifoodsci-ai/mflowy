@@ -106,14 +106,18 @@ def test_get_node_info_unknown_module():
 
 
 def test_list_nodes_annotates_builtin_requires():
-    """0.2.0 extras 语义：重栈为域包硬依赖零标注，唯一可选 extra=[deep]（torch/MLP）"""
+    """extras 语义（#216 裁定/#217）：model 域四顶层目录全标 local——标注 = 安装
+    提示而非降级事实：全栈环境（[local] 在位）条目照常内省（upstream 非 None）"""
     entries = list_nodes(namespace="model")
     requires = entries[0]["requires"]
-    assert "XGB" not in requires  # CPU 建模栈硬依赖——零标注即裸装可用
-    assert requires.get("MLP") == "deep"  # torch 栈隔离进 [deep]
-    # 数据栈/解释栈均为硬依赖：plot 族零标注
+    assert requires.get("XGB") == "local"  # CPU 建模栈随 [local] extra
+    assert requires.get("MLP") == "local"  # torch 真合并进 [local]（不再单独标 deep）
+    # 标注≠降级：全栈环境 bindings 照常内省（瘦装实可用节点不触发降级）
+    xgb = next(e for e in entries[0]["nodes"] if e["name"] == "model__XGB")
+    assert isinstance(xgb["upstream"], list)
+    # plot 顶层目录同标 local（shap/sklearn 依赖面）——逐键钉死
     plot = list_nodes(namespace="plot")
-    assert not plot[0].get("requires")
+    assert plot[0].get("requires", {}).get("confusion_matrix") == "local", plot[0].get("requires")
 
 
 def test_get_node_info_unavailable_reports_extra(monkeypatch):
@@ -121,10 +125,10 @@ def test_get_node_info_unavailable_reports_extra(monkeypatch):
     import mflowy.driver.discover as discover_mod
 
     def _missing_dep(key: str):
-        raise ModuleNotFoundError("No module named 'torch'", name="torch")
+        raise ModuleNotFoundError("No module named 'sklearn'", name="sklearn")
 
     monkeypatch.setattr(discover_mod, "_load_node", _missing_dep)  # #126：加载器拆 _load_node/_load_edge
     info = get_node_info("model", "MLP")
     assert info["available"] is False
-    assert info["requires"] == "deep"
-    assert "[deep]" in info["reason"]
+    assert info["requires"] == "local"
+    assert "[local]" in info["reason"]

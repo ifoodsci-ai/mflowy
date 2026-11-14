@@ -25,13 +25,13 @@ uv run mflowy-mcp                   # MCP server（stdio）
 
 **uvx 陷阱**（uvx 不读 pyproject 的 `[tool.uv.sources]`）：
 
-- torch CPU 索引（`--index https://download.pytorch.org/whl/cpu` + `unsafe-best-match`）为 [deep] 必需（仅 MLP；`[model]` CPU 栈干净安装）——缺省时 torch 解析为 CUDA 全家桶（2–3GB）
-- extras 内联进 `--from "mflowy[model]"`——uvx 的 `--extra` 需新版 uv
+- torch CPU 索引（`--index https://download.pytorch.org/whl/cpu` + `unsafe-best-match`）为 [local] 必需（`mflowy[mcp,local]`——torch 随 [local] 真合并随行；纯 `mflowy[mcp]` 瘦装零 torch）——缺省时 torch 解析为 CUDA 全家桶（2–3GB）
+- extras 内联进 `--from "mflowy[mcp,local]"`——uvx 的 `--extra` 需新版 uv
 - 入口名 `mflowy-mcp` 刻意避开 mcp SDK 同名 CLI（`mcp.cli:app`）
 
 ## 分层
 
-uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_workspace.py` 断言）。extras = 域选择器：聚合包 `[data]`/`[model]`/`[mcp]`/`[deep]`（torch 栈隔离在 model 包 `[deep]`，唯一可选 extra）。
+uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_workspace.py` 断言）。extras = 形态选择器：域包直装，聚合包 `[mcp]`（server 形态——SDK+遥测+双域词表，纯远程瘦装）/`[local]`（model 包本地建模重栈，[deep] 真合并）二选一组合（`mflowy[mcp,local]` = server+本地栈；聚合 `[data]`/`[model]`/`[deep]` 已退役）。
 
 | 层     | 位置                              | 职责                                                       |
 | ------ | --------------------------------- | ---------------------------------------------------------- |

@@ -1,6 +1,6 @@
 """JobProvider 工厂 — 按 MFLOWY_JOB_PROVIDER env 解析。
 
-默认 "local"（[modeling] extra 环境下的直调模式）。
+默认 "local"（[local] extra 本地建模栈环境下的直调模式）。
 远程部署为 "module:Class"（Class 为实现 JobProvider 协议的类，如
 "my_pkg.job_provider:MyRemoteProvider"）——模块经宿主进程 sys.path
 （PYTHONPATH）解析。
