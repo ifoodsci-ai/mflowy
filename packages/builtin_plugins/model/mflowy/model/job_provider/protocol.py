@@ -113,18 +113,3 @@ class JobProvider(Protocol):
         inherit_platform_job_id: str | None = None,
         headers: Headers = None,
     ) -> JobOutcome: ...
-
-    async def inverse_optimization(
-        self,
-        *,
-        data: str,
-        model: str,
-        direction: dict[str, str] | None = None,
-        constraint: dict[str, list | dict] | None = None,
-        cross_rules: str | None = None,
-        n_trials: int = 10000,
-        seed: int = 42,
-        platform_experiment_id: str | None = None,
-        inherit_platform_job_id: str | None = None,
-        headers: Headers = None,
-    ) -> JobOutcome: ...

@@ -1,7 +1,7 @@
 """JobProvider headers 透传契约 — 请求 _meta → provider.headers（清单从 Protocol 自省单源生成）。
 
 契约：
-- 仅 compute（hyperparameters_search/modeling/explanation/predict/inverse_optimization）经 JobProvider 委派；
+- 仅 compute（hyperparameters_search/modeling/explanation/predict）经 JobProvider 委派（inverse_optimization 已随 BO 落地退役，#179 R4）；
   ctx（Context | None）由 SDK 注入（不进 input schema），ctx.request_context.meta
   （客户端 call_tool(meta=...) 直传）原样透传给 JobProvider 同名 headers 形参
 - _meta 缺失 / JSON runner 直调（无 ctx）→ headers=None

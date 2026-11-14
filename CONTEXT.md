@@ -1,6 +1,6 @@
 # MFlowy
 
-YAML 配置驱动的模块化 ML 工作流引擎：能力以插件节点存在、图以 YAML 组装、全部能力经 MCP 工具暴露。本文件是**元词汇**的词表，按「引擎内核（共享）+ 三子系统」分组（子系统划分与系统设计见 [docs/pilot-loop.md](docs/pilot-loop.md)）——只定义这些词本身与禁用别名；节点与边函数的名字以运行期插件目录为唯一真源（`list-nodes` 可查），方法论术语见 [docs/research-flow.md](docs/research-flow.md) 自带术语表，均不在此复述。
+YAML 配置驱动的模块化 ML 工作流引擎：能力以插件节点存在、图以 YAML 组装、全部能力经 MCP 工具暴露。本文件是**元词汇**的词表，按「引擎内核（共享）+ 三子系统」分组（子系统划分与系统设计见 [bo 包 README](packages/builtin_plugins/bo/README.md)）——只定义这些词本身与禁用别名；节点与边函数的名字以运行期插件目录为唯一真源（`list-nodes` 可查），方法论术语见 [docs/research-flow.md](docs/research-flow.md) 自带术语表，均不在此复述。
 
 ## Language
 

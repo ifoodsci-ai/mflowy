@@ -1,6 +1,37 @@
+# mflowy-bo —— 贝叶斯优化推荐子系统（BO）
+
+> bo = agent 调 BO 工具的工作流，**非 POMDP 会话**（#177 裁定）：状态载体 = study
+> sqlite db（`<task_dir>/bo_studies/<study_name>/study.db`，长寿命可继承资产），
+> 引擎 = TPE 单引擎（`multivariate=True, constant_liar=True` 显式开，#175——torch
+> 全线离开 bo）。依赖方向 `utils ← driver ← data ← model ← bo ← mcp`（可 import
+> mflowy.model；`search_input` 节点随本包真迁移自 model，#175 Q2）。
+
+**六工具**（`mflowy.tools` entry points 声明；签名/schema = docstring 单源，真源见
+`tools/list`；全无状态、恒本地——预测走既有 `model.predict`，bo 零触碰模型）：
+
+| 工具 | 职责 |
+| --- | --- |
+| `bo_load_or_init` | 开局三形态一入口：init ← 历史 parquet（20 行机器门，#183）/ continue ← 既有 db（换模型 = 学习信号归档重置，#182）/ rebuild ← db 迁移式重建（空间组/direction/seed 变更，#180 R4） |
+| `bo_ask` | 推荐一批候选 → 完整 schema 候选 csv（无预测列、非搜索维空列；在途避让，#179 R1） |
+| `bo_prune` | 剪枝终局化：tell(PRUNED) + 原因 attr（求值归 agent，#180 R1） |
+| `bo_diversity_check` | 多样性筛选：归一化 FPS 选批 + 落选 tell(FAIL)（度量 = 实现层常量，#178 R3） |
+| `bo_tell` | 回填唯一湿实验期批量写入口（写 attrs 先于 tell；学习信号批末附带——未触发静默、触发不拦截） |
+| `bo_export_dataset` | 数据出口：db → 单 parquet（仅 COMPLETE；上游 `load.parquet` 直吃，#182 R1） |
+
+**BOCard**（`mflowy/bo/types.py`，pydantic 单源）：bo 先验卡书写契约——空间组
+（同一性：变更 = 重建 study）+ 策略组（hard 规则表达式树/按类常量表/band/容差/
+信号门限/批缺省，不重建不升版）。工具零卡耦合（#180 R3）：门限/规则/容差由 agent
+读卡后以参数进入。确定性规则求值参照实现住 `mflowy/bo/rules.py`（agent/剧本/
+bo-bench 消费）。
+
+**剧本**：`bo-prior`（先验讨论产 `<task_dir>/BOCard.yaml`，交棒不开局）+
+`bo-suggestion`（owns 开局 + 全循环）——见 `.agents/skills/`。
+
+---
+
 # PILOT-AI4S 系统设计（先验继承闭环优化测试系统）
 
-> **状态**：草案 v1.0（目标态叙事）。本文是三子系统闭环的系统级设计基准：已实现部分以 `tools/list` 与模块注册表为准（防漂移，本文不复述），进行中决策见 [BO 决策图 #171](https://github.com/ifoodsci-ai/mflowy/issues/171) 与 [业务实现地图 #76](https://github.com/ifoodsci-ai/mflowy/issues/76)，对齐裁定记录见 [#171 附录 C](https://github.com/ifoodsci-ai/mflowy/issues/171#issuecomment-6767418379)。规划落地后在 [CHANGELOG.md](../CHANGELOG.md) 记录并更新下表，不逐项改写正文。
+> **状态**：草案 v1.0（目标态叙事）。本文是三子系统闭环的系统级设计基准（canon 随 bo 包分发，#184 迁自 `docs/pilot-loop.md`）：已实现部分以 `tools/list` 与模块注册表为准（防漂移，本文不复述），进行中决策见 [业务实现地图 #76](https://github.com/ifoodsci-ai/mflowy/issues/76)，对齐裁定记录见 [#171 附录 C](https://github.com/ifoodsci-ai/mflowy/issues/171#issuecomment-6767418379)。规划落地后在 [CHANGELOG.md](../../CHANGELOG.md) 记录并更新下表，不逐项改写正文。
 
 ## 落位现状对照（随实现推进更新本表，不改正文）
 
@@ -8,9 +39,9 @@
 | :--- | :--- | :--- |
 | Clean 子系统（POMDP 检测↔清洗循环、先验建档） | clean 域 POMDP 会话 + survey 剧本 → DomainCard | **已实现** |
 | Model 子系统（CV 钉死、逐模型 HPO、汇总决策、终训评估解释） | modeling 域 POMDP 会话（单会话八动作面） | **已实现**（嵌套会话形态 = 概念示意，未来迭代方向） |
-| BO 子系统（推荐台账、轮次闭环、信号） | bo 域（新包）——agent 工具工作流 + study sqlite db，非 POMDP 会话（#177） | **决策图 #171 进行中** |
-| 湿实验台账与两路回填 | 台账/回填契约 | **决策图 #171 进行中**（#181） |
-| 学习门禁（两类信号、参数化、三方归因） | 学习信号 = 推荐级计数制（正向累计门；负向累计门 + 窗口门），不拦截、人点火；参数形态与正文 §5.3 示例不同（先验容差 + 计数门）；三方归因无契约载体（可选诊断叙述 + 剧本开局问句，#182）；回流交棒 = 零工件（study 跨模型存续 + 信号按 run_id 归档重置，重进自带路径，#182） | 信号语义**裁定已定**（#177）；回流交棒**裁定已定**（#182——#177「study↔模型一对一」随之推翻） |
+| BO 子系统（推荐台账、轮次闭环、信号） | bo 域六工具工作流（`bo_load_or_init`/`bo_ask`/`bo_prune`/`bo_diversity_check`/`bo_tell`/`bo_export_dataset`）+ study sqlite db，非 POMDP 会话（#177） | **已实现** |
+| 湿实验台账与两路回填 | 台账 = agent 推导推送文件（`round_00N.csv`，零预测列族）+ `bo_tell` 批量回填（信号批末附带） | **已实现**（#181 契约） |
+| 学习门禁（两类信号、参数化、三方归因） | 学习信号 = 推荐级计数制（正向累计门；负向累计门 + 窗口门），随 `bo_tell` 批末抛出、不拦截、人点火；参数形态与正文 §5.3 示例不同（先验容差 + 计数门）；三方归因无契约载体（可选诊断叙述 + 剧本开局问句，#182）；回流交棒 = 零工件（study 跨模型存续 + 信号按 run_id 归档重置，重进自带路径，#182） | **已实现**（#177/#182 契约） |
 | 先验继承链（只读继承/显式覆盖/版本化） | 剧本承载（零机制起步；统一档案 schema = 未来迭代方向） | **裁定已定**（#171 附录 C C3） |
 | Model→BO 不确定度/OOD 接口 | predict 区间（#164 在途）/ OOD 待评估 | **依赖链已挂 #76** |
 | 闭环级评估指标（§9） | docs 验收叙事起步，机制化随观测面毕业 | 规划 |

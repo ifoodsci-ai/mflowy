@@ -278,59 +278,6 @@ async def predict(
     )
 
 
-@anchor_task_dir("data")  # 入口路由据此推锚（#95 裁定 B）——元数据不包函数
-async def inverse_optimization(
-    data: Annotated[
-        str, Field(description="数据绝对路径（推断搜索空间；csv/xlsx/parquet，或 py 文件 'path:func' 引用）")
-    ],
-    model: Annotated[str, Field(description="训练 run 的 id（从训练输出 RunInfo 或 get_experiment 获取）")],
-    direction: Annotated[
-        dict[str, str] | None,
-        Field(description='y→direction 映射（如 {"price": "maximize"}）'),
-    ] = None,
-    constraint: Annotated[
-        dict[str, list | dict] | None,
-        Field(description="搜索空间约束（连续 name:[lo,hi,step] / 离散 name:[v1,v2]）"),
-    ] = None,
-    cross_rules: Annotated[str | None, Field(description="交叉规则表达式")] = None,
-    n_trials: Annotated[int, Field(description="优化试验次数（默认 10000，与旧 CLI 一致）")] = 10000,
-    seed: Annotated[int, Field(description="随机种子")] = 42,
-    platform_experiment_id: Annotated[
-        str | None,
-        Field(description="平台实验 ID（remote 模式必填；local 模式忽略）——先调 ensure_platform_experiment 取得"),
-    ] = None,
-    inherit_platform_job_id: Annotated[
-        str | None,
-        Field(
-            description="继承源任务 job_id（可选）——解包其可继承 zip 恢复前序追踪态与数据；引用前序 run（model/experiment_id）时必填；local 模式忽略"
-        ),
-    ] = None,
-    ctx: Context | None = None,
-) -> JobOutcome:
-    """基于已训练模型逆向设计最优输入特征组合。
-
-    何时使用 inverse_optimization：
-    - 回答"什么输入让输出最优/满足约束"
-
-    受理面（JobOutcome）：local 完成等待（finished 内嵌 DAGResult）；remote 受理即返
-    （submitted + job_id——先 ensure_platform_experiment 就绪实验）。在途观察走
-    get_platform_job_logs 轮询（terminal=true 即停）；产物经 download_platform_job_artifacts
-    拉取（outputs 下 ``{job_id}.zip``）。
-    """
-    return await _get_job_provider().inverse_optimization(
-        data=data,
-        model=model,
-        direction=direction,
-        constraint=constraint,
-        cross_rules=cross_rules,
-        n_trials=n_trials,
-        seed=seed,
-        platform_experiment_id=platform_experiment_id,
-        inherit_platform_job_id=inherit_platform_job_id,
-        headers=ctx.request_context.meta if ctx else None,
-    )
-
-
 # ── 建模会话工具（环境面在 model/session，π 在调用方 LLM） ───────────────────
 # 协议谈判在剧本层（model-brief + research-review skill）；start(cv_card)
 # 唯一主通道直进八动作面（#62：配置编辑 + 计算动作；done = finish）。

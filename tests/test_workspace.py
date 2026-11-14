@@ -1,4 +1,4 @@
-"""workspace 完整性：六 distribution 锁步版本 + namespace 铁律（无 mflowy/__init__.py）"""
+"""workspace 完整性：七 distribution 锁步版本 + namespace 铁律（无 mflowy/__init__.py）"""
 
 import pathlib
 import tomllib
@@ -13,6 +13,7 @@ PACKAGES = {
     "mcp": "packages/mcp",
     "data": "packages/builtin_plugins/data",
     "model": "packages/builtin_plugins/model",
+    "bo": "packages/builtin_plugins/bo",
 }
 
 
@@ -22,7 +23,7 @@ def _version(pyproject: pathlib.Path) -> str:
 
 
 def test_lockstep_versions():
-    """六 distribution 版本锁步（发布脚本 sed 全仓，此断言兜底）"""
+    """七 distribution 版本锁步（发布脚本 sed 全仓，此断言兜底）"""
     versions = {"mflowy": _version(ROOT / "pyproject.toml")}
     for p, rel in PACKAGES.items():
         versions[f"mflowy-{p.replace('_', '-')}"] = _version(ROOT / rel / "pyproject.toml")
@@ -36,16 +37,18 @@ def test_namespace_no_init(pkg):
 
 
 def test_member_import_boundaries():
-    """包依赖方向铁律（utils ← driver ← data ← model ← mcp 单向）：
+    """包依赖方向铁律（utils ← driver ← data ← model ← bo ← mcp 单向，#175 Q2）：
     driver/utils 不得 import 任何域包（内核对插件零感知）；data 不得 import model
-    （两 POMDP 域隔离，共享件住上游 data）。mcp 是编排层、pyproject 硬依赖双域包，
-    合法消费其公开清单如 extras.py；entry point group 名字符串不算 import。"""
+    （两 POMDP 域隔离，共享件住上游 data）；bo 不得 import mcp（mcp 零域硬依赖，
+    #210）。mcp 是编排层、pyproject 硬依赖域包，合法消费其公开清单如 extras.py；
+    entry point group 名字符串不算 import。"""
     import re
 
     bans = {
-        "driver": r"mflowy\.(data|model)",
-        "utils": r"mflowy\.(data|model)",
-        "data": r"mflowy\.model",
+        "driver": r"mflowy\.(data|model|bo)",
+        "utils": r"mflowy\.(data|model|bo)",
+        "data": r"mflowy\.(model|bo)",
+        "bo": r"mflowy\.mcp",
     }
     # mcp：零域硬依赖——模块级（列首）import 域包禁止；函数内惰性导入（缩进）合法
     violators = []
@@ -54,13 +57,15 @@ def test_member_import_boundaries():
         for py in (ROOT / PACKAGES[pkg] / "mflowy").rglob("*.py"):
             if pat.search(py.read_text(encoding="utf-8")):
                 violators.append(str(py.relative_to(ROOT)))
-    mcp_pat = re.compile(r"^(?:from mflowy\.(data|model)|import mflowy\.(data|model))", re.M)
+    mcp_pat = re.compile(r"^(?:from mflowy\.(data|model|bo)|import mflowy\.(data|model|bo))", re.M)
     for py in (ROOT / "packages" / "mcp" / "mflowy").rglob("*.py"):
         if mcp_pat.search(py.read_text(encoding="utf-8")):
             violators.append(str(py.relative_to(ROOT)))
     assert not violators, f"反向依赖: {violators}"
     mcp_hard = " ".join(_pkg_meta("packages/mcp/pyproject.toml")["dependencies"])
-    assert "mflowy-data" not in mcp_hard and "mflowy-model" not in mcp_hard, "mcp 零域硬依赖（0b 解耦不变量）"
+    assert (
+        "mflowy-data" not in mcp_hard and "mflowy-model" not in mcp_hard and "mflowy-bo" not in mcp_hard
+    ), "mcp 零域硬依赖（0b 解耦不变量）"
 
 
 def _pkg_meta(rel: str) -> dict:
@@ -80,17 +85,19 @@ def test_mcp_extra_is_optional_not_hard():
 
 
 def test_aggregate_extras_are_form_selectors():
-    """聚合包 extras = 形态选择器（#216 裁定/#217 落地）：{mcp, local}——域包直装
-    （mflowy-data / mflowy-model），聚合 extras 只选形态：[mcp] = server 形态
-    （SDK+遥测+双域词表；remote 平台工具引擎住 model 包 platform_client 必须随行），
+    """聚合包 extras = 形态选择器（#216 裁定/#217 落地 + #210 bo 纳入）：{mcp,
+    local}——域包直装（mflowy-data / mflowy-model / mflowy-bo），聚合 extras 只选
+    形态：[mcp] = server 形态（SDK+遥测+三域词表；remote 平台工具引擎住 model 包
+    platform_client 必须随行；bo 六工具随行——server 完全面先例 #159），
     [local] = 本地建模重栈（model 包 [local]，[deep] 真合并）。聚合 [data]/[model]/
-    [deep] 已退役（BREAKING）；bo 就绪后随 #210 扩 mflowy-bo 进 [mcp]"""
+    [deep] 已退役（BREAKING）"""
     extras = _pkg_meta("pyproject.toml")["optional-dependencies"]
     assert set(extras) == {"mcp", "local"}
-    assert extras["mcp"] == ["mflowy-mcp[mcp]", "mflowy-data", "mflowy-model"]
+    assert extras["mcp"] == ["mflowy-mcp[mcp]", "mflowy-data", "mflowy-model", "mflowy-bo"]
     assert extras["local"] == ["mflowy-model[local]"]
-    # 唯一可选 extra 在 model 包（= local，[deep] 真合并）；data/bo 零 extras
+    # 唯一可选 extra 在 model 包（= local，[deep] 真合并）；data/bo 零 extras（#184）
     assert set(_pkg_meta("packages/builtin_plugins/data/pyproject.toml").get("optional-dependencies", {})) == set()
+    assert set(_pkg_meta("packages/builtin_plugins/bo/pyproject.toml").get("optional-dependencies", {})) == set()
     assert set(_pkg_meta("packages/builtin_plugins/model/pyproject.toml")["optional-dependencies"]) == {"local"}
 
 

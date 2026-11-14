@@ -6,7 +6,7 @@ AI 编码 agent 在本仓库的唯一指引。代码是真相源——本文件�
 
 ## Project
 
-MFlowy：YAML 配置驱动的模块化 ML 工作流引擎，全部能力以 **MCP tools**（pyfunc）暴露——MCP server（stdio）、JSON runner（K8s Job 容器）、直接 import 三入口。业务系统 = PILOT 三子系统闭环（[docs/pilot-loop.md](docs/pilot-loop.md)）：Clean / Model 两域已落地，BO 推荐域设计进行中（#171）。
+MFlowy：YAML 配置驱动的模块化 ML 工作流引擎，全部能力以 **MCP tools**（pyfunc）暴露——MCP server（stdio）、JSON runner（K8s Job 容器）、直接 import 三入口。业务系统 = PILOT 三子系统闭环（[bo 包 README](packages/builtin_plugins/bo/README.md)）：Clean / Model / BO 三域已落地。
 
 **Language**: Python 3.12 | 代码注释与文档：中文
 
@@ -96,7 +96,7 @@ uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 | 用户方法论 / 案例叙事      | [docs/research-flow.md](docs/research-flow.md)（五律总纲 + 五幕叙事入口）              |
 | 查数据清洗方法论（先验 / 检测算子 / 清洗算子矩阵） | [docs/method/data-cleaning.md](docs/method/data-cleaning.md)（研究领域知识，零词表绑定） |
 | 查建模方法论（模型矩阵 / CV-HPO / 特征工程 / 评估） | [docs/method/model-training.md](docs/method/model-training.md)（研究领域知识，零词表绑定） |
-| 查系统闭环设计（PILOT 三子系统 / 学习门禁 / 先验继承） | [docs/pilot-loop.md](docs/pilot-loop.md)（目标态叙事 + 落位现状对照表；BO 决策图 #171） |
+| 查系统闭环设计（PILOT 三子系统 / 学习门禁 / 先验继承） | [bo 包 README](packages/builtin_plugins/bo/README.md)（目标态叙事 + 落位现状对照表，#184 随包分发） |
 | 规划新功能 / 查路线图      | [docs/roadmap.md](docs/roadmap.md)（已实现清单以 `tools/list` 为真源，roadmap 只留规划） |
 
 **防漂移**：代码已表达的只链接不复述（文件树/签名/行号锚点留给代码）；只写追加式文档（新案例 → `examples/` 快照，新版本 → `CHANGELOG.md`）；"漂移可接受"仅限用户文档，release 边界回填——本文件与 skills 除外（见同步规则）。**剧本引用面谓词**（#65 裁定）：操作 skill（`.agents/skills/*`）参考节只允许引用工具名与入仓文档——引用实现路径（含包结构迁移前的旧路径）即 P0 漂移，删除而非修正。新建文档先过漂移测试："这文件里哪句话会因下次代码 PR 失效？"有答案就不建。

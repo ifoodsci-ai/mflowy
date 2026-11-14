@@ -12,7 +12,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pandas as pd
 import pytest
-from mflowy.model.model.search_input import search_input
+from mflowy.bo.search_input import search_input
 from mflowy.model.model.study import ContinuousSpace, DiscreteSpace
 
 # ============================================================

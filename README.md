@@ -4,7 +4,7 @@
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](pyproject.toml)
 [![MCP](https://img.shields.io/badge/MCP-Server-7B61FF.svg)](packages/mcp/mflowy/mcp/server.py)
 
-MFlowy 是 **MCP-native** 的 AI4S 能力层，实现 **PILOT 闭环**（**P**rior-**I**nherited **L**oop for **O**ptimization and **T**esting，先验继承闭环优化测试）：从个人历史实验数据出发——数据清洗、模型预训练、贝叶斯优化推荐下一轮实验——湿实验结果回流，学习门禁判定继续还是带着失败信号回炉重训。每个子系统都是一场 agent 会话，统一范式：**先验讨论建档（剧本问卷）→ 核心执行（POMDP 会话）→ 产出与先验更新**。系统设计全文见 [docs/pilot-loop.md](docs/pilot-loop.md)。
+MFlowy 是 **MCP-native** 的 AI4S 能力层，实现 **PILOT 闭环**（**P**rior-**I**nherited **L**oop for **O**ptimization and **T**esting，先验继承闭环优化测试）：从个人历史实验数据出发——数据清洗、模型预训练、贝叶斯优化推荐下一轮实验——湿实验结果回流，学习门禁判定继续还是带着失败信号回炉重训。每个子系统都是一场 agent 会话，统一范式：**先验讨论建档（剧本问卷）→ 核心执行（POMDP 会话）→ 产出与先验更新**。系统设计全文见 [bo 包 README](packages/builtin_plugins/bo/README.md)（canon 随包分发）。
 
 ```mermaid
 flowchart LR
@@ -198,6 +198,6 @@ MCP 工具调用诊断采集，同意制、默认 `ask`，端点不可达时完�
 
 ## 文档
 
-- **系统与叙事**：[PILOT 系统设计](docs/pilot-loop.md)（三子系统闭环）· [研究流方法论](docs/research-flow.md)（前两程案例叙事，agent 可直接采用的工作规约）· [路线图](docs/roadmap.md)
+- **系统与叙事**：[PILOT 系统设计](packages/builtin_plugins/bo/README.md)（三子系统闭环，随 bo 包分发）· [研究流方法论](docs/research-flow.md)（前两程案例叙事，agent 可直接采用的工作规约）· [路线图](docs/roadmap.md)
 - **子系统方法论**：[数据清洗](docs/method/data-cleaning.md) · [模型训练](docs/method/model-training.md)（研究领域知识）· [数据域 catalog](packages/builtin_plugins/data/README.md) · [建模域 catalog / 远程执行](packages/builtin_plugins/model/README.md)
 - **引擎与工程**：[架构与贡献指南](AGENTS.md) · [元词汇词表](CONTEXT.md)（引擎内核 + 三子系统） · [DAG 内核](packages/driver/README.md) · [MCP 层：工具 / 平台登录 / 遥测](packages/mcp/README.md) · [共享工具层](packages/utils/README.md)

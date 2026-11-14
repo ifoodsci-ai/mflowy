@@ -10,7 +10,7 @@ shap_explanation）。
 from pathlib import Path
 
 from mflowy.driver.builder import Builder
-from mflowy.model.templates import EXPLANATION_TEMPLATE, INVERSE_OPTIMIZATION_TEMPLATE, PREDICT_TEMPLATE
+from mflowy.model.templates import EXPLANATION_TEMPLATE, PREDICT_TEMPLATE
 
 
 def build_flow(keys: list[str], tmp_path: Path):
@@ -63,8 +63,8 @@ def test_predict_nearest_feeds_shap_explanation(tmp_path):
 
 def test_predict_template_compiles():
     """predict compute 工具活路径：run_id 经模板内 model__loader 承载，predict 零 run_id 参数。
-    渲染断言（#224 P3，对照下方 inverse 用例写法）：两 env 键都须落进节点 params——
-    模板不渲染 = 调用方传参被 Jinja 静默丢弃。"""
+    渲染断言（#224 P3）：两 env 键都须落进节点 params——模板不渲染 = 调用方传参被
+    Jinja 静默丢弃。"""
     dag = Builder(PREDICT_TEMPLATE, env={"run_id": "r1", "data_path": "/tmp/x.csv"}).build()
     params = {k: n.params for item in dag.conf.flow for k, n in item.items()}
     assert params["load__file"]["file_path"] == "/tmp/x.csv"
@@ -74,28 +74,6 @@ def test_predict_template_compiles():
 
 
 def test_search_input_out_of_model_ns_eval_plots_compile(tmp_path):
-    """search_input 裸节点化：与 predict 对称，DataFrame 返回者移出 model 组。"""
+    """search_input 裸节点化：与 predict 对称，DataFrame 返回者移出 model 组
+    （节点已迁 bo 域——寻址名/YAML 不变，词表真源 = 运行期目录）。"""
     build_flow(["load__csv", "x_y", "cv__split", "model__loader", "search_input", "plot__roc_curve"], tmp_path)
-
-
-def test_inverse_optimization_template_compiles():
-    """inverse_optimization compute 工具活路径：run_id 经 model__loader 承载。
-
-    n_trials/random_seed 必须渲染进 search_input params（#77）：LocalJobProvider 恒传
-    两键进 env，模板不渲染 = 调用方传参被 Jinja 静默丢弃、node 默认值恒生效。
-    取非默认值（200/7）断言——恰好等于默认值的断言钉不住"渲染"这个行为。
-    """
-    env = {
-        "run_id": "r1",
-        "y_names": ["y"],
-        "directions": {"y": "maximize"},
-        "data_path": "",
-        "columns": {},
-        "cross_rules_source": "",
-        "n_trials": 200,
-        "random_seed": 7,
-    }
-    dag = Builder(INVERSE_OPTIMIZATION_TEMPLATE, env=env).build()
-    search = next(n for item in dag.conf.flow for k, n in item.items() if k == "search_input")
-    assert search.params["n_trials"] == 200
-    assert search.params["random_seed"] == 7

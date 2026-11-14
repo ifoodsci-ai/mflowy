@@ -21,7 +21,6 @@ from mflowy.utils.path import anchor_of_source, resolve_data_ref, set_task_dir, 
 from ..templates import (
     EXPLANATION_TEMPLATE,
     HYPERPARAMETERS_SEARCH_TEMPLATE,
-    INVERSE_OPTIMIZATION_TEMPLATE,
     MODELING_TEMPLATE,
     PREDICT_TEMPLATE,
     count_model_steps,
@@ -278,45 +277,6 @@ class LocalJobProvider:
                 env={
                     "data_path": data_path,
                     "run_id": run_id,
-                },
-            )
-            return builder.build().run(tags=fingerprint_tags("data", data))
-
-        return JobOutcome.finished(dag_result=await asyncio.to_thread(_run))
-
-    # ── inverse_optimization ─────────────────────────────────────────────────────
-
-    async def inverse_optimization(
-        self,
-        *,
-        data: str,
-        model: str,
-        direction: dict[str, str] | None = None,
-        constraint: dict[str, list | dict] | None = None,
-        cross_rules: str | None = None,
-        n_trials: int = 10000,
-        seed: int = 42,
-        platform_experiment_id: str | None = None,
-        inherit_platform_job_id: str | None = None,
-        headers: Headers = None,
-    ) -> JobOutcome:
-        def _run():
-            _validate_model_arg(model)
-            _, data_path = resolve_data_ref(data)
-
-            run_id = model.strip()
-            directions = direction or {}
-            builder = Builder(
-                dag_yaml=INVERSE_OPTIMIZATION_TEMPLATE,
-                env={
-                    "data_path": data_path,
-                    "run_id": run_id,
-                    "y_names": list(directions.keys()),
-                    "directions": directions,
-                    "columns": constraint if constraint else None,
-                    "cross_rules_source": cross_rules,
-                    "n_trials": n_trials,
-                    "random_seed": seed,
                 },
             )
             return builder.build().run(tags=fingerprint_tags("data", data))
