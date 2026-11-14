@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 贝叶斯优化推荐子系统（BO）落地（#171 决策图 → #175/#177/#178/#179/#180/#181/#182/#183/#184/#206/#210，feat·BREAKING）
+
+bo 域包 `mflowy-bo` 落地——**agent 工具工作流，非 POMDP 会话**（#177）：状态载体
+= study sqlite db（`<task_dir>/bo_studies/<study_name>/study.db`，长寿命可继承资产），
+引擎 = TPE 单引擎（`multivariate=True, constant_liar=True` 显式开——torch 全线离开
+bo，#175）。
+
+- **六工具**（#180/#184 定名；全无状态、恒本地、零模型触碰——预测走既有
+  `predict`，耦合只发生在 agent 的 MCP 编排层）：
+  - `bo_load_or_init`——开局三形态一入口：init ← 湿实验历史 parquet（**20 行
+    机器门**，#183）/ continue ← 既有 db（换模型 = 学习信号归档重置一气呵成，
+    #182）/ rebuild ← db 迁移式重建（空间组/direction/seed 指纹不符——COMPLETE
+    保态迁移、新增维度从 conditions/湿历史补值 fail-loud、PRUNED/FAIL 新维度下
+    不迁、在途 RUNNING 终局化 FAIL、迁移报告不静默）；
+  - `bo_ask`——完整 schema 候选 csv（无预测列、非搜索维**空列**，#179）+ 在途
+    避让（对 RUNNING 精确去重重采样，撞点落 FAIL/diversity_rejected）；
+  - `bo_prune`——tell(PRUNED) + 原因 attr（求值归 agent，#180）；
+  - `bo_diversity_check`——归一化 FPS 选批 + 落选 tell(FAIL)（冗余 ≠ 负面判断，
+    度量 = 实现层常量，#178）；
+  - `bo_tell`——回填唯一湿实验期批量写入口（写 attrs 先于 tell，#172 实测语义；
+    行形态 done/failed(conditional→PRUNED 计负向|operational/dirty_data→FAIL)/
+    deviated(变体确认)/abandoned/appended 平行样；**学习信号批末附带**——推荐级
+    计数制，未触发静默、触发不拦截，agent 无主动查询面）；
+  - `bo_export_dataset`——db → 单 parquet（仅 COMPLETE；`load.parquet` 直吃）。
+- **BOCard**（#178/#184）：bo 先验卡 pydantic 契约（空间组 = 同一性字段变更即重建
+  study；策略组 = hard 规则表达式树/查表谓词/按类常量表/band/容差/信号门限/批缺省
+  /典型测量变异——不重建不升版；软约束唯一形态 = band 标量，构造性隔离）。工具零
+  卡耦合；确定性求值参照实现住 `mflowy.bo.rules`（python 逃生舱走 scan_security
+  白名单）。
+- **trial 终态语义**（#177 R2 + 修订）：PRUNED = 对条件的负面判断（硬规则违例|
+  出带|用户拒绝|条件致因失败）、FAIL = 作废无判断（多样性落选|放弃|操作事故|
+  脏数据|变体替换|重建终局化）、RUNNING = 在途跨对话（显式放弃为唯一出口）。
+- **workspace 七 distribution**（#210）：`mflowy[mcp]` 聚合纳 `mflowy-bo`（server
+  完全面先例 #159）；bo 零 extra 面；依赖方向 `utils ← driver ← data ← model ←
+  bo ← mcp`。
+- **CONTEXT.md BO 节六词条**随本 PR 落（#184：BOCard/study/trial/推荐台账/湿实验/
+  学习信号）；`docs/pilot-loop.md` 迁移为 bo 包 README（canon 随包分发，原地不留
+  stub）；PRIVACY.md 风险边界措辞泛化「工具调用输入与输出」（#206）。
+
+**BREAKING**：
+
+- `inverse_optimization` 工具**退役**（#179 R4——用例由 bo 推荐流程超集承接：超集
+  替代非并存）：mcp 工具面、JobProvider 协议/local/remote 实现、模板
+  `inverse_optimization.yaml.j2` 全链下线。
+- `search_input` 节点自 model 包**真迁移**进 bo（#175 Q2：迁移非复制、model 不留
+  副本）——节点键 `search_input` 不变，寻址名/YAML 零破坏；import 路径
+  `mflowy.model.model.search_input` → `mflowy.bo.search_input`。
+
 ### OOF 证据四面落盘 + predict 回归区间（#80/#164，feat）
 
 「可预测」路线落地（#80 裁定）：OOF 残差分位区间——BO 侧预测范围对带 / 配对反馈

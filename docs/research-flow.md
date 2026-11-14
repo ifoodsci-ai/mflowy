@@ -203,7 +203,7 @@ board（inner CV，均值−std）:
 | --- | --- | --- |
 | 终态数据 | `final_path`（parquet） | 建模数据源 / 下轮回流的输入 |
 | 清洗计划 | `plan_yaml` | 可入 DAG 全量重放，审计"计划 ≡ 终态" |
-| 模型 | mlflow run（loader） | `predict` / `explanation` / `inverse_optimization` 直接消费 |
+| 模型 | mlflow run（loader） | `predict` / `explanation` 直接消费（`inverse_optimization` 已随 BO 落地退役） |
 | 体检报告 | findings ×3 | 过拟合 / 切片 / 误差集中（回流线索） |
 | 决策日志 | 清洗 + 建模两本 | 全程 (s,a,r,s′)，任何结论可被第三人重放（律五） |
 

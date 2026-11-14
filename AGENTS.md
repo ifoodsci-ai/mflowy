@@ -31,19 +31,20 @@ uv run mflowy-mcp                   # MCP server（stdio）
 
 ## 分层
 
-uv workspace 六 distribution（PEP 420 namespace，版本锁步，`tests/test_workspace.py` 断言）。extras = 形态选择器：域包直装，聚合包 `[mcp]`（server 形态——SDK+遥测+双域词表，纯远程瘦装）/`[local]`（model 包本地建模重栈，[deep] 真合并）二选一组合（`mflowy[mcp,local]` = server+本地栈；聚合 `[data]`/`[model]`/`[deep]` 已退役）。
+uv workspace 七 distribution（PEP 420 namespace，版本锁步，`tests/test_workspace.py` 断言）。extras = 形态选择器：域包直装（mflowy-data / mflowy-model / mflowy-bo），聚合包 `[mcp]`（server 形态——SDK+遥测+三域词表，纯远程瘦装；bo 零 extra 面）/`[local]`（model 包本地建模重栈，[deep] 真合并）二选一组合（`mflowy[mcp,local]` = server+本地栈；聚合 `[data]`/`[model]`/`[deep]` 已退役）。
 
 | 层     | 位置                              | 职责                                                       |
 | ------ | --------------------------------- | ---------------------------------------------------------- |
 | MCP    | `packages/mcp/mflowy/mcp/`        | 工具注册面、stdio server、runner、遥测                     |
 | Data   | `packages/builtin_plugins/data/mflowy/data/`      | 清洗 POMDP 动作域（load/statistic/detect/clean/plot + DomainCard 先验分级 + 缺陷封闭枚举/Finding 契约 + 路由提示表） |
 | Model  | `packages/builtin_plugins/model/mflowy/model/`    | 建模 POMDP 动作域（x_y/cv/x_transformer/model + plot——cv 族 = split 参数构建/load 引用加载）+ JobProvider + diagnose/report 观察面 |
+| BO     | `packages/builtin_plugins/bo/mflowy/bo/`          | 贝叶斯优化推荐工作流域（**非 POMDP 会话**，#177——agent 工具工作流 + study sqlite db）：六工具 + BOCard 契约 + 学习信号 + search_input 节点（自 model 真迁移，#175） |
 | Driver | `packages/driver/mflowy/driver/`  | YAML→DAG 编译调度、@node/@edge 插件 SDK、POMDP 会话基座（`pomdp` 契约 + `session` 壳——六操作 start/observe/apply/rollback/finish/abandon） |
 | Utils  | `packages/utils/mflowy/utils/`    | mlflow seam、OAuth 2.1 客户端（login/token 库）、脚本安全扫描、capture/path/logging/jinja |
 
-依赖方向保持单向：utils ← driver ← data ← model ← mcp（内核零域感知、两 POMDP 域隔离——`tests/test_workspace.py` 断言，改动 import 保持全绿）。模块内相对导入、跨模块绝对导入。
+依赖方向保持单向：utils ← driver ← data ← model ← bo ← mcp（内核零域感知、两 POMDP 域隔离、bo 工作流域居 model 之后——`tests/test_workspace.py` 断言，改动 import 保持全绿）。模块内相对导入、跨模块绝对导入。
 
-工具六组共 35 个（真源 = `tools/list`）：平台 10（info 3 + mlflow 观测 2（`get_experiment`/`get_run`，可选单参 `tracking_uri` 查远程下载库）+ 会话回收 1 + 登录 1，本地；实验就绪 1 + 任务日志 1 + 产物拉取 1（`ensure_platform_experiment`/`get_platform_job_logs`/`download_platform_job_artifacts`，平台 API 面——引擎住 model 包 platform_client 懒加载，`mflowy[mcp]` 聚合含 model））；compute 6（五件 + `switch_job_provider` 执行模式切换，受理面 = JobOutcome）；本地分析 5（`data_profile`/`eda`/`propose_questions`/`draw_taylor_diagram`/`modeling_report_skeleton`）；YAML 预检 1（`validate_modeling_steps`）；POMDP 会话 13（`clean_*`×6 + `modeling_*`×7——含 `modeling_report_findings`，引擎在两域 session 模块，动作面 = modeling 八动作面）。
+工具七组共 40 个（真源 = `tools/list`）：平台 10（info 3 + mlflow 观测 2（`get_experiment`/`get_run`，可选单参 `tracking_uri` 查远程下载库）+ 会话回收 1 + 登录 1，本地；实验就绪 1 + 任务日志 1 + 产物拉取 1（`ensure_platform_experiment`/`get_platform_job_logs`/`download_platform_job_artifacts`，平台 API 面——引擎住 model 包 platform_client 懒加载，`mflowy[mcp]` 聚合含 model））；compute 5（四件 + `switch_job_provider` 执行模式切换，受理面 = JobOutcome——`inverse_optimization` 已随 BO 落地退役，#179）；本地分析 5（`data_profile`/`eda`/`propose_questions`/`draw_taylor_diagram`/`modeling_report_skeleton`）；YAML 预检 1（`validate_modeling_steps`）；POMDP 会话 13（`clean_*`×6 + `modeling_*`×7——含 `modeling_report_findings`，引擎在两域 session 模块，动作面 = modeling 八动作面）；BO 推荐 6（`bo_load_or_init`/`bo_ask`/`bo_prune`/`bo_diversity_check`/`bo_tell`/`bo_export_dataset`——全无状态、恒本地、零模型触碰，#180/#184）。
 
 插件身份静态声明：`@node(namespace=...)` 标记（裸命名参数=参数边，Annotated=用户可配）+ 域包 pyproject `[project.entry-points."mflowy.builtin_plugins"]` 手写条目（0.2.0 起构建期 AST 扫描钩子退役，与第三方包声明方式同构），运行期 `driver/discover.py` 按注册表（装饰器写入 `<node_key, Node>`，#126 零属性挂载）解析——发现表键 = 注册表键，声明与注册不一致（未装饰/错 namespace/别名键）加载期 fail-loud（#140 身份桥退役）；忘声明由 CR 交叉检查兜底（见「添加能力」）。
 
