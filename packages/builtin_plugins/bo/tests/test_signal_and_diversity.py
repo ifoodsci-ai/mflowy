@@ -56,11 +56,15 @@ def test_exclusions_spontaneous_unlabeled_not_counted():
 
 
 def test_gates_positive_cumulative_negative_window():
-    trials = [_trial(i, {"temperature": float(i), "enzyme": "WT"}, source="recommended", label="severe_mismatch") for i in range(5)]
+    trials = [
+        _trial(i, {"temperature": float(i), "enzyme": "WT"}, source="recommended", label="severe_mismatch")
+        for i in range(5)
+    ]
     # 累计门 6 未到、窗口门（最近 3 条里 2 条负向）触发
     state = compute_learning_signal(_study(trials), negative_gate=6, window_k=3, window_m=2)
     assert state["negative_triggered"] and state["window_fired"] == {"k": 3, "m": 2}
-    assert "漂移" in signal_suggestion(state)
+    text = signal_suggestion(state)
+    assert text is not None and "漂移" in text
     # 窗口关 → 只看累计门
     state2 = compute_learning_signal(_study(trials), negative_gate=6)
     assert not state2["negative_triggered"]

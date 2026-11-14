@@ -125,8 +125,8 @@ def distributions_of(dims: dict[str, SpaceDim]) -> dict[str, Any]:
     out: dict[str, BaseDistribution] = {}
     for name, dim in dims.items():
         if isinstance(dim, ContinuousDim):
-            if dim.dtype == "int":
-                out[name] = IntDistribution(dim.low, dim.high, log=dim.scale == "log")
+            if dim.dtype == "int":  # 卡校验保证 int 维边界整值（types.py）
+                out[name] = IntDistribution(int(dim.low), int(dim.high), log=dim.scale == "log")
             else:
                 out[name] = FloatDistribution(dim.low, dim.high, log=dim.scale == "log")
         elif isinstance(dim, DiscreteDim | CombinatorialDim):
@@ -286,16 +286,15 @@ def init_from_history(
     prepared: list[tuple[dict[str, Any], float, dict[str, Any]]] = []
     for idx, row in df.iterrows():
         value = row[target_column]
-        if pd.isna(value) or not isinstance(value, (int, float)) or isinstance(value, bool):
+        # 数值且非 NaN（NaN != NaN 自反不等）——pandas 标量谓词走纯 python 避开 stub 双义
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value != value:
             raise ValueError(f"湿历史第 {idx} 行目标列 '{target_column}' 非数值实测：{value!r}")
         params = {name: row[name] for name in dims}
         for name, v in params.items():
-            if pd.isna(v):
+            if isinstance(v, float) and v != v:  # NaN 自反不等（纯 python 谓词）
                 raise ValueError(f"湿历史第 {idx} 行搜索维 '{name}' 缺值（NaN）")
         assert_params_in_distributions(dists, params, where=f"湿历史第 {idx} 行")
-        prepared.append(
-            (params, encode_objective(direction, float(value), band), {c: row[c] for c in df.columns})
-        )
+        prepared.append((params, encode_objective(direction, float(value), band), {c: row[c] for c in df.columns}))
 
     study = create_study(db_path, direction=direction)
     set_identity_attrs(
@@ -379,15 +378,16 @@ def _backfill_new_dims(
                 matched = history_df
                 for old in old_names:
                     matched = matched[matched[old] == trial.params[old]]
-                col = matched[name].dropna()
+                series = matched[name]
+                assert isinstance(series, pd.Series)  # 单列选择恒 Series（stub 联合收窄）
+                col = series.dropna().unique()
                 if len(col) == 0:
                     conflicts.append(f"trial#{trial.number} 维 '{name}'：湿历史无旧参数匹配行")
                     continue
-                uniq = col.unique()
-                if len(uniq) > 1:
-                    conflicts.append(f"trial#{trial.number} 维 '{name}'：湿历史匹配多行异值 {list(map(str, uniq))}")
+                if len(col) > 1:
+                    conflicts.append(f"trial#{trial.number} 维 '{name}'：湿历史匹配多行异值 {list(map(str, col))}")
                     continue
-                values[name] = uniq[0]
+                values[name] = col[0]
                 continue
             conflicts.append(f"trial#{trial.number} 维 '{name}'：无 conditions attr 且未传湿历史补值")
         backfill[trial.number] = values
@@ -443,7 +443,7 @@ def rebuild_from_db(
     dists = distributions_of(dims)
     for trial in complete:
         params = {**trial.params, **backfill.get(trial.number, {})}
-        for name, value in params.items():
+        for name in params:
             if name not in dists:
                 raise ValueError(f"trial#{trial.number} 参数 '{name}' 不在新空间维清单——候选：{sorted(dists)}")
         assert_params_in_distributions(dists, params, where=f"迁移 trial#{trial.number}")

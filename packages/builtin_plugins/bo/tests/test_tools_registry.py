@@ -46,6 +46,6 @@ def test_search_input_entry_point_lives_in_bo():
     }
     assert "search_input" in bo_eps
     assert "search_input" not in model_eps
-    assert "inverse_optimization" not in {
-        ep.name for ep in entry_points(group="mflowy.tools")
-    }, "inverse_optimization 已随 BO 落地退役（#179 R4）"
+    assert "inverse_optimization" not in {ep.name for ep in entry_points(group="mflowy.tools")}, (
+        "inverse_optimization 已随 BO 落地退役（#179 R4）"
+    )

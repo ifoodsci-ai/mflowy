@@ -63,9 +63,9 @@ def test_member_import_boundaries():
             violators.append(str(py.relative_to(ROOT)))
     assert not violators, f"反向依赖: {violators}"
     mcp_hard = " ".join(_pkg_meta("packages/mcp/pyproject.toml")["dependencies"])
-    assert (
-        "mflowy-data" not in mcp_hard and "mflowy-model" not in mcp_hard and "mflowy-bo" not in mcp_hard
-    ), "mcp 零域硬依赖（0b 解耦不变量）"
+    assert "mflowy-data" not in mcp_hard and "mflowy-model" not in mcp_hard and "mflowy-bo" not in mcp_hard, (
+        "mcp 零域硬依赖（0b 解耦不变量）"
+    )
 
 
 def _pkg_meta(rel: str) -> dict:

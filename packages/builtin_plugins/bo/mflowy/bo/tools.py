@@ -24,7 +24,6 @@ from . import study as _study
 from .diversity import farthest_point_selection
 from .signal import compute_learning_signal, signal_suggestion
 from .study import (
-    ATTRIBUTION_MAP,
     ATTR_CONDITIONS,
     ATTR_DIRECTION,
     ATTR_LABEL,
@@ -35,7 +34,7 @@ from .study import (
     ATTR_SCHEMA,
     ATTR_SIGNAL,
     ATTR_SOURCE,
-    ATTR_SPACE,
+    ATTRIBUTION_MAP,
     LABELS,
     PRUNED_REASONS,
     SOURCES,
@@ -102,7 +101,9 @@ def _write_csv_atomic(df: pd.DataFrame, path: Path) -> None:
 
 def bo_load_or_init(
     study_name: Annotated[str, Field(description="study 名（决定落位 <task_dir>/bo_studies/<study_name>/study.db）")],
-    model_run_id: Annotated[str, Field(description="预测模型 run_id（模型 = 调用入参非身份——换模型仅重置学习信号，#182）")],
+    model_run_id: Annotated[
+        str, Field(description="预测模型 run_id（模型 = 调用入参非身份——换模型仅重置学习信号，#182）")
+    ],
     data: Annotated[
         str | None,
         Field(description="湿实验历史 parquet 绝对路径（开局锚一；无 db 时 = 从历史建新 study）"),
@@ -111,12 +112,12 @@ def bo_load_or_init(
         str | None,
         Field(description="既有 study db 绝对路径（开局锚二：续用或迁移式重建的源；其他五工具的 study_db 即此路径"),
     ] = None,
-    target_column: Annotated[
-        str | None, Field(description="目标列名（direction 键目标列；data 锚开局必填）")
-    ] = None,
+    target_column: Annotated[str | None, Field(description="目标列名（direction 键目标列；data 锚开局必填）")] = None,
     direction: Annotated[
         str | None,
-        Field(description="业务方向 maximize|minimize|match（空间组同一性字段；data 锚必填；与 search_space 一并传以比对指纹）"),
+        Field(
+            description="业务方向 maximize|minimize|match（空间组同一性字段；data 锚必填；与 search_space 一并传以比对指纹）"
+        ),
     ] = None,
     search_space: Annotated[
         dict[str, dict] | None,
@@ -126,7 +127,8 @@ def bo_load_or_init(
         ),
     ] = None,
     band: Annotated[
-        list[float] | None, Field(description="目标带 [lo, hi]（direction=match 时必填——hinge 编码；策略组可后改不重建）")
+        list[float] | None,
+        Field(description="目标带 [lo, hi]（direction=match 时必填——hinge 编码；策略组可后改不重建）"),
     ] = None,
     seed: Annotated[int | None, Field(description="TPE 种子（同一性字段；缺省开局 42、续用沿用 db 内种子）")] = None,
 ) -> dict:
@@ -157,9 +159,14 @@ def bo_load_or_init(
 
     if db is None:
         # ── init：历史 parquet → 新 study ─────────────────────────────────────
-        missing = [k for k, v in {"target_column": target_column, "direction": direction, "search_space": search_space}.items() if v is None]
+        missing = [
+            k
+            for k, v in {"target_column": target_column, "direction": direction, "search_space": search_space}.items()
+            if v is None
+        ]
         if missing:
             raise ValueError(f"data 锚开局必填 {missing}（target_column/direction/search_space）")
+        assert target_column is not None and direction is not None and search_space is not None and data is not None
         if direction != "match" and band is not None:
             raise ValueError(f"band 仅 direction=match 需要——收到 {band!r}（构造性隔离：软约束唯一形态 = band 标量）")
         dims = _study.parse_search_space(search_space)
@@ -186,9 +193,7 @@ def bo_load_or_init(
             raise ValueError(
                 "db 锚续用不收 data（意图不明）——续用只传 db；特征空间变更重建请一并传 search_space + direction（data 可作新增维补值源）"
             )
-        _study.assert_min_history(
-            sum(1 for t in st.get_trials(deepcopy=False) if str(t.state).endswith("COMPLETE"))
-        )
+        _study.assert_min_history(sum(1 for t in st.get_trials(deepcopy=False) if str(t.state).endswith("COMPLETE")))
         out: dict[str, Any] = {"action": "continue", "study_db": str(source_path)}
         if st.user_attrs[_study.ATTR_MODEL]["run_id"] != model_run_id:
             out["run_id_rebind"] = _study.rebind_model(st, new_run_id=model_run_id)
@@ -204,9 +209,7 @@ def bo_load_or_init(
     if fingerprint == st.user_attrs[_study.ATTR_FINGERPRINT]:
         if data is not None:
             raise ValueError("指纹相符（续用）不收 data——续用只传 db；重建场景指纹必不符，请核对空间组/direction/seed")
-        _study.assert_min_history(
-            sum(1 for t in st.get_trials(deepcopy=False) if str(t.state).endswith("COMPLETE"))
-        )
+        _study.assert_min_history(sum(1 for t in st.get_trials(deepcopy=False) if str(t.state).endswith("COMPLETE")))
         out = {"action": "continue", "study_db": str(source_path)}
         if st.user_attrs[_study.ATTR_MODEL]["run_id"] != model_run_id:
             out["run_id_rebind"] = _study.rebind_model(st, new_run_id=model_run_id)
@@ -290,8 +293,7 @@ def bo_ask(
     st, dims, path = _open_with_dims(study_db)
     dists = _study.distributions_of(dims)
     running: set[str] = {
-        _study._params_key(t.params)
-        for t in st.get_trials(deepcopy=False, states=(optuna.trial.TrialState.RUNNING,))
+        _study._params_key(t.params) for t in st.get_trials(deepcopy=False, states=(optuna.trial.TrialState.RUNNING,))
     }
     schema: list[str] = list(st.user_attrs[ATTR_SCHEMA])
 
@@ -312,11 +314,12 @@ def bo_ask(
 
     csv_path: str | None = None
     if picked:
-        df = pd.DataFrame(
-            [{**{c: None for c in schema}, **dict(params), "trial": number} for number, params in picked]
-        )[["trial", *[c for c in schema if c not in ("trial",)]]]
+        # 记录字典键序即列序（trial 头列 + schema 序）；每记录全 schema 键在场（None 铺底）
+        ask_df = pd.DataFrame(
+            [{"trial": number, **{c: None for c in schema}, **dict(params)} for number, params in picked]
+        )
         csv_path = str(path.parent / f"ask_{picked[0][0]}_{picked[-1][0]}.csv")
-        _write_csv_atomic(df, Path(csv_path))
+        _write_csv_atomic(ask_df, Path(csv_path))
     return {
         "study_db": str(path),
         "n_asked": len(picked),
@@ -331,7 +334,9 @@ def bo_ask(
 
 def bo_prune(
     study_db: Annotated[str, Field(description="study db 绝对路径")],
-    trials: Annotated[list[int], Field(description="拟剪枝的候选 trial number 清单（bo_ask 响应的 trial）", min_length=1)],
+    trials: Annotated[
+        list[int], Field(description="拟剪枝的候选 trial number 清单（bo_ask 响应的 trial）", min_length=1)
+    ],
     reason: Annotated[
         str,
         Field(description=f"负面判断原因（与台账/attrs 同源词表）：{'/'.join(PRUNED_REASONS)}"),
@@ -362,8 +367,12 @@ def bo_prune(
 
 def bo_diversity_check(
     study_db: Annotated[str, Field(description="study db 绝对路径")],
-    candidates: Annotated[list[int], Field(description="agent 判 keep 后的候选 trial number 清单（升序传入）", min_length=1)],
-    batch_size: Annotated[int, Field(description="本轮批大小（卡批缺省由 agent 读数传入；实验室容量，可逐轮覆写）", ge=1)],
+    candidates: Annotated[
+        list[int], Field(description="agent 判 keep 后的候选 trial number 清单（升序传入）", min_length=1)
+    ],
+    batch_size: Annotated[
+        int, Field(description="本轮批大小（卡批缺省由 agent 读数传入；实验室容量，可逐轮覆写）", ge=1)
+    ],
 ) -> dict:
     """多样性筛选：归一化 farthest-point-selection 从 kept 候选选多样批；落选者
     落 FAIL + diversity_rejected（冗余 ≠ 负面判断——落 PRUNED 会把 TPE 推离好区域，
@@ -377,9 +386,7 @@ def bo_diversity_check(
 
     st, dims, path = _open_with_dims(study_db)
     frozen = [(number, _running_trial(st, number).params) for number in candidates]
-    selected_idx, rejected_idx = farthest_point_selection(
-        dims, [params for _, params in frozen], batch_size=batch_size
-    )
+    selected_idx, rejected_idx = farthest_point_selection(dims, [params for _, params in frozen], batch_size=batch_size)
     selected = [frozen[i][0] for i in selected_idx]
     rejected = [frozen[i][0] for i in rejected_idx]
     for number in rejected:
@@ -417,15 +424,21 @@ def bo_tell(
     study_db: Annotated[str, Field(description="study db 绝对路径")],
     rows: Annotated[
         list[dict],
-        Field(description="批量回填行（一批台账多行 = 一次调用；行形态见 docstring），一批一次 bo_tell、学习信号批末报告不打断"),
+        Field(
+            description="批量回填行（一批台账多行 = 一次调用；行形态见 docstring），一批一次 bo_tell、学习信号批末报告不打断"
+        ),
     ],
     band: Annotated[
         list[float] | None,
-        Field(description="目标带 [lo, hi]（direction=match 的 study 必填——实测值 hinge 编码；agent 从卡读数，策略组可后改不重建）"),
+        Field(
+            description="目标带 [lo, hi]（direction=match 的 study 必填——实测值 hinge 编码；agent 从卡读数，策略组可后改不重建）"
+        ),
     ] = None,
     positive_gate: Annotated[int, Field(description="正向累计门（卡缺省 100；agent 从卡读数传入）", ge=1)] = 100,
     negative_gate: Annotated[int, Field(description="负向累计门（卡缺省 3）", ge=1)] = 3,
-    window_k: Annotated[int | None, Field(description="小窗口门 K（最近 K 条推荐；缺省关——启用须与 window_m 同传且 m < 负向门）", ge=1)] = None,
+    window_k: Annotated[
+        int | None, Field(description="小窗口门 K（最近 K 条推荐；缺省关——启用须与 window_m 同传且 m < 负向门）", ge=1)
+    ] = None,
     window_m: Annotated[int | None, Field(description="小窗口门 m（最近 K 条里 m 条负向即触发）", ge=1)] = None,
 ) -> dict:
     """回填（唯一湿实验期写入口，批量）：写 user_attrs + tell 单一封装——attrs
@@ -437,14 +450,14 @@ def bo_tell(
       平行样逐条不合并（独立测量）；已终态 trial 再操作 fail-loud（先到为准）
     - 批末一次学习信号检查（推荐级计数制）：未触发静默；触发返回门禁与建议
       （继续推荐 / 交棒更新模型——人点火），不拦截批继续；agent 无主动查询面
-
-    """ + _TELL_DOC_ROWS
-    import optuna
+    """
 
     if (window_k is None) != (window_m is None):
         raise ValueError("窗口门 window_k/window_m 须成对传入（缺省关）")
     if window_m is not None and window_m >= negative_gate:
-        raise ValueError(f"window_m 须小于 negative_gate（否则累计门先响、窗口门冗余）——收到 {window_m} ≥ {negative_gate}")
+        raise ValueError(
+            f"window_m 须小于 negative_gate（否则累计门先响、窗口门冗余）——收到 {window_m} ≥ {negative_gate}"
+        )
 
     st, dims, path = _open_with_dims(study_db)
     dists = _study.distributions_of(dims)
@@ -470,6 +483,11 @@ def bo_tell(
     if suggestion is not None:  # 未触发静默（#180 R1）
         out["signal"] = {"state": state, "suggestion": suggestion}
     return out
+
+
+# 行形态细则并入 docstring（tools/list 下发即 API 文档——docstring 须单字面量，
+# 拼接式首语句不被 Python 识别为 __doc__，pyright 亦报 unused expression）
+bo_tell.__doc__ = f"{bo_tell.__doc__}\n{_TELL_DOC_ROWS}"
 
 
 def _apply_tell_row(
@@ -582,6 +600,7 @@ def _apply_tell_row(
     raw = _require_measured()
     source = row.get("source", "spontaneous")
     _check_source(source)
+    assert isinstance(params, dict)  # 入口已拦 None（寻址二选一）
     _study.assert_params_in_distributions(dists, params, where="追加行（超特征空间拒收并指明列，#177 R3）")
     attrs = {ATTR_MEASURED: raw, ATTR_SOURCE: source, **_common_attrs()}
     if row.get("replicate_of") is not None:
@@ -603,7 +622,9 @@ def _apply_tell_row(
 
 def bo_export_dataset(
     study_db: Annotated[str, Field(description="study db 绝对路径")],
-    output_path: Annotated[str, Field(description="导出 parquet 绝对路径（显式参数无缺省——按需主动调用，信号触发不自动导出）")],
+    output_path: Annotated[
+        str, Field(description="导出 parquet 绝对路径（显式参数无缺省——按需主动调用，信号触发不自动导出）")
+    ],
 ) -> dict:
     """导出 study 数据集：db trials → 单个 parquet（``load.parquet`` 直吃，上游零新
     接入通道）。仅 COMPLETE（实测即数据，含结果很差的）；failed/PRUNED 不进数据集
@@ -616,7 +637,7 @@ def bo_export_dataset(
     """
     import optuna
 
-    st, _, path = _open_with_dims(study_db)
+    st, _, _path = _open_with_dims(study_db)
     schema = list(st.user_attrs[ATTR_SCHEMA])
     rows: list[dict[str, Any]] = []
     for trial in st.get_trials(deepcopy=False, states=(optuna.trial.TrialState.COMPLETE,)):
@@ -633,7 +654,7 @@ def bo_export_dataset(
         if attrs.get(ATTR_SOURCE) is not None:
             row["source"] = attrs[ATTR_SOURCE]
         rows.append(row)
-    df = pd.DataFrame(rows, columns=[*schema, "measured_value", "round", "replicate_of", "source"])
+    df = pd.DataFrame(rows).reindex(columns=[*schema, "measured_value", "round", "replicate_of", "source"])
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp = out.with_suffix(out.suffix + ".tmp")

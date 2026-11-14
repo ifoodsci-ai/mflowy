@@ -14,7 +14,6 @@ from typing import Any
 from .types import (
     AllRule,
     AnyRule,
-    Arith,
     BetweenRule,
     BOCard,
     ComparisonRule,
@@ -73,7 +72,9 @@ def _eval_operand(op: Operand, row: Mapping[str, Any]):
             return min(args)
         case "max":
             return max(args)
-    raise ValueError(f"未知算术谓词 {op.op!r}——候选：{sorted({'add', 'sub', 'mul', 'div', 'min', 'max'})}")  # pragma: no cover
+    raise ValueError(
+        f"未知算术谓词 {op.op!r}——候选：{sorted({'add', 'sub', 'mul', 'div', 'min', 'max'})}"
+    )  # pragma: no cover
 
 
 def _eval_rule(rule: Rule, row: Mapping[str, Any], card: BOCard) -> bool:

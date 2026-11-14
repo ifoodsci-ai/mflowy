@@ -6,7 +6,7 @@
 """
 
 import pytest
-from mflowy.bo.rules import evaluate_hard_rules, load_python_rule
+from mflowy.bo.rules import evaluate_hard_rules
 from mflowy.bo.types import BOCard
 from pydantic import ValidationError
 
@@ -44,9 +44,7 @@ def test_band_ordering_and_dim_bounds():
             _base_card(search_space={"t": {"kind": "continuous", "low": 0, "high": 9, "scale": "log"}})
         )
     with pytest.raises(ValidationError, match="choices 含重复"):
-        BOCard.model_validate(
-            _base_card(search_space={"e": {"kind": "discrete", "choices": ["WT", "WT"]}})
-        )
+        BOCard.model_validate(_base_card(search_space={"e": {"kind": "discrete", "choices": ["WT", "WT"]}}))
 
 
 def test_extra_forbid_and_three_kinds():
@@ -134,9 +132,7 @@ def test_python_rule_scanned_at_validation():
     with pytest.raises(ValidationError):
         BOCard.model_validate(_base_card(python_rule=bad))
     good = (
-        "import pandas as pd\n\n"
-        "def validate(row: pd.DataFrame) -> bool:\n"
-        "    return row['temperature'].iloc[0] > 25\n"
+        "import pandas as pd\n\ndef validate(row: pd.DataFrame) -> bool:\n    return row['temperature'].iloc[0] > 25\n"
     )
     BOCard.model_validate(_base_card(python_rule=good))
 
@@ -215,10 +211,10 @@ def test_evaluator_fail_loud_on_unknown_row_feature(card):
 
 def test_python_escape_hatch(card):
     rule = (
-        "import pandas as pd\n\n"
-        "def validate(row: pd.DataFrame) -> bool:\n"
-        "    return row['temperature'].iloc[0] < 40\n"
+        "import pandas as pd\n\ndef validate(row: pd.DataFrame) -> bool:\n    return row['temperature'].iloc[0] < 40\n"
     )
     card = card.model_copy(update={"python_rule": rule})
-    assert evaluate_hard_rules(card, {"temperature": 44.0, "enzyme": "WT"}) == ["python_rule"]  # hard 规则全过、仅 python 违例
+    assert evaluate_hard_rules(card, {"temperature": 44.0, "enzyme": "WT"}) == [
+        "python_rule"
+    ]  # hard 规则全过、仅 python 违例
     assert evaluate_hard_rules(card, {"temperature": 30.0, "enzyme": "WT"}) == []

@@ -21,9 +21,8 @@ from __future__ import annotations
 
 from typing import Annotated, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-
 from mflowy.utils.python_script_security_scan import scan_security
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # ── 空间组：搜索维三 kind（#178 R2；编码声明归空间组承载但不进同一性 M1）──────
 
@@ -63,9 +62,7 @@ class CombinatorialDim(BaseModel):
     note: str | None = None
 
 
-type SpaceDim = Annotated[
-    Union[ContinuousDim, DiscreteDim, CombinatorialDim], Field(discriminator="kind")
-]
+type SpaceDim = Annotated[Union[ContinuousDim, DiscreteDim, CombinatorialDim], Field(discriminator="kind")]
 
 # ── 策略组：hard 规则表达式树（JSON 树——Callable 过不了 MCP 通道，D14）────────
 #
@@ -80,7 +77,7 @@ class Arith(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     op: Literal["add", "sub", "mul", "div", "min", "max"]
-    args: list["Operand"] = Field(min_length=2)
+    args: list[Operand] = Field(min_length=2)
 
 
 class ConstRef(BaseModel):
@@ -226,6 +223,8 @@ class BOCard(BaseModel):
             if isinstance(dim, ContinuousDim):
                 if dim.low >= dim.high:
                     raise ValueError(f"搜索维 '{name}' 需 low < high，收到 [{dim.low}, {dim.high}]")
+                if dim.dtype == "int" and (dim.low != int(dim.low) or dim.high != int(dim.high)):
+                    raise ValueError(f"搜索维 '{name}' dtype=int 需整值边界，收到 [{dim.low}, {dim.high}]")
                 if dim.scale == "log" and dim.low <= 0:
                     raise ValueError(f"搜索维 '{name}' scale=log 需 low > 0，收到 {dim.low}")
             elif isinstance(dim, DiscreteDim) and len(set(map(str, dim.choices))) != len(dim.choices):
@@ -285,9 +284,7 @@ class BOCard(BaseModel):
                     raise ValueError(f"查表谓词引用未知键特征 '{r.key_feature}'——候选：{sorted(dims)}")
                 table = self.lookup_tables.get(r.table)
                 if table is None:
-                    raise ValueError(
-                        f"查表谓词引用未知表键 '{r.table}'——候选：{sorted(self.lookup_tables) or '无'}"
-                    )
+                    raise ValueError(f"查表谓词引用未知表键 '{r.table}'——候选：{sorted(self.lookup_tables) or '无'}")
                 for row_key, constants in table.items():
                     if r.constant not in constants:
                         raise ValueError(

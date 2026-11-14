@@ -9,11 +9,12 @@
 from __future__ import annotations
 
 import math
+from typing import Any
 
-from .types import CombinatorialDim, ContinuousDim, DiscreteDim, SpaceDim
+from .types import ContinuousDim, SpaceDim
 
 
-def _dim_distance(dim: SpaceDim, a: object, b: object) -> float:
+def _dim_distance(dim: SpaceDim, a: Any, b: Any) -> float:
     """单维距离：连续 = 归一化差绝对值（log 先取对数）；离散/组合 = 恒等/汉明。"""
     if isinstance(dim, ContinuousDim):
         lo, hi = (math.log(dim.low), math.log(dim.high)) if dim.scale == "log" else (dim.low, dim.high)
@@ -21,13 +22,13 @@ def _dim_distance(dim: SpaceDim, a: object, b: object) -> float:
     return 0.0 if a == b else 1.0
 
 
-def _distance(dims: dict[str, SpaceDim], a: dict[str], b: dict[str]) -> float:
+def _distance(dims: dict[str, SpaceDim], a: dict[str, Any], b: dict[str, Any]) -> float:
     return math.sqrt(sum(_dim_distance(dim, a[name], b[name]) for name, dim in dims.items()))
 
 
 def farthest_point_selection(
     dims: dict[str, SpaceDim],
-    candidates: list[dict],
+    candidates: list[dict[str, Any]],
     *,
     batch_size: int,
 ) -> tuple[list[int], list[int]]:

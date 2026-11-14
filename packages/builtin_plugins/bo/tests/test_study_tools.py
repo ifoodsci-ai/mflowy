@@ -59,16 +59,24 @@ def test_init_min_history_gate(tmp_path, history):
     short.to_parquet(tmp_path / "short.parquet")
     with pytest.raises(ValueError, match="开局最小历史量 20"):
         tools.bo_load_or_init(
-            study_name="s2", model_run_id="r", data=str(tmp_path / "short.parquet"),
-            target_column="yield", direction="maximize", search_space=SPACE,
+            study_name="s2",
+            model_run_id="r",
+            data=str(tmp_path / "short.parquet"),
+            target_column="yield",
+            direction="maximize",
+            search_space=SPACE,
         )
 
 
 def test_init_name_collision_fails_loud(tmp_path, study):
     with pytest.raises(FileExistsError, match="撞名"):
         tools.bo_load_or_init(
-            study_name="s1", model_run_id="r", data=study_study_parquet(tmp_path),
-            target_column="yield", direction="maximize", search_space=SPACE,
+            study_name="s1",
+            model_run_id="r",
+            data=study_study_parquet(tmp_path),
+            target_column="yield",
+            direction="maximize",
+            search_space=SPACE,
         )
 
 
@@ -81,8 +89,11 @@ def test_init_requires_space_direction_target(tmp_path, history):
         tools.bo_load_or_init(study_name="s3", model_run_id="r", data=study_study_parquet(tmp_path))
     with pytest.raises(ValueError, match="schema 同构"):
         tools.bo_load_or_init(
-            study_name="s3", model_run_id="r", data=study_study_parquet(tmp_path),
-            target_column="yield", direction="maximize",
+            study_name="s3",
+            model_run_id="r",
+            data=study_study_parquet(tmp_path),
+            target_column="yield",
+            direction="maximize",
             search_space={"pressure": {"kind": "continuous", "low": 0, "high": 5}},
         )
 
@@ -90,12 +101,21 @@ def test_init_requires_space_direction_target(tmp_path, history):
 def test_match_init_requires_band(tmp_path, history):
     with pytest.raises(ValueError, match="需要 band"):
         tools.bo_load_or_init(
-            study_name="s4", model_run_id="r", data=study_study_parquet(tmp_path),
-            target_column="yield", direction="match", search_space=SPACE,
+            study_name="s4",
+            model_run_id="r",
+            data=study_study_parquet(tmp_path),
+            target_column="yield",
+            direction="match",
+            search_space=SPACE,
         )
     out = tools.bo_load_or_init(
-        study_name="s4", model_run_id="r", data=study_study_parquet(tmp_path),
-        target_column="yield", direction="match", search_space=MATCH_SPACE, band=[40, 60],
+        study_name="s4",
+        model_run_id="r",
+        data=study_study_parquet(tmp_path),
+        target_column="yield",
+        direction="match",
+        search_space=MATCH_SPACE,
+        band=[40, 60],
     )
     assert out["action"] == "init"
 
@@ -108,7 +128,7 @@ def test_ask_full_schema_csv_and_running_trials(study):
     assert ask["n_asked"] == 4
     df = pd.read_csv(ask["candidates_csv"])
     assert list(df.columns) == ["trial", "temperature", "ph", "enzyme"]  # 非搜索维空列（#179 R1）
-    assert df["ph"].isna().all() and df["temperature"].notna().all()
+    assert bool(df["ph"].isna().all()) and bool(df["temperature"].notna().all())
     numbers = [t["trial"] for t in ask["trials"]]
     assert numbers == sorted(numbers) and numbers[0] >= 25  # trial number 直用（历史 25 条占 0-24）
 
@@ -152,10 +172,21 @@ def test_tell_done_and_appended_replicate(study):
     out = tools.bo_tell(
         study["study_db"],
         [
-            {"trial": head["trial"], "status": "done", "measured_value": 42.0, "label": "close",
-             "round": 1, "conditions": {"ph": 6.5}},
-            {"params": head["params"], "measured_value": 42.3, "source": "recommended",
-             "replicate_of": head["trial"], "label": "close"},  # 平行样余条
+            {
+                "trial": head["trial"],
+                "status": "done",
+                "measured_value": 42.0,
+                "label": "close",
+                "round": 1,
+                "conditions": {"ph": 6.5},
+            },
+            {
+                "params": head["params"],
+                "measured_value": 42.3,
+                "source": "recommended",
+                "replicate_of": head["trial"],
+                "label": "close",
+            },  # 平行样余条
         ],
     )
     assert [t["state"] for t in out["told"]] == ["COMPLETE", "COMPLETE"]
@@ -188,8 +219,17 @@ def test_tell_deviated_variant_semantics(study):
     measured = {**base["params"], "temperature": 55.5}
     out = tools.bo_tell(
         study["study_db"],
-        [{"trial": base["trial"], "status": "deviated", "params": measured,
-          "measured_value": 31.0, "variant": True, "label": "close", "conditions": {"ph": 7.0}}],
+        [
+            {
+                "trial": base["trial"],
+                "status": "deviated",
+                "params": measured,
+                "measured_value": 31.0,
+                "variant": True,
+                "label": "close",
+                "conditions": {"ph": 7.0},
+            }
+        ],
     )
     row = out["told"][0]
     assert row["original"] == "FAIL(variant_replaced)" and row["source"] == "recommended"
@@ -197,8 +237,15 @@ def test_tell_deviated_variant_semantics(study):
     base2 = ask["trials"][1]
     out2 = tools.bo_tell(
         study["study_db"],
-        [{"trial": base2["trial"], "status": "deviated", "params": {**base2["params"], "temperature": 60.0},
-          "measured_value": 30.0, "variant": False}],
+        [
+            {
+                "trial": base2["trial"],
+                "status": "deviated",
+                "params": {**base2["params"], "temperature": 60.0},
+                "measured_value": 30.0,
+                "variant": False,
+            }
+        ],
     )
     assert "RUNNING" in out2["told"][0]["original"]  # 默认自发追加——原推荐留在途
 
@@ -207,12 +254,16 @@ def test_tell_fail_loud_forms(study):
     ask = tools.bo_ask(study["study_db"], n_candidates=2)
     n = [t["trial"] for t in ask["trials"]]
     with pytest.raises(ValueError, match="二选一"):
-        tools.bo_tell(study["study_db"], [{"trial": n[0], "params": {"temperature": 50, "enzyme": "WT"}, "status": "done"}])
+        tools.bo_tell(
+            study["study_db"], [{"trial": n[0], "params": {"temperature": 50, "enzyme": "WT"}, "status": "done"}]
+        )
     with pytest.raises(ValueError, match="未知 status"):
         tools.bo_tell(study["study_db"], [{"trial": n[0], "status": "weird"}])
     with pytest.raises(ValueError, match="schema 外列"):
-        tools.bo_tell(study["study_db"], [{"trial": n[0], "status": "done", "measured_value": 1.0,
-                                           "conditions": {"ghost_col": 1}}])
+        tools.bo_tell(
+            study["study_db"],
+            [{"trial": n[0], "status": "done", "measured_value": 1.0, "conditions": {"ghost_col": 1}}],
+        )
     with pytest.raises(ValueError, match="超出搜索分布"):
         tools.bo_tell(study["study_db"], [{"params": {"temperature": 500.0, "enzyme": "WT"}, "measured_value": 1.0}])
     tools.bo_tell(study["study_db"], [{"trial": n[0], "status": "done", "measured_value": 5.0}])
@@ -222,16 +273,25 @@ def test_tell_fail_loud_forms(study):
 
 def test_tell_match_band_required(tmp_path, history):
     out = tools.bo_load_or_init(
-        study_name="m1", model_run_id="r", data=str(tmp_path / "wet_history.parquet"),
-        target_column="yield", direction="match", search_space=MATCH_SPACE, band=[40, 60],
+        study_name="m1",
+        model_run_id="r",
+        data=str(tmp_path / "wet_history.parquet"),
+        target_column="yield",
+        direction="match",
+        search_space=MATCH_SPACE,
+        band=[40, 60],
     )
     ask = tools.bo_ask(out["study_db"], n_candidates=1)
     with pytest.raises(ValueError, match="回填需 band"):
         tools.bo_tell(out["study_db"], [{"trial": ask["trials"][0]["trial"], "status": "done", "measured_value": 41.0}])
     # match 编码：带外实测值 → hinge 距离入 trial.value，raw 恒存 measured_value attr
-    told = tools.bo_tell(out["study_db"], [
-        {"trial": ask["trials"][0]["trial"], "status": "done", "measured_value": 80.0, "label": "not_counted"},
-    ], band=[40, 60])
+    told = tools.bo_tell(
+        out["study_db"],
+        [
+            {"trial": ask["trials"][0]["trial"], "status": "done", "measured_value": 80.0, "label": "not_counted"},
+        ],
+        band=[40, 60],
+    )
     assert told["told"][0]["state"] == "COMPLETE"
 
 
@@ -289,8 +349,16 @@ def test_export_complete_only_with_bookkeeping(study, tmp_path):
     tools.bo_prune(study["study_db"], trials=[n[0]], reason="hard_rule_violation")
     tools.bo_tell(
         study["study_db"],
-        [{"trial": n[1], "status": "done", "measured_value": 42.0, "label": "close", "round": 2,
-          "conditions": {"ph": 6.5}}],
+        [
+            {
+                "trial": n[1],
+                "status": "done",
+                "measured_value": 42.0,
+                "label": "close",
+                "round": 2,
+                "conditions": {"ph": 6.5},
+            }
+        ],
     )
     out = tools.bo_export_dataset(study["study_db"], str(tmp_path / "ds.parquet"))
     df = pd.read_parquet(out["output_path"])
@@ -311,10 +379,19 @@ def test_rebuild_bounds_change_migrates_terminal_states(study, tmp_path):
     # n[2] 留 RUNNING → 重建终局化 FAIL
 
     narrowed = dict(SPACE)
-    narrowed["temperature"] = {"kind": "continuous", "low": 15.0, "high": 95.0, "dtype": "float"}  # 物理边界变（放宽——收窄越界即 fail-loud，见下例）
+    narrowed["temperature"] = {
+        "kind": "continuous",
+        "low": 15.0,
+        "high": 95.0,
+        "dtype": "float",
+    }  # 物理边界变（放宽——收窄越界即 fail-loud，见下例）
     out = tools.bo_load_or_init(
-        study_name="rebuilt", model_run_id="run-A", db=study["study_db"],
-        direction="maximize", search_space=narrowed, seed=7,
+        study_name="rebuilt",
+        model_run_id="run-A",
+        db=study["study_db"],
+        direction="maximize",
+        search_space=narrowed,
+        seed=7,
     )
     assert out["action"] == "rebuild"
     report = out["migration_report"]
@@ -328,8 +405,12 @@ def test_rebuild_out_of_bounds_fails_loud(study, tmp_path, history):
     narrowed["temperature"] = {"kind": "continuous", "low": 20.0, "high": 21.0, "dtype": "float"}
     with pytest.raises(ValueError, match="temperature"):
         tools.bo_load_or_init(
-            study_name="rebuilt2", model_run_id="run-A", db=study["study_db"],
-            direction="maximize", search_space=narrowed, seed=7,
+            study_name="rebuilt2",
+            model_run_id="run-A",
+            db=study["study_db"],
+            direction="maximize",
+            search_space=narrowed,
+            seed=7,
         )
 
 
@@ -339,14 +420,17 @@ def test_rebuild_new_dim_drops_negative_and_backfills(study, tmp_path, history):
     tools.bo_prune(study["study_db"], trials=[n[0]], reason="hard_rule_violation")
     tools.bo_tell(
         study["study_db"],
-        [{"trial": n[1], "status": "done", "measured_value": 42.0, "label": "close",
-          "conditions": {"ph": 6.9}}],
+        [{"trial": n[1], "status": "done", "measured_value": 42.0, "label": "close", "conditions": {"ph": 6.9}}],
     )
     wider = dict(SPACE)
     wider["ph"] = {"kind": "continuous", "low": 5.0, "high": 8.0, "dtype": "float"}  # 新增搜索维
     out = tools.bo_load_or_init(
-        study_name="rebuilt3", model_run_id="run-A", db=study["study_db"],
-        direction="maximize", search_space=wider, seed=7,
+        study_name="rebuilt3",
+        model_run_id="run-A",
+        db=study["study_db"],
+        direction="maximize",
+        search_space=wider,
+        seed=7,
         data=str(tmp_path / "wet_history.parquet"),  # 湿历史补新增维值
     )
     report = out["migration_report"]
@@ -359,10 +443,15 @@ def test_rebuild_new_dim_drops_negative_and_backfills(study, tmp_path, history):
 def test_continue_rejects_ambiguous_anchors(study, tmp_path, history):
     with pytest.raises(ValueError, match="不收 data"):
         tools.bo_load_or_init(
-            study_name="s1", model_run_id="run-A", db=study["study_db"],
+            study_name="s1",
+            model_run_id="run-A",
+            db=study["study_db"],
             data=str(tmp_path / "wet_history.parquet"),
         )  # 无 search_space + data 同传 = 意图不明
     with pytest.raises(ValueError, match="须一并传入"):
         tools.bo_load_or_init(
-            study_name="s1", model_run_id="run-A", db=study["study_db"], search_space=SPACE,
+            study_name="s1",
+            model_run_id="run-A",
+            db=study["study_db"],
+            search_space=SPACE,
         )  # 比对指纹需要 direction
