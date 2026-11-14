@@ -62,8 +62,15 @@ def test_predict_nearest_feeds_shap_explanation(tmp_path):
 
 
 def test_predict_template_compiles():
-    """predict compute 工具活路径：run_id 经模板内 model__loader 承载，predict 零 run_id 参数。"""
-    Builder(PREDICT_TEMPLATE, env={"run_id": "r1", "data_path": "/tmp/x.csv"}).build()
+    """predict compute 工具活路径：run_id 经模板内 model__loader 承载，predict 零 run_id 参数。
+    渲染断言（#224 P3，对照下方 inverse 用例写法）：两 env 键都须落进节点 params——
+    模板不渲染 = 调用方传参被 Jinja 静默丢弃。"""
+    dag = Builder(PREDICT_TEMPLATE, env={"run_id": "r1", "data_path": "/tmp/x.csv"}).build()
+    params = {k: n.params for item in dag.conf.flow for k, n in item.items()}
+    assert params["load__file"]["file_path"] == "/tmp/x.csv"
+    assert params["model__loader"]["run_id"] == "r1"
+    assert set(params) == {"load__file", "model__loader", "predict"}  # 三节点面钉死（改名/缺席即红）
+    assert not params["predict"]  # predict 零参数（组寻址吃上游）
 
 
 def test_search_input_out_of_model_ns_eval_plots_compile(tmp_path):

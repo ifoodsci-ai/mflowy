@@ -25,6 +25,7 @@ def test_runs_named_func(tmp_path):
     df = pd.DataFrame({"a": [1.0, None, 3.0]})
     out = python(load=df, source=f"{_script(tmp_path)}:keep_first")
     assert out.shape == (1, 1)
+    assert out["a"].tolist() == [1.0]  # 值级（#224 P3）：keep_first 真跑了指定函数
 
 
 def test_defaults_to_clean(tmp_path):
@@ -32,3 +33,4 @@ def test_defaults_to_clean(tmp_path):
     df = pd.DataFrame({"a": [1.0, None, 3.0]})
     out = python(load=df, source=str(_script(tmp_path)))
     assert out.shape == (2, 1)
+    assert out["a"].tolist() == [1.0, 3.0]  # 值级（#224 P3）：dropna 语义非丢首行

@@ -72,15 +72,17 @@ class TestSearchExperimentModelRunIds:
 class TestDefaultTrackingUri:
     """MCP 模式固定默认库 — task_dir 漂移是 bug（见提交说明）。"""
 
-    def test_fixed_path_independent_of_task_dir(self):
-        from pathlib import Path
+    def test_fixed_path_independent_of_task_dir(self, tmp_path, monkeypatch):
+        """HOME 隔离（#224 P1）：固定 ~/.mflowy/mlflow.db 不随 task_dir 漂移——
+        旧断言的 is_dir 被前一行 default_tracking_uri() 的 mkdir 副作用自我满足，
+        且套件写真 HOME；隔离下目录须由本调用自建（tmp_path 起始为空）"""
+        monkeypatch.setenv("HOME", str(tmp_path))
 
         from mflowy.utils.mlflow import default_tracking_uri
 
         uri = default_tracking_uri()
-        assert uri.startswith("sqlite:///")
-        assert uri.endswith(".mflowy/mlflow.db")
-        assert (Path.home() / ".mflowy").is_dir()
+        assert uri == f"sqlite:///{tmp_path}/.mflowy/mlflow.db"
+        assert (tmp_path / ".mflowy").is_dir()  # 本调用自建（非先在）
 
     def test_setup_env_override(self, monkeypatch):
         import mflowy.utils.mlflow as m

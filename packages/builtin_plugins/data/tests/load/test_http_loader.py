@@ -63,12 +63,15 @@ def test_multi_a_record_any_private_rejects(monkeypatch):
 
 
 def test_all_public_records_pass(monkeypatch):
-    monkeypatch.setattr(
-        http_loader.socket,
-        "getaddrinfo",
-        lambda h, p: [(0, 0, 0, "", ("93.184.216.34", 0))],
-    )
+    calls = []
+
+    def _spy(h, p):
+        calls.append(h)
+        return [(0, 0, 0, "", ("93.184.216.34", 0))]
+
+    monkeypatch.setattr(http_loader.socket, "getaddrinfo", _spy)
     _validate_url("https://public.example.com/data")  # 不 raise 即通过
+    assert calls == ["public.example.com"]  # 正路径须真调 DNS 解析（#224 P3：防校验被移除的静默假绿）
 
 
 # ── http()：请求路径上的安全默认 ───────────────────────────────

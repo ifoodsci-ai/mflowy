@@ -46,7 +46,9 @@ def trained_pipe():
     def make_pipe(**params):
         return build_pipeline(TASKTYPE.REGRESSION, model_cls, None, params)
 
-    loader = training(split, "RF", make_pipe, {"n_estimators": 5, "random_state": 0, "n_jobs": 1, "oob_score": True})
+    # n_estimators=30（#224 P3 值级断言前提）：5 树叶平均样本内偏差实测达 34%，
+    # 30 树收敛 ±8%——rtol=0.25 有 3 倍余量；20 行训练毫秒级无感
+    loader = training(split, "RF", make_pipe, {"n_estimators": 30, "random_state": 0, "n_jobs": 1, "oob_score": True})
     return loader
 
 
@@ -67,12 +69,17 @@ class TestModelPipelineContract:
         X = pd.DataFrame({"f1": [1.0, 2.0], "f2": [2.0, 4.0]})
         pred = trained_pipe.predict(X)
         assert len(pred) == 2
+        # 值级下限（#224 P3）：y=f1*3+1 确定性——5 树 RF 样本内实测偏 15%（叶平均
+        # 不可精确插值），rtol=0.25 钉「非垃圾尺度」（常数/零/错列均出界）；
+        # 质量地板归 e2e-bench，此处不越位
+        np.testing.assert_allclose(pred, [4.0, 7.0], rtol=0.25)
 
     def test_input_column_alignment(self, trained_pipe):
         """多余列（如 target）被剔除，缺列 raise"""
         df = pd.DataFrame({"f1": [1.0], "f2": [2.0], "target": [999.0]})
         pred = trained_pipe.predict(df)
         assert len(pred) == 1
+        np.testing.assert_allclose(pred, [4.0], rtol=0.25)
 
         with pytest.raises(ValueError, match="缺少模型输入列"):
             trained_pipe.predict(pd.DataFrame({"f1": [1.0]}))
@@ -198,7 +205,7 @@ class TestWithColumnTransformer:
         )
         ct.set_output(transform="pandas")
 
-        pipe = build_pipeline(TASKTYPE.REGRESSION, model_cls, ct, {"n_estimators": 5, "random_state": 0, "n_jobs": 1})
+        pipe = build_pipeline(TASKTYPE.REGRESSION, model_cls, ct, {"n_estimators": 30, "random_state": 0, "n_jobs": 1})
         pipe.fit(X, y)
         pipe.set_names(y.columns.tolist())
 
@@ -206,6 +213,10 @@ class TestWithColumnTransformer:
         # CT 只在训练数据上 fit（防泄漏由 Pipeline 边界承载）
         pred = pipe.predict(X)
         assert len(pred) == 20
+        # 拟合优度下限（#224 P3）：样本内 MAE ≤ 10% 变程（实测 ~1.2%；边界点 f1=0
+        # 回归均值偏离 2.4——相对容差在近零区天然失效，变程口径稳定）
+        truth = y["target"].to_numpy()
+        assert float(np.abs(pred - truth).mean()) <= 0.1 * (truth.max() - truth.min())
 
     def test_x_names_stay_raw_when_ct_expands_columns(self):
         """OHE 扩列时 x_names 仍是原始输入列——pipe 整体作为模型单位（input X → output y），
@@ -224,7 +235,7 @@ class TestWithColumnTransformer:
         ct = ColumnTransformer([("ohe", OneHotEncoder(sparse_output=False), ["cat"])], remainder="passthrough")
         ct.set_output(transform="pandas")
 
-        pipe = build_pipeline(TASKTYPE.REGRESSION, model_cls, ct, {"n_estimators": 5, "random_state": 0, "n_jobs": 1})
+        pipe = build_pipeline(TASKTYPE.REGRESSION, model_cls, ct, {"n_estimators": 30, "random_state": 0, "n_jobs": 1})
         pipe.fit(X, y)
         pipe.set_names(y.columns.tolist())
 
