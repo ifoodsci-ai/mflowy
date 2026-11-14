@@ -1,6 +1,6 @@
 # MFlowy
 
-YAML 配置驱动的模块化 ML 工作流引擎：能力以插件节点存在、图以 YAML 组装、全部能力经 MCP 工具暴露。本文件是**元词汇**的词表，按「引擎内核（共享）+ 三子系统」分组（子系统划分与系统设计见 [docs/pilot-loop.md](docs/pilot-loop.md)）——只定义这些词本身与禁用别名；节点与边函数的名字以运行期插件目录为唯一真源（`list-nodes` 可查），方法论术语见 [docs/research-flow.md](docs/research-flow.md) 自带术语表，均不在此复述。
+YAML 配置驱动的模块化 ML 工作流引擎：能力以插件节点存在、图以 YAML 组装、全部能力经 MCP 工具暴露。本文件是**元词汇**的词表，按「引擎内核（共享）+ 三子系统」分组（子系统划分与系统设计见 [bo 包 README](packages/builtin_plugins/bo/README.md)）——只定义这些词本身与禁用别名；节点与边函数的名字以运行期插件目录为唯一真源（`list-nodes` 可查），方法论术语见 [docs/research-flow.md](docs/research-flow.md) 自带术语表，均不在此复述。
 
 ## Language
 
@@ -227,4 +227,51 @@ _Avoid_: 快照、checkpoint
 
 ### 贝叶斯优化推荐子系统（BO）
 
-> 占位：本子系统词条随 bo 域落地 PR 填充（决策图 #171）。
+**BOCard**:
+bo 域先验卡（正式名，#178/#184）：空间组（搜索维三 kind + 边界 = DomainCard
+`expected_ranges` 直取（宽于物理域拒绝）+ direction——同一性字段，变更 = 重建
+study）+ 策略组（hard 规则表达式树 / 查表谓词 / 按类常量表 / band / 容差门限 /
+批缺省 / 典型测量变异——变更不重建不升版）。pydantic 单源（`mflowy/bo/types.py`），
+卡实例 = YAML 工件（bo-prior 剧本产 `<task_dir>/BOCard.yaml`）；bo 工具零卡耦合
+——门限/规则/容差由 agent 读卡后以参数进入。
+_Avoid_: 先验卡（Clean 的 DomainCard 专属）单指 bo 卡；「BO 先验卡」降为非正式叙述语
+
+**study**:
+bo 状态载体：sqlite db（`<task_dir>/bo_studies/<study_name>/study.db`，不匹配
+sessions_gc glob——长寿命可继承资产）+ 同一性判据（影响 `study.ask` 的字段：空间
+组三 kind/边界/choices + direction + seed——指纹存 study attrs，变更即迁移式重建）
++ 模型 = 调用入参非身份（换模型仅重置学习信号，run_id 归档）+ 迁移式开局三场景
+（COMPLETE 保态迁移/新增维度从湿历史补值 fail-loud/在途 RUNNING 终局化 FAIL）
++ 在途避让（对 RUNNING 精确去重重采样）。引擎 = TPE 单引擎
+（multivariate+constant_liar 显式开，#175）。
+_Avoid_: bo 会话（bo = agent 工具工作流非 POMDP 会话，#177）；WetLab 局 / Virtual 局（双模式表退役）
+
+**trial**:
+optuna trial，台账序号 = trial number 直用（PRUNED/FAIL 也占号，跳号即事实）。
+终态三义：COMPLETE = 有实测值（含结果很差的）/ PRUNED = 对条件的负面判断
+（硬规则违例|出带|用户拒绝|条件致因失败）/ FAIL = 作废无判断（多样性落选——
+「落选」吸收为义之一|放弃|操作事故|脏数据|变体替换|重建终局化）；RUNNING =
+在途，跨对话有效（显式放弃为唯一出口）。attrs 三键判定标签/来源/原因 +
+簿记键（measured_value/conditions/round/replicate_of）。
+
+**推荐台账（ledger）**:
+`<study 目录>/round_001.csv` 每轮新文件（「轮」吸收，文件序列即轮次）；行 =
+推荐项（recommendation）；纯 bench 表**零预测列族**（预测值 = agent 过程工件 +
+回填期 predict 复算）；列名面 `trial`/`round`/`measured_value`/`status`
+（done|failed|deviated|abandoned|appended）/`attribution`
+（conditional|operational|dirty_data）/`label`/`source`/`replicate_of`；
+两路回填（台账更新 / 带序号消息）先到为准、后到撞 fail-loud。
+_Avoid_: 提案（proposal——不与内核 Observation 退役词撞义）
+
+**湿实验（wetlab）**:
+外部环境（人工或自动化实验室）对推荐台账的执行与回填——系统的学习信号只认
+湿数据（虚拟预测值永不入 study）。
+_Avoid_: 裸「实验」（与平台实验/追踪实验并现的语境）
+
+**学习信号（learning signal）**:
+推荐级计数制信号：正向累计门（缺省 100）/ 负向累计门（缺省 3）+ 小窗口门任一
+触发；计数单位 = 推荐（同参数推荐来源 trial 归一条）；信号 = `bo_tell` 批末抛出的
+事件（agent 无主动查询面），未触发静默、触发不拦截（人点火）；换模型按 run_id
+归档重置（`learning_signal_archive`）。「学习门禁（Learning Gate）」为叙述词，
+机制见 [bo 包 README](packages/builtin_plugins/bo/README.md)。
+_Avoid_: 信号检查工具（独立工具已并入 bo_tell 批末，#180）

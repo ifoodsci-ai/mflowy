@@ -1,0 +1,55 @@
+[project]
+name = "mflowy-bo"
+version = "0.2.0"
+description = "MFlowy bo domain — 贝叶斯优化推荐（六工具 + BOCard + study 状态载体；agent 工具工作流，非 POMDP 会话 #177）"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+# bo 居 model 之后（#175 Q2：utils ← driver ← data ← model ← bo ← mcp——search_input
+# 血统 + ModelLoader 引用合法）；零 extra 面（#184：bo 无独占依赖栈，不设 mflowy[bo]）
+dependencies = [
+    "mflowy-model",
+    "mflowy-driver",  # search_input @node/log_search_input 直用 driver（import 即声明，红线 6）
+    "mflowy-utils",
+    # TPE 单引擎硬依赖（#175 Q1：multivariate+constant_liar 显式开；torch 全线离开 bo）
+    "optuna>=4.8",
+    # 直用科学栈（import 即声明——不靠 model 传递侥幸）
+    "numpy>=2.0.0",
+    "pandas>=2.2,<3",
+    "pyarrow>=12.0.0",
+    "pydantic>=2.13.4",
+    "pyyaml>=6.0",
+]
+
+# 内置插件注册（静态声明；CR 必查：新 @node 必有声明、声明必有函数、
+# namespace 段与装饰器 namespace= 逐字一致）。search_input 自 model 真迁移（#175：
+# 迁移非复制，model 不留副本；裸名节点键不变——寻址名/YAML 零破坏）。
+[project.entry-points."mflowy.builtin_plugins"]
+search_input = "mflowy.bo.search_input:search_input"
+
+# 域工具注册（静态声明）；镜像测试断言本组 ≡ mflowy/bo/tools.py 公有函数。
+# 六工具全无状态（#180 R1）：每次调用从 study sqlite db 加载状态，恒本地执行
+# （#183：ask 恒本地，预测走既有 model.predict，bo 零触碰模型）。
+[project.entry-points."mflowy.tools"]
+bo_load_or_init = "mflowy.bo.tools:bo_load_or_init"
+bo_ask = "mflowy.bo.tools:bo_ask"
+bo_prune = "mflowy.bo.tools:bo_prune"
+bo_diversity_check = "mflowy.bo.tools:bo_diversity_check"
+bo_tell = "mflowy.bo.tools:bo_tell"
+bo_export_dataset = "mflowy.bo.tools:bo_export_dataset"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["mflowy"]
+dev-mode-dirs = ["."]
+
+[tool.hatch.build.targets.sdist]
+include = ["mflowy", "pyproject.toml"]
+
+[tool.uv.sources]
+mflowy-model = { workspace = true }
+mflowy-driver = { workspace = true }
+mflowy-utils = { workspace = true }

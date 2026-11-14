@@ -4,7 +4,7 @@
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](pyproject.toml)
 [![MCP](https://img.shields.io/badge/MCP-Server-7B61FF.svg)](packages/mcp/mflowy/mcp/server.py)
 
-MFlowy 是 **MCP-native** 的 AI4S 能力层，实现 **PILOT 闭环**（**P**rior-**I**nherited **L**oop for **O**ptimization and **T**esting，先验继承闭环优化测试）：从个人历史实验数据出发——数据清洗、模型预训练、贝叶斯优化推荐下一轮实验——湿实验结果回流，学习门禁判定继续还是带着失败信号回炉重训。每个子系统都是一场 agent 会话，统一范式：**先验讨论建档（剧本问卷）→ 核心执行（POMDP 会话）→ 产出与先验更新**。系统设计全文见 [docs/pilot-loop.md](docs/pilot-loop.md)。
+MFlowy 是 **MCP-native** 的 AI4S 能力层，实现 **PILOT 闭环**（**P**rior-**I**nherited **L**oop for **O**ptimization and **T**esting，先验继承闭环优化测试）：从个人历史实验数据出发——数据清洗、模型预训练、贝叶斯优化推荐下一轮实验——湿实验结果回流，学习门禁判定继续还是带着失败信号回炉重训。每个子系统都是一场 agent 会话，统一范式：**先验讨论建档（剧本问卷）→ 核心执行（POMDP 会话）→ 产出与先验更新**。系统设计全文见 [bo 包 README](packages/builtin_plugins/bo/README.md)（canon 随包分发）。
 
 ```mermaid
 flowchart LR
@@ -56,10 +56,11 @@ title MFlowy 组件架构（C4 Container）
 Person(agent, "自主 Agent", "数据分析 / 建模 / 预测 agent（Claude Code、Cursor 等）")
 Person(dev, "能力作者", "写 @node 插件的开发者")
 
-System_Boundary(sys, "MFlowy —— uv workspace · PEP 420 namespace · 六 distribution 锁步") {
+System_Boundary(sys, "MFlowy —— uv workspace · PEP 420 namespace · 七 distribution 锁步") {
     Container(mcp, "mflowy-mcp", "MCP 层", "工具注册面（平台工具 + 域工具发现）· mflowy-mcp stdio server · mflowy JSON runner · 平台登录 · 遥测")
     Container(data, "mflowy-data", "数据域", "清洗 POMDP 动作域：load/statistic/detect/clean + plot(data_analysis)；数据栈硬依赖，装包即得完整数据域")
     Container(model, "mflowy-model", "建模域", "建模 POMDP 动作域：x_y/cv/x_transformer/model + plot(evaluation/interpretability) · compute 工具与 JobProvider 执行策略；本地建模重栈（CPU 六件 + torch）住 [local] extra，瘦装 = 纯远程 server")
+    Container(bo, "mflowy-bo", "推荐域", "贝叶斯优化推荐工作流域（agent 工具工作流非 POMDP 会话）：六工具 + BOCard + study sqlite db；TPE 单引擎（optuna），零 extra 面、零 torch")
     Container(driver, "mflowy-driver", "DAG 内核", "Builder YAML 增量编译（平铺叙事·编译即校验）· Context 血缘 DAG · LIFO 拓扑调度 + 失败血缘剪枝 · discover 插件目录（零 import 查询/惰性加载）· @node/@edge 插件 SDK + mlflow 默认尾链")
     Container(utils, "mflowy-utils", "共享工具", "mlflow 封装 · jinja 沙箱 · 日志与 stdout 捕获 · 文件指纹 · 脚本安全门")
 }
@@ -87,10 +88,11 @@ Rel(model, remote, "compute 工具执行委派", "JobProvider 协议")
 
 | distribution | 角色 | 职责 |
 | ------------ | ---- | ---- |
-| `mflowy` | 聚合包（PyPI 入口） | extras = 形态选择器：`[mcp]` / `[local]`——域包直装（`mflowy-data` / `mflowy-model`），`mflowy[mcp]` 起 server（纯远程瘦装）、`mflowy[mcp,local]` = server + 本地建模重栈；聚合 `[data]`/`[model]`/`[deep]` 已退役 |
+| `mflowy` | 聚合包（PyPI 入口） | extras = 形态选择器：`[mcp]` / `[local]`——域包直装（`mflowy-data` / `mflowy-model` / `mflowy-bo`），`mflowy[mcp]` 起 server（纯远程瘦装、三域完整词表）、`mflowy[mcp,local]` = server + 本地建模重栈；聚合 `[data]`/`[model]`/`[deep]` 已退役 |
 | `mflowy-mcp` | 用户面 | 工具注册面（平台工具 + 域工具发现）与三种入口、平台登录、遥测与同意门 |
 | `mflowy-data` | 数据域 | 清洗 POMDP 动作域（load/statistic/detect/clean + EDA 图）；数据栈硬依赖 |
-| `mflowy-model` | 建模域 | 建模 POMDP 动作域（x_y/cv/x_transformer/model + 评估/解释图）+ compute 工具执行策略（JobProvider）；本地建模重栈（sklearn/lightgbm/xgboost/catboost/shap/optuna/torch）住 `[local]` extra；两域包同为第三方插件的活参考（抄走 pyproject + hook，改 entry points 组即成插件包） |
+| `mflowy-model` | 建模域 | 建模 POMDP 动作域（x_y/cv/x_transformer/model + 评估/解释图）+ compute 工具执行策略（JobProvider）；本地建模重栈（sklearn/lightgbm/xgboost/catboost/shap/optuna/torch）住 `[local]` extra；域包同为第三方插件的活参考（抄走 pyproject + hook，改 entry points 组即成插件包） |
+| `mflowy-bo` | 推荐域 | 贝叶斯优化推荐（六工具工作流 + BOCard + study sqlite db + 学习信号；`search_input` 节点居此）；optuna 硬依赖、零 extra 面、零 torch |
 | `mflowy-driver` | 内核 | 编译与调度，不实现任何业务能力；插件 SDK 与词表校验所在 |
 | `mflowy-utils` | 底座 | 无业务语义的共享工具层 |
 
@@ -181,7 +183,7 @@ uv run mflowy-mcp                                             # MCP server（std
 
 - **入口名 `mflowy-mcp`**：刻意避开 mcp SDK 自带的同名 `mcp` CLI（`mcp.cli:app`）——uvx 解析 `mcp` 命令时可能命中 SDK 侧导致启动失败
 - **extras 内联在 `--from` spec**：uvx 的 `--extra` 需新版 uv，内联写法兼容性最好
-- **离线分发用 wheels**：`make build-whl` 产出六 wheel（`dist/*.whl`，六 distribution 锁步），`uv pip install --find-links <dist目录> "mflowy[mcp,local]"` 安装（K8s 镜像构建 / 内网场景；Dockerfile 即此形态，支持 `--build-arg MFLOWY_EXTRA_MODULES=...` 定制插件）
+- **离线分发用 wheels**：`make build-whl` 产出七 wheel（`dist/*.whl`，七 distribution 锁步），`uv pip install --find-links <dist目录> "mflowy[mcp,local]"` 安装（K8s 镜像构建 / 内网场景；Dockerfile 即此形态，支持 `--build-arg MFLOWY_EXTRA_MODULES=...` 定制插件）
 - **torch CPU 索引**（`--index` pytorch-cpu + `--index-strategy unsafe-best-match`）为 [local] 必需（`mflowy[local]` / `mflowy[mcp,local]`——torch 随 [local] 真合并随行；纯 `mflowy[mcp]` 瘦装不装 torch 无需索引）：uvx 不读 pyproject 的 `[tool.uv.sources]`，缺省时 torch 解析为 CUDA 全家桶（2–3GB）；`unsafe-best-match` 须与 pytorch 索引同用，否则 first-index 策略会因该索引上的旧版 requests 解析失败
 
 ## 遥测（Telemetry）
@@ -198,6 +200,6 @@ MCP 工具调用诊断采集，同意制、默认 `ask`，端点不可达时完�
 
 ## 文档
 
-- **系统与叙事**：[PILOT 系统设计](docs/pilot-loop.md)（三子系统闭环）· [研究流方法论](docs/research-flow.md)（前两程案例叙事，agent 可直接采用的工作规约）· [路线图](docs/roadmap.md)
+- **系统与叙事**：[PILOT 系统设计](packages/builtin_plugins/bo/README.md)（三子系统闭环，随 bo 包分发）· [研究流方法论](docs/research-flow.md)（前两程案例叙事，agent 可直接采用的工作规约）· [路线图](docs/roadmap.md)
 - **子系统方法论**：[数据清洗](docs/method/data-cleaning.md) · [模型训练](docs/method/model-training.md)（研究领域知识）· [数据域 catalog](packages/builtin_plugins/data/README.md) · [建模域 catalog / 远程执行](packages/builtin_plugins/model/README.md)
 - **引擎与工程**：[架构与贡献指南](AGENTS.md) · [元词汇词表](CONTEXT.md)（引擎内核 + 三子系统） · [DAG 内核](packages/driver/README.md) · [MCP 层：工具 / 平台登录 / 遥测](packages/mcp/README.md) · [共享工具层](packages/utils/README.md)

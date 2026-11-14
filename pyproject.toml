@@ -16,7 +16,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-# 聚合包：五 distribution 锁步版本（tests/test_workspace.py 断言一致）
+# 聚合包：七 distribution 锁步版本（tests/test_workspace.py 断言一致）
 dependencies = [
     "mflowy-utils",
     "mflowy-driver",
@@ -29,16 +29,18 @@ Issues = "https://github.com/ifoodsci-ai/mflowy/issues"
 Documentation = "https://github.com/ifoodsci-ai/mflowy#readme"
 
 [project.optional-dependencies]
-# extras = 形态选择器（#216 裁定/#217 落地）：域包直装（mflowy-data / mflowy-model），
-# 聚合 extras 只选形态——[mcp] = server 形态（SDK+遥测+双域完整词表；remote 平台
-# 工具的引擎住 model 包 platform_client，server 分发形态必须可用——懒加载 + 零降级：
-# 缺则调用 fail-loud；纯远程瘦装 server，零本地建模重栈）；[local] = 本地建模重栈
-# （model 包 [local]，[deep] 真合并）。聚合 [data]/[model]/[deep] 已退役（BREAKING）；
-# bo 就绪后随 #210 追加 mflowy-bo 进 [mcp]
+# extras = 形态选择器（#216 裁定/#217 落地 + #210 bo 纳入）：域包直装
+# （mflowy-data / mflowy-model / mflowy-bo），聚合 extras 只选形态——[mcp] =
+# server 形态（SDK+遥测+三域完整词表；remote 平台工具的引擎住 model 包
+# platform_client，server 分发形态必须可用——懒加载 + 零降级：缺则调用
+# fail-loud；纯远程瘦装 server，零本地建模重栈；bo 六工具随 #210 纳入——
+# server 完全面先例 #159，落实 model ← bo ← mcp 依赖链）；[local] = 本地建模
+# 重栈（model 包 [local]，[deep] 真合并）。聚合 [data]/[model]/[deep] 已退役（BREAKING）
 mcp = [
     "mflowy-mcp[mcp]",
     "mflowy-data",
     "mflowy-model",
+    "mflowy-bo",
 ]
 local = ["mflowy-model[local]"]
 
@@ -50,6 +52,7 @@ mflowy-utils = { workspace = true }
 mflowy-driver = { workspace = true }
 mflowy-data = { workspace = true }
 mflowy-model = { workspace = true }
+mflowy-bo = { workspace = true }
 mflowy-mcp = { workspace = true }
 
 [build-system]

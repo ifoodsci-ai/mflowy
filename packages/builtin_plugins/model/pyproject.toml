@@ -64,7 +64,6 @@ local = [
 "plot.shap_summary" = "mflowy.model.plot.model_interpretability.shap.summary:shap_summary"
 "plot.taylor_diagram" = "mflowy.model.plot.model_evaluation.regression.taylor_diagram:taylor_diagram"
 predict = "mflowy.model.model.predict:predict"
-search_input = "mflowy.model.model.search_input:search_input"
 "shap.explanation" = "mflowy.model.plot.model_interpretability.shap.explanation_node:explanation"
 "shap.load" = "mflowy.model.plot.model_interpretability.shap.load:load"
 "x_transformer.hash_encoder" = "mflowy.model.x_transformer.categorical.hash_encoder:hash_encoder"
@@ -98,7 +97,6 @@ hyperparameters_search = "mflowy.model.tools:hyperparameters_search"
 modeling = "mflowy.model.tools:modeling"
 explanation = "mflowy.model.tools:explanation"
 predict = "mflowy.model.tools:predict"
-inverse_optimization = "mflowy.model.tools:inverse_optimization"
 switch_job_provider = "mflowy.model.tools:switch_job_provider"
 
 [build-system]

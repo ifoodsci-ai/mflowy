@@ -29,12 +29,11 @@ from .protocol import Headers, JobOutcome
 # 单 argv 载荷上限（128KiB——execve argv 硬上限之内的工程边界；超限提示拆分清单/缩载荷）
 _KWARGS_JSON_LIMIT = 128 * 1024
 
-# 引用前序状态的入参名（给定而 inherit 缺 → 静态门）：explanation/predict/inverse 的
+# 引用前序状态的入参名（给定而 inherit 缺 → 静态门）：explanation/predict 的
 # model（跨 Job 寻址前序 run）与 modeling 的 mlflow experiment_id（resume 前史实验）
 _RESUMES_PRIOR_STATE: dict[str, tuple[str, ...]] = {
     "explanation": ("model",),
     "predict": ("model",),
-    "inverse_optimization": ("model",),
     "modeling": ("experiment_id",),
 }
 
@@ -197,34 +196,4 @@ class RemoteJobProvider:
             platform_experiment_id=platform_experiment_id,
             inherit_platform_job_id=inherit_platform_job_id,
             prior_state_refs=_RESUMES_PRIOR_STATE["predict"],
-        )
-
-    async def inverse_optimization(
-        self,
-        *,
-        data: str,
-        model: str,
-        direction: dict[str, str] | None = None,
-        constraint: dict[str, list | dict] | None = None,
-        cross_rules: str | None = None,
-        n_trials: int = 10000,
-        seed: int = 42,
-        platform_experiment_id: str | None = None,
-        inherit_platform_job_id: str | None = None,
-        headers: Headers = None,
-    ) -> JobOutcome:
-        return await self._submit(
-            "inverse_optimization",
-            {
-                "data": data,
-                "model": model,
-                "direction": direction,
-                "constraint": constraint,
-                "cross_rules": cross_rules,
-                "n_trials": n_trials,
-                "seed": seed,
-            },
-            platform_experiment_id=platform_experiment_id,
-            inherit_platform_job_id=inherit_platform_job_id,
-            prior_state_refs=_RESUMES_PRIOR_STATE["inverse_optimization"],
         )

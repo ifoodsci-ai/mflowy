@@ -56,9 +56,11 @@ jobs:
           path: coverage.xml
           if-no-files-found: error
 
-  # 瘦装门（#216 Q6.3/#217）：[mcp] 单 extra = 纯远程瘦装 server——零本地建模重栈
-  # （重栈全进 model 包 [local] 后，no-torch 门随 [deep] 真合并消亡）。环境级验证：
-  # 零重栈自证 + 词表降级标注（model ns requires→local + 条目 upstream=null）+
+  # 瘦装门（#216 Q6.3/#217 + #210 bo 纳入修订）：[mcp] 单 extra = server 完全面
+  # ——零本地建模重栈（重栈全进 model 包 [local] 后，no-torch 门随 [deep] 真合并
+  # 消亡）；bo 随 [mcp] 牵入 optuna（#175 硬依赖，by design——ask 恒本地故 bo 引擎
+  # 属 server 面，torch 仍隔离）。环境级验证：零重栈自证（optuna 除外）+ bo 工具
+  # 可用 + 词表降级标注（model ns requires→local + 条目 upstream=null）+
   # get_node_info 降级面（available=false + 安装提示）+ remote 提交路径（mock
   # provider 受理即返）+ server stdio 冒烟；全量重栈环境见 test/typecheck 门（--all-extras）
   thin:
@@ -74,15 +76,18 @@ jobs:
         run: uv sync --all-groups --extra mcp
         env:
           UV_DEFAULT_INDEX: https://pypi.org/simple
-      - name: 瘦装断言（零重栈 + 词表 requires→local 降级 + get_node_info 降级面）
+      - name: 瘦装断言（零重栈 + bo 工具可用 + 词表 requires→local 降级 + get_node_info 降级面）
         run: |
           uv run python - <<'PY'
           import importlib.util
 
           # sklearn 不在清单：mlflow（utils 硬依赖）传递随行——但五族模块统一 import
-          # shap，缺 shap 即全族降级（RF 亦然），不依赖 sklearn 在缺的假设
-          for mod in ("lightgbm", "xgboost", "catboost", "shap", "optuna", "torch"):
+          # shap，缺 shap 即全族降级（RF 亦然），不依赖 sklearn 在缺的假设。
+          # optuna 不在禁装清单：bo 随 [mcp] 牵入（#210——mflowy-bo 硬依赖，by design）
+          for mod in ("lightgbm", "xgboost", "catboost", "shap", "torch"):
               assert importlib.util.find_spec(mod) is None, f"瘦装环境不应装重栈 {mod}"
+          # bo 六工具随 server 完全面在场（ask 恒本地——optuna 属 server 面）
+          from mflowy.bo.tools import bo_ask, bo_tell
           from mflowy.mcp.tools import get_node_info, list_nodes
 
           ns = next(n for n in list_nodes(namespace="model") if n["namespace"] == "model")
@@ -94,7 +99,7 @@ jobs:
           assert info.get("available") is False and info.get("requires") == "local", info
           assert "mflowy[local]" in info.get("reason", ""), info
           degraded = sum(1 for e in ns["nodes"] if e["upstream"] is None)
-          print(f"瘦装降级契约成立：model ns {len(ns['nodes'])} 节点中 {degraded} 降级 + requires→local")
+          print(f"瘦装降级契约成立：model ns {len(ns['nodes'])} 节点中 {degraded} 降级 + requires→local；bo 工具在场")
           PY
       - name: remote 提交路径（mock provider 受理——零重栈提交自证）
         run: |

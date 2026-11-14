@@ -5,7 +5,7 @@
 
 数据面不经此包——参数边与 @edge 边函数在 driver。
 消费方一律从包级导入：``mflowy.data.middlewares``。
-模型域专用件（log_cv / log_prediction / log_search_input）在 ``mflowy.model.middlewares``；
+模型域专用件（log_cv / log_prediction）在 ``mflowy.model.middlewares``；bo 域 ``log_search_input`` 随 search_input 迁移；
 内核默认中间件（mlflow_log）在 mflowy.driver.builtin_middleware（stop_on_error 已随 #59 血缘剪枝调度退役）。
 """
 

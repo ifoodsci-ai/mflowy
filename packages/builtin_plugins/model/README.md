@@ -27,8 +27,8 @@ findings 是真态的多对一投影——同聚合不同病灶不可分；u_inn
   `x_transformer/`（编码 ×5 + 数值变换 ×8）、`cv/`（types.py 契约叶子 + split 参数构建 + load 引用加载——契约与节点同族居住）、
   `plot/model_interpretability/shap/`（shap 族：explanation 真算留痕 + load 引用重建——构建/引用分家，
   契约 = 裸 shap.Explanation + 属性注记，消费方走 `shap` 组边）、
-  非归组 `x_y.py`（任务目标划分 + 任务类型推理）/ `model/predict.py` + `model/search_input.py`（model 上游边消费，零 run_id 耦合）
-- 共享件：`middlewares/`（log_cv / log_prediction / log_search_input / log_shap_explanation / log_task_evidence——
+  非归组 `x_y.py`（任务目标划分 + 任务类型推理）/ `model/predict.py`（model 上游边消费，零 run_id 耦合；`search_input` 已随 bo 域真迁移，#175）
+- 共享件：`middlewares/`（log_cv / log_prediction / log_shap_explanation / log_task_evidence——
   副产物统一走中间件落 mlflow 工件）、`plot/`（评估/解释图，主题门面复用 `mflowy.utils.plot`）
 - 类型：`model/types.py`（MetricName / ModelPipeline / ModelLoader；TASKTYPE 再导出自 data）
 - 标注：`extras.py`（model/cv/x_transformer/plot 四顶层目录 → `[local]`——目录全标，标注 = import 失败时的安装提示，实可用节点不触发降级、无害）
@@ -82,8 +82,8 @@ MY_MODEL.mdp_family = {
 
 ## JobProvider：compute 工具的执行委派
 
-compute 五工具（hyperparameters_search / modeling / explanation / predict /
-inverse_optimization）经 JobProvider 委派执行，受理面 = **JobOutcome**（finished 内嵌
+compute 四工具（hyperparameters_search / modeling / explanation / predict）
+经 JobProvider 委派执行，受理面 = **JobOutcome**（finished 内嵌
 DAGResult / submitted 提交凭据，互斥不变量构造期 fail-loud）：内置 `local`（本包直调
 driver 编排，忽略模式专属参数）与 `remote`（RemoteJobProvider——`MFLOWY_JOB_PROVIDER=remote`
 启用；提交面 `mflowy-job wrap`，受理即返回，`platform_experiment_id` 必填、`inherit_platform_job_id`

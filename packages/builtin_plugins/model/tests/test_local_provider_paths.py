@@ -1,9 +1,9 @@
 """LocalJobProvider 数据路径的 <py_path>:<func> 处理（e543628f 回归）。
 
-predict / inverse_optimization 的 data 可带 :func 后缀（经 load.file → python_loader），
-exists/set_task_dir 必须作用在拆掉后缀的路径上，报错信息不得包含 :func 残留。
-#224 P4：predict / inverse_optimization 成功链正路径（此前仅错误路径，正路径只有
-人肉 make e2e 兜底）。
+predict 的 data 可带 :func 后缀（经 load.file → python_loader），exists/set_task_dir
+必须作用在拆掉后缀的路径上，报错信息不得包含 :func 残留。#224 P4：predict 成功链
+正路径（此前仅错误路径，正路径只有人肉 make e2e 兜底）。inverse_optimization 已随
+BO 落地退役（#179 R4——用例由 bo 推荐流程承接）。
 """
 
 import asyncio
@@ -16,14 +16,6 @@ def test_predict_missing_py_func_reports_clean_path(tmp_path):
     missing = tmp_path / "missing.py"
     with pytest.raises(FileNotFoundError, match=str(missing)) as ei:
         asyncio.run(LocalJobProvider().predict(data=f"{missing}:load", model="abc123"))
-    assert "FileNotExisted" in str(ei.value)
-    assert ":load" not in str(ei.value)
-
-
-def test_inverse_optimization_missing_py_func_reports_clean_path(tmp_path):
-    missing = tmp_path / "missing.py"
-    with pytest.raises(FileNotFoundError, match=str(missing)) as ei:
-        asyncio.run(LocalJobProvider().inverse_optimization(data=f"{missing}:load", model="abc123"))
     assert "FileNotExisted" in str(ei.value)
     assert ":load" not in str(ei.value)
 
@@ -106,10 +98,10 @@ class TestAnchorTaskDir:
             reset_task_dir(token)
 
 
-class TestPredictInversePositivePath:
+class TestPredictPositivePath:
     """#224 P4：成功链正路径——tmp gen.py + 真 mlflow（root conftest autouse 已把
     tracking 隔离进本用例 tmp sqlite）落 name='final' 已训模型，断言 JobOutcome.finished
-    与节点值契约（py:func 加载 → model__loader 真取回 → predict/search_input 真算）。"""
+    与节点值契约（py:func 加载 → model__loader 真取回 → predict 真算）。"""
 
     @pytest.fixture(autouse=True)
     def _task_dir(self, tmp_path):
@@ -158,7 +150,7 @@ class TestPredictInversePositivePath:
         )
         return run.info.run_id, gen
 
-    def test_predict_then_inverse_roundtrip(self, trained_run):
+    def test_predict_positive_roundtrip(self, trained_run):
         run_id, gen = trained_run
 
         outcome = asyncio.run(LocalJobProvider().predict(data=f"{gen}:load", model=run_id))
@@ -172,12 +164,3 @@ class TestPredictInversePositivePath:
         import numpy as np
 
         np.testing.assert_allclose(df["target"].to_numpy(), [4.0, 7.0, 10.0, 13.0, 16.0], rtol=0.25)
-
-        outcome2 = asyncio.run(
-            LocalJobProvider().inverse_optimization(
-                data=f"{gen}:load", model=run_id, direction={"target": "maximize"}, n_trials=4, seed=7
-            )
-        )
-        assert outcome2.status == "finished" and outcome2.dag_result is not None
-        si = next(r for r in outcome2.dag_result.runs if r.node == "search_input")
-        assert len(si.value) >= 1 and "target" in si.value.columns  # complete trials 带目标列

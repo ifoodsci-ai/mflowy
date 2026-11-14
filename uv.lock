@@ -13,6 +13,7 @@ resolution-markers = [
 [manifest]
 members = [
     "mflowy",
+    "mflowy-bo",
     "mflowy-data",
     "mflowy-driver",
     "mflowy-mcp",
@@ -1663,6 +1664,7 @@ local = [
     { name = "mflowy-model", extra = ["local"] },
 ]
 mcp = [
+    { name = "mflowy-bo" },
     { name = "mflowy-data" },
     { name = "mflowy-mcp", extra = ["mcp"] },
     { name = "mflowy-model" },
@@ -1684,6 +1686,7 @@ jupyter = [
 
 [package.metadata]
 requires-dist = [
+    { name = "mflowy-bo", marker = "extra == 'mcp'", editable = "packages/builtin_plugins/bo" },
     { name = "mflowy-data", marker = "extra == 'mcp'", editable = "packages/builtin_plugins/data" },
     { name = "mflowy-driver", editable = "packages/driver" },
     { name = "mflowy-mcp", editable = "packages/mcp" },
@@ -1705,6 +1708,35 @@ dev = [
     { name = "ruff", specifier = ">=0.15.8" },
 ]
 jupyter = [{ name = "nbformat", specifier = ">=5.10.4" }]
+
+[[package]]
+name = "mflowy-bo"
+version = "0.2.0"
+source = { editable = "packages/builtin_plugins/bo" }
+dependencies = [
+    { name = "mflowy-driver" },
+    { name = "mflowy-model" },
+    { name = "mflowy-utils" },
+    { name = "numpy" },
+    { name = "optuna" },
+    { name = "pandas" },
+    { name = "pyarrow" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "mflowy-driver", editable = "packages/driver" },
+    { name = "mflowy-model", editable = "packages/builtin_plugins/model" },
+    { name = "mflowy-utils", editable = "packages/utils" },
+    { name = "numpy", specifier = ">=2.0.0" },
+    { name = "optuna", specifier = ">=4.8" },
+    { name = "pandas", specifier = ">=2.2,<3" },
+    { name = "pyarrow", specifier = ">=12.0.0" },
+    { name = "pydantic", specifier = ">=2.13.4" },
+    { name = "pyyaml", specifier = ">=6.0" },
+]
 
 [[package]]
 name = "mflowy-data"

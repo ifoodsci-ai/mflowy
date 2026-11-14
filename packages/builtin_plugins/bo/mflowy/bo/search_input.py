@@ -1,9 +1,12 @@
 """search_input node —— Optuna 驱动的输入空间优化（inverse design）。
 
 给定训练好的 model + 搜索空间约束，找出能让预测输出最优的输入特征组合。
-核心抽象（``mflowy.model.model.study``）：``ParameterSearchSpace`` / ``search_inverse``（单目标 tpe / 多目标 NSGAII）。
-模型经 ``model`` 上游边注入（model__* 组寻址取最近；跨 run 复用经 model__loader 声明承载），
-预测复用 ModelLoader 门面（单一最终模型）——本节点零 run_id 耦合。
+搜索机器（``ParameterSearchSpace`` / ``search_inverse``）仍住
+``mflowy.model.model.study``（model 域先例）；本节点随 bo 域自 model 真迁移
+（#175 Q2：迁移非复制，model 不留副本——节点键 ``search_input`` 不变，寻址名/
+YAML 零破坏）。模型经 ``model`` 上游边注入（model__* 组寻址取最近；跨 run 复用
+经 model__loader 声明承载），预测复用 ModelLoader 门面（单一最终模型）——本节点
+零 run_id 耦合。
 
 设计契约：``model.y_names`` 是训练时定义的目标契约，search_input 优化全部 y_names，
 方向由 ``directions`` dict 显式给出。不在推理时挑选「关心哪几个 y」——那是训练的事。
@@ -18,19 +21,19 @@ from typing import Annotated, Any, Literal
 import numpy as np
 import pandas as pd
 from mflowy.driver.node import node
-from mflowy.model.middlewares import log_search_input
 from mflowy.model.model.study import (
     ContinuousSpace,
     DiscreteSpace,
     ParameterSearchSpace,
     search_inverse,
 )
+from mflowy.model.model.types import ModelLoader
 from mflowy.utils.constants import RANDOM_STATE
 from mflowy.utils.file import read_text
 from mflowy.utils.path import split_path_to_py_with_target
 from mflowy.utils.python_script_security_scan import scan_security
 
-from .types import ModelLoader
+from .log_search_input import log_search_input
 
 logger = logging.getLogger(__name__)
 
