@@ -107,12 +107,11 @@ class TestTrainingBehavior:
 
 class TestHoldoutReport:
     def test_report_shape_and_findings_empty_on_clean_fit(self, reg_split):
-        """holdout_report：verdict 结构面——u（归一，terminal_u 单源）+ 全套指标 + findings。"""
+        """holdout_report：verdict 结构面——u（归一，terminal_u 单源）+ 全套指标（#236 findings 键退役）。"""
         loader = training(reg_split, "RF", _make_rf_pipe(), {"n_estimators": 10, "random_state": 0})
         report = holdout_report(loader, reg_split, MetricName.MAE)
         assert isinstance(report["u"], float) and report["u"] <= 0  # MAE 误差类取负归一
         assert report["metrics"] and "target" in report["metrics"]
-        assert report["findings"] == []  # u_inner=None（未搜索）无 overfit 对照
 
 
 class TestNoWindowDiscipline:

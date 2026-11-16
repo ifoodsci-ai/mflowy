@@ -1,10 +1,11 @@
-"""建模会话引擎（应用层，#89 会话基座上壳）：#62 回路与状态机——s 元组（光标 + 账本）+ 八动作面。
+"""建模会话引擎（model 域，#89 基座上壳 + #226 拆票C #236 实体化）：#62 回路与
+状态机——s 元组（光标 + 账本）+ 九动作面。
 
-状态 ``s = (光标 m/H/seed/F, 账本 board, oof, budget,
-done, history)``；动作面 ``A = {select_model, set_hp, set_hp_space, set_seed,
-select_FE}（配置编辑：零步费零奖励）∪ {run_hpo, final_train_test}（计算动作：吃步
-——步数由壳按 counts_step 谓词单源记账，#226 ②）∪ {done}``（= finish_session
-控制面独立入口，同 clean 域）。
+状态 ``s = (光标 m/H/seed/F, 账本 board, oof, budget, done, history)``；动作面
+``A = {select_model, set_hp, set_hp_space, set_seed, select_FE}（配置编辑：零步费
+零奖励）∪ {run_hpo, final_train_test}（计算动作：吃步——步数由壳按 counts_step
+谓词单源记账，#226 ②）∪ {report_findings}（agent 判读落诊，#226 ④/#236 收编——
+零步费）∪ {done}``（= finish 控制面独立入口）。
 
 会话恒**单目标任务**（x_y target 收窄——多目标在会话外三层循环：多目标 →
 多模型 → 单目标任务会话，文献综述阶段输出每目标的模型候选）。
@@ -49,6 +50,7 @@ import logging
 import os
 import pickle
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 from mflowy.data.types import TASKTYPE
@@ -69,8 +71,17 @@ from mflowy.utils.file import write_bytes_atomic, write_text_atomic
 
 logger = logging.getLogger(__name__)
 
-# 八动作面（done = finish_session 控制面独立入口）；compute = 吃步（counts_step 口径）
-ACTIONS = ("select_model", "set_hp", "set_hp_space", "set_seed", "select_FE", "run_hpo", "final_train_test")
+# 九动作面（#226 ④/#236：report_findings 收编——配置面零步费；done = finish 控制面独立入口）；compute = 吃步（counts_step 口径）
+ACTIONS = (
+    "select_model",
+    "set_hp",
+    "set_hp_space",
+    "set_seed",
+    "select_FE",
+    "run_hpo",
+    "final_train_test",
+    "report_findings",
+)
 COMPUTE_ACTIONS = frozenset({"run_hpo", "final_train_test"})
 DEFAULT_N_TRIALS = 10  # run_hpo 缺省搜索档（执行面单源——出题规则侧随菜单退役，#120）
 BOARD_FILE = "board.json"
@@ -123,14 +134,15 @@ def _mview(ss: POMDPSession, o: Observation, board: dict) -> dict:
         "verdict": board.get("verdict"),
         "steps": o.validation.steps,
         "max_steps": o.validation.max_steps,
-        "finished": o.validation.finished,
-        "abandoned": o.validation.abandoned,
+        "source_fingerprint": d.get("source_fingerprint"),  # #236 工件契约锚（开局原始帧一次计算）
+        # finished/abandoned 死投影清（#226 ⑥/#236）——引擎事实单源 o.validation
     }
 
 
 def _state_projection(m: dict) -> dict:
     """o.biz 投影：划分身份 + 光标 + 账本板面 + 指纹（域逻辑读 m）。"""
     return {
+        "source_fingerprint": m.get("source_fingerprint"),  # #236 工件契约锚（apply 覆写不丢）
         "split": m["split"],
         "cursor": {k: (dict(v) if isinstance(v, dict) else v) for k, v in m["cursor"].items()},
         "board": _board(m),
@@ -237,137 +249,467 @@ def _parse_split_yaml(cv_card: str) -> dict:
     return dict(parsed)
 
 
-def start_session(
-    sid: str | None = None,
-    file_path: str | None = None,
-    cv_card: str | None = None,
-    *,
-    target: str | None = None,
-    task: str | None = None,
-    metric: str | None = None,
-    candidates: list[dict] | None = None,
-    max_steps: int | None = None,
-    id_columns: list[str] | None = None,
-    goal: str | None = None,
-    external_baseline: dict | None = None,
-    card: dict | None = None,
-) -> tuple[str, Observation]:
-    """开局/续载建模会话（#226 ② 形状适配——工具动词化改名随 #236）：sid 给定 =
-    加载既有会话（此时任何域尾巴开局入参同传 = 参数来源冲突 fail-loud；续局带
-    新认知 = 旧会话产物数据路径 + 新协议**开新局**）；sid 缺省 = cv_card
-    （cv.split 配置 yaml 明文）必填新开：D 物化冻结 + 光标就位。返回 (sid, o)
-    ——sid = 会话目录绝对路径（Handle 寻址面）。
+class ModelingSession:
+    """model 域 POMDP 会话实体（#226 ⑨ 合规修复，#236）：typed 六操作、无状态 sid
+    寻址。先验 = ModelPrior（冻结协议，⑦）——episode 内动作面冻结（牙齿在壳）；
+    apply 参数由 agent 基于上下文中的 o 翻译（红线 10——机器面零注入）。"""
 
-    **显式参数 > card（DomainCard 背景）分层缺省**——合并结果冻结进 prior
-    （episode 背景状态，⑧动作面冻结牙齿在壳）；两处同显式来源的冲突仍由校验门
-    fail-loud。改协议 = 新 episode（弃局重开）。
-    """
-    if sid is not None:
-        conflicts = {
-            "file_path": file_path,
-            "cv_card": cv_card,
-            "target": target,
-            "task": task,
-            "metric": metric,
-            "candidates": candidates,
-            "max_steps": max_steps,
-            "id_columns": id_columns,
-            "goal": goal,
-            "external_baseline": external_baseline,
-            "card": card,
+    def load_or_start(
+        self,
+        sid: str | None = None,
+        *,
+        file_path: str | None = None,
+        cv_card: str | None = None,
+        target: str | None = None,
+        task: str | None = None,
+        metric: str | None = None,
+        candidates: list[dict] | None = None,
+        max_steps: int | None = None,
+        id_columns: list[str] | None = None,
+        goal: str | None = None,
+        external_baseline: dict | None = None,
+        card: dict | None = None,
+    ) -> tuple[str, Observation]:
+        """开局/续载（#226 ②⑤，#236 实体化）：sid 给定 = 加载（任何开局入参同传 =
+        参数来源冲突 fail-loud；minted-but-unstarted 孤儿目录给专属报错——物化中断
+        所致，重开即愈）；sid 缺省 = cv_card 必填新开（D 物化冻结 + 光标就位，物化
+        收进 start_ctx body——孤儿窗收窄到 mint 级）。返回 (sid, o)。
+
+        **显式参数 > card（背景）分层缺省**——合并结果冻结进 ModelPrior prior
+        （episode 背景状态，⑧动作面冻结牙齿在壳）；两处同显式来源的冲突仍由
+        校验门 fail-loud。改协议 = 新 episode（弃局重开）。
+        """
+        if sid is not None:
+            conflicts = {
+                "file_path": file_path,
+                "cv_card": cv_card,
+                "target": target,
+                "task": task,
+                "metric": metric,
+                "candidates": candidates,
+                "max_steps": max_steps,
+                "id_columns": id_columns,
+                "goal": goal,
+                "external_baseline": external_baseline,
+                "card": card,
+            }
+            given = sorted(k for k, v in conflicts.items() if v is not None)
+            if given:
+                raise ValueError(
+                    f"参数来源冲突：sid（加载既有会话）与开局入参 {given} 不可同传——"
+                    "续局带新认知 = 以旧会话产物数据路径 + 新协议开新局"
+                )
+            from pathlib import Path as _Path
+
+            if _Path(sid).is_dir() and not (_Path(sid) / "observation.json").exists():
+                raise ValueError(  # minted-but-unstarted（#236）：确定性判据（目录在、开局观测缺）
+                    f"会话目录存在但未开局（minted-but-unstarted——开局物化中断所致），孤儿不可续，请开新局: {sid}"
+                )
+            ss = POMDPSession.load_or_start(sid=sid, counts_step=_counts_step)
+            return ss.sid, ss.observation
+        goal = goal or ""
+        card = card or {}
+        if not cv_card or not str(cv_card).strip():
+            raise ValueError("cv_card 必填——cv.split 配置 yaml 明文（协议谈判在剧本层 model-brief 完成）")
+        if not file_path:
+            raise ValueError("file_path 必填——新开局的原始数据源")
+        split_params = _parse_split_yaml(cv_card)
+        target = target or card.get("target")
+        if not target:
+            raise ValueError("target 必填——显式参数或 card.target（无静默缺省）")
+        task = task if task is not None else card.get("task")
+        if not task:
+            raise ValueError("task 必填（regression/classification）——显式参数或 card.task")
+        # id 剔除面（#112 涟漪）：单源委托 data.excluded_from_features（pk ∪ known_id ∪
+        # composite 成员；fk 不剔——join 需求可见且可作类别特征）；显式 id_columns 覆盖卡背景。
+        if id_columns is not None:
+            id_cols = list(id_columns)
+        else:
+            from mflowy.data.types import excluded_from_features
+
+            id_cols = excluded_from_features(card)
+        df = pd.read_parquet(file_path) if file_path.endswith(".parquet") else pd.read_csv(file_path)
+
+        # 四类相容校验门：task↔dtype/metric↔task/cv↔数据/预算与候选（含 hints ⊆ 签名空间、baseline 恰一）
+        from mflowy.model.protocol import CVCard
+
+        # 缺省单源（#83）：未指定即不传——落 CVCard.build 签名缺省；会话层零复述、零 or 合并
+        proto_extras: dict = {}
+        if "cv" in split_params:
+            proto_extras["cv"] = split_params["cv"]
+        if max_steps is not None:
+            proto_extras["max_steps"] = max_steps
+        proto = CVCard.build(
+            df,
+            target=target,
+            task=task,
+            metric=metric,
+            candidates=candidates,
+            goal=goal,
+            external_baseline=external_baseline,
+            **proto_extras,
+        ).as_dict()
+
+        ss = POMDPSession(_root(), prefix="ms_")
+        cursor = {"m": None, "H": {}, "seed": None, "F": {"cat": "passthrough", "num": "passthrough"}}
+        board = {
+            "cursor": cursor,
+            # 光标快照：rollback 弹栈只回退光标——账本/study 永不回退（盘上 append-only）
+            "snapshots": [{"m": None, "H": {}, "seed": None, "F": dict(cursor["F"])}],
+            "models": {},  # 账本：per (family,F) 条目（真源 = 盘上 sqlite study）
+            "verdict": None,
         }
-        given = sorted(k for k, v in conflicts.items() if v is not None)
-        if given:
-            raise ValueError(
-                f"参数来源冲突：sid（加载既有会话）与开局入参 {given} 不可同传——"
-                "续局带新认知 = 以旧会话产物数据路径 + 新协议开新局"
-            )
-        ss = POMDPSession.load_or_start(sid=sid, counts_step=_counts_step)
-        return ss.sid, ss.observation
-    goal = goal or ""
-    card = card or {}
-    if not cv_card or not str(cv_card).strip():
-        raise ValueError("cv_card 必填——cv.split 配置 yaml 明文（协议谈判在剧本层 model-brief 完成）")
-    if not file_path:
-        raise ValueError("file_path 必填——新开局的原始数据源")
-    split_params = _parse_split_yaml(cv_card)
-    target = target or card.get("target")
-    if not target:
-        raise ValueError("target 必填——显式参数或 card.target（无静默缺省）")
-    task = task if task is not None else card.get("task")
-    if not task:
-        raise ValueError("task 必填（regression/classification）——显式参数或 card.task")
-    # id 剔除面（#112 涟漪）：单源委托 data.excluded_from_features（pk ∪ known_id ∪
-    # composite 成员；fk 不剔——join 需求可见且可作类别特征）；显式 id_columns 覆盖卡背景。
-    if id_columns is not None:
-        id_cols = list(id_columns)
-    else:
-        from mflowy.data.types import excluded_from_features
-
-        id_cols = excluded_from_features(card)
-    df = pd.read_parquet(file_path) if file_path.endswith(".parquet") else pd.read_csv(file_path)
-
-    # 四类相容校验门：task↔dtype/metric↔task/cv↔数据/预算与候选（含 hints ⊆ 签名空间、baseline 恰一）
-    from mflowy.model.protocol import CVCard
-
-    # 缺省单源（#83）：未指定即不传——落 CVCard.build 签名缺省；会话层零复述、零 or 合并
-    proto_extras: dict = {}
-    if "cv" in split_params:
-        proto_extras["cv"] = split_params["cv"]
-    if max_steps is not None:
-        proto_extras["max_steps"] = max_steps
-    proto = CVCard.build(
-        df,
-        target=target,
-        task=task,
-        metric=metric,
-        candidates=candidates,
-        goal=goal,
-        external_baseline=external_baseline,
-        **proto_extras,
-    ).as_dict()
-
-    ss = POMDPSession(_root(), prefix="ms_")
-    cursor = {"m": None, "H": {}, "seed": None, "F": {"cat": "passthrough", "num": "passthrough"}}
-    board = {
-        "cursor": cursor,
-        # 光标快照：rollback 弹栈只回退光标——账本/study 永不回退（盘上 append-only）
-        "snapshots": [{"m": None, "H": {}, "seed": None, "F": dict(cursor["F"])}],
-        "models": {},  # 账本：per (family,F) 条目（真源 = 盘上 sqlite study）
-        "verdict": None,
-    }
-    m = {
-        "session_id": ss.id,
-        "source_file": str(file_path),
-        "target": target,
-        "card": card,
-        "protocol": {**proto, "split_yaml": cv_card, "split_params": split_params},
-        "task": None,
-        "id_columns": id_cols,
-        "split": {},  # 划分身份（run tag 面板）：run_id 引用 + test_size + group_by
-        "candidates": list(proto.get("candidates") or []),  # #63 结构化候选（含 baseline/hints/seed）
-        "cursor": board["cursor"],
-        "snapshots": board["snapshots"],
-        "models": board["models"],
-        "steps": 0,
-        "max_steps": proto["max_steps"],  # 冻结协议值直抄——无二次合并（#83）
-    }
-    _materialize(ss, m, df, task)
-    with ss.start_ctx(
-        max_steps=proto["max_steps"],
-        prior={
-            "source_file": m["source_file"],
-            "target": m["target"],
-            "task": m["task"],  # 物化后落定的实际 task（x_y 推断）
+        m = {
+            "session_id": ss.id,
+            "source_file": str(file_path),
+            "target": target,
             "card": card,
-            "protocol": m["protocol"],
-            "candidates": m["candidates"],
+            "protocol": {**proto, "split_yaml": cv_card, "split_params": split_params},
+            "task": None,
             "id_columns": id_cols,
-        },
-    ) as o:
-        _board_write(ss, board)  # 域状态先行（开局 commit = 观测落盘）
-        o.biz = _state_projection(m)
-    return ss.sid, o
+            "split": {},  # 划分身份（run tag 面板）：run_id 引用 + test_size + group_by
+            "candidates": list(proto.get("candidates") or []),  # #63 结构化候选（含 baseline/hints/seed）
+            "cursor": board["cursor"],
+            "snapshots": board["snapshots"],
+            "models": board["models"],
+            "steps": 0,
+            "max_steps": proto["max_steps"],  # 冻结协议值直抄——无二次合并（#83）
+        }
+        with ss.start_ctx(max_steps=proto["max_steps"]) as o:
+            _materialize(ss, m, df, task)  # #236：物化收进 ctx body——孤儿窗收窄（失败留 minted-unstarted，不污染观测）
+            o.prior = _build_prior(m, card, id_cols)  # task 在物化后落定（x_y 推断）——prior 随之冻结
+            from mflowy.data.fingerprint import fingerprint as _fp
+
+            m["source_fingerprint"] = _fp(df)  # #236 工件契约锚（原始帧一次计算——单源进 m/biz）
+            o.biz = _state_projection(m)
+            _board_write(ss, board)  # 域状态先行（开局 commit = 观测落盘）
+        return ss.sid, o
+
+    def apply(self, sid: str, action: str, params: dict | None = None) -> Observation:
+        """执行一个回合动作：action ∈ 九动作面词表（配置编辑 + 计算动作 + 落诊，
+        #226 ④/#236 report_findings 收编；done = finish 控制面独立入口）。
+
+        配置编辑只改光标（零步费零奖励，生效于该键下一次 run_hpo）；计算动作吃步
+        （counts_step 口径 → 壳预算门）。词表外 fail-loud 带词表清单（单源 = ACTIONS）。
+        """
+        params = dict(params or {})
+        if action not in ACTIONS:
+            raise ValueError(
+                f"动作 `{action}` 不在词表（九动作面 = {list(ACTIONS)}；done = finish 控制面独立入口，"
+                "rollback/finish/abandon 同为独立入口）"
+            )
+        ss = _open(sid)
+        with ss.apply_ctx(action) as (o, log):
+            board = _board_load(ss)
+            m = _mview(ss, o, board)
+            dispatch = {
+                "select_model": _select_model,
+                "set_hp": _set_hp,
+                "set_hp_space": _set_hp_space,
+                "set_seed": _set_seed,
+                "select_FE": _select_fe,
+                "run_hpo": _run_hpo,
+                "final_train_test": _final_train_test,
+                "report_findings": _do_report_findings,
+            }
+            dispatch[action](ss, o, m, board, log, params)
+        return o
+
+    def rollback(self, sid: str) -> Observation:
+        """回退光标到上一快照（决策日志追加 rollback 记录；预算不回补；账本/study 永不
+        回退——盘上 append-only）。"""
+        ss = _open(sid)
+        with ss.rollback_ctx() as (o, log):
+            board = _board_load(ss)
+            m = _mview(ss, o, board)
+            if len(m["snapshots"]) <= 1:
+                raise RuntimeError("无历史版本可回退")
+            snap = m["snapshots"].pop()
+            m["cursor"] = {
+                "m": snap["m"],
+                "H": dict(snap["H"]),
+                "seed": snap["seed"],
+                "F": dict(snap["F"]),
+            }
+            board["cursor"] = m["cursor"]
+            _board_write(ss, board)
+            o.validation.reward = None  # ⑥ 补 r：先置再 append（回滚无过程奖励）
+            log.append(
+                _record(
+                    log,
+                    m,
+                    "rollback",
+                    {},
+                    f"光标弹栈（预算不回补：steps={m['steps']}/{m['max_steps']}；账本与盘上 study 一致）",
+                )
+            )
+            o.biz = _state_projection(m)
+        return o
+
+    def abandon(self, sid: str, reason: str | None = None) -> dict[str, Any]:
+        """弃局终局：委托壳 abandon（幂等）——置 abandoned、记录进决策日志、保留
+        决策日志与模型账本、不导出交付物；已收局不可弃（终态互斥）。"""
+        return _open(sid).abandon(reason=reason)
+
+    def finish(self, sid: str, *, pdf: str) -> FinishVerdict:
+        """收局（done，#66 单动作——报告是 π 的产物，引擎只收编不编译）：
+
+        收编 π 产报告进 deliverables（复制 + tmp/rename 原子落盘；文件缺失 fail-loud）
+        + verdict（u/findings/rank 一致性）。收编不验内容——报告是给人看的便当，
+        数字权威面是 verdict/board/盘上 study。重入 = 幂等重导出——**壳构造保证**
+        （finish_ctx 只读重入：双 commit 不可能、观测零落盘；交付报告不可变更——
+        重写须弃局重开）。素材面走 draw_taylor_diagram / modeling_report_skeleton
+        两工具，finish 只做一次收编。
+
+        无冻结 combo 可交付 → 拒收 verdict（拒收后可续局——先 run_hpo +
+        final_train_test；accepted 恒真的例外路径，reason 即续局指引）；有交付面时
+        accepted 恒真（holdout 读在 final_train_test 恰一次，finish 只结算）。
+        """
+        ss = _open(sid)
+        with ss.finish_ctx() as (o, log):  # 幂等重入 = 壳只读路径（已收局零落盘）
+            board = _board_load(ss)
+            m = _mview(ss, o, board)
+            if board.get("verdict"):  # 已结算：幂等重导出（交付报告不可变更——审计面）
+                adopted = board["verdict"]["report"]["source_pdf"]
+                if pdf != adopted:
+                    raise ValueError(f"已收局交付报告不可变更（审计面）——重写报告须弃局重开；已收编报告源：{adopted!r}")
+                return _verdict_response(m, list(ss.decision_log))
+
+            keys = sorted(k for k, v in m["models"].items() if v["frozen"])
+            if not keys:
+                return FinishVerdict(  # 拒收：无交付面（先搜后店），拒收后可续局
+                    accepted=False,
+                    reason="无冻结 combo 可交付——先 run_hpo + final_train_test 再收局",
+                    terminal_utility={"steps": m["steps"]},
+                    deliverables={},
+                    decision_log=list(ss.decision_log),
+                )
+
+            src = Path(pdf)
+            if not src.is_file():
+                raise ValueError(
+                    f"报告文件不存在：{pdf!r}（先 draw_taylor_diagram + modeling_report_skeleton 拿素材，π 产报告后带路径收局）"
+                )
+            report = _adopt_report(ss.dir, src)
+
+            verdict_models = {k: {"u": m["models"][k]["u"], "findings": m["models"][k]["findings"]} for k in keys}
+            board["verdict"] = {
+                "deliver_keys": keys,
+                "models": verdict_models,
+                "rank": _rank_consistency(m, keys),
+                "report": report,
+            }
+            o.validation.finished = True
+            _board_write(ss, board)  # 域状态先行（verdict 缓存）
+            log.append(_record(log, m, "finish", {"pdf": str(src)}, f"交付 {keys}；报告 {report['file']}"))
+            m = _mview(ss, o, board)
+            return _verdict_response(m, list(ss.decision_log))
+
+    def observe(self, sid: str) -> Observation:
+        """观测（幂等只读零转移，#117 取代 propose）：盘上观测 + 读时决策面投影。
+
+        - 本 combo 键 findings（#66 作用域——规则与 LLM 落诊同粒度，证据不跨 FE 组合）
+        - 光标 combo_key、账本摘要（family/frozen/u_inner/θ*/n_trials）、has_cat（FE
+          cat 槽资格的数据面）
+        - face：候选族超参面（动态维 Space 可收窄 / 静态常量可 pin——原菜单的黑盒开箱
+          证据上浮；选项面 = 全候选，不截断）
+        投影只回调用方（壳 observe_ctx 零写）；终态会话照常可观测。
+        """
+        ss = _open(sid)
+        with ss.observe_ctx() as o:
+            m = _mview(ss, o, _board_load(ss))
+            cursor = m["cursor"]
+            key = _structure_key(cursor["m"], cursor["F"]) if cursor["m"] else None
+            o.biz = {
+                **o.biz,
+                "findings": [
+                    {"key": k, **f} for k, e in m["models"].items() if k == key for f in (e.get("findings") or [])
+                ],
+                "combo_key": key,
+                "models": {
+                    k: {
+                        "family": e["family"],
+                        "frozen": e["frozen"],
+                        "u_inner": e.get("u_inner"),
+                        "best_params": e.get("best_params") or {},
+                        "n_trials_at_last_eval": e.get("n_trials_at_last_eval"),
+                    }
+                    for k, e in m["models"].items()
+                },
+                "has_cat": _has_cat(m),
+                "face": {family: _space_summary(family) for family in _candidates(m)},
+            }
+        return o
+
+    def statistics(self, sid: str, key: str, top_k: int = 5) -> dict:
+        """统计证据（#226 ⑥ 判读退役承接 + 补充裁定统计步独立成工具，#236）：
+        run 寻址（oof run 或终训 run）声明式分析——证据表 + 图集经 JobProvider 执行
+        （R1：全计算工具走 provider），工件落统计 run。零会话转移（只读 board/prior）。
+
+        agent 回路：run_hpo/final_train_test 收账 → 本方法取证据 → 你推理 →
+        report_findings 落账（apply 动作）→ observe 支撑决策。"""
+        from mflowy.driver.config import NodeConf
+        from mflowy.driver.serializer import flow_to_yaml
+
+        ss = _open(sid)
+        m = _mview(ss, ss.observation, _board_load(ss))
+        entry = m["models"].get(key)
+        if entry is None:
+            raise ValueError(f"统计键 `{key}` 不在账本（已搜 combo：{sorted(m['models'])}）——先 run_hpo")
+        if entry.get("frozen") and entry.get("run_id"):  # 终训面优先（更新证据——holdout 同构）
+            run_id, artifact = entry["run_id"], entry["byproducts"]["y_pred"]
+        elif (oof := entry.get("oof") or {}).get("run_id"):
+            run_id, artifact = oof["run_id"], oof["y_pred"]
+        else:
+            raise ValueError(f"combo `{key}` 无可统计面（未 run_hpo）——先搜索取 OOF 证据工件")
+        # 契约前置门（fail-fast 直报 ValueError，不进 DAG 被 RuntimeError 包皮；
+        # 节点内同门 = provider 窗口的防御纵深——判据与文案单源 statistics.contract_gates）
+        from mflowy.model.model.statistics import contract_gates
+
+        src = (
+            pd.read_parquet(m["source_file"])
+            if m["source_file"].endswith(".parquet")
+            else pd.read_csv(m["source_file"])
+        )
+        contract_gates(src, run_id, artifact)
+        # 受理边界同 final_train_test：统计恒 local 形态（remote 工作流随 #225 重启议）
+        plan_text = flow_to_yaml(
+            (
+                {
+                    "load__file": NodeConf(
+                        node_key="load__file", name="导入源数据", params={"file_path": m["source_file"]}
+                    )
+                },
+                {
+                    "model__statistics": NodeConf(
+                        node_key="model__statistics",
+                        name=f"统计证据-{key}",
+                        params={
+                            "run_id": run_id,
+                            "y_pred_artifact": artifact,
+                            "target": m["target"],
+                            "task": m["task"],
+                            "top_k": top_k,
+                        },
+                    )
+                },
+            )
+        )
+        from .job_provider import get_job_provider
+
+        result = _run_bridge(
+            get_job_provider().modeling(
+                modeling_steps=plan_text,
+                name=f"statistics:{m['session_id'][:6]}",
+                desc=f"会话 {m['session_id']} combo {key} 统计证据（run {run_id[:8]} 寻址）",
+            )
+        )
+        if result.status != "finished" or result.dag_result is None or result.dag_result.status != "finished":
+            raise RuntimeError(f"统计受理面未完成（status={result.status}）——证据不达，检查 run 寻址与工件契约")
+        node = next(
+            (r for r in result.dag_result.runs if r.node == "model__statistics" and r.status == "FINISHED"), None
+        )
+        if node is None or node.value is None:
+            raise RuntimeError("统计 DAG 无完成的 model__statistics 节点——证据不达")
+        return dict(node.value)
+
+    def taylor_report(self, sid: str, run_ids: list[str]) -> dict:
+        """泰勒聚合门面（draw_taylor_diagram 工具面）：ledger 反查 label（combo key）
+        + 终训面校验（fail-loud 带可用清单）+ 副产物 fan-in（taylor_byproducts 边函数
+        ——y_test 逐位同一断言）+ 图落会话目录。"""
+        from mflowy.model.report import taylor_for_runs
+
+        ss = _open(sid)
+        m = _mview(ss, ss.observation, _board_load(ss))
+        rid_to_key = {v["run_id"]: k for k, v in m["models"].items() if v.get("run_id")}
+        unknown = [r for r in run_ids if r not in rid_to_key]
+        if unknown:
+            raise ValueError(
+                f"run_ids {unknown} 无终训副产物（不在账本终训面——先 final_train_test）——可用 run：{sorted(rid_to_key)}"
+            )
+        runs = [(rid_to_key[r], r) for r in run_ids]
+        out = taylor_for_runs(runs, m["task"], ss.dir)
+        return {**out, "figure": out["figure"] if out["figure"] is None else str(out["figure"])}
+
+    def report_skeleton(self, sid: str) -> dict:
+        """报告素材样板（#66 只读零副作用）：表格从账本渲染（数字抄写归引擎——π 不
+        默写 u_inner/θ*/u/rank）+ 图片清单（各 combo 的 OOF 图集、终训副产物指针、
+        泰勒图路径）+ 叙事槽样板（判断归 π）。"""
+        ss = _open(sid)
+        m = _mview(ss, ss.observation, _board_load(ss))
+        d = ss.dir
+        from mflowy.model.report import TAYLOR_FIGURE  # 图名单源——与写入方共享常量（#83）
+        from mflowy.utils.mlflow import download_run_artifact
+
+        taylor_fig = str(d / TAYLOR_FIGURE) if (d / TAYLOR_FIGURE).exists() else None
+        # rank：冻结面按 u 降序的名次（1 = 交付最优）；rank_consistency = u_inner/u 秩相关（SH 赌注出账）
+        frozen = sorted(
+            (k for k, e in m["models"].items() if e.get("frozen") and e.get("u") is not None),
+            key=lambda k: m["models"][k]["u"],
+            reverse=True,
+        )
+        rank_of = {k: i + 1 for i, k in enumerate(frozen)}
+        board_rows = []
+        images = []
+        for k, e in sorted(m["models"].items()):
+            if e.get("u_inner") is None:
+                continue  # 未搜 combo 无观察面
+            board_rows.append(
+                {
+                    "key": k,
+                    "family": e["family"],
+                    "fe": e["fe"],
+                    "u_inner": e["u_inner"],
+                    "u": e["u"],
+                    "best_params": e["best_params"],  # θ*
+                    "std": e["std"],
+                    "n_trials": e["n_trials_at_last_eval"],
+                    "frozen": e["frozen"],
+                    "rank": rank_of.get(k),  # 冻结面名次（未终训 = None——不伪装）
+                }
+            )
+            images.append(
+                {
+                    "key": k,
+                    "run_id": e.get("run_id"),
+                    # OOF 图集寻址 = run 工件树（#95 项4）——本地仓库 download 即原路径（零拷贝，只读契约）
+                    "oof_plots": [str(download_run_artifact(e["oof"]["run_id"], p)) for p in e["oof"].get("plots", [])],
+                    "holdout_byproducts": e.get("byproducts"),
+                    "findings": e.get("findings", []),
+                }
+            )
+        return {
+            "session_id": sid,
+            "tables": {"board": board_rows},
+            "rank_consistency": _rank_consistency(m, frozen),
+            "images": images,
+            "taylor": taylor_fig,
+            "narrative_slots": [
+                {"slot": "为什么是这个模型", "hint": "对比 board 的 u_inner/u/rank 与泰勒图的误差结构，说明交付选择"},
+                {
+                    "slot": "局限与风险",
+                    "hint": "消费 findings（drift/slice_collapse/error_concentrated）与 rank_consistency",
+                },
+                {"slot": "下一步建议", "hint": "回流清洗域候选 / 换 FE 组合 / 加深搜索的证据化建议"},
+            ],
+            "board": _board(m),
+            "decision_log": list(ss.decision_log),
+        }
+
+
+def _build_prior(m: dict, card: dict, id_cols: list[str]) -> dict:
+    """冻结协议 → ModelPrior（⑦ typed 载体）→ o.prior 通道形态（单源）。"""
+    from mflowy.model.prior import ModelPrior
+
+    return ModelPrior(
+        source_file=m["source_file"],
+        target=m["target"],
+        task=m["task"],  # 物化后落定的实际 task（x_y 推断）
+        protocol=m["protocol"],
+        candidates=m["candidates"],
+        card=card,
+        id_columns=list(id_cols),
+    ).model_dump(mode="json")
 
 
 def _session_experiment(m: dict) -> str:
@@ -459,37 +801,7 @@ def _session_run(m: dict, run_name: str):
     return mlflow.start_run(experiment_id=_session_experiment(m), run_name=run_name)
 
 
-# ── apply：八动作面分派（clean 形状；终态/预算门在壳的 apply_ctx） ───────────
-
-
-def apply_action(session_id: str, node: str, params: dict | None = None) -> Observation:
-    """执行一个回合动作：node ∈ 八动作面词表（配置编辑 + 计算动作；done = finish）。
-
-    配置编辑只改光标（零步费零奖励，生效于该键下一次 run_hpo）；计算动作吃步
-    （counts_step 口径 → 壳预算门）。词表外（族名/FE 节点名直 apply 已随 #62
-    退役）fail-loud 带词表清单。
-    """
-    params = dict(params or {})
-    if node not in ACTIONS:
-        raise ValueError(
-            f"动作 `{node}` 不在词表（八动作面 = {list(ACTIONS)}；done = finish 控制面独立入口，"
-            "rollback/finish/abandon 同为独立入口）"
-        )
-    ss = _open(session_id)
-    with ss.apply_ctx(node) as (o, log):
-        board = _board_load(ss)
-        m = _mview(ss, o, board)
-        dispatch = {
-            "select_model": _select_model,
-            "set_hp": _set_hp,
-            "set_hp_space": _set_hp_space,
-            "set_seed": _set_seed,
-            "select_FE": _select_fe,
-            "run_hpo": _run_hpo,
-            "final_train_test": _final_train_test,
-        }
-        dispatch[node](ss, o, m, board, log, params)
-    return o
+# ── apply：九动作面分派（clean 形状；终态/预算门在壳的 apply_ctx） ───────────
 
 
 def _commit(ss, o, m, board, log, action: str, params: dict, note: str = "", reward=None, findings=None) -> None:
@@ -724,7 +1036,7 @@ def _tag_run(run, m: dict, *, action: str, key: str, family: str) -> None:
 def _run_hpo(ss, o, m, board, log, params: dict) -> None:
     """run_hpo：增量搜索（inner CV）→ θ* 上 OOF 观察面 → 账本更新（reward = Δu_inner）。"""
     import mlflow
-    from mflowy.model.model._pipeline import hyperparameters_search, theta_probe
+    from mflowy.model.model._pipeline import hyperparameters_search
 
     n_trials = params.get("n_trials", DEFAULT_N_TRIALS)
     unknown = set(params) - {"n_trials"}
@@ -787,13 +1099,11 @@ def _run_hpo(ss, o, m, board, log, params: dict) -> None:
             half_width = oof_half_widths(y_true_oof, y_oof) if _task(m) == TASKTYPE.REGRESSION else None
             if half_width is not None:
                 mlflow.set_tag(OOF_HALF_WIDTH_TAG, json.dumps(half_width))  # loader/final 复制面
-            from mflowy.model.report import oof_plot_album
-
-            plots = oof_plot_album(m["task"], y_true_oof, y_oof, y_proba)
             # #95 项5：study storage 随父 run 落工件（只读投影——盘上真源不变，账本 append-only）
             log_file(_root() / m["session_id"] / _study_db_name(key))
-            # 段1 体征证据：θ* 单次代表拟合——得分对（同尺同拟合）+ 曲线（OOB 族 → None 降级）
-            probe_scores, curve_df = theta_probe(ts, make_pipe, theta, scoring)
+            mlflow.set_tag(
+                "mflowy.source_fingerprint", m["source_fingerprint"]
+            )  # #236 工件契约：统计工具重构校验锚（开局原始帧指纹——稳定锚；θ* 体征探针随判读退役）
         captured = buf.getvalue().strip()
         if captured:
             logger.info("run_hpo[%s] 捕获输出：\n%s", key, captured)
@@ -805,27 +1115,8 @@ def _run_hpo(ss, o, m, board, log, params: dict) -> None:
     scores = best.user_attrs.get("scores", [])
     import numpy as np
 
-    # #35 diagnose 接线点：OOF 观察面上的机械化诊断（零步数）——落 models[key] + run 响应浮出
-    from mflowy.model.diagnose import diagnose_oof
-
-    findings = [
-        {"source": "rule", **f}
-        for f in diagnose_oof(
-            m["task"],
-            ts.X_train.loc[y_oof.index],  # OOF 对齐面（holdout-val 模式 = val 段；K 折恒等）
-            y_true_oof,
-            y_oof[y_oof.columns[0]].to_numpy() if isinstance(y_oof, pd.DataFrame) else y_oof,
-            best_params=dict(best.params),
-            space=space,
-            fold_scores=scores
-            if scores
-            else [float(best.value)],  # fold_std 证据（holdout 模式无折分——best value 即读数）
-            train_scores=[probe_scores["train"]],  # 体征①④：θ* 探针得分对（同一拟合的苹果对苹果）
-            val_scores=[probe_scores["val"]],
-            curve_df=curve_df,
-            scoring=scoring,
-        )
-    ]
+    # #226 ⑥/#236 判读退役：规则 findings 出场——统计证据走独立工具 modeling_statistics
+    # （run 寻址重构），判读归 agent 经 report_findings 动作落账（单源 source=llm）。
     entry.update(
         {
             "study": _study_db_name(key),
@@ -839,12 +1130,11 @@ def _run_hpo(ss, o, m, board, log, params: dict) -> None:
             "std": round(float(np.std(scores)), 4) if len(scores) else None,
             "oof": {
                 "run_id": run.info.run_id,
-                "y_pred": "oof_y_pred.parquet",  # run 工件名（run_id 在本面——寻址 = (run_id, name)）
+                "y_pred": "oof_y_pred.parquet",  # run 工件名（#236 起带 indices 列 + 源指纹 tag）
                 "half_width": half_width,  # 回归区间半宽（#164；分类 None 无面）
-                "plots": plots,  # 工件名清单（log_figure 落父 run 工件树）
+                "plots": [],  # #236：图集随统计工具（modeling_statistics）产——搜索时留空槽
             },
-            # 规则 findings 随每次搜索刷新；LLM findings（#36）保留
-            "findings": findings + [f for f in entry.get("findings", []) if f.get("source") == "llm"],
+            "findings": [f for f in entry.get("findings", []) if f.get("source") == "llm"],  # 单源 llm（#226 ⑥）
         }
     )
     reward = new_u if prev_u is None else round(new_u - prev_u, 4)
@@ -858,7 +1148,6 @@ def _run_hpo(ss, o, m, board, log, params: dict) -> None:
         {"n_trials": n_trials, "key": key},
         note=f"u_inner={new_u}（Δ={reward}）trials={len(study.trials)} oof_run={run.info.run_id[:8]}",
         reward=reward,
-        findings=findings,  # run 响应浮出（π 的过程决策面 → o.biz["findings"]）
     )
 
 
@@ -946,7 +1235,9 @@ def _final_train_test(ss, o, m, board, log, params: dict) -> None:
     if missing:
         raise RuntimeError(f"终训 run 缺副产物 {sorted(missing)}（run artifacts：{arts}）——training 行为契约不符")
     byproducts = dict(HOLDOUT_BYPRODUCTS)
-    y_pred = pd.read_parquet(download_run_artifact(node.run_id, HOLDOUT_BYPRODUCTS["y_pred"]))
+    pd.read_parquet(
+        download_run_artifact(node.run_id, HOLDOUT_BYPRODUCTS["y_pred"])
+    )  # 副产物可读性过门（#236：判读退役后不再消费值）
 
     # 血缘认证 post-hoc 补打（DAG run 窗口外）+ #164 残差源寻址（复制面）：
     # OOF 证据 parquet + 半宽 tag 随终训 run 复制——predict 单 run_id 入参可用
@@ -956,6 +1247,8 @@ def _final_train_test(ss, o, m, board, log, params: dict) -> None:
     client = mlflow.MlflowClient()
     for k, v in _lineage_tags(m, action="final_train_test", key=key, family=family).items():
         client.set_tag(node.run_id, k, v)
+    # #236 工件契约：终训 run 旁记原始帧指纹（锚单源 = m.source_fingerprint，与 oof run 同尺）
+    client.set_tag(node.run_id, "mflowy.source_fingerprint", m["source_fingerprint"])
     oof = entry.get("oof") or {}
     if (oof_name := oof.get("y_pred")) and (oof_src := oof.get("run_id")):
         src_arts = run_artifacts(oof_src)
@@ -967,20 +1260,14 @@ def _final_train_test(ss, o, m, board, log, params: dict) -> None:
     if (w := oof.get("half_width")) is not None:
         client.set_tag(node.run_id, OOF_HALF_WIDTH_TAG, json.dumps(w))
 
-    # findings：会话 split（≡ DAG 按引用复用的划分）+ 副产物 y_pred + u_inner
-    ts = _load_split(m)
-    y_pred_df = pd.DataFrame(y_pred.to_numpy(), index=ts.y_test.index, columns=ts.y_test.columns)
-    from mflowy.model.model._pipeline import holdout_findings
-
-    findings = [{"source": "rule", **f} for f in holdout_findings(ts, y_pred_df, entry.get("u_inner"), holdout["u"])]
-
+    # #226 ⑥/#236 判读退役：holdout 规则 findings 出场——证据面同构（统计工具 + agent 判读）
     save_loader(m["session_id"], loader, key, v=loader_v)
     entry.update(
         {
             "frozen": True,
             "u": holdout["u"],
             "metrics": {t: {k.value: v for k, v in tm.items()} for t, tm in holdout["metrics"].items()},
-            "findings": findings + [f for f in entry.get("findings", []) if f.get("source") == "llm"],
+            "findings": [f for f in entry.get("findings", []) if f.get("source") == "llm"],  # 单源 llm（#226 ⑥）
             "run_id": node.run_id,
             "final_params": final_params,  # 证据配置（= plan 全 pin 面——重放承诺与执行事实同一）
             "byproducts": byproducts,
@@ -997,7 +1284,6 @@ def _final_train_test(ss, o, m, board, log, params: dict) -> None:
         {"key": key},
         note=f"u={holdout['u']} combo 冻结 run={node.run_id[:8]}（终训即 plan：{plan_path.name}）",
         reward=0,
-        findings=findings,
     )
 
 
@@ -1028,35 +1314,35 @@ def _new_entry(key: str, family: str, fe: dict) -> dict:
 # ── 控制面 ──
 
 
-def report_findings(session_id: str, key: str, findings: list[dict]) -> Observation:
-    """LLM findings 落诊（#36 控制面）：不可机械化诊断进 models[key]——schema 校验、
-    决策日志审计、与规则 findings 均匀聚合（observe 投影不区分来源）。
+def _do_report_findings(ss, o, m, board, log, params: dict) -> None:
+    """report_findings 动作（#226 ④/#236 收编为第九词——工具面薄别名透传到此）：
+    agent 判读落诊（#36 控制面；#226 ⑥ 判读退役后**单源** source=llm——规则/LLM
+    双源聚合消失，机器统计证据经 modeling_statistics 工具取回后由 agent 判读）。
 
     schema = diagnose 族 ErrorReport 先例（kind/severity/evidence/message）+
-    ``source`` 引擎保留键；kind ⊆ 已知词表（#35 定案——语言超纲即拒）。
+    ``source`` 引擎保留键；kind ⊆ 已知词表（taxonomy fail-loud 不变——语言超纲即拒）。
     """
-    ss = _open(session_id)
-    with ss.apply_ctx("report_findings") as (o, log):
-        board = _board_load(ss)
-        m = _mview(ss, o, board)
-        if key not in m["models"]:
-            raise ValueError(f"落诊键 `{key}` 不在账本（已训 combo：{sorted(m['models'])}）")
-        validated = [_validate_llm_finding(f) for f in findings]
+    key = params.get("key")
+    findings = params.get("findings") or []
+    if not key:
+        raise ValueError("report_findings 须带 key（落诊账本键）")
+    if key not in m["models"]:
+        raise ValueError(f"落诊键 `{key}` 不在账本（已训 combo：{sorted(m['models'])}）")
+    validated = [_validate_llm_finding(f) for f in findings]
 
-        entry = m["models"][key]
-        entry["findings"] = [f for f in entry.get("findings", []) if f.get("source") == "rule"] + validated
-        _commit(
-            ss,
-            o,
-            m,
-            board,
-            log,
-            "report_findings",
-            {"key": key, "n": len(validated)},
-            note="; ".join(f["kind"] for f in validated),
-            findings=validated,
-        )
-    return o
+    entry = m["models"][key]
+    entry["findings"] = validated  # 单源 source=llm（#226 ⑥——双源聚合退役）
+    _commit(
+        ss,
+        o,
+        m,
+        board,
+        log,
+        "report_findings",
+        {"key": key, "n": len(validated)},
+        note="; ".join(f["kind"] for f in validated),
+        findings=validated,
+    )
 
 
 def _validate_llm_finding(f: dict) -> dict:
@@ -1086,44 +1372,6 @@ def _validate_llm_finding(f: dict) -> dict:
     return {"source": "llm", **f}
 
 
-def rollback(session_id: str) -> Observation:
-    """回退光标到上一快照（决策日志追加 rollback 记录；预算不回补；账本/study 永不
-    回退——盘上 append-only）。"""
-    ss = _open(session_id)
-    with ss.rollback_ctx() as (o, log):
-        board = _board_load(ss)
-        m = _mview(ss, o, board)
-        if len(m["snapshots"]) <= 1:
-            raise RuntimeError("无历史版本可回退")
-        snap = m["snapshots"].pop()
-        m["cursor"] = {
-            "m": snap["m"],
-            "H": dict(snap["H"]),
-            "seed": snap["seed"],
-            "F": dict(snap["F"]),
-        }
-        board["cursor"] = m["cursor"]
-        _board_write(ss, board)
-        o.validation.reward = None  # ⑥ 补 r：先置再 append（回滚无过程奖励）
-        log.append(
-            _record(
-                log,
-                m,
-                "rollback",
-                {},
-                f"光标弹栈（预算不回补：steps={m['steps']}/{m['max_steps']}；账本与盘上 study 一致）",
-            )
-        )
-        o.biz = _state_projection(m)
-    return o
-
-
-def abandon_session(session_id: str, reason: str | None = None) -> dict:
-    """弃局终局：委托壳 abandon（幂等）——置 abandoned、记录进决策日志、保留
-    决策日志与模型账本、不导出交付物；已收局不可弃（终态互斥）。"""
-    return _open(session_id).abandon(reason=reason)
-
-
 # ── finish（done）：一次结算、多模型交付 ────────────────────────────────────
 
 
@@ -1137,61 +1385,6 @@ def _record(log, m: dict, action: str, params: dict, note: str) -> dict:
         "budget_left": m["max_steps"] - m["steps"],
         "note": note,
     }
-
-
-def finish_session(session_id: str, *, pdf: str) -> FinishVerdict:
-    """收局（done，#66 单动作——报告是 π 的产物，引擎只收编不编译）：
-
-    收编 π 产报告进 deliverables（复制 + tmp/rename 原子落盘；文件缺失 fail-loud）
-    + verdict（u/findings/rank 一致性）。收编不验内容——报告是给人看的便当，
-    数字权威面是 verdict/board/盘上 study。重入 = 幂等重导出——**壳构造保证**
-    （finish_ctx 只读重入：双 commit 不可能、观测零落盘；交付报告不可变更——
-    重写须弃局重开）。素材面走 draw_taylor_diagram / modeling_report_skeleton
-    两工具，finish 只做一次收编。
-
-    无冻结 combo 可交付 → 拒收 verdict（拒收后可续局——先 run_hpo +
-    final_train_test；accepted 恒真的例外路径，reason 即续局指引）；有交付面时
-    accepted 恒真（holdout 读在 final_train_test 恰一次，finish 只结算）。
-    """
-    ss = _open(session_id)
-    with ss.finish_ctx() as (o, log):  # 幂等重入 = 壳只读路径（已收局零落盘）
-        board = _board_load(ss)
-        m = _mview(ss, o, board)
-        if board.get("verdict"):  # 已结算：幂等重导出（交付报告不可变更——审计面）
-            adopted = board["verdict"]["report"]["source_pdf"]
-            if pdf != adopted:
-                raise ValueError(f"已收局交付报告不可变更（审计面）——重写报告须弃局重开；已收编报告源：{adopted!r}")
-            return _verdict_response(m, list(ss.decision_log))
-
-        keys = sorted(k for k, v in m["models"].items() if v["frozen"])
-        if not keys:
-            return FinishVerdict(  # 拒收：无交付面（先搜后店），拒收后可续局
-                accepted=False,
-                reason="无冻结 combo 可交付——先 run_hpo + final_train_test 再收局",
-                terminal_utility={"steps": m["steps"]},
-                deliverables={},
-                decision_log=list(ss.decision_log),
-            )
-
-        src = Path(pdf)
-        if not src.is_file():
-            raise ValueError(
-                f"报告文件不存在：{pdf!r}（先 draw_taylor_diagram + modeling_report_skeleton 拿素材，π 产报告后带路径收局）"
-            )
-        report = _adopt_report(ss.dir, src)
-
-        verdict_models = {k: {"u": m["models"][k]["u"], "findings": m["models"][k]["findings"]} for k in keys}
-        board["verdict"] = {
-            "deliver_keys": keys,
-            "models": verdict_models,
-            "rank": _rank_consistency(m, keys),
-            "report": report,
-        }
-        o.validation.finished = True
-        _board_write(ss, board)  # 域状态先行（verdict 缓存）
-        log.append(_record(log, m, "finish", {"pdf": str(src)}, f"交付 {keys}；报告 {report['file']}"))
-        m = _mview(ss, o, board)
-        return _verdict_response(m, list(ss.decision_log))
 
 
 def _adopt_report(session_dir: Path, src: Path) -> dict:
@@ -1208,91 +1401,6 @@ def _adopt_report(session_dir: Path, src: Path) -> dict:
     shutil.copyfile(src, tmp)
     os.replace(tmp, dest)
     return {"file": f"deliverables/{src.name}", "source_pdf": str(src)}
-
-
-def taylor_report(session_id: str, run_ids: list[str]) -> dict:
-    """泰勒聚合门面（draw_taylor_diagram 工具面）：ledger 反查 label（combo key）
-    + 终训面校验（fail-loud 带可用清单）+ 副产物 fan-in（taylor_byproducts 边函数
-    ——y_test 逐位同一断言）+ 图落会话目录。"""
-    from mflowy.model.report import taylor_for_runs
-
-    ss = _open(session_id)
-    m = _mview(ss, ss.observation, _board_load(ss))
-    rid_to_key = {v["run_id"]: k for k, v in m["models"].items() if v.get("run_id")}
-    unknown = [r for r in run_ids if r not in rid_to_key]
-    if unknown:
-        raise ValueError(
-            f"run_ids {unknown} 无终训副产物（不在账本终训面——先 final_train_test）——可用 run：{sorted(rid_to_key)}"
-        )
-    runs = [(rid_to_key[r], r) for r in run_ids]
-    out = taylor_for_runs(runs, m["task"], ss.dir)
-    return {**out, "figure": out["figure"] if out["figure"] is None else str(out["figure"])}
-
-
-def report_skeleton(session_id: str) -> dict:
-    """报告素材样板（#66 只读零副作用）：表格从账本渲染（数字抄写归引擎——π 不
-    默写 u_inner/θ*/u/rank）+ 图片清单（各 combo 的 OOF 图集、终训副产物指针、
-    泰勒图路径）+ 叙事槽样板（判断归 π）。"""
-    ss = _open(session_id)
-    m = _mview(ss, ss.observation, _board_load(ss))
-    d = ss.dir
-    from mflowy.model.report import TAYLOR_FIGURE  # 图名单源——与写入方共享常量（#83）
-    from mflowy.utils.mlflow import download_run_artifact
-
-    taylor_fig = str(d / TAYLOR_FIGURE) if (d / TAYLOR_FIGURE).exists() else None
-    # rank：冻结面按 u 降序的名次（1 = 交付最优）；rank_consistency = u_inner/u 秩相关（SH 赌注出账）
-    frozen = sorted(
-        (k for k, e in m["models"].items() if e.get("frozen") and e.get("u") is not None),
-        key=lambda k: m["models"][k]["u"],
-        reverse=True,
-    )
-    rank_of = {k: i + 1 for i, k in enumerate(frozen)}
-    board_rows = []
-    images = []
-    for k, e in sorted(m["models"].items()):
-        if e.get("u_inner") is None:
-            continue  # 未搜 combo 无观察面
-        board_rows.append(
-            {
-                "key": k,
-                "family": e["family"],
-                "fe": e["fe"],
-                "u_inner": e["u_inner"],
-                "u": e["u"],
-                "best_params": e["best_params"],  # θ*
-                "std": e["std"],
-                "n_trials": e["n_trials_at_last_eval"],
-                "frozen": e["frozen"],
-                "rank": rank_of.get(k),  # 冻结面名次（未终训 = None——不伪装）
-            }
-        )
-        images.append(
-            {
-                "key": k,
-                "run_id": e.get("run_id"),
-                # OOF 图集寻址 = run 工件树（#95 项4）——本地仓库 download 即原路径（零拷贝，只读契约）
-                "oof_plots": [str(download_run_artifact(e["oof"]["run_id"], p)) for p in e["oof"].get("plots", [])],
-                "holdout_byproducts": e.get("byproducts"),
-                "findings": e.get("findings", []),
-            }
-        )
-    return {
-        "session_id": session_id,
-        "tables": {"board": board_rows},
-        "rank_consistency": _rank_consistency(m, frozen),
-        "images": images,
-        "taylor": taylor_fig,
-        "narrative_slots": [
-            {"slot": "为什么是这个模型", "hint": "对比 board 的 u_inner/u/rank 与泰勒图的误差结构，说明交付选择"},
-            {
-                "slot": "局限与风险",
-                "hint": "消费 findings（drift/slice_collapse/error_concentrated）与 rank_consistency",
-            },
-            {"slot": "下一步建议", "hint": "回流清洗域候选 / 换 FE 组合 / 加深搜索的证据化建议"},
-        ],
-        "board": _board(m),
-        "decision_log": list(ss.decision_log),
-    }
 
 
 def _rank_consistency(m: dict, keys: list[str]) -> float | None:
@@ -1375,43 +1483,6 @@ def _plan_yaml(m: dict, key: str, final_params: dict | None = None) -> str:
 
 
 # ── observe：读时投影（π 的决策面——菜单退役，#117/#120） ───────────────────
-
-
-def observe_session(session_id: str) -> Observation:
-    """观测（幂等只读零转移，#117 取代 propose）：盘上观测 + 读时决策面投影。
-
-    - 本 combo 键 findings（#66 作用域——规则与 LLM 落诊同粒度，证据不跨 FE 组合）
-    - 光标 combo_key、账本摘要（family/frozen/u_inner/θ*/n_trials）、has_cat（FE
-      cat 槽资格的数据面）
-    - face：候选族超参面（动态维 Space 可收窄 / 静态常量可 pin——原菜单的黑盒开箱
-      证据上浮；选项面 = 全候选，不截断）
-    投影只回调用方（壳 observe_ctx 零写）；终态会话照常可观测。
-    """
-    ss = _open(session_id)
-    with ss.observe_ctx() as o:
-        m = _mview(ss, o, _board_load(ss))
-        cursor = m["cursor"]
-        key = _structure_key(cursor["m"], cursor["F"]) if cursor["m"] else None
-        o.biz = {
-            **o.biz,
-            "findings": [
-                {"key": k, **f} for k, e in m["models"].items() if k == key for f in (e.get("findings") or [])
-            ],
-            "combo_key": key,
-            "models": {
-                k: {
-                    "family": e["family"],
-                    "frozen": e["frozen"],
-                    "u_inner": e.get("u_inner"),
-                    "best_params": e.get("best_params") or {},
-                    "n_trials_at_last_eval": e.get("n_trials_at_last_eval"),
-                }
-                for k, e in m["models"].items()
-            },
-            "has_cat": _has_cat(m),
-            "face": {family: _space_summary(family) for family in _candidates(m)},
-        }
-    return o
 
 
 def _space_summary(family: str) -> dict:

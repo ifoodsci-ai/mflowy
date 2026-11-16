@@ -1,6 +1,6 @@
 ---
 name: model-brief
-description: 建模协议问卷(mflowy)。清洗收局后、开始建模前使用——用户要求"建模/训练模型"且清洗已完成时触发。规则预填候选，用户只确认四项必答，剧本层产出开局入参（cv_card = cv.split 配置 yaml 明文 + 显式协议参数）后 modeling_session_start 直进建模 POMDP。前置:clean skill 已 finish。
+description: 建模协议问卷(mflowy)。清洗收局后、开始建模前使用——用户要求"建模/训练模型"且清洗已完成时触发。规则预填候选，用户只确认四项必答，剧本层产出开局入参（cv_card = cv.split 配置 yaml 明文 + 显式协议参数）后 load_or_start_modeling 直进建模 POMDP。前置:clean skill 已 finish。
 disable-model-invocation: true
 ---
 
@@ -38,7 +38,7 @@ research-review 产物即可；无 research 产物时留空（全部已声明族
 ## 收口：编译交棒
 
 攒齐必答后在剧本层组装开局入参并调
-`modeling_session_start(final_path, cv_card=<split yaml 明文>, target=, task=,
+`load_or_start_modeling(file_path=<清洗终态路径>, cv_card=<split yaml 明文>, target=, task=,
 candidates=, max_steps=, id_columns=, card=<DomainCard 背景>)`——显式参数 > card
 分层缺省，合并结果冻结进 manifest；start 即四类相容校验
 （task↔target dtype / metric↔task / cv↔数据事实 / 预算与候选机械校验：候选 ⊆ 已声明

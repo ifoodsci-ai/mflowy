@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from mflowy.model import session as ms
+from mflowy.model.session import ModelingSession
 from mflowy.utils.path import pin_task_dir, reset_task_dir
 
 CARD = {"domain": "测试", "target": "target"}
@@ -43,7 +44,7 @@ def _csv(tmp_path: Path) -> str:
 
 
 def _start(tmp_path: Path):
-    return ms.start_session(
+    return ModelingSession().load_or_start(
         file_path=_csv(tmp_path),
         cv_card=CV_CARD,
         card=CARD,

@@ -11,7 +11,7 @@ import json
 import numpy as np
 import pandas as pd
 import pytest
-from mflowy.model import session as ms
+from mflowy.model.session import ModelingSession
 from mflowy.utils.mlflow import download_run_artifact, run_artifacts
 
 KEY = "RF|passthrough|passthrough"
@@ -58,7 +58,7 @@ def _predict_df(run_id: str, data: str) -> pd.DataFrame:
 
 def _run_hpo_regression(csv: str) -> str:
     """回归最小搜索链 → session_id（两用例共用的前置段）。"""
-    sid, s = ms.start_session(
+    sid, s = ModelingSession().load_or_start(
         file_path=csv,
         cv_card="cv: 3",
         card={"domain": "t", "target": "target"},
@@ -67,8 +67,8 @@ def _run_hpo_regression(csv: str) -> str:
         candidates=[{"family": "RF", "baseline": True}],
         max_steps=6,
     )
-    ms.apply_action(sid, "select_model", {"family": "RF"})
-    ms.apply_action(sid, "run_hpo", {"n_trials": 2})
+    ModelingSession().apply(sid, "select_model", {"family": "RF"})
+    ModelingSession().apply(sid, "run_hpo", {"n_trials": 2})
     return sid
 
 
@@ -81,7 +81,12 @@ class TestRegressionIntervalChain:
         entry = _entry(sid)
         oof_run = entry["oof"]["run_id"]
         ev = pd.read_parquet(download_run_artifact(oof_run, entry["oof"]["y_pred"]))
-        assert list(ev.columns) == ["y_target", "y_pred_target", "error_target"]
+        assert list(ev.columns) == [
+            "indices",
+            "y_target",
+            "y_pred_target",
+            "error_target",
+        ]  # #236：indices 列进工件契约（稳定行身份）
         np.testing.assert_allclose(ev["error_target"], ev["y_target"] - ev["y_pred_target"])
         # 半宽 tag（run 面）+ 账本面（board 面）同源
         w_tag = json.loads(mlflow.get_run(oof_run).data.tags["mflowy.oof_half_width"])
@@ -91,7 +96,7 @@ class TestRegressionIntervalChain:
     def test_final_run_carries_evidence_and_predict_interval(self, sessions_root, tmp_path):
         """final run 复制证据 parquet + 半宽 tag；predict 单 run_id 出区间列在界。"""
         sid = _run_hpo_regression(_reg_csv(tmp_path))
-        ms.apply_action(sid, "final_train_test")
+        ModelingSession().apply(sid, "final_train_test")
 
         entry = _entry(sid)
         final_run = entry["run_id"]
@@ -135,7 +140,7 @@ class TestClassificationZeroChange:
         p = tmp_path / "cls.csv"
         pd.DataFrame({"x": x, "target": (x > 0).astype(int)}).to_csv(p, index=False)
 
-        sid, s = ms.start_session(
+        sid, s = ModelingSession().load_or_start(
             file_path=str(p),
             cv_card="cv: 3",
             card={"domain": "t", "target": "target"},
@@ -144,8 +149,8 @@ class TestClassificationZeroChange:
             candidates=[{"family": "RF", "baseline": True}],
             max_steps=6,
         )
-        ms.apply_action(sid, "select_model", {"family": "RF"})
-        ms.apply_action(sid, "run_hpo", {"n_trials": 2})
+        ModelingSession().apply(sid, "select_model", {"family": "RF"})
+        ModelingSession().apply(sid, "run_hpo", {"n_trials": 2})
 
         entry = _entry(sid)
         oof_run = entry["oof"]["run_id"]
@@ -155,7 +160,7 @@ class TestClassificationZeroChange:
         assert any(c.startswith("y_proba_") for c in ev.columns)
         assert entry["oof"]["half_width"] is None  # 分类无区间面（键恒在、值 None——板面 schema 稳定）
 
-        ms.apply_action(sid, "final_train_test")
+        ModelingSession().apply(sid, "final_train_test")
         final_run = _entry(sid)["run_id"]
         df = _predict_df(final_run, str(p))
         assert list(df.columns) == ["target"]  # 零变化钉：无区间列

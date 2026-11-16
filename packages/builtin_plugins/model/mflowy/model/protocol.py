@@ -118,7 +118,7 @@ def _validate_hints(family: str, hints) -> dict:
 
 @dataclass
 class CVCard:
-    """建模会话的评估协议。字段与 modeling_session_start 的冻结 protocol 分量一一对应。
+    """建模会话的评估协议。字段与 load_or_start_modeling 的冻结 protocol 分量一一对应。
 
     candidates 空 = 全部已声明族开放（缺省，字典序、首个为 baseline）；research-review
     剧本产出收窄清单（文献先验第一轮淘汰 + baseline 锚点 + 空间 hints + 候选 seed）。

@@ -182,56 +182,29 @@ def test_active_docs_use_pomdp_not_mdp():
 
 
 def test_domain_sessions_implement_handle_protocol():
-    """#89 结构等价钉测（#226 ②⑨ 随基座/data 切片更新）：clean 域 = CleaningSession
-    实体（#235 实体化——六方法 + observe 先验更新缝 prior_updates）；model 域 =
-    模块函数组（实体化随 #236，形状与 Handle 协议对齐）。响应类型 = 契约模型。"""
+    """#89 结构等价钉测（#226 ②⑨ 随三切片收敛，#236）：两域 = 会话实体
+    （CleaningSession/ModelingSession——⑨ 合规修复，模块级薄门面退役）；响应
+    类型 = 契约模型；report_findings 进 ACTIONS（④ 九动作面收编）。"""
     import inspect
 
     from mflowy.data.session import CleaningSession
     from mflowy.driver.pomdp import Observation, POMDPSessionHandle
-    from mflowy.model import session as ms
+    from mflowy.model.session import ACTIONS, ModelingSession
 
-    # clean：实体面（⑨ 实体化，#235）
-    for op in ("load_or_start", "observe", "apply", "rollback", "finish", "abandon"):
-        assert hasattr(CleaningSession, op), op
-    assert list(inspect.signature(CleaningSession.load_or_start).parameters)[:2] == ["self", "sid"]
+    # 两域实体面：六操作齐备 + typed 形状
+    for entity in (CleaningSession, ModelingSession):
+        for op in ("load_or_start", "observe", "apply", "rollback", "finish", "abandon"):
+            assert hasattr(entity, op), (entity.__name__, op)
+        assert list(inspect.signature(entity.load_or_start).parameters)[:2] == ["self", "sid"]
     assert list(inspect.signature(CleaningSession.observe).parameters)[:3] == ["self", "sid", "prior_updates"]
-
-    # model：模块函数组（#236 界）
-    def _shape(mod, prefix_map):
-        for op, fn_name in prefix_map.items():
-            fn = getattr(mod, fn_name, None)
-            assert fn is not None, f"{mod.__name__} 缺 {fn_name}"
-            params = list(inspect.signature(fn).parameters)
-            if op in ("load_or_start",):
-                assert params[0] == "sid", (mod.__name__, fn_name, params)
-            elif op in ("apply",):
-                assert params[:2] == ["session_id", "node"], (mod.__name__, fn_name, params)
-            elif op in ("observe", "rollback", "finish", "abandon"):
-                assert params[0] == "session_id", (mod.__name__, fn_name, params)
-
-    _shape(
-        ms,
-        {
-            "load_or_start": "start_session",
-            "observe": "observe_session",
-            "apply": "apply_action",
-            "rollback": "rollback",
-            "finish": "finish_session",
-            "abandon": "abandon_session",
-        },
-    )
+    assert "report_findings" in ACTIONS  # #226 ④/#236：九动作面收编（工具面薄别名）
+    assert "Observation" in inspect.signature(ModelingSession.load_or_start).return_annotation  # (sid, o) 二联
 
     # 响应注解 = 契约模型（六操作面向 π 的三类返回面）
-    assert (
-        "Observation" in inspect.signature(CleaningSession.load_or_start).return_annotation
-    )  # (sid, o) 二联（#226 ②）
-    assert "Observation" in inspect.signature(CleaningSession.apply).return_annotation
-    assert "FinishVerdict" in inspect.signature(CleaningSession.finish).return_annotation  # preview 同裁决面（#235）
-    assert "FinishVerdict" in inspect.signature(ms.finish_session).return_annotation
+    assert "Observation" in inspect.signature(ModelingSession.apply).return_annotation
+    assert "FinishVerdict" in inspect.signature(ModelingSession.finish).return_annotation
     # 协议面自检：六操作齐备（防 Handle 面漂移；start→load_or_start 随 #226 ②）
     for op in ("load_or_start", "observe", "apply", "rollback", "finish", "abandon"):
         assert hasattr(POMDPSessionHandle, op), op
     assert "Observation" in inspect.signature(CleaningSession.observe).return_annotation
-    assert "Observation" in inspect.signature(ms.observe_session).return_annotation
     assert Observation.model_config.get("extra") == "forbid"  # 封闭契约

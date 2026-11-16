@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### BREAKING：POMDP 会话基座重构·model 切片（#226 ⑦⑨⑤⑥④ + 统计工具独立化补充裁定 → 拆票 #236）
+
+model 域全量落位（`ModelingSession` 实体化，模块级薄门面退役）：
+
+- **ModelPrior pydantic**（⑦·BREAKING）：冻结协议 dict（source_file/target/task/
+  card/protocol/candidates/id_columns）→ typed pydantic（extra=forbid）；o.prior
+  四件挂接；prior 构建移入 start_ctx body（物化后 task 落定）
+- **Handle 实体化**（⑨·合规修复）：`ModelingSession` typed 六操作（load_or_start/
+  observe/apply/rollback/finish/abandon）+ taylor_report/report_skeleton 观测面
+  方法；**minted-but-unstarted 孤儿区分**（load 专属报错；物化收进 start_ctx
+  body——孤儿窗收窄到 mint 级）
+- **判读退役**（⑥·BREAKING）：规则判读机制（#35/#38 半边）退役——`diagnose.py`
+  与 `holdout_findings` 删除、run_hpo/final_train_test/holdout_report 不再产规则
+  findings；findings **单源 source=llm**（规则/LLM 双源聚合消失）；kind 词表保留
+  为 agent 词表（taxonomy fail-loud 不变）；θ* 体征探针（theta_probe 调用）随判读
+  退役出 run_hpo
+- **report_findings 收编**（④）：`ACTIONS` 收编第九词（九动作面进 apply 分派；
+  `report_findings_modeling` 薄别名工具保留）；apply 错误清单单源 = ACTIONS
+- **统计工具独立化**（补充裁定「统计步独立成工具，不在 hpo DAG 管线内」）：
+  新 compute 工具 `modeling_statistics(sid, key)`（走 JobProvider，R1）——run
+  寻址（oof run / 终训 run）重构证据面：证据表（overall/误差集中列分组/目标
+  分档）+ 图集（`oof_plot_album` 自 `_run_hpo` 迁入）；新节点 `model__statistics`
+  （run 寻址声明式分析，零判断只出证据）；agent 回路 = hpo 收账 → 统计工具取
+  证据 → 推理 → report_findings 落账 → observe 决策
+- **工件契约**：`oof_y_pred.parquet` 补 **indices 列**（原始数据稳定行身份——
+  显式对齐替代按位对齐）+ 宿主 run 旁记 **源数据指纹 tag**
+  （`mflowy.source_fingerprint`，开局原始帧一次计算单源）；统计工具指纹门
+  （换血 fail-loud——按旧工件统计 = 撒谎的证据）；#236 前旧工件（无 indices/
+  无 tag）fail-loud 指路重跑
+- **工具动词化**（⑤·BREAKING）：`modeling_session_start`/`modeling_observe`/
+  `modeling_apply`/`modeling_rollback`/`modeling_finish`/`modeling_abandon` →
+  `load_or_start_modeling`/`observe_modeling`/`apply_modeling`/
+  `rollback_modeling`/`finish_modeling`/`abandon_modeling`（apply 参数 node →
+  action）；skills 同 PR 更新（model 手册判读回路改写 + model-brief/research-review
+  跟名）
+- **机械跟随 model 侧**：m["session_id"] 穿线单源（ss.id 经 _mview 独立传参——
+  #234 承接收口，o.session_id 镜像已退役）、decision log 补 r（#234）、_mview 死投影
+  清（finished/abandoned）、θ* 体征探针（theta_probe/abs_spearman_per_column）随
+  判读退役整删、step yaml/实验名冗余（实验名为功能性寻址保留）
+
 ### BREAKING：POMDP 会话基座重构·data 切片（#226 ⑦⑨⑤ + #51 余项吸收 → 拆票 #235）
 
 clean 域全量落位（`cleaning_session.py` → `session.py`，模块命名对称）：

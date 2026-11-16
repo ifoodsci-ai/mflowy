@@ -17,7 +17,7 @@ def _ns(name: str):
 
 
 def test_bare_node_identity_pinned():
-    """#67 词表身份：DataFrame 产物裸节点化 + shap 族化——plot ns 只有图、model ns 只有训练节点（组寻址契约单一）。"""
+    """#67 词表身份：DataFrame 产物裸节点化 + shap 族化——plot ns 只有图、model ns = 训练节点 + 统计证据节点（#236 扩——组寻址契约单一）。"""
     bare = {e.name for e in _ns("").nodes}
     assert {"predict", "search_input", "x_y"} <= bare
     assert {e.name for e in _ns("model").nodes} == {
@@ -27,6 +27,7 @@ def test_bare_node_identity_pinned():
         "model__RF",
         "model__XGB",
         "model__loader",
+        "model__statistics",  # #236：统计证据节点（#226 ⑥ 判读退役承接——run 寻址声明式分析）
     }
     assert {e.name for e in _ns("shap").nodes} == {"shap__explanation", "shap__load"}
     assert "plot__shap_explanation" not in {e.name for e in _ns("plot").nodes}
