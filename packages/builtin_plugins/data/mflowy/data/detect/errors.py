@@ -42,6 +42,8 @@ class DefectType(StrEnum):
     DUPLICATE = "duplicate"  # 重复行
     COLLINEAR = "collinear"  # 共线列对
     RANGE_VIOLATION = "range_violation"  # 问卷 expected_ranges 物理范围违例（声明式）
+    VALUE_VIOLATION = "value_violation"  # 问卷 expected_values 离散合法值违例（声明式，#235）
+    INVARIANT_VIOLATION = "invariant_violation"  # 问卷 invariants 跨列不变式违例（声明式，#235）
     MIXED_UNITS = "mixed_units"  # 同列单位混录（#151——量纲可换算性由 π 判，引擎零单位知识）
 
 

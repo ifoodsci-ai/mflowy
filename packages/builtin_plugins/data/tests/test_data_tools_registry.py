@@ -28,12 +28,14 @@ def test_registry_matches_tools_module():
 
 
 def test_menu_tool_retired_observe_in():
-    """#117 工具面换血：clean_propose（菜单）退役、clean_observe（幂等只读观测）上位。"""
+    """#117 工具面换血：clean_propose（菜单）退役、observe_cleaning（幂等只读观测）上位；
+    #226 ⑤（#235 落地）动词化——{verb}_cleaning 族，旧 clean_* 族名退役。"""
     declared = {ep.name for ep in entry_points(group="mflowy.tools") if ep.dist and ep.dist.name == "mflowy-data"}
-    assert "clean_observe" in declared and "clean_propose" not in declared
+    assert "observe_cleaning" in declared and "clean_propose" not in declared
+    assert not any(n.startswith("clean_") for n in declared), sorted(n for n in declared if n.startswith("clean_"))
 
 
-def test_clean_apply_schema_has_no_dry_run():
+def test_apply_cleaning_schema_has_no_dry_run():
     """#65 dry_run 退役的 schema 面钉住：工具入参 schema 不再出现 dry_run
     （docstring 编译的 schema 随签名自动更新——本测防参数回潮）。"""
     import asyncio
@@ -42,8 +44,8 @@ def test_clean_apply_schema_has_no_dry_run():
     from mflowy.data import tools
 
     server = MCPServer(name="schema-test")
-    server.tool()(tools.clean_apply)
+    server.tool()(tools.apply_cleaning)
     schema = asyncio.run(server.list_tools())[0].input_schema
 
     assert "dry_run" not in schema.get("properties", {})
-    assert {"session_id", "node", "params"} <= set(schema.get("properties", {}))
+    assert {"session_id", "action", "params"} <= set(schema.get("properties", {}))

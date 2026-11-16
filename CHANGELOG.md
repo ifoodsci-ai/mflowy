@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### BREAKING：POMDP 会话基座重构·data 切片（#226 ⑦⑨⑤ + #51 余项吸收 → 拆票 #235）
+
+clean 域全量落位（`cleaning_session.py` → `session.py`，模块命名对称）：
+
+- **CleanPrior pydantic**（⑦ + #51 阶段三·BREAKING）：吃下 DomainCard 全部先验字段
+  （never_drop 三源 target·protected·time / ID 六档 / unit_hints / expected_ranges /
+  source）+ 记分/保留率先验（defect_priority / min_row·col_retention）+ 声明式新维
+  `expected_values`（离散合法值）/ `invariants`（跨列不变式公式）——extra=forbid =
+  未知键 fail-loud（#51 阶段三红测兑现）；`DomainCard` dataclass 与 `_freeze_card`
+  白名单退役；domain/goal 纯叙事走 load_or_start 显式参数（不进先验）
+- **声明式违例检测**（#51 B2/B3 修订）：`expected_values` 违例 → `VALUE_VIOLATION`
+  （列级）、`invariants` 违例 → `INVARIANT_VIOLATION`（行级样本）——DefectType
+  新成员（枚举门/记分牌/路由三面闭包随扩）；invariants 建档期 fail-loud（ast
+  标识符列对照 + 空帧试编译）；validate = detect/rules.py 非词表纯函数（经
+  `_detect_all` 从 o.prior 机器翻译——observe 侧合规 ⑧；不建 rules union、不建
+  DAG detect.validate 节点）；severity = 违例占比（与 range_violation 同尺）
+- **Handle 实体化**（⑨·合规修复）：clean 域模块级薄门面退役 → `CleaningSession`
+  实体（typed 六操作 + `observe(sid, prior_updates=...)` 先验更新缝——结构封闭 +
+  语义门复用 build，检测 memo 键随先验自动失效）
+- **盘上 memo 域侧迁移**（③/#235）：`_REPORT_MEMO`/`_PROFILE_MEMO` 模块级内存
+  dict（无 gc、同进程跨会话共享）退役 → 壳 SessionMemo（会话目录 memo.json，open
+  水化、写穿原子；ErrorReport 经六字段投影序列化往返）
+- **o_actions 投影落地**（④ clean 侧）：o.actions = 运行期 clean 目录查询
+  （`actions_projector` 钩子接通——写死常量违运行期词表铁律，不取）
+- **preview 收编 FinishVerdict**：手拼 dict 退役——探针同为裁决面
+  （accepted=True + terminal_utility.preview=True + deliverables={}）
+- **工具动词化**（⑤·BREAKING）：`clean_session_start`/`clean_observe`/`clean_apply`/
+  `clean_rollback`/`clean_finish`/`clean_abandon` → `load_or_start_cleaning`/
+  `observe_cleaning`/`apply_cleaning`/`rollback_cleaning`/`finish_cleaning`/
+  `abandon_cleaning`（session 词删除，动词族统一；apply 参数 node → action）；
+  skills 同 PR 更新（clean 手册 + survey/model-brief 引用跟名）
+- **问卷证据化候选**：expected_values（低基数列观测值全集机器举证）/ invariants
+  （dive-in 关联证据追问）出题入 propose_questions（剧本改写并 #233 窗口）
+- **机械跟随**：kind 措辞退役（defect_type×count / scoring 措辞）、step yaml 头
+  sid 回显清理（目录即归属；实验名为功能性寻址保留）
+
 ### BREAKING：POMDP 会话基座重构·driver 切片（#226 裁定集①—④+⑥⑧ → 拆票 #234）
 
 `driver/pomdp.py` + `driver/session.py` 基座重写，两域（data/model）构造点随形状

@@ -5,7 +5,7 @@ plot EDA 图族（族内扁平，直住 `plot/`）。数据栈为硬依赖，装
 
 ## 清洗会话 POMDP 元素表（O/S/A/P·T/R）
 
-契约下限与校验器住 `driver/pomdp.py`（Observation / FinishVerdict）；本域语义如下（引擎 = `cleaning_session.py`。转移确定性——无概率
+契约下限与校验器住 `driver/pomdp.py`（Observation 四件 / FinishVerdict）；本域语义如下（引擎 = `session.py` 的 `CleaningSession` 实体，#235。转移确定性——无概率
 转移表；可观测性 = 检测算子覆盖面：O 是检测算子族的确定性多对一投影，覆盖外缺陷对 π 不可见
 （态混叠），终局 U（可学性）依赖观测未含的态——「干净但不可学」即其症状）：
 
@@ -32,7 +32,7 @@ plot EDA 图族（族内扁平，直住 `plot/`）。数据栈为硬依赖，装
   收缩为 target/protected/time）
 - 路由：`routing.py`（ROUTING_HINTS——defect_type → 推荐 clean 算子集，state_digest
   常驻投影；提示非约束，π 可见面 = clean 词表全集）
-- 观测面：`clean_observe` 幂等只读（续局锚点）——候选规则与菜单随 #113 退役，缺陷→算子的
+- 观测面：`observe_cleaning` 对真态只读/观测派生面写盘（#226 ③，续局锚点）——候选规则与菜单随 #113 退役，缺陷→算子的
   策略知识外置 clean skill（决策指南）
 - 判据：镜像路径有对应测试（`tests/`），`uv sync` 后 `list-nodes` 可见（新模块须重跑 `uv sync`）
 

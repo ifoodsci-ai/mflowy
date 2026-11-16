@@ -10,10 +10,11 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from mflowy.data import cleaning_session as cs
+from mflowy.data import session as cs
+from mflowy.data.session import CleaningSession
 from mflowy.utils.path import pin_task_dir, reset_task_dir
 
-CARD = {"domain": "测试", "target": "target"}
+CARD = {"target": "target"}
 
 
 def _csv(tmp_path: Path) -> str:
@@ -38,7 +39,7 @@ class TestAnchorChain:
         """①锚定时会话落 <task_dir>/clean_sessions（目录自动物化）。"""
         token = pin_task_dir(str(tmp_path))
         try:
-            sid, s = cs.start_session(file_path=_csv(tmp_path), card=CARD, max_steps=3)
+            sid, s = CleaningSession().load_or_start(file_path=_csv(tmp_path), prior=CARD, max_steps=3)
             assert (tmp_path / "clean_sessions" / sid / "observation.json").is_file()
         finally:
             reset_task_dir(token)
@@ -47,7 +48,7 @@ class TestAnchorChain:
         """②无锚（直接 import）落 ~/.mflowy/clean_sessions——旧缺省路径逐字相同。"""
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         assert cs._root() == tmp_path / ".mflowy" / "clean_sessions"
-        sid, s = cs.start_session(file_path=_csv(tmp_path), card=CARD, max_steps=3)  # 端到端钉
+        sid, s = CleaningSession().load_or_start(file_path=_csv(tmp_path), prior=CARD, max_steps=3)  # 端到端钉
         assert (tmp_path / ".mflowy" / "clean_sessions" / sid / "observation.json").is_file()
 
     def test_old_session_reachable_by_absolute_path(self, tmp_path, no_anchor):
@@ -55,7 +56,7 @@ class TestAnchorChain:
         不存在的绝对 sid fail-loud（零回退查找）。"""
         token = pin_task_dir(str(tmp_path))
         try:
-            sid, s = cs.start_session(file_path=_csv(tmp_path), card=CARD, max_steps=3)
+            sid, s = CleaningSession().load_or_start(file_path=_csv(tmp_path), prior=CARD, max_steps=3)
         finally:
             reset_task_dir(token)
 

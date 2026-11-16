@@ -15,7 +15,7 @@ evidence 脱敏）。
 
 门禁与分值 = 本模块常量（v1，照搬文档 DEFAULT_GATE；人工维护——#115：门禁键无
 跨算子共享，不建全局 dict）；纯计算判据（命名/格式/长度/单调/排除）住
-``detect/rules.py``。先验输入面 = DomainCard 分级字段（#112）。
+``detect/rules.py``。先验输入面 = CleanPrior 分级字段（#112/#235）。
 """
 
 from typing import Annotated, Any
@@ -54,7 +54,7 @@ _MIN_ROWS = 100  # 常规打分最小非空行数（小样本唯一性无信息�
 _THRESHOLD = 5  # 出报线
 _HIGH = 7  # high 分线
 
-# card 参数的合法键 = DomainCard 字段（单源：dataclasses.fields 派生）；公开——
+# card 参数的合法键 = CleanPrior 字段（单源：pydantic model_fields 派生，#235）；公开——
 # 会话侧 memo 键组成复用本面（cleaning_session._PRIOR_MEMO_KEYS）
 PRIOR_KEYS = (
     "primary_key_columns",
@@ -75,16 +75,15 @@ def _prior(card: dict[str, Any] | None, columns) -> dict[str, Any]:
     - 列面：pk/fk/known_id/known_non_id 列必须存在于 df（缺列点名报——四出口同尺，
       composite 缺列原有校验同迁此面）
     """
-    from dataclasses import fields
 
-    from mflowy.data.types import DomainCard
+    from mflowy.data.types import CleanPrior
 
     if not card:
         return {k: () if k != "source" else "manual" for k in PRIOR_KEYS}
-    allowed = {f.name for f in fields(DomainCard)}
+    allowed = set(CleanPrior.model_fields) | {"domain", "goal"}  # 叙事键宽容（问卷中间态）
     unknown = sorted(set(card) - allowed)
     if unknown:
-        raise ValueError(f"card 未知先验键 {unknown}（可用: {sorted(allowed)}）——DomainCard 字段集之外不收")
+        raise ValueError(f"card 未知先验键 {unknown}（可用: {sorted(allowed)}）——CleanPrior 字段集之外不收")
     out: dict[str, Any] = {}
     for k in PRIOR_KEYS:
         v = card.get(k)
@@ -164,7 +163,7 @@ def suspected_id(
     *,
     card: Annotated[
         dict | None,
-        "DomainCard 先验分级字段（primary_key_columns/foreign_key_columns/id_columns/composite_keys/"
+        "CleanPrior 先验分级字段（primary_key_columns/foreign_key_columns/id_columns/composite_keys/"
         "known_non_id_columns/hinted_id_patterns/source）——问卷/会话注入；无卡只走常规打分",
     ] = None,
 ) -> ErrorReport:

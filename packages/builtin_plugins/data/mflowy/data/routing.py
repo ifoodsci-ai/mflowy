@@ -40,6 +40,8 @@ ROUTING_HINTS: dict[DefectType, frozenset[str]] = {
     DefectType.DUPLICATE: frozenset({"drop_duplicate"}),
     DefectType.COLLINEAR: frozenset({"drop_cols"}),
     DefectType.RANGE_VIOLATION: frozenset({"range_clip"}),
+    DefectType.VALUE_VIOLATION: frozenset({"python", "cast_cols"}),  # #235：离散违例值改写/收敛
+    DefectType.INVARIANT_VIOLATION: frozenset({"python"}),  # #235：跨列公式修复无专用算子——python 面
 }
 
 

@@ -21,6 +21,8 @@ _WEIGHTS: dict[DefectType, float] = {
     DefectType.COLLINEAR: 0.10,
     DefectType.EMPTY_ROW: 0.10,
     DefectType.RANGE_VIOLATION: 0.10,
+    DefectType.VALUE_VIOLATION: 0.10,  # #235：声明式违例族（与 range 同档——问卷宣告的不变量被违反）
+    DefectType.INVARIANT_VIOLATION: 0.10,
     DefectType.SUSPECTED_ID: 0.05,
     DefectType.SUSPECTED_COMPOSITE_ID: 0.05,
     DefectType.PRIOR_CONFLICT: 0.05,
@@ -34,7 +36,7 @@ def defect_weight(defect: DefectType | str, overrides: dict[str, float] | None =
     """缺陷类型的生效权重：记分牌覆盖（P0 问卷 defect_priority）优先。
 
     overrides 键按枚举值收（封闭枚举，#124——引用未知缺陷类型 fail-loud 带候选，
-    退役 kind 名当即报错，不留死配置）。
+    旧缺陷类型名（kind 为 #235 退役词）当即报错，不留死配置）。
     """
     defect = DefectType(defect)
     if overrides:

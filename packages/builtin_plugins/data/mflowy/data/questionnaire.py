@@ -39,6 +39,11 @@ def _validate_columns(partial: dict, df: pd.DataFrame) -> None:
         miss = [c for c in hints if c not in df.columns]
         if miss:
             raise ValueError(f"列 {miss} 不存在（unit_hints）——可用列: {list(df.columns)}")
+    ev = partial.get("expected_values")
+    if ev:
+        miss = [c for c in ev if c not in df.columns]
+        if miss:
+            raise ValueError(f"列 {miss} 不存在（expected_values）——可用列: {list(df.columns)}")
 
 
 def propose_questions(file_path: str, card_partial: dict | None = None, eda_findings: list[str] | None = None) -> dict:
@@ -92,6 +97,21 @@ def propose_questions(file_path: str, card_partial: dict | None = None, eda_find
         ask("unit_hints", "这些列的单位是什么？（如 {'pct': '%'}）", stringly)
     if "expected_ranges" not in card_partial and hits.get("outlier"):
         ask("expected_ranges", "哪些列有物理范围约束？（如 {'温度': [0, 100]}——异常值截断到边界）", hits["outlier"])
+    if "expected_values" not in card_partial:
+        # #235 证据化候选（机器举证）：低基数列的观测值全集——确认/否认制，不开放填空
+        low_card = [
+            f"{n}: 观测值 {sorted(set(map(str, df[n].dropna().unique())))[:10]}"
+            for n, r in schema.items()
+            if n not in id_cols and r["missing_rate"] < 1.0 and df[n].nunique(dropna=True) <= 5
+        ]
+        if low_card:
+            ask("expected_values", "这些低基数列的合法取值集是？（如 {'grade': ['A', 'B']}——观测值外即违例）", low_card)
+    if "invariants" not in card_partial and eda_findings:
+        ask(
+            "invariants",
+            "有哪些跨列业务不变式？（如 'end >= start'、'total == price * qty'——公式引用列名，违例行即缺陷）",
+            list(eda_findings)[:5],
+        )
     if "protected_columns" not in card_partial:
         ask("protected_columns", "哪些列不许任何清洗动作删/改？（无则跳过）")
     if eda_findings:

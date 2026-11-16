@@ -112,7 +112,7 @@ _Avoid_: 环境引擎（与 runner 混淆）；MDP（0.2.0 起的旧称——pro
 
 **先验（prior）家族**:
 两卡通用概念（#169/#170 扩义）：episode 内冻结、开局校验门后不可改的知识注入面。
-数据域先验住**先验卡 DomainCard**（列语义/ID 分级/范围 + source 权威度，#112）；
+数据域先验住**清洗先验卡 CleanPrior**（pydantic 封闭，#226 ⑦/#235——列语义/ID 分级/范围/离散合法值/跨列不变式 + source 权威度；DomainCard dataclass 已退役）；
 建模域先验住**协议卡 CVCard.external_baseline**（前沿研究的领域先验知识——结构化
 对标 {value, metric, source_text, source}，口径须与本任务指标同域 + 权威度白名单
 literature/internal_history/manual）。先验的具体科学性引擎不判断——校验门只管
@@ -146,7 +146,7 @@ _Avoid_: Activation / 菜单 / 候选（#113/#120 退役——菜单是不完整
 
 ### 数据清洗子系统（Clean）
 
-**先验卡（DomainCard）**:
+**清洗先验卡（CleanPrior，#235）**:
 清洗 POMDP 的冻结输入：数据域先验（先验家族的数据域成员，#169/#170 扩义——
 target/ID 分级字段（pk/fk/known_id/composite/known_non_id/hinted）/单位/范围/
 protected + source 权威度——#112 PriorKnowledge 并入卡；never_drop 收缩为
@@ -228,13 +228,13 @@ _Avoid_: 快照、checkpoint
 ### 贝叶斯优化推荐子系统（BO）
 
 **BOCard**:
-bo 域先验卡（正式名，#178/#184）：空间组（搜索维三 kind + 边界 = DomainCard
+bo 域先验卡（正式名，#178/#184）：空间组（搜索维三 kind + 边界 = 清洗先验卡
 `expected_ranges` 直取（宽于物理域拒绝）+ direction——同一性字段，变更 = 重建
 study）+ 策略组（hard 规则表达式树 / 查表谓词 / 按类常量表 / band / 容差门限 /
 批缺省 / 典型测量变异——变更不重建不升版）。pydantic 单源（`mflowy/bo/types.py`），
 卡实例 = YAML 工件（bo-prior 剧本产 `<task_dir>/BOCard.yaml`）；bo 工具零卡耦合
 ——门限/规则/容差由 agent 读卡后以参数进入。
-_Avoid_: 先验卡（Clean 的 DomainCard 专属）单指 bo 卡；「BO 先验卡」降为非正式叙述语
+_Avoid_: 先验卡（Clean 的 CleanPrior 专属）单指 bo 卡；「BO 先验卡」降为非正式叙述语
 
 **study**:
 bo 状态载体：sqlite db（`<task_dir>/bo_studies/<study_name>/study.db`，不匹配

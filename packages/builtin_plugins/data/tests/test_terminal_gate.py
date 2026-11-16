@@ -9,7 +9,7 @@
 import numpy as np
 import pandas as pd
 import pytest
-from mflowy.data import cleaning_session as cs
+from mflowy.data.session import CleaningSession
 from mflowy.driver.pomdp import FinishVerdict
 
 
@@ -34,17 +34,17 @@ def clean_csv(tmp_path) -> str:
     return str(path)
 
 
-CARD_REG = {"domain": "测试", "target": "target"}
+CARD_REG = {"target": "target"}
 
 
-def _start(sessions_root, csv, card=CARD_REG):
-    return cs.start_session(file_path=csv, card=card, max_steps=5)  # (sid, o) 二联
+def _start(sessions_root, csv, prior=CARD_REG):
+    return CleaningSession().load_or_start(file_path=csv, prior=prior, max_steps=5)  # (sid, o) 二联
 
 
 def test_finish_reports_terminal_utility_regression(sessions_root, clean_csv):
     """有数值 target：终局 U 契约面齐备（task/metric/score/baseline/skill），可复现。"""
     sid, s = _start(sessions_root, clean_csv)
-    r = cs.finish_session(sid)
+    r = CleaningSession().finish(sid)
     assert isinstance(r, FinishVerdict)
 
     u = r.terminal_utility  # #30 升顶：顶层键（拒收/accepted 两路一致）
@@ -55,17 +55,17 @@ def test_finish_reports_terminal_utility_regression(sessions_root, clean_csv):
     assert u["skill"] > 0.0, "可学数据终局 skill 应为正（模型优于中位数基线）"
 
     sid2, _s2 = _start(sessions_root, clean_csv)
-    again = cs.finish_session(sid2)
+    again = CleaningSession().finish(sid2)
     assert isinstance(again, FinishVerdict)
     assert again.terminal_utility["skill"] == u["skill"], "固定 seed 终局 U 必须可复现"
 
 
 def test_finish_terminal_utility_none_without_target(sessions_root, clean_csv):
     """无 target（探索性）：终局 U 退化为 None（纯 Φ 排名），不伪装。"""
-    sid, s = cs.start_session(
-        file_path=clean_csv, card={"domain": "t"}, max_steps=5
+    sid, s = CleaningSession().load_or_start(
+        file_path=clean_csv, prior={}, max_steps=5
     )  # 无 target 的卡:utility=None 语义仍在
-    r = cs.finish_session(sid)
+    r = CleaningSession().finish(sid)
     assert isinstance(r, FinishVerdict)
     assert "task" not in r.terminal_utility  # 无 U 键（不伪装）——报告面（final_quality/steps）仍在
 
@@ -80,8 +80,8 @@ def test_finish_terminal_utility_classification(sessions_root, tmp_path):
     p = tmp_path / "cls.csv"
     df.to_csv(p, index=False)
 
-    sid, s = cs.start_session(file_path=str(p), card={"domain": "t", "target": "target"}, max_steps=5)
-    r = cs.finish_session(sid)
+    sid, s = CleaningSession().load_or_start(file_path=str(p), prior={"target": "target"}, max_steps=5)
+    r = CleaningSession().finish(sid)
     assert isinstance(r, FinishVerdict)
     u = r.terminal_utility
     assert u["task"] == "classification"
@@ -93,18 +93,18 @@ def test_finish_terminal_utility_classification(sessions_root, tmp_path):
 def test_finish_theta_gate_rejects_and_keeps_session(sessions_root, clean_csv):
     """θ 门：min_quality 高于终态质量 → accepted=False、无 plan 导出、会话可继续。"""
     sid, s = _start(sessions_root, clean_csv)
-    pv = cs.finish_session(sid, preview=True)
-    assert isinstance(pv, dict)  # preview 探针走 dict 面
-    q = pv["report"]["final_quality"]["score"]  # 零副作用测量
+    pv = CleaningSession().finish(sid, preview=True)
+    assert isinstance(pv, FinishVerdict)  # #235：preview 收编裁决面（手拼 dict 退役）
+    q = pv.terminal_utility["final_quality"]["score"]  # 零副作用测量
 
-    rejected = cs.finish_session(sid, min_quality=q + 0.05)
+    rejected = CleaningSession().finish(sid, min_quality=q + 0.05)
     assert isinstance(rejected, FinishVerdict)
     assert rejected.accepted is False
     assert "plan_yaml" not in rejected.deliverables
     assert rejected.terminal_utility["final_quality"]["score"] == q
 
     # 会话未被销毁：仍可继续动作与正常收局
-    ok = cs.finish_session(sid)
+    ok = CleaningSession().finish(sid)
     assert isinstance(ok, FinishVerdict)
     assert ok.accepted is True
     assert "plan_yaml" in ok.deliverables
@@ -113,7 +113,7 @@ def test_finish_theta_gate_rejects_and_keeps_session(sessions_root, clean_csv):
 def test_finish_theta_gate_passes_by_default(sessions_root, clean_csv):
     """缺省（min_quality=None）不做门——accepted=True 恒导出（向后兼容）。"""
     sid, s = _start(sessions_root, clean_csv)
-    r = cs.finish_session(sid)
+    r = CleaningSession().finish(sid)
     assert isinstance(r, FinishVerdict)
     assert r.accepted is True
     assert "plan_yaml" in r.deliverables

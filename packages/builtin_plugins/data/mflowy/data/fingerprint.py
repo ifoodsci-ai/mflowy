@@ -1,6 +1,6 @@
 """数据面内容指纹（单一真源）：CAS——df 规范序列化（``to_parquet(index=False)``）字节流的 sha256。
 
-消费方：cleaning_session 的 ``_detect_all`` 备忘键（纯内存优化设施——manifest
+消费方：session 的 ``_detect_all`` 备忘键（#235 起盘上 memo）（纯内存优化设施——manifest
 不落指纹键，版本溯源由 artifact_sha256 单键承担，重放对账经闭合性直对工件 sha）。
 model 域经 #66 划分引用化后不再消费——划分同一性由 split.pkl 副产物的 run_id
 引用承担，无指纹重现假设。
