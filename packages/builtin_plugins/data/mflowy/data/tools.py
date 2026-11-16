@@ -117,35 +117,46 @@ def propose_questions(
 
 
 def clean_session_start(
-    file_path: Annotated[str, Field(description="数据文件绝对路径（csv/parquet）")],
+    sid: Annotated[
+        str | None,
+        Field(description="会话目录绝对路径：给定 = 加载既有会话（开局入参不可同传）；缺省 = 新开"),
+    ] = None,
+    file_path: Annotated[str | None, Field(description="数据文件绝对路径（csv/parquet），新开必填")] = None,
     card: Annotated[
         dict | None,
         Field(
             description="建档卡（问卷答案）：target/id_columns/protected_columns/time_column/unit_hints/expected_ranges"
         ),
     ] = None,
-    max_steps: Annotated[int, Field(description="清洗预算（最大动作步数）")] = 15,
+    max_steps: Annotated[int | None, Field(description="清洗预算（最大动作步数，缺省 15）")] = None,
 ) -> dict:
-    """开局清洗 POMDP 会话：v0 快照 + 初始错误清单 + 内生质量分。
+    """开局/续载清洗 POMDP 会话（#226 ②）：sid 给定 = 加载既有会话；缺省 = v0
+    快照 + 初始错误清单 + 内生质量分。返回二联信封 {sid, observation}——sid 即
+    后续所有会话工具的寻址面（会话目录绝对路径）。
 
     何时使用 clean_session_start：
-    - 建档问卷完成后，开始自主清洗的回合循环
+    - 建档问卷完成后，开始自主清洗的回合循环（sid 缺省新开）
+    - 上下文丢失/跨进程续局：拿 sid 加载（开局入参 file_path/card 与 sid 同传
+      = 参数来源冲突报错——续局带新认知 = 旧会话产物数据路径 + 新卡开新局）
     """
     from . import cleaning_session
 
-    return cleaning_session.start_session(file_path, card=card, max_steps=max_steps).model_dump()
+    # TODO(#235)：工具动词化改名（load_or_start_cleaning）随域切片——本处先落 ⑤ 的二联信封形状
+    sid_out, o = cleaning_session.start_session(sid, file_path=file_path, card=card, max_steps=max_steps)
+    return {"sid": sid_out, "observation": o.model_dump()}
 
 
-def clean_observe(session_id: Annotated[str, Field(description="会话 ID")]) -> dict:
-    """观测清洗会话（幂等只读零转移）：回当前观测——缺陷清单（state_digest.problems）
-    + 质量分 + 列画像 + 预算/步数 + 近期决策 + 终态旗。
+def clean_observe(session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")]) -> dict:
+    """观测清洗会话（对真态只读、观测派生面写盘、零转移，#226 ③）：回当前观测——
+    缺陷清单（biz.problems）+ 质量分 + 列画像 + 预算/步数（validation）+ 近期决策
+    + 终态旗。
 
     选项面不设菜单：可执行算子 = clean 词表全集（list_nodes(namespace="clean") /
     get_node_info 看参数面），按观测证据自构 clean_apply。
 
     何时使用 clean_observe：
-    - 续局 / 上下文丢失后重新定位（拿 session_id 直接观测，无副作用）
-    - 终态会话同样可观测（finished/abandoned 旗即收局事实）
+    - 续局 / 上下文丢失后重新定位（拿 sid 直接观测）
+    - 终态会话同样可观测（validation 终态旗即收局事实）
     """
     from . import cleaning_session
 
@@ -153,12 +164,12 @@ def clean_observe(session_id: Annotated[str, Field(description="会话 ID")]) ->
 
 
 def clean_apply(
-    session_id: Annotated[str, Field(description="会话 ID")],
+    session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")],
     node: Annotated[str, Field(description="clean 词表算子名（list_nodes(namespace='clean') 可查）")],
     finding_ids: Annotated[
         list[str] | None,
         Field(
-            description="本步处理的 finding_id 清单（state_digest.problems 的 finding_id）——"
+            description="本步处理的 finding_id 清单（biz.problems 的 finding_id）——"
             "非空时校验 ⊆ 当前 findings（幻觉即免费失败）；空列表 = 行级算子/无 finding 对应的处置"
         ),
     ],
@@ -168,17 +179,18 @@ def clean_apply(
     """执行一个清洗动作：守卫 → 转移 → 快照 → diff/错误清单/质量分（s′ 观测）→ 决策日志。
 
     提交面双必填（#117）：finding_ids（本步处理的 findings，可空）+ reason（非空，
-    每步可审计）；日志键 clean_op + 派生 intent（drop/fix）。
+    每步可审计）；日志键 clean_op + 派生 intent（drop/fix）；记录自带 r（壳补 r
+    机制——(s,a,r,s′) 可从日志重建）。
 
-    响应自带 reward（本步 ΔΦ 质量差，舍入 4 位，正值 = 改善）与 state_digest
-    （缺陷摘要指纹）——直接读数决策，无需从决策日志做减法。
+    响应自带 reward（validation.reward，本步 ΔΦ 质量差，舍入 4 位，正值 = 改善）
+    与 biz（缺陷摘要指纹）——直接读数决策，无需从决策日志做减法。
 
     失败即免费异常（不耗预算、不落版本）——不确定动作的试探面 = 提交后读 s′，
     负 reward 即 clean_rollback；no-op 步否决（不动 df 的提交拒绝——keep 走
     clean_finish 声明）。
 
     何时使用 clean_apply：
-    - 读观测证据选定算子与参数后提交执行（响应自带 reward 与 state_digest——直接读数决策）
+    - 读观测证据选定算子与参数后提交执行（响应自带 reward 与 biz——直接读数决策）
     """
     from . import cleaning_session
 
@@ -188,13 +200,13 @@ def clean_apply(
 
 
 def clean_rollback(
-    session_id: Annotated[str, Field(description="会话 ID")],
+    session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")],
     to_version: Annotated[int, Field(description="回滚到的版本号（0 = 原始数据）")],
 ) -> dict:
     """回滚到历史版本（决策日志保留，审计不可篡改）。
 
-    响应自带 reward（恢复 ΔΦ——撤销改进动作通常为负值）与 state_digest（回滚后
-    的缺陷摘要指纹）。
+    响应自带 reward（validation.reward，恢复 ΔΦ——撤销改进动作通常为负值）与
+    biz（回滚后的缺陷摘要指纹）。
 
     何时使用 clean_rollback：
     - 动作后质量分下降/引入新缺陷时撤销到上一个好版本
@@ -208,7 +220,7 @@ def clean_rollback(
 
 
 def clean_finish(
-    session_id: Annotated[str, Field(description="会话 ID")],
+    session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")],
     keeps: Annotated[
         list[dict] | None,
         Field(
@@ -248,7 +260,7 @@ def clean_finish(
 
 
 def clean_abandon(
-    session_id: Annotated[str, Field(description="会话 ID")],
+    session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")],
     reason: Annotated[str | None, Field(description="弃局原因（落盘供审计，如「改卡重开」）")] = None,
 ) -> dict:
     """弃局终局：置 abandoned、决策日志与版本树保留、不导出交付物；已终态再弃即报错。

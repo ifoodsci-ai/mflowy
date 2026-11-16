@@ -2,7 +2,7 @@
 
 #125：high_null = 纯门禁——报告线 ≥ _REPORT_RATE（0.05），0.05–0.30 medium、
 ≥ 0.30 high（算子模块常量 v1，人工维护）；低空值列不再产缺陷——π 可见性不受损
-（列画像 missing_rate 常驻 state_digest.columns），终局 credit 兜底。奖励语义分界：
+（列画像 missing_rate 常驻 o.biz.columns），终局 credit 兜底。奖励语义分界：
 defect = 质量问题（Φ 跟走），画像 = 数据事实（可见但无逐步奖励）。
 """
 

@@ -36,7 +36,7 @@ modeling_session_start(final_path, cv_card=<cv.split 配置 yaml 明文>,
 1. `run_hpo{n_trials}`——**search-only**：sqlite study 增量续跑（空间收窄/pin/加深
    继续，seed/scoring 变重开）；每 trial inner CV → u_inner/std；结束在 θ* 上出 OOF
    预测 + 图集 + findings（diagnose 四算子：error_concentrated/slice_collapse/
-   fold_std/complexity_edge）；响应 `reward` = **Δu_inner**（相对该键上次最优）。
+   fold_std/complexity_edge）；响应 `validation.reward` = **Δu_inner**（相对该键上次最优；#226 ① 四件观测）。
 2. `final_train_test`——**先搜后店**：终训走 modeling 工具（JobProvider DAG）——
    交付的恒是**搜索时刻证据配置**（快照 ∪ θ*，搜后改 pin 不生效）→ 终训/终评/
    X_test·y_test·y_pred 副产物/plan 一体（交付的 plan_yaml 就是那次终训本身）→ holdout

@@ -285,14 +285,20 @@ async def predict(
 
 
 def modeling_session_start(
-    file_path: Annotated[str, Field(description="数据文件绝对路径（清洗会话终态 parquet/csv）")],
+    sid: Annotated[
+        str | None,
+        Field(description="会话目录绝对路径：给定 = 加载既有会话（开局入参不可同传）；缺省 = 新开"),
+    ] = None,
+    file_path: Annotated[
+        str | None, Field(description="数据文件绝对路径（清洗会话终态 parquet/csv），新开必填")
+    ] = None,
     cv_card: Annotated[
-        str,
+        str | None,
         Field(
             description="cv.split 配置 yaml 明文（如 'cv: 3\\ntest_size: 0.2'——键 ⊆ cv.split 参数面："
             "cv/repeats/group_by/test_size/shuffle/random_state）；episode 内冻结"
         ),
-    ],
+    ] = None,
     target: Annotated[str | None, Field(description="目标列（显式参数 > card 背景 > 报错——单目标任务）")] = None,
     task: Annotated[
         str | None, Field(description="任务类型 regression/classification（显式参数 > card 背景 > 报错）")
@@ -309,7 +315,7 @@ def modeling_session_start(
     id_columns: Annotated[
         list[str] | None, Field(description="ID 列（从 X 剔除防泄漏——显式参数 > card 背景；划分/搜索/终训同一数据面）")
     ] = None,
-    goal: Annotated[str, Field(description="建模成功判据（业务口径）")] = "",
+    goal: Annotated[str | None, Field(description="建模成功判据（业务口径，缺省空）")] = None,
     external_baseline: Annotated[
         dict | None,
         Field(
@@ -321,15 +327,20 @@ def modeling_session_start(
         dict | None, Field(description="DomainCard（survey 产物）背景：target/task/id_columns 的兜底层")
     ] = None,
 ) -> dict:
-    """开局建模会话：x_y+split 物化冻结 D + 光标就位（协议不进动作空间）。
+    """开局/续载建模会话（#226 ②）：sid 给定 = 加载既有会话；缺省 = x_y+split
+    物化冻结 D + 光标就位（协议不进动作空间）。返回二联信封 {sid, observation}
+    ——sid 即后续所有会话工具的寻址面（会话目录绝对路径）。
 
     何时使用 modeling_session_start：
     - model-brief 问卷（含 research-review 结构化候选）编译出 cv_card（split yaml
       明文）+ 显式协议参数后开局回合循环；多目标 = 每目标各开一个会话（三层循环）
+    - 上下文丢失/跨进程续局：拿 sid 加载（开局入参与 sid 同传 = 参数来源冲突报错）
     """
     session = _session()
 
-    return session.start_session(
+    # TODO(#236)：工具动词化改名（load_or_start_modeling）随域切片——本处先落 ⑤ 的二联信封形状
+    sid_out, o = session.start_session(
+        sid,
         file_path,
         cv_card,
         target=target,
@@ -341,10 +352,11 @@ def modeling_session_start(
         goal=goal,
         external_baseline=external_baseline,
         card=card,
-    ).model_dump()
+    )
+    return {"sid": sid_out, "observation": o.model_dump()}
 
 
-def modeling_observe(session_id: Annotated[str, Field(description="会话 ID")]) -> dict:
+def modeling_observe(session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")]) -> dict:
     """观测建模会话（幂等只读零转移）：当前观测 + 读时决策面——本 combo 键 findings
     （规则与 LLM 落诊同粒度）、光标/combo_key、账本摘要（θ*/u_inner/冻结旗）、has_cat、
     候选族超参面（face：动态维可收窄、静态常量可 pin）。
@@ -362,7 +374,7 @@ def modeling_observe(session_id: Annotated[str, Field(description="会话 ID")])
 
 
 def modeling_apply(
-    session_id: Annotated[str, Field(description="会话 ID")],
+    session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")],
     node: Annotated[
         str,
         Field(
@@ -394,7 +406,7 @@ def modeling_apply(
     return session.apply_action(session_id, node, params).model_dump()
 
 
-def modeling_rollback(session_id: Annotated[str, Field(description="会话 ID")]) -> dict:
+def modeling_rollback(session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")]) -> dict:
     """回退光标到上一快照（决策日志保留；预算不回补；账本与盘上 study 永不回退）。
 
     何时使用 modeling_rollback：
@@ -406,7 +418,7 @@ def modeling_rollback(session_id: Annotated[str, Field(description="会话 ID")]
 
 
 def modeling_finish(
-    session_id: Annotated[str, Field(description="会话 ID")],
+    session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")],
     pdf: Annotated[
         str,
         Field(
@@ -432,7 +444,7 @@ def modeling_finish(
 
 
 def draw_taylor_diagram(
-    session_id: Annotated[str, Field(description="建模会话 ID（副产物按 run 寻址、图落会话目录）")],
+    session_id: Annotated[str, Field(description="建模会话目录绝对路径（sid；副产物按 run 寻址、图落会话目录）")],
     run_ids: Annotated[
         list[str], Field(description="final_train_test 的 run_id 清单（账本 entry.run_id；≥2 个才有对比面）")
     ],
@@ -453,7 +465,7 @@ def draw_taylor_diagram(
 
 
 def modeling_report_skeleton(
-    session_id: Annotated[str, Field(description="会话 ID")],
+    session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")],
 ) -> dict:
     """报告素材样板（只读零副作用）：表格从账本渲染（u_inner/θ*/u/rank——数字抄写
     归引擎，你不默写）+ 图片清单（各 combo 的 OOF 图集、终训副产物指针、泰勒图路径）
@@ -468,7 +480,7 @@ def modeling_report_skeleton(
 
 
 def modeling_report_findings(
-    session_id: Annotated[str, Field(description="会话 ID")],
+    session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")],
     key: Annotated[str, Field(description="账本键（family|cat|num——models 键，run_hpo 响应可见）")],
     findings: Annotated[
         list[dict],
@@ -490,7 +502,7 @@ def modeling_report_findings(
 
 
 def modeling_abandon(
-    session_id: Annotated[str, Field(description="会话 ID")],
+    session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")],
     reason: Annotated[str | None, Field(description="弃局原因（落盘供审计，如「改协议重开」）")] = None,
 ) -> dict:
     """弃局终局：置 abandoned、决策日志与模型账本保留、不导出交付物；已终态再弃即报错。

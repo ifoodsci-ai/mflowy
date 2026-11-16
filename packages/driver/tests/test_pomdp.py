@@ -1,9 +1,9 @@
-"""pomdp 契约：pydantic 投影类型（封闭模型）/ POMDPSessionHandle 服务面。
+"""pomdp 契约：pydantic 投影类型（四件封闭模型）/ POMDPSessionHandle 服务面。
 
 seam 即 interface，测试即消费方（先例：test_reflect.py）——只测外部行为。
-样本即独立真源：issue #29 类型表 + #89 会话基座设计（七键封闭/终态双旗/
-拒收必附 reason）+ #117/#120 换血（propose 出局、observe 入局，Activation 退役），
-非实现回填。
+样本即独立真源：issue #29 类型表 + #89 会话基座设计 + #117/#120 换血（propose
+出局、observe 入局）+ #226 基座重构（① Observation 四件/session_id 出观测；
+② load_or_start 生命周期；⑧ 先验生命周期契约），非实现回填。
 """
 
 import importlib
@@ -14,6 +14,7 @@ from mflowy.driver.pomdp import (
     TOP_K_DECISIONS,
     FinishVerdict,
     Observation,
+    ObservationValidation,
     POMDPSessionHandle,
 )
 from pydantic import ValidationError
@@ -21,11 +22,11 @@ from pydantic import ValidationError
 
 class TestExports:
     def test_contract_surface(self):
-        """会话 SDK 契约面：两投影模型 + TOP_K + Handle 齐备（机制住 session 模块）；
-        菜单候选模型 Activation 随规则引擎退役（#120）。"""
+        """会话 SDK 契约面：两投影模型 + validation 子模型 + TOP_K + Handle 齐备
+        （机制住 session 模块）；菜单候选模型 Activation 随规则引擎退役（#120）。"""
         import mflowy.driver.pomdp as m
 
-        for name in ("Observation", "FinishVerdict", "TOP_K_DECISIONS", "POMDPSessionHandle"):
+        for name in ("Observation", "ObservationValidation", "FinishVerdict", "TOP_K_DECISIONS", "POMDPSessionHandle"):
             assert hasattr(m, name), name
         assert not hasattr(m, "Activation")
 
@@ -35,29 +36,29 @@ class TestExports:
             importlib.import_module("mflowy.driver.rule")
 
     def test_handle_six_ops(self):
-        """Handle = 无状态 sid 寻址服务面：六操作齐备（propose 出局、observe 入局——#117）。"""
-        for op in ("start", "observe", "apply", "rollback", "finish", "abandon"):
+        """Handle = 无状态 sid 寻址服务面：六操作（start→load_or_start ②，#117 observe
+        入局）。具名核心 + ``*args: Any`` 域尾巴；observe 带 *args 更新先验（⑧）。"""
+        for op in ("load_or_start", "observe", "apply", "rollback", "finish", "abandon"):
             assert hasattr(POMDPSessionHandle, op), op
-        assert not hasattr(POMDPSessionHandle, "propose")
-        # 具名核心 + *args 域尾巴：apply 的 sid/action 具名，域选项不进契约签名
+        for gone in ("start", "propose"):
+            assert not hasattr(POMDPSessionHandle, gone)
         sig = inspect.signature(POMDPSessionHandle.apply)
         assert list(sig.parameters)[:3] == ["self", "sid", "action"]
         assert any(p.kind is inspect.Parameter.VAR_POSITIONAL for p in sig.parameters.values())
-        assert list(inspect.signature(POMDPSessionHandle.start).parameters) == ["self", "args"]
+        los = inspect.signature(POMDPSessionHandle.load_or_start)
+        assert list(los.parameters) == ["self", "sid", "args"]
         observe = inspect.signature(POMDPSessionHandle.observe)
-        assert list(observe.parameters) == ["self", "sid"]
-        assert observe.return_annotation in (Observation, "Observation")  # 幂等只读：回观测本身
+        assert list(observe.parameters) == ["self", "sid", "args"]
+        assert observe.return_annotation in (Observation, "Observation")  # 幂等：回观测本身
 
 
 def _observation(**over):
-    """合法观测样本——独立真源：#29/#89 类型表。"""
+    """合法观测样本——独立真源：#29/#89/#226① 类型表（四件）。"""
     base = {
-        "session_id": "s1",
         "prior": {"target": "y"},
-        "state_digest": {"defects": {"missing": 3}, "current_v": 2},
-        "reward": 0.42,
-        "steps": 2,
-        "max_steps": 15,
+        "biz": {"defects": {"missing": 3}, "current_v": 2},
+        "actions": ["fill_median", "drop_cols"],
+        "validation": {"steps": 2, "max_steps": 15, "reward": 0.42},
     }
     base.update(over)
     return base
@@ -66,42 +67,57 @@ def _observation(**over):
 class TestObservationModel:
     def test_valid_and_json_roundtrip(self):
         o = Observation.model_validate(_observation())
-        assert o.state_digest["current_v"] == 2 and o.prior == {"target": "y"}
+        assert o.biz["current_v"] == 2 and o.prior == {"target": "y"}
+        assert o.actions == ["fill_median", "drop_cols"]
+        assert o.validation.steps == 2 and o.validation.reward == 0.42
         assert Observation.model_validate(o.model_dump(mode="json")) == o  # 盘上往返等价
 
-    def test_seven_keys_defaults(self):
-        """七键缺省面 + 终态双旗：prior/state_digest/recent_decisions 可缺省；reward None 白名单（仅 start）。"""
-        o = Observation.model_validate({"session_id": "s1", "max_steps": 15})
-        assert o.steps == 0 and o.state_digest == {} and o.recent_decisions == []
-        assert o.prior is None and o.reward is None
-        assert o.finished is False and o.abandoned is False
+    def test_four_part_defaults(self):
+        """四件缺省面：prior/actions/recent_decisions 可缺省；biz 空映射；reward None
+        白名单（仅 start）；validation 只收引擎事实（① 收口清单外无键）。"""
+        o = Observation.model_validate({"validation": {"max_steps": 15}})
+        assert o.validation.steps == 0 and o.biz == {} and o.actions == []
+        assert o.prior is None and o.validation.reward is None
+        assert o.validation.finished is False and o.validation.abandoned is False
+        assert o.validation.recent_decisions == []
         assert TOP_K_DECISIONS == 5  # 观测有界常量
 
     def test_extra_forbidden_and_retired_keys(self):
-        """封闭契约：未知键拒收；退役键（should_stop）与旧域尾巴（report）不回流。"""
+        """封闭契约（每层 extra=forbid）：顶层未知键、退役键（session_id/state_digest/
+        顶层 recent_decisions/should_stop/report）与 validation 层未知键全拒。"""
+        with pytest.raises(ValidationError):
+            Observation.model_validate(_observation(session_id="s1"))  # ① sid 出观测——寻址不是观测
+        with pytest.raises(ValidationError):
+            Observation.model_validate(_observation(state_digest={"v": 0}))  # ① 更名 biz
+        with pytest.raises(ValidationError):
+            Observation.model_validate(_observation(recent_decisions=[]))  # ① 并入 validation
         with pytest.raises(ValidationError):
             Observation.model_validate(_observation(should_stop=True))
         with pytest.raises(ValidationError):
             Observation.model_validate(_observation(report={"shape": [10, 2]}))
+        with pytest.raises(ValidationError):
+            Observation.model_validate(_observation(validation={"max_steps": 15, "n_trials": 3}))  # 层内封闭
 
     def test_strict_numeric_faces_reject_bool_and_str(self):
         """strict 数值面：bool 不冒充步数/奖励，str 不软转 float（旧 verify 牙齿的模型承接）。"""
         with pytest.raises(ValidationError):
-            Observation.model_validate(_observation(steps=True))
+            Observation.model_validate(_observation(validation={"max_steps": 15, "steps": True}))
         with pytest.raises(ValidationError):
-            Observation.model_validate(_observation(max_steps="15"))
+            Observation.model_validate(_observation(validation={"max_steps": "15"}))
         with pytest.raises(ValidationError):
-            Observation.model_validate(_observation(reward=True))
+            Observation.model_validate(_observation(validation={"max_steps": 15, "reward": True}))
         with pytest.raises(ValidationError):
-            Observation.model_validate(_observation(reward="0.4"))
+            Observation.model_validate(_observation(validation={"max_steps": 15, "reward": "0.4"}))
 
     def test_validate_assignment_teeth(self):
-        """赋值期校验：改 steps 为 str、置未知属性，当场拒绝。"""
+        """赋值期校验：顶层与 validation 层改坏值/置未知属性，当场拒绝。"""
         o = Observation.model_validate(_observation())
         with pytest.raises(ValidationError):
-            setattr(o, "steps", "3")  # noqa: B010 — 直赋的静态签名面即拒收 str；setattr 同走 __setattr__ 校验
+            o.validation.steps = "3"  # type: ignore[reportAttributeAccessIssue]  # 负例：直赋 str 当场拒收（setattr 同走 __setattr__ 校验）
         with pytest.raises(ValidationError):
             o.should_stop = True  # type: ignore[attr-defined]
+        with pytest.raises(ValidationError):
+            o.validation.unknown = 1  # type: ignore[attr-defined]
 
 
 def _verdict(**over):
@@ -137,3 +153,13 @@ class TestFinishVerdictModel:
             FinishVerdict.model_validate(_verdict(deliverables="x"))
         with pytest.raises(ValidationError):
             FinishVerdict.model_validate(_verdict(decision_log={"step": 1}))
+
+
+class TestObservationValidationModel:
+    def test_validation_only_engine_facts(self):
+        """① validation 只收引擎事实（steps/max_steps/reward/finished/abandoned/
+        recent_decisions）——finish 前置条件预读不进（拒收面 = FinishVerdict.reason）。"""
+        v = ObservationValidation.model_validate({"steps": 1, "max_steps": 8, "reward": 0.0})
+        assert v.steps == 1 and v.finished is False and v.abandoned is False
+        with pytest.raises(ValidationError):
+            ObservationValidation.model_validate({"max_steps": 8, "deliverable_ready": True})

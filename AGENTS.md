@@ -39,7 +39,7 @@ uv workspace 七 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 | Data   | `packages/builtin_plugins/data/mflowy/data/`      | 清洗 POMDP 动作域（load/statistic/detect/clean/plot + DomainCard 先验分级 + 缺陷封闭枚举/Finding 契约 + 路由提示表） |
 | Model  | `packages/builtin_plugins/model/mflowy/model/`    | 建模 POMDP 动作域（x_y/cv/x_transformer/model + plot——cv 族 = split 参数构建/load 引用加载）+ JobProvider + diagnose/report 观察面 |
 | BO     | `packages/builtin_plugins/bo/mflowy/bo/`          | 贝叶斯优化推荐工作流域（**非 POMDP 会话**，#177——agent 工具工作流 + study sqlite db）：六工具 + BOCard 契约 + 学习信号 + search_input 节点（自 model 真迁移，#175） |
-| Driver | `packages/driver/mflowy/driver/`  | YAML→DAG 编译调度、@node/@edge 插件 SDK、POMDP 会话基座（`pomdp` 契约 + `session` 壳——六操作 start/observe/apply/rollback/finish/abandon） |
+| Driver | `packages/driver/mflowy/driver/`  | YAML→DAG 编译调度、@node/@edge 插件 SDK、POMDP 会话基座（`pomdp` 契约——Observation 四件 o.prior/o.biz/o.actions/o.validation + Handle 六操作 load_or_start/observe/apply/rollback/finish/abandon；`session` 壳——单源计步/盘上 memo/o_actions 投影钩子/补 r 机制） |
 | Utils  | `packages/utils/mflowy/utils/`    | mlflow seam、OAuth 2.1 客户端（login/token 库）、脚本安全扫描、capture/path/logging/jinja |
 
 依赖方向保持单向：utils ← driver ← data ← model ← bo ← mcp（内核零域感知、两 POMDP 域隔离、bo 工作流域居 model 之后——`tests/test_workspace.py` 断言，改动 import 保持全绿）。模块内相对导入、跨模块绝对导入。
@@ -59,6 +59,7 @@ uv workspace 七 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 7. **测试钉契约**：行为变更带契约测试；架构不变量（依赖方向/版本锁步/注册表镜像）住 `tests/`；测试替身只打 adapter 缝位（`_DEFAULT_CATALOG`/`Tracking` seam）；测试随包镜像 `packages/<pkg>/tests/** ↔ mflowy/<pkg>/**`，跨域接缝用例住消费侧包；接缝测试真跑产物，以 mock 为主的地方补真跑。
 8. **文档同频**：工具行为改 docstring（`tools/list` 自动下发即 API 文档）；本文件与 skills 随行为变更同 PR 更新（见同步规则）。
 9. **mixin 组合方契约**：mixin 引用组合方才满足的属性/方法，一律直取 + 带码 ignore 注明「组合方满足——定义期不可见」（#122 裁定：是否满足取决于组合方）；TYPE_CHECKING 借基/伪继承伪造类型面即债。属性在缺是值级可选性（`getattr(..., None)` 语义，如 `evals_result_` 随 eval_set 在缺）；第三方无 py.typed 的属性发现走回退链，全缺 fail-loud。
+10. **观测/执行二分纪律**（#226 ⑧，会话工具设计）：observe 可从内存 o 翻译内部组合函数参数（如检测算子从 o.prior 取先验）；apply 必须由 agent 基于上下文中的 o 翻译参数，机器面**不得从 o 翻译 apply 参数**——新增节点零机器面注入接线。先验生命周期单缝：load_or_start 的 `*args` 初始化、observe 的 `*args` 更新（动作面冻结，壳牙齿强制）；sid+域尾巴开局入参同传 = 参数来源冲突 fail-loud（续局带新认知 = 旧产物 data 路径 + 新 prior 开新局）。
 
 
 ## 添加能力

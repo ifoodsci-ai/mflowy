@@ -19,20 +19,20 @@ clean_session_start(file_path, card=<DomainCard>, max_steps=15)   # 唯一主通
 - 卡由 **survey skill**（warm-up/dive-in 问卷剧本）产出后传入——start 即全量校验
   （列引用/物理范围 fail-loud）并富化 never_drop；never_drop / 目标列禁改 /
   unit_hints / expected_ranges / defect_priority / 保留率下限全部生效；
-- 返回 s′：缺陷清单（`state_digest.defects` 计数 + `problems` 逐条证据）+ 内生
+- 返回 s′：缺陷清单（`biz.defects` 计数 + `biz.problems` 逐条证据）+ 内生
   质量分 + 列画像（`columns`：dtype 族 / 分布读数）+ 预算。改卡 = 新 episode（重开会话）。
 
 ## 回合循环
 
 1. **读观测，自构动作**——引擎不出菜单：可执行算子 = clean 词表全集
    （`list_nodes(namespace="clean")` 看全集、`get_node_info` 看参数面）；缺陷证据
-   在 `state_digest.problems`，列读数在 `state_digest.columns`。按下方决策指南
+   在 `biz.problems`，列读数在 `biz.columns`。按下方决策指南
    选算子与参数——指南是起点不是边界，词表内的算子与参数可自由组合（词表外的
    动作会被拒）。
 2. `clean_apply(session_id, node, params, finding_ids, reason)` 提交：守卫 → 转移 →
    免费观测（失败即免费异常——不耗预算、不落版本、不进决策日志；试探不确定动作
    就直接提交，负 reward 即回滚，全量真值决策）+ 决策日志 (s,a,r,s′)。响应自带
-   **`reward`**（本步 ΔΦ，舍入 4 位）与 **`state_digest`**——直接读数，不从日志做减法。
+   **`validation.reward`**（本步 ΔΦ，舍入 4 位）与 **`biz`**——直接读数，不从日志做减法（#226 ① 四件：prior/biz/actions/validation）。
    - **`finding_ids`**（必填可空）：本步处理的 finding_id（`problems` 的
      `finding_id`）——非空时校验 ⊆ 当前 findings，幻觉 id 免费失败；行级算子
      （drop_duplicate 等）/逃生舱可传空；

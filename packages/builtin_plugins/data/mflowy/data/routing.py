@@ -7,7 +7,7 @@
   card.source 权威度，#116）——空集表示「无推荐算子，走 finish keep 声明」。
 - 策略知识（决策树/参数默认档/反模式）外置 ``.agents/skills/clean/SKILL.md``
   （π 的大脑——决策指南叙述性展开本表与参数档位）；本表是缺陷→算子提示的机器
-  单源——state_digest.routing_hints 常驻投影（#117 Q1：形状稳定、零拉取调用）。
+  单源——o.biz.routing_hints 常驻投影（#117 Q1：形状稳定、零拉取调用）。
 """
 
 from __future__ import annotations
@@ -44,5 +44,5 @@ ROUTING_HINTS: dict[DefectType, frozenset[str]] = {
 
 
 def routing_hints() -> dict[str, list[str]]:
-    """state_digest 投影形态（JSON 安全）：{defect_type: [推荐算子…]}——排序保确定性。"""
+    """o.biz 投影形态（JSON 安全）：{defect_type: [推荐算子…]}——排序保确定性。"""
     return {d.value: sorted(ops) for d, ops in ROUTING_HINTS.items()}

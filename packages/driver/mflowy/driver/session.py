@@ -1,18 +1,21 @@
-"""会话基座机制：POMDPSession（会话壳，#89）+ SessionStore（存量会话 GC 面）。
+"""会话基座机制：POMDPSession（会话壳，#89 + #226 基座重构）+ SessionStore（存量会话 GC 面）。
 
 driver=机制、域=策略——POMDPSession 吃下壳骨架：六个操作上下文承载业务流程
-（终态门/预算门/prior 冻结/append-only 决策日志/统一盘上写序），域实现
-``pomdp.POMDPSessionHandle`` 只填转移语义。盘上两文件（rules.pkl 随规则引擎
-退役——#120；存量会话的遗留文件不读不迁，GC 自然回收）：
+（终态门/预算门/counts_step 单源计步/o_actions 投影/动作面先验冻结/补 r 机制/
+append-only 决策日志/统一盘上写序），域实现 ``pomdp.POMDPSessionHandle`` 只填
+转移语义。盘上三件（rules.pkl 随规则引擎退役——#120；存量会话的遗留文件不读
+不迁，GC 自然回收）：
 
-- ``observation.json``：观测摘要（七键+终态双旗，pydantic 封闭模型），整读改写、
-  原子落盘——观测投影，最后写
-- ``decision.log``：决策日志（JSONL append-only，一行一条 (s,a,r,s′)）——
-  ``ra`` 接口无删除面；**追加即 commit 点**
+- ``observation.json``：观测投影（四件，pydantic 封闭模型），整读改写、原子
+  落盘——最后写
+- ``decision.log``：决策日志（JSONL append-only，一行一条 (s,a,r,s′)——⑥ 补 r
+  由壳在 commit 点 stamp）——追加即 commit 点；``ra`` 接口无删除面
+- ``memo.json``：盘上 memo（③）——sid 路径锚定的观测派生缓存，open 随磁盘 o
+  一起水化、写穿原子（模块级内存 dict 的无 gc/同进程跨会话共享两缺陷由此解）
 
 统一写序（构造保证）：工件先行（域、未 commit、孤儿无害）→ 日志追加（commit）→
 观测投影最后落盘。崩溃窗口二分：追加前崩 = 失败免费；追加后投影前崩 = 日志领先，
-``open`` 的一致性牙齿（recent_decisions 尾 ≡ 日志尾）fail-loud。
+``open`` 的一致性牙齿（validation.recent_decisions 尾 ≡ 日志尾）fail-loud。
 """
 
 from __future__ import annotations
@@ -21,7 +24,7 @@ import json
 import shutil
 import time
 import uuid
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, MutableMapping
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -29,10 +32,18 @@ from typing import Any
 
 from mflowy.utils.file import write_text_atomic
 
-from .pomdp import TOP_K_DECISIONS, Observation
+from .pomdp import TOP_K_DECISIONS, Observation, ObservationValidation
 
 OBSERVATION_FILE = "observation.json"
 DECISION_LOG_FILE = "decision.log"
+MEMO_FILE = "memo.json"
+
+
+def _canonical(prior: Mapping[str, Any] | None) -> str | None:
+    """先验快照 canonical 形态：sort_keys 排序序列化——嵌套结构内容比对（顺序无关）。"""
+    if prior is None:
+        return None
+    return json.dumps(prior, sort_keys=True, ensure_ascii=False, default=str)
 
 
 def gc_report_key(dry_run: bool) -> str:
@@ -118,14 +129,83 @@ class _DecisionLog:
         return self._records[i]
 
 
+class _RewardStampLog:
+    """补 r 门面（#226 ⑥）：commit 点把回合奖励 stamp 进记录（键缺省时）——
+    (s,a,r,s′) 叙事在日志层可重建（累计连事后重建自此可能）。
+
+    域须先置 ``o.validation.reward`` 再 append（#234 形状适配已改两域调用序）；
+    只读面透传内层（审计读与迭代不受包装影响）。
+    """
+
+    def __init__(self, inner: _DecisionLog, o: Observation) -> None:
+        self._inner = inner
+        self._o = o
+
+    def append(self, record: Mapping[str, Any]) -> None:
+        if "r" not in record:
+            record = {**record, "r": self._o.validation.reward}
+        self._inner.append(record)
+
+    def tail(self, n: int) -> list[Mapping[str, Any]]:
+        return self._inner.tail(n)
+
+    def __len__(self) -> int:
+        return len(self._inner)
+
+    def __iter__(self) -> Iterator[dict]:
+        return iter(self._inner)
+
+    def __getitem__(self, i: int) -> dict:
+        return self._inner[i]
+
+
+class SessionMemo(MutableMapping[str, Any]):
+    """盘上 memo（#226 ③）：sid 路径锚定的观测派生缓存。
+
+    模块级内存 dict（无 gc、同进程跨会话共享——清洗域 _REPORT_MEMO/_PROFILE_MEMO
+    旧形态）由此退役的机制载体：open/load_or_start 随磁盘 o 一起水化、写穿原子
+    （tmp+rename，红线 3）；observe 以 sid 路径寻址即读即得。值域 JSON
+    （default=str 宽容序列化——与 decision.log 同尺）。
+    """
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+    def __getitem__(self, key: str) -> Any:
+        return self._data[key]
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        self._data[key] = value
+        self._flush()
+
+    def __delitem__(self, key: str) -> None:
+        del self._data[key]
+        self._flush()
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._data)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def _flush(self) -> None:
+        write_text_atomic(str(self._path), json.dumps(self._data, ensure_ascii=False, indent=1, default=str))
+
+
 class POMDPSession:
-    """POMDP 会话壳（#89 统一机制）：所有业务共用，域只填转移语义。
+    """POMDPSession 会话壳（#89 统一机制 + #226 基座重构）：所有业务共用，域只填
+    转移语义。
 
     新开 = ``POMDPSession(root, prefix=...)``：mint id + 建目录 + 空决策日志；
-    开局观测由 ``start_ctx`` 提交。
-    重水化 = ``POMDPSession.open(dir)``：入口一致性牙齿（观测投影 ≡ 日志尾）。
-    步数口径：``counts_step(action) -> bool`` 模块级谓词，缺省 None = 每 apply
-    计步；预算门 = counts_step(action) ∧ steps ≥ max_steps。
+    开局观测由 ``start_ctx`` 提交。重水化 = ``POMDPSession.open(dir)``：入口
+    一致性牙齿（观测投影 ≡ 日志尾）+ memo 水化。生命周期缝 =
+    ``load_or_start``（#226 ②——给 sid 加载、不给新建）。
+
+    步数口径（#226 ② 单源）：壳按 ``counts_step(action)`` 谓词在 apply 的 commit
+    缝计步（域内手动自增退役）；预算门 = counts_step(action) ∧ steps ≥ max_steps。
+    o_actions 投影（#226 ④）：``actions_projector`` 域词表钩子（与 counts_step
+    谓词同构居所），写点刷新纯词清单（不带吃步标记）。
     """
 
     def __init__(
@@ -134,46 +214,96 @@ class POMDPSession:
         *,
         prefix: str = "",
         counts_step: Callable[[str], bool] | None = None,
+        actions_projector: Callable[[], list[str]] | None = None,
     ) -> None:
-        self._root = Path(root)
+        self._root = Path(root).absolute()  # sid = 会话目录绝对路径（②）——根先归一
         self._counts_step = counts_step
+        self._actions_projector = actions_projector
         sid = f"{prefix}{uuid.uuid4().hex[:12]}"
         self._root.mkdir(parents=True, exist_ok=True)
         self._dir = self._root / sid
         self._dir.mkdir(exist_ok=False)  # sid 冲突 fail-loud
         self._id = sid
         (self._dir / DECISION_LOG_FILE).write_text("", encoding="utf-8")
+        self._memo = SessionMemo(self._dir / MEMO_FILE)
 
     @classmethod
-    def open(cls, dir: Path | str, *, counts_step: Callable[[str], bool] | None = None) -> POMDPSession:
-        """重水化既有会话：目录/开局观测缺失 fail-loud；投影与日志撕裂 fail-loud。"""
+    def open(
+        cls,
+        dir: Path | str,
+        *,
+        counts_step: Callable[[str], bool] | None = None,
+        actions_projector: Callable[[], list[str]] | None = None,
+    ) -> POMDPSession:
+        """重水化既有会话：sid 绝对路径 fail-loud（②——相对路径在 #207 锚定后有
+        歧义）；目录/开局观测缺失 fail-loud；投影与日志撕裂 fail-loud；memo 随
+        磁盘 o 一起水化（③）。"""
+        d = Path(dir)
+        if not d.is_absolute():
+            raise ValueError(f"sid 须为会话目录绝对路径（相对路径在 task_dir 锚定后有歧义）: {dir}")
         ss = cls.__new__(cls)
-        ss._root = Path(dir).parent
-        ss._dir = Path(dir)
+        ss._root = d.parent
+        ss._dir = d
         if not ss._dir.is_dir():
             raise FileNotFoundError(f"会话不存在: {dir}")
         obs_path = ss._dir / OBSERVATION_FILE
         if not obs_path.exists():
             raise FileNotFoundError(f"会话未开局（缺 observation.json）: {dir}")
         ss._counts_step = counts_step
+        ss._actions_projector = actions_projector
         ss._id = ss._dir.name
+        ss._memo = SessionMemo(ss._dir / MEMO_FILE)  # 随磁盘 o 一起水化
         obs = ss._load_observation()
-        if list(obs.recent_decisions) != _DecisionLog(ss._dir / DECISION_LOG_FILE).tail(TOP_K_DECISIONS):
+        if list(obs.validation.recent_decisions) != _DecisionLog(ss._dir / DECISION_LOG_FILE).tail(TOP_K_DECISIONS):
             raise RuntimeError(f"观测投影与决策日志不一致（撕裂写嫌疑，日志领先）: {dir}")
         return ss
 
+    @classmethod
+    def load_or_start(
+        cls,
+        *,
+        sid: Path | str | None = None,
+        root: Path | str | None = None,
+        prefix: str = "",
+        counts_step: Callable[[str], bool] | None = None,
+        actions_projector: Callable[[], list[str]] | None = None,
+    ) -> POMDPSession:
+        """生命周期缝（#226 ②，Handle load_or_start 的壳面）：sid 给定 = 加载
+        （绝对路径、缺失 fail-loud）；sid 缺省 = root+prefix 新建。
+
+        加载不吃开局入参——「sid + 域尾巴开局入参同传 = 参数来源冲突」在域缝
+        fail-loud（具名先验参数只有域知道）；续局带新认知 = 以旧会话产物 data
+        路径 + 新 prior 开新局（集链语义），不开旧局换卡。
+        """
+        if sid is not None:
+            return cls.open(sid, counts_step=counts_step, actions_projector=actions_projector)
+        if root is None:
+            raise ValueError("sid 缺省 = 新建会话——须给 root（mint 目录的父）")
+        return cls(root, prefix=prefix, counts_step=counts_step, actions_projector=actions_projector)
+
     @property
     def id(self) -> str:
+        """会话目录名（内部寻址/标签/实验名面）。"""
         return self._id
+
+    @property
+    def sid(self) -> str:
+        """Handle 寻址面（#226 ②）：会话目录绝对路径。"""
+        return str(self._dir)
 
     @property
     def dir(self) -> Path:
         return self._dir
 
     @property
+    def memo(self) -> SessionMemo:
+        """盘上 memo（③）：观测派生缓存，写穿原子。"""
+        return self._memo
+
+    @property
     def is_terminal(self) -> bool:
         o = self._load_observation()
-        return o.finished or o.abandoned
+        return o.validation.finished or o.validation.abandoned
 
     @property
     def observation(self) -> Observation:
@@ -189,56 +319,73 @@ class POMDPSession:
 
     @contextmanager
     def start_ctx(
-        self, max_steps: int, *, prior: Mapping[str, Any] | None = None, state_digest: Mapping[str, Any] | None = None
+        self, max_steps: int, *, prior: Mapping[str, Any] | None = None, biz: Mapping[str, Any] | None = None
     ) -> Iterator[Observation]:
-        """开局：body 内物化工件（工件先行），exit 提交观测（开局 commit 点）。"""
+        """开局：body 内物化工件（工件先行），exit 提交观测（开局 commit 点）——
+        prior/biz 形状域定（typed Prior 随 #235/#236 实体化）。"""
         if (self._dir / OBSERVATION_FILE).exists():
             raise FileExistsError(f"会话已开局: {self._id}")
-        o = Observation(session_id=self._id, max_steps=max_steps, prior=prior, state_digest=state_digest or {})
+        o = Observation(prior=prior, biz=biz or {}, validation=ObservationValidation(max_steps=max_steps))
         yield o
         self._write_observation(o)
 
     @contextmanager
     def observe_ctx(self) -> Iterator[Observation]:
-        """观测：水化 + 投影（只读零写——幂等、零转移，壳里最简操作）。
+        """观测（#226 ③ 计算语义）：对观测业务目标计算内存 o 并**更新磁盘 o**。
 
-        yield 盘上观测的副本：域可在 body 内组装读时投影（只回调用方），exit 不落盘；
-        不设终态门——终态会话照常可观测（续局/re-orientation 锚点，观测不是动作）。
+        「只读」指对真态只读（写的是观测派生面：biz 投影/prior 更新⑧/memo）；
+        零转移边界维持——决策日志零追加、不吃步、盘上真态工件不动。终态旗恒
+        盘读（body 内清旗不复活终局）；不设终态门——终态会话照常可观测
+        （续局/re-orientation 锚点，观测不是动作）。
         """
-        yield self._load_observation()
-
-    @contextmanager
-    def apply_ctx(self, action: str) -> Iterator[tuple[Observation, _DecisionLog]]:
-        """执行动作：终态门 + 预算门；``l.append`` 写穿即 commit；exit 投影最后。
-
-        body 内失败即免费（追加前抛出：零日志、零观测变更、孤儿工件无害）。
-        """
-        o = self._gate_mutable()
-        if self._action_counts(action) and o.steps >= o.max_steps:
-            raise RuntimeError(f"预算耗尽（max_steps={o.max_steps}）：请 rollback 或 finish")
-        log = _DecisionLog(self._dir / DECISION_LOG_FILE)
-        yield o, log
+        o = self._load_observation()
+        yield o
+        disk = self._load_observation()
+        o.validation.finished = disk.validation.finished
+        o.validation.abandoned = disk.validation.abandoned
+        o.validation.steps = disk.validation.steps  # 不吃步：步数恒盘读（只随 apply commit 缝变化）
         self._write_observation(o)
 
     @contextmanager
-    def rollback_ctx(self) -> Iterator[tuple[Observation, _DecisionLog]]:
-        """回滚：域在 body 定位目标记录、恢复指针状态、追加 rollback 记录（不删行）。"""
+    def apply_ctx(self, action: str) -> Iterator[tuple[Observation, _RewardStampLog]]:
+        """执行动作：终态门 + 预算门 + 壳单源计步（②——counts_step 谓词，域内手动
+        自增退役）；``l.append`` 写穿即 commit（⑥ 补 r：壳从 o.validation.reward
+        stamp 进记录）；exit 投影最后。
+
+        body 内失败即免费（追加前抛出：零日志、零观测变更、孤儿工件无害——计步
+        同回滚）；先验在动作面冻结（⑧——init/更新只走 load_or_start/observe 缝）。
+        """
         o = self._gate_mutable()
-        log = _DecisionLog(self._dir / DECISION_LOG_FILE)
-        yield o, log
+        if self._action_counts(action):
+            if o.validation.steps >= o.validation.max_steps:
+                raise RuntimeError(f"预算耗尽（max_steps={o.validation.max_steps}）：请 rollback 或 finish")
+            o.validation.steps += 1  # 单源记账：commit 缝计步（body 失败 = 盘上未写，免费）
+        prior_before = _canonical(o.prior)
+        yield o, _RewardStampLog(_DecisionLog(self._dir / DECISION_LOG_FILE), o)
+        self._assert_prior_frozen(o, prior_before)
+        self._write_observation(o)
+
+    @contextmanager
+    def rollback_ctx(self) -> Iterator[tuple[Observation, _RewardStampLog]]:
+        """回滚：域在 body 定位目标记录、恢复指针状态、追加 rollback 记录（不删行；
+        补 r 同 apply——恢复 ΔΦ 先置再 append）。"""
+        o = self._gate_mutable()
+        prior_before = _canonical(o.prior)
+        yield o, _RewardStampLog(_DecisionLog(self._dir / DECISION_LOG_FILE), o)
+        self._assert_prior_frozen(o, prior_before)
         self._write_observation(o)
 
     @contextmanager
     def finish_ctx(self) -> Iterator[tuple[Observation, _DecisionLog]]:
         """收局：abandoned → raise（改协议重开走新会话）；finished → 只读重入
         （``l.append`` 即 raise、exit 不落盘——幂等重导出由构造保证，交付物
-        工件写不受门管）；活会话 → body 置 ``o.finished=True``、追加 finish
-        记录，exit 投影（拒收路不置 finished，会话保留可续局）。
+        工件写不受门管）；活会话 → body 置 ``o.validation.finished=True``、追加
+        finish 记录，exit 投影（拒收路不置 finished，会话保留可续局）。
         """
         o = self._load_observation()
-        if o.abandoned:
+        if o.validation.abandoned:
             raise RuntimeError(f"会话已弃局：改协议重开走新会话（{self._id}）")
-        if o.finished:
+        if o.validation.finished:
             yield o, _DecisionLog(self._dir / DECISION_LOG_FILE, readonly=True)
             return  # 幂等重入：零落盘
         log = _DecisionLog(self._dir / DECISION_LOG_FILE)
@@ -247,29 +394,38 @@ class POMDPSession:
 
     def abandon(self, reason: str | None = None) -> dict[str, Any]:
         """弃局：日志记录 + 观测置 abandoned。幂等（已弃局重复弃 = no-op 回执）；
-        已收局不可弃（二终态互斥）。
-        """
+        已收局不可弃（二终态互斥）。ack 的 session_id = sid（绝对路径，Handle
+        寻址面）。"""
         o = self._load_observation()
-        if o.finished:
+        if o.validation.finished:
             raise RuntimeError(f"会话已终态（收局）：不可弃局（{self._id}）")
-        if o.abandoned:
-            return {"session_id": self._id, "abandoned": True, "reason": reason, "steps": o.steps}
-        o.abandoned = True
+        if o.validation.abandoned:
+            return {"session_id": self.sid, "abandoned": True, "reason": reason, "steps": o.validation.steps}
+        o.validation.abandoned = True
         _DecisionLog(self._dir / DECISION_LOG_FILE).append({"action": "abandon", "reason": reason})
         self._write_observation(o)
-        return {"session_id": self._id, "abandoned": True, "reason": reason, "steps": o.steps}
+        return {"session_id": self.sid, "abandoned": True, "reason": reason, "steps": o.validation.steps}
 
     # ── 内部件（三个 RWA 原语与门）─────────────────────────────────────────
 
     def _gate_mutable(self) -> Observation:
         """可变打开的终态门：已终态会话动作面为空（apply/rollback 共用）。"""
         o = self._load_observation()
-        if o.finished or o.abandoned:
+        if o.validation.finished or o.validation.abandoned:
             raise RuntimeError(f"会话已终态（收局/弃局）：动作面为空（{self._id}）")
         return o
 
     def _action_counts(self, action: str) -> bool:
         return self._counts_step is None or bool(self._counts_step(action))
+
+    def _assert_prior_frozen(self, o: Observation, prior_before: str | None) -> None:
+        """⑧ 动作面先验冻结牙齿（原观测写缝冻结随 observe 更新缝合法化退役）：
+        apply/rollback 路径改 prior = 生命周期违规 fail-loud。快照 = canonical
+        序列化（嵌套就地改写也可检——浅拷贝比对两侧重叠失效）。"""
+        if prior_before != _canonical(o.prior):
+            raise ValueError(
+                f"prior 在动作面冻结（init/更新走 load_or_start/observe 缝，改卡重开走新会话）：{self._id}"
+            )
 
     def _load_observation(self) -> Observation:
         p = self._dir / OBSERVATION_FILE
@@ -278,11 +434,9 @@ class POMDPSession:
         return Observation.model_validate(json.loads(p.read_text(encoding="utf-8")))
 
     def _write_observation(self, o: Observation) -> None:
-        """观测投影落盘（最后写）：prior 冻结牙齿 + recent_decisions 日志尾投影。"""
-        p = self._dir / OBSERVATION_FILE
-        if p.exists():
-            disk = self._load_observation()
-            if (disk.prior or None) != (o.prior or None):
-                raise ValueError(f"prior 在 episode 内冻结（改卡/改协议重开走新会话）：{self._id}")
-        o.recent_decisions = list(_DecisionLog(self._dir / DECISION_LOG_FILE).tail(TOP_K_DECISIONS))
-        write_text_atomic(str(p), o.model_dump_json(indent=1))
+        """观测投影落盘（最后写）：recent_decisions 日志尾投影 + o_actions 词表
+        投影（④——钩子在座则刷新纯词清单）。"""
+        o.validation.recent_decisions = list(_DecisionLog(self._dir / DECISION_LOG_FILE).tail(TOP_K_DECISIONS))
+        if self._actions_projector is not None:
+            o.actions = [str(a) for a in self._actions_projector()]
+        write_text_atomic(str(self._dir / OBSERVATION_FILE), o.model_dump_json(indent=1))
