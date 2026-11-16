@@ -84,9 +84,9 @@ def never_drop(card: Mapping[str, Any] | None) -> list[str]:
     return list(card["never_drop"])
 
 
-# 影响检测产出的卡先验键（memo 键组成 + suspected_id 注入面，#115）：ID 分级七键
-# 单源 = suspected_id.PRIOR_KEYS，另加 expected_ranges（range_violation 注入面）
-_PRIOR_MEMO_KEYS = ("expected_ranges", *PRIOR_KEYS)
+# 影响检测产出的卡先验键（memo 键组成 + suspected_id 注入面，#115/#235）：ID 分级
+# 七键单源 = suspected_id.PRIOR_KEYS，另加三个声明式检测注入面（ranges/values/invariants）
+_PRIOR_MEMO_KEYS = ("expected_ranges", "expected_values", "invariants", *PRIOR_KEYS)
 
 
 def _prior_card(card: Mapping[str, Any] | None) -> dict | None:
@@ -134,6 +134,11 @@ def _detect_all(df: pd.DataFrame, card: Mapping[str, Any] | None = None) -> Erro
     reports.append(detect_collinear(load=df))
     if ranges:
         reports.append(detect_range_violation(load=df, ranges=ranges))
+    if card and (card.get("expected_values") or card.get("invariants")):
+        # 声明式先验校验（#235）：机器从 o.prior 翻译注入面——observe 侧合规（#226 ⑧）
+        from mflowy.data.detect.rules import validate as _validate
+
+        reports.append(_validate(df, expected_values=card.get("expected_values"), invariants=card.get("invariants")))
     report = ErrorReport(shape=df.shape, errors=[e for r in reports for e in r.errors])
     if len(_REPORT_MEMO) >= _REPORT_MEMO_CAP:
         _REPORT_MEMO.clear()

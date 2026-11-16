@@ -21,6 +21,8 @@ _WEIGHTS: dict[DefectType, float] = {
     DefectType.COLLINEAR: 0.10,
     DefectType.EMPTY_ROW: 0.10,
     DefectType.RANGE_VIOLATION: 0.10,
+    DefectType.VALUE_VIOLATION: 0.10,  # #235：声明式违例族（与 range 同档——问卷宣告的不变量被违反）
+    DefectType.INVARIANT_VIOLATION: 0.10,
     DefectType.SUSPECTED_ID: 0.05,
     DefectType.SUSPECTED_COMPOSITE_ID: 0.05,
     DefectType.PRIOR_CONFLICT: 0.05,

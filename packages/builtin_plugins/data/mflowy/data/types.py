@@ -9,9 +9,11 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Any
 
 import numpy as np
 import pandas as pd
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_core import core_schema
 
 logger = logging.getLogger(__name__)
@@ -291,7 +293,7 @@ class DomainCard:
 def excluded_from_features(card: dict | None) -> list[str]:
     """ID 特征剔除面单源（#112 涟漪）：pk ∪ known_id(id_columns) ∪ composite 成员——
     防 ID 泄漏的建模剔除清单（fk 不剔——join 需求可见且可作类别特征）；data 会话
-    manifest 与 model 域开局共用本式。"""
+    manifest 与 model 域共用本式。"""
     card = card or {}
     return sorted(
         set(
@@ -302,3 +304,123 @@ def excluded_from_features(card: dict | None) -> list[str]:
             ]
         )
     )
+
+
+class CleanPrior(BaseModel):
+    """清洗先验卡（#226 ⑦ + #51 阶段三/B2/B3 吸收，#235）：pydantic 全量载体——
+    extra=forbid = 未知键 fail-loud（#51 阶段三红测兑现）；``o.prior`` 的域侧载体。
+
+    - 吸收 DomainCard 全部先验字段（never_drop 三源 target·protected·time / ID 六档 /
+      unit_hints / expected_ranges / source）+ 声明式新维 ``expected_values``（离散合法值）
+      / ``invariants``（跨列业务不变式公式）+ 记分/保留率先验（defect_priority /
+      min_row_retention / min_col_retention）
+    - domain/goal 纯叙事**不进先验**（走 load_or_start 显式参数）
+    - never_drop = 三源派生（model_validator 前置计算；携带值与三源不一致 = 手改嫌疑
+      fail-loud——真源唯一）
+    - 语义校验（列引用/数值列/范围次序/正则/source 白名单/invariants ast 列对照 +
+      空帧试编译）在 ``build(df, ...)`` 建档期——pydantic 面只做结构封闭
+    """
+
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    target: str | None = None
+    id_columns: tuple[str, ...] = ()  # known_id 档（普通标识列）
+    time_column: str | None = None
+    unit_hints: dict[str, str] = Field(default_factory=dict)
+    protected_columns: tuple[str, ...] = ()
+    expected_ranges: dict[str, tuple[float, float]] = Field(default_factory=dict)
+    # ── ID 分级（#112 三合一载体，冻结牙齿自动覆盖）──
+    primary_key_columns: tuple[str, ...] = ()
+    foreign_key_columns: tuple[str, ...] = ()
+    composite_keys: tuple[tuple[str, ...], ...] = ()
+    known_non_id_columns: tuple[str, ...] = ()
+    hinted_id_patterns: tuple[str, ...] = ()
+    source: str = "manual"  # 权威度（manual/lineage/governance_platform——prior_conflict 冲突策略输入）
+    # ── 声明式新维（#51 B2/B3 修订，#235）──
+    expected_values: dict[str, tuple[str | int | float, ...]] = Field(default_factory=dict)  # 列名→离散合法值
+    invariants: tuple[str, ...] = ()  # 跨列业务不变式公式（建档期 ast 列对照 + 空帧试编译）
+    # ── 记分/保留率先验（原 _freeze_card 富化面收编）──
+    defect_priority: dict[str, float] = Field(default_factory=dict)  # DefectType 值→权重覆盖（scoring 侧枚举门）
+    min_row_retention: float | None = None
+    min_col_retention: float | None = None
+    never_drop: tuple[str, ...] = ()  # 三源派生（target·protected·time——前置计算，手改 fail-loud）
+
+    @model_validator(mode="before")
+    @classmethod
+    def _derive_never_drop(cls, data: Any) -> Any:
+        """never_drop 三源派生：缺省计算；携带值与三源不一致 = 手改嫌疑 fail-loud。"""
+        if not isinstance(data, dict):
+            return data
+        cols = [data.get("target"), *(data.get("protected_columns") or ()), data.get("time_column")]
+        derived = tuple(dict.fromkeys(c for c in cols if c is not None))
+        if "never_drop" not in data:
+            data = {**data, "never_drop": derived}
+        elif tuple(data["never_drop"]) != derived:
+            raise ValueError(f"never_drop 是三源派生字段（{list(derived)}）——手改无效，改 target/protected_columns/time_column")
+        return data
+
+    @field_validator("source")
+    @classmethod
+    def _source_whitelist(cls, v: str) -> str:
+        if v not in ("manual", "lineage", "governance_platform"):
+            raise ValueError(f"source 须为 manual/lineage/governance_platform，得到 {v!r}")
+        return v
+
+    @field_validator("defect_priority")
+    @classmethod
+    def _priority_enum_gate(cls, v: dict[str, float]) -> dict[str, float]:
+        from mflowy.data.detect.errors import DefectType
+
+        unknown = sorted(set(v) - {m.value for m in DefectType})
+        if unknown:
+            raise ValueError(f"defect_priority 键 {unknown} 不在 DefectType 封闭枚举（可用: {[m.value for m in DefectType]}）")
+        return v
+
+    @classmethod
+    def build(cls, df: pd.DataFrame, **fields: Any) -> CleanPrior:
+        """建档期语义校验（fail-loud 单一事实源，DomainCard.build 承接 + 声明式新维）：
+        列引用逐项对照 df（撒谎 fail-loud）；expected_ranges 列须数值且下限 ≤ 上限；
+        expected_values 列对照；invariants ast 标识符列对照 + 空帧试编译；hinted 正则
+        合法。结构封闭（未知键）由 pydantic extra=forbid 兜底。"""
+        import re
+
+        fields = dict(fields)
+        for narrative in ("domain", "goal", "task_hint"):
+            if narrative in fields:
+                raise ValueError(
+                    f"{narrative} 不进 CleanPrior（domain/goal 纯叙事走 load_or_start 显式参数；task 已退役）"
+                )
+        for pat in fields.get("hinted_id_patterns") or ():
+            re.compile(pat)  # 坏正则当场报（不静默吞）
+
+        named = [
+            fields.get("target"),
+            fields.get("time_column"),
+            *(fields.get("id_columns") or []),
+            *(fields.get("protected_columns") or []),
+            *fields.get("unit_hints", {}),
+            *fields.get("expected_ranges", {}),
+            *fields.get("expected_values", {}),
+            *(fields.get("primary_key_columns") or []),
+            *(fields.get("foreign_key_columns") or []),
+            *(c for g in (fields.get("composite_keys") or []) for c in g),
+            *(fields.get("known_non_id_columns") or []),
+        ]
+        missing = sorted({c for c in named if c is not None and c not in df.columns})
+        if missing:
+            raise ValueError(f"问卷引用了数据框中不存在的列: {','.join(f'`{c}`' for c in missing)}")
+        for col in fields.get("expected_ranges") or {}:
+            if not pd.api.types.is_numeric_dtype(df[col]):
+                raise ValueError(f"expected_ranges 的列 `{col}` 不是数值列，无法定义物理范围")
+        for col, bound in (fields.get("expected_ranges") or {}).items():
+            if float(bound[0]) > float(bound[1]):
+                raise ValueError(f"列 `{col}` 的物理范围下限 {bound[0]} 大于上限 {bound[1]}")
+
+        from mflowy.data.detect.rules import compile_invariants
+
+        compile_invariants(df, list(fields.get("invariants") or ()))
+        return cls.model_validate(fields)
+
+    def as_dict(self) -> dict:
+        """通道形态（JSON 安全，o.prior 序列化面）：与 model_dump 等价（历史名保留）。"""
+        return self.model_dump()

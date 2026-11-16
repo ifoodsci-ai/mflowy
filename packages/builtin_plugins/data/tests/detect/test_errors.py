@@ -20,7 +20,7 @@ _DOC_CORE = {
     "suspected_composite_id",
     "prior_conflict",
 }
-_EXTENSIONS = {"empty_row", "duplicate", "collinear", "range_violation", "mixed_units"}  # #151
+_EXTENSIONS = {"empty_row", "duplicate", "collinear", "range_violation", "value_violation", "invariant_violation", "mixed_units"}  # #151 + #235 声明式违例族
 
 
 def _f(**over) -> Finding:

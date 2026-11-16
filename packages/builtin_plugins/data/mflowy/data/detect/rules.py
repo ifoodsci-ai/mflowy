@@ -178,6 +178,116 @@ def high_corr_pairs(
     return pairs
 
 
+# ── 声明式先验校验（#51 B2/B3 修订形态，#235）：纯计算零判断 ──────────────────
+# Finding/severity 组装在 cleaning_session._detect_all（observe 侧从 o.prior 机器
+# 翻译 = ⑧ 合规面）；不建通用 rules union、不建 DAG detect.validate 节点（#235 裁定
+# ——无 YAML 消费者，防漂移）。NaN 不计违例（high_null 管辖——与 range_violation 同约）。
+
+
+def invariant_columns(expr: str) -> list[str]:
+    """invariant 公式引用的标识符（ast Name 收集，排序保确定性）——非列名即检错面输入。"""
+    import ast as _ast
+
+    tree = _ast.parse(expr, mode="eval")  # 语法错当场 SyntaxError（fail-loud）
+    return sorted({n.id for n in _ast.walk(tree) if isinstance(n, _ast.Name)})
+
+
+def compile_invariants(df: pd.DataFrame, invariants: list[str] | tuple[str, ...]) -> None:
+    """建档期 fail-loud（#235 验收）：ast 标识符列对照 + 空帧试编译——引用不存在列
+    或不可求值的公式当场报（带可用列清单）。"""
+    for expr in invariants or ():
+        try:
+            cols = invariant_columns(expr)
+        except SyntaxError as e:
+            raise ValueError(f"invariant `{expr}` 不是合法表达式：{e}") from e
+        unknown = sorted(set(cols) - set(df.columns))
+        if unknown:
+            raise ValueError(f"invariant `{expr}` 引用不存在的列 {unknown}（可用: {list(df.columns)}）")
+        try:
+            eval(expr, {"__builtins__": {}}, {c: df[c].iloc[:0] for c in df.columns})
+        except Exception as e:  # noqa: BLE001 —— 空帧试编译的任意失败面都归「公式不可求值」
+            raise ValueError(f"invariant `{expr}` 空帧试编译失败：{e}") from e
+
+
+def value_violations(df: pd.DataFrame, expected_values: dict[str, list] | None) -> list[tuple[str, int, int, str]]:
+    """离散合法值违例（VALUE_VIOLATION 纯计算）：每列 (列名, 违例数, 总行数, 首例样本已脱敏)。"""
+    out: list[tuple[str, int, int, str]] = []
+    for col, legal in (expected_values or {}).items():
+        if col not in df.columns:
+            raise ValueError(f"expected_values 的列 `{col}` 不在数据框中（可用: {list(df.columns)}）")
+        s = df[col]
+        mask = s.notna() & ~s.isin(set(legal))
+        n = int(mask.sum())
+        if n:
+            out.append((str(col), n, len(df), mask_text(str(s[mask].iloc[0]))))
+    return out
+
+
+def invariant_violations(
+    df: pd.DataFrame, invariants: list[str] | tuple[str, ...] | None
+) -> list[tuple[str, int, int, tuple[int, ...]]]:
+    """跨列不变式违例（INVARIANT_VIOLATION 纯计算）：每公式 (公式, 违例行数, 有效行数,
+    违例行号样本封顶 20)。有效行 = 引用列全非 NaN（NaN 归 high_null，不冒充违例）。"""
+    out: list[tuple[str, int, int, tuple[int, ...]]] = []
+    for expr in invariants or ():
+        cols = invariant_columns(expr)
+        result = eval(expr, {"__builtins__": {}}, {c: df[c] for c in cols})
+        assert isinstance(result, pd.Series)  # 谓词列向求值（标量公式 = 非谓词，建档期未拦的兜底）
+        valid = df[cols].notna().all(axis=1) if cols else pd.Series(True, index=df.index)
+        mask = valid & ~result.fillna(False).astype(bool)
+        n = int(mask.sum())
+        if n:
+            out.append((expr, n, int(valid.sum()), tuple(int(i) for i in mask[mask].index[:20])))
+    return out
+
+
+# 声明式违例分档线（与 range_violation 同尺——违例占比；owner 单源，v1 人工维护）
+_VIOLATION_HIGH_RATE = 0.05
+_VIOLATION_MEDIUM_RATE = 0.01
+
+
+def validate(
+    df: pd.DataFrame,
+    *,
+    expected_values: dict[str, list] | None = None,
+    invariants: list[str] | tuple[str, ...] | None = None,
+) -> ErrorReport:
+    """声明式先验校验算子（非词表纯函数，#235——``_detect_all`` 从 o.prior 机器翻译
+    调用，⑧ observe 侧合规）：expected_values → VALUE_VIOLATION（列级）、
+    invariants → INVARIANT_VIOLATION（行级样本）；severity = 违例占比分档。
+
+    本模块「零判断」章程的显式例外——判断不来自引擎启发，而来自问卷宣告的
+    不变量（与 range_violation 同族：判断与执行同尺）。
+    """
+    from .errors import DefectType, ErrorReport, Finding, Severity, rationale
+
+    errors: list[Finding] = []
+    for col, n, total, sample in value_violations(df, expected_values):
+        rate = n / total if total else 0.0
+        n_legal = len(set((expected_values or {})[col]))
+        errors.append(
+            Finding(
+                defect_type=DefectType.VALUE_VIOLATION,
+                column=col,
+                severity=Severity.band(rate, high=_VIOLATION_HIGH_RATE, medium=_VIOLATION_MEDIUM_RATE),
+                rationale=rationale(rate, f"违例 {n}/{total}（合法值 {n_legal} 个）"),
+                evidence=f"{col} 有 {n} 个值不在合法值集，如 {sample}（已脱敏）",
+            )
+        )
+    for expr, n, valid_n, rows in invariant_violations(df, invariants):
+        rate = n / valid_n if valid_n else 0.0
+        errors.append(
+            Finding(
+                defect_type=DefectType.INVARIANT_VIOLATION,
+                rows=rows,
+                severity=Severity.band(rate, high=_VIOLATION_HIGH_RATE, medium=_VIOLATION_MEDIUM_RATE),
+                rationale=rationale(rate, f"违例行 {n}/{valid_n}（`{expr}`）"),
+                evidence=f"不变式 `{expr}` 被 {n} 行违反（行号样本 {list(rows[:5])}…）",
+            )
+        )
+    return ErrorReport(shape=df.shape, errors=errors)
+
+
 from scipy import stats as _sps  # noqa: E402 —— 延迟填充：_TESTS 表在函数定义后装配
 
 _TESTS.update({"spearman": _sps.spearmanr, "pearson": _sps.pearsonr, "kendall": _sps.kendalltau})
