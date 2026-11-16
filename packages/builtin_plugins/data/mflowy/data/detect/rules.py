@@ -13,6 +13,9 @@ import re
 
 import numpy as np
 import pandas as pd
+from mflowy.data.detect.errors import (
+    ErrorReport,
+)
 from mflowy.data.types import as_series
 
 # rule 与默认档位的配对（detect.outliers / 修复原子的默认参数共用）
@@ -179,13 +182,16 @@ def high_corr_pairs(
 
 
 # ── 声明式先验校验（#51 B2/B3 修订形态，#235）：纯计算零判断 ──────────────────
-# Finding/severity 组装在 cleaning_session._detect_all（observe 侧从 o.prior 机器
+# Finding/severity 组装在 session._detect_all（observe 侧从 o.prior 机器
 # 翻译 = ⑧ 合规面）；不建通用 rules union、不建 DAG detect.validate 节点（#235 裁定
 # ——无 YAML 消费者，防漂移）。NaN 不计违例（high_null 管辖——与 range_violation 同约）。
 
 
 def invariant_columns(expr: str) -> list[str]:
-    """invariant 公式引用的标识符（ast Name 收集，排序保确定性）——非列名即检错面输入。"""
+    """invariant 公式引用的标识符（ast Name 收集，排序保确定性）——非列名即检错面输入。
+
+    信任边界：invariant 来自问卷先验（与 ``python`` 算子同级受信输入——域本就开放
+    脚本面）；ast 门拦非列名标识符，防误写不防恶意。"""
     import ast as _ast
 
     tree = _ast.parse(expr, mode="eval")  # 语法错当场 SyntaxError（fail-loud）
@@ -204,9 +210,13 @@ def compile_invariants(df: pd.DataFrame, invariants: list[str] | tuple[str, ...]
         if unknown:
             raise ValueError(f"invariant `{expr}` 引用不存在的列 {unknown}（可用: {list(df.columns)}）")
         try:
-            eval(expr, {"__builtins__": {}}, {c: df[c].iloc[:0] for c in df.columns})
-        except Exception as e:  # noqa: BLE001 —— 空帧试编译的任意失败面都归「公式不可求值」
+            result = eval(expr, {"__builtins__": {}}, {c: df[c].iloc[:0] for c in df.columns})
+        except Exception as e:
             raise ValueError(f"invariant `{expr}` 空帧试编译失败：{e}") from e
+        if not isinstance(result, pd.Series):
+            raise ValueError(
+                f"invariant `{expr}` 不是谓词公式（求值为标量 {type(result).__name__}——须为列间布尔表达式，如 'end >= start'）"
+            )
 
 
 def value_violations(df: pd.DataFrame, expected_values: dict[str, list] | None) -> list[tuple[str, int, int, str]]:
@@ -216,10 +226,10 @@ def value_violations(df: pd.DataFrame, expected_values: dict[str, list] | None) 
         if col not in df.columns:
             raise ValueError(f"expected_values 的列 `{col}` 不在数据框中（可用: {list(df.columns)}）")
         s = df[col]
-        mask = s.notna() & ~s.isin(set(legal))
+        mask = as_series(s.notna() & ~s.isin(list(legal)))  # 收窄（stub 联合面）
         n = int(mask.sum())
         if n:
-            out.append((str(col), n, len(df), mask_text(str(s[mask].iloc[0]))))
+            out.append((str(col), n, len(df), mask_text(str(s.loc[mask].iloc[0]))))
     return out
 
 
@@ -232,12 +242,16 @@ def invariant_violations(
     for expr in invariants or ():
         cols = invariant_columns(expr)
         result = eval(expr, {"__builtins__": {}}, {c: df[c] for c in cols})
-        assert isinstance(result, pd.Series)  # 谓词列向求值（标量公式 = 非谓词，建档期未拦的兜底）
-        valid = df[cols].notna().all(axis=1) if cols else pd.Series(True, index=df.index)
-        mask = valid & ~result.fillna(False).astype(bool)
+        if not isinstance(result, pd.Series):  # 建档门已拦标量——盘上先验被手改的兜底（fail-loud）
+            raise ValueError(f"invariant `{expr}` 不是谓词公式（求值为标量 {type(result).__name__}）")
+        valid = as_series(df[cols].notna().all(axis=1)) if cols else pd.Series(True, index=df.index)
+        predicate = as_series(result.fillna(False).astype(bool))  # 谓词列收窄（stub 联合面）
+        mask = as_series(valid & ~predicate)
         n = int(mask.sum())
         if n:
-            out.append((expr, n, int(valid.sum()), tuple(int(i) for i in mask[mask].index[:20])))
+            out.append(
+                (expr, n, int(valid.sum()), tuple(int(i) for i in np.flatnonzero(mask.to_numpy(dtype=bool))[:20]))
+            )
     return out
 
 
@@ -259,7 +273,7 @@ def validate(
     本模块「零判断」章程的显式例外——判断不来自引擎启发，而来自问卷宣告的
     不变量（与 range_violation 同族：判断与执行同尺）。
     """
-    from .errors import DefectType, ErrorReport, Finding, Severity, rationale
+    from .errors import DefectType, Finding, Severity, rationale
 
     errors: list[Finding] = []
     for col, n, total, sample in value_violations(df, expected_values):

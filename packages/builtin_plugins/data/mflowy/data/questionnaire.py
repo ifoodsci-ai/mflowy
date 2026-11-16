@@ -109,8 +109,7 @@ def propose_questions(file_path: str, card_partial: dict | None = None, eda_find
     if "invariants" not in card_partial and eda_findings:
         ask(
             "invariants",
-            "有哪些跨列业务不变式？（如 'end >= start'、'total == price * qty'——公式引用列名，"
-            "违例行即缺陷）",
+            "有哪些跨列业务不变式？（如 'end >= start'、'total == price * qty'——公式引用列名，违例行即缺陷）",
             list(eda_findings)[:5],
         )
     if "protected_columns" not in card_partial:

@@ -30,7 +30,7 @@ POMDP 回合里的事（model skill）。
 research-review 产物即可；无 research 产物时留空（全部已声明族开放，首个为 baseline）。
 校验闸会在 start 时核对：baseline 恰一、hints ⊆ 族签名声明空间。
 
-### 预填项（证据来自 clean_finish 产物，不重跑画像）
+### 预填项（证据来自 finish_cleaning 产物，不重跑画像）
 
 - `task`：由 target dtype 与统计推断（数值/唯一率/步长判据）——唯一归属本协议卡；
 - `cv`：n<1k → 3~5 折；分类任务受最小类计数约束（cv ≤ min class count）。

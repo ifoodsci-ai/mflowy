@@ -1,13 +1,14 @@
-"""数据域共享类型：任务类型 TASKTYPE（target 列的数据事实）+ 领域建档卡 DomainCard。
+"""数据域共享类型：任务类型 TASKTYPE（target 列的数据事实）+ 清洗先验卡 CleanPrior。
 
-两个 POMDP（清洗/建模会话）隔离任务的唯一通信载体——问卷答案的结构化产物，
-经参数边只读注入；清洗链的产物本身走 df 数据边，不经此卡。
+清洗 POMDP 的先验载体（#226 ⑦ + #51 吸收，#235）——问卷答案的结构化产物，经
+参数边只读注入；清洗链的产物本身走 df 数据边，不经此卡。``DomainCard``
+dataclass 已退役（语义校验由 ``CleanPrior.build`` 承接——extra=forbid 未知键
+fail-loud 兑现 #51 阶段三）；建模域背景卡走 dict（ModelPrior 实体化随 #236）。
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
@@ -29,7 +30,7 @@ def as_series(value: object) -> pd.Series:
 
 def frames_value_comparable(before: pd.DataFrame, after: pd.DataFrame) -> bool:
     """帧值可比判据（单源，#149）：形状 + 列标签 + 行索引全等——会话 diff 摘要
-    （cleaning_session._diff_summary）与 df_diff 中间件（log_df_diff._compute_diff）
+    （session._diff_summary）与 df_diff 中间件（log_df_diff._compute_diff）
     共用。两处守卫曾分叉（中间件只看 shape）：改名列算子 shape 不变但标签不齐，
     ``DataFrame.compare`` 直接抛错使整条 DAG 失败——判据单源后此象不再。"""
     return before.shape == after.shape and before.columns.equals(after.columns) and before.index.equals(after.index)
@@ -157,139 +158,6 @@ class TASKTYPE(DualFormStrEnum):
         }
 
 
-@dataclass
-class DomainCard:
-    """数据领域建档卡：问卷答案的结构化产物，两个 POMDP 的先验输入。
-
-    由 survey 剧本产出（列引用已对 df 校验，撒谎 fail-loud）。消费约定：
-    - clean 域：never_drop 列免删、unit_hints 供 normalize_units（单一单位列的 to/factors 先验）、expected_ranges 供
-      range_violation/range_clip、target 指明标签列；ID 分级字段（pk/fk/known_id/
-      composite/known_non_id/hinted）喂 suspected_id 检测器四出口（#115）
-    - #112 breaking：never_drop 收缩为 target/protected/time——ID 列不再自动免删，
-      drop/hash/mask 归 π 按 SKILL 策略决（误删兜底 = POMDP 回滚）
-    """
-
-    domain: str
-    goal: str = ""
-    target: str | None = None
-    id_columns: tuple[str, ...] = ()  # known_id 档（普通标识列）
-    time_column: str | None = None
-    unit_hints: dict[str, str] = field(default_factory=dict)
-    protected_columns: tuple[str, ...] = ()
-    expected_ranges: dict[str, tuple[float, float]] = field(default_factory=dict)
-    # ── 先验分级字段（#112：PriorKnowledge 并入卡——三合一载体，冻结牙齿自动覆盖）──
-    primary_key_columns: tuple[str, ...] = ()  # 强先验：唯一率 ≥0.95 → suspected_id(high) 跳打分
-    foreign_key_columns: tuple[str, ...] = ()  # 强先验同上（join 需求可见——fk 在卡）
-    composite_keys: tuple[tuple[str, ...], ...] = ()  # 组合唯一 → suspected_composite_id(joined 名锚点)
-    known_non_id_columns: tuple[str, ...] = ()  # 反先验：常规跳过，is_id_like 命中 → prior_conflict
-    hinted_id_patterns: tuple[str, ...] = ()  # 弱先验：列名命中正则 → 打分 +2（re 语义，坏模式 fail-loud）
-    source: str = "manual"  # 权威度（manual/lineage/governance_platform——prior_conflict 冲突策略输入）
-
-    def __post_init__(self) -> None:
-        """通道宽容：composite_keys 成员归一为 tuple（as_dict 往返/JSON 输入不较形态）。"""
-        self.composite_keys = tuple(tuple(g) for g in self.composite_keys)
-
-    @property
-    def never_drop(self) -> tuple[str, ...]:
-        """任何清洗动作不得删除的列：目标/受保护/时间（#112：ID 各档不再自动免删）。"""
-        cols = [self.target, *self.protected_columns, self.time_column]
-        return tuple(dict.fromkeys(c for c in cols if c is not None))
-
-    @classmethod
-    def build(
-        cls,
-        df,
-        *,
-        domain: str,
-        goal: str = "",
-        target: str | None = None,
-        id_columns=None,
-        time_column: str | None = None,
-        unit_hints=None,
-        protected_columns=None,
-        expected_ranges=None,
-        primary_key_columns=None,
-        foreign_key_columns=None,
-        composite_keys=None,
-        known_non_id_columns=None,
-        hinted_id_patterns=None,
-        source: str = "manual",
-    ) -> DomainCard:
-        """问卷答案 → 卡片（fail-loud 校验的单一事实源）。
-
-        列引用逐项对照 df（撒谎 fail-loud——分级字段与复合键成员全检）；expected_ranges
-        列必须数值且下限 ≤ 上限；hinted_id_patterns 须为合法正则；source ∈ 三值白名单。
-        应用层问卷与两域会话开局共用本校验。
-        task 唯一归属建模协议（ProtocolCard.task）——task_hint 已退役（fail-loud 门在
-        cleaning_session._freeze_card，现实的带毒入口是旧卡喂 start_session）。
-        """
-        import re
-
-        import pandas as pd
-
-        id_columns = list(id_columns or [])
-        protected_columns = list(protected_columns or [])
-        unit_hints = dict(unit_hints or {})
-        raw_ranges = expected_ranges or {}
-        pk = list(primary_key_columns or [])
-        fk = list(foreign_key_columns or [])
-        composites = [tuple(g) for g in (composite_keys or [])]
-        known_non_id = list(known_non_id_columns or [])
-        hinted = tuple(hinted_id_patterns or [])
-        if source not in ("manual", "lineage", "governance_platform"):
-            raise ValueError(f"source 须为 manual/lineage/governance_platform，得到 {source!r}")
-        for pat in hinted:
-            re.compile(pat)  # 坏正则当场报（不静默吞）
-
-        named = [
-            target,
-            time_column,
-            *id_columns,
-            *protected_columns,
-            *unit_hints,
-            *raw_ranges,
-            *pk,
-            *fk,
-            *(c for g in composites for c in g),
-            *known_non_id,
-        ]
-        missing = sorted({c for c in named if c is not None and c not in df.columns})
-        if missing:
-            raise ValueError(f"问卷引用了数据框中不存在的列: {','.join(f'`{c}`' for c in missing)}")
-
-        ranges: dict[str, tuple[float, float]] = {}
-        for col, bound in raw_ranges.items():
-            if not pd.api.types.is_numeric_dtype(df[col]):
-                raise ValueError(f"expected_ranges 的列 `{col}` 不是数值列，无法定义物理范围")
-            lo, hi = float(bound[0]), float(bound[1])
-            if lo > hi:
-                raise ValueError(f"列 `{col}` 的物理范围下限 {lo} 大于上限 {hi}")
-            ranges[col] = (lo, hi)
-
-        return cls(
-            domain=domain,
-            goal=goal,
-            target=target,
-            id_columns=tuple(id_columns),
-            time_column=time_column,
-            unit_hints=unit_hints,
-            protected_columns=tuple(protected_columns),
-            expected_ranges=ranges,
-            primary_key_columns=tuple(pk),
-            foreign_key_columns=tuple(fk),
-            composite_keys=tuple(composites),
-            known_non_id_columns=tuple(known_non_id),
-            hinted_id_patterns=hinted,
-            source=source,
-        )
-
-    def as_dict(self) -> dict:
-        """通道形态（JSON 安全）：元组→列表，供 MCP 工具返回。"""
-        from dataclasses import asdict
-
-        return asdict(self)
-
-
 def excluded_from_features(card: dict | None) -> list[str]:
     """ID 特征剔除面单源（#112 涟漪）：pk ∪ known_id(id_columns) ∪ composite 成员——
     防 ID 泄漏的建模剔除清单（fk 不剔——join 需求可见且可作类别特征）；data 会话
@@ -356,7 +224,9 @@ class CleanPrior(BaseModel):
         if "never_drop" not in data:
             data = {**data, "never_drop": derived}
         elif tuple(data["never_drop"]) != derived:
-            raise ValueError(f"never_drop 是三源派生字段（{list(derived)}）——手改无效，改 target/protected_columns/time_column")
+            raise ValueError(
+                f"never_drop 是三源派生字段（{list(derived)}）——手改无效，改 target/protected_columns/time_column"
+            )
         return data
 
     @field_validator("source")
@@ -373,12 +243,14 @@ class CleanPrior(BaseModel):
 
         unknown = sorted(set(v) - {m.value for m in DefectType})
         if unknown:
-            raise ValueError(f"defect_priority 键 {unknown} 不在 DefectType 封闭枚举（可用: {[m.value for m in DefectType]}）")
+            raise ValueError(
+                f"defect_priority 键 {unknown} 不在 DefectType 封闭枚举（可用: {[m.value for m in DefectType]}）"
+            )
         return v
 
     @classmethod
     def build(cls, df: pd.DataFrame, **fields: Any) -> CleanPrior:
-        """建档期语义校验（fail-loud 单一事实源，DomainCard.build 承接 + 声明式新维）：
+        """建档期语义校验（fail-loud 单一事实源，DomainCard.build 承接面 + 声明式新维，#235）：
         列引用逐项对照 df（撒谎 fail-loud）；expected_ranges 列须数值且下限 ≤ 上限；
         expected_values 列对照；invariants ast 标识符列对照 + 空帧试编译；hinted 正则
         合法。结构封闭（未知键）由 pydantic extra=forbid 兜底。"""
@@ -422,5 +294,6 @@ class CleanPrior(BaseModel):
         return cls.model_validate(fields)
 
     def as_dict(self) -> dict:
-        """通道形态（JSON 安全，o.prior 序列化面）：与 model_dump 等价（历史名保留）。"""
-        return self.model_dump()
+        """通道形态（JSON 安全，o.prior 序列化面）：mode="json"——元组→列表，与盘上
+        observation.json 读回形态逐位一致（内存 o 与磁盘 o 同型，#235）。"""
+        return self.model_dump(mode="json")

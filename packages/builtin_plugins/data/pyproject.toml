@@ -7,6 +7,7 @@ license = "MIT"
 requires-python = ">=3.12"
 # 2.0.0 起数据栈为硬依赖：装包即得完整数据域（词表=已安装能力）
 dependencies = [
+    "pydantic>=2.7",  # #235：CleanPrior 封闭模型（原经 driver 传递——红线 6 显式声明）
     "mflowy-driver",
     # 图表主题门面（plot 子树共享 mflowy.utils.plot；本包自身仍声明 matplotlib/seaborn）
     "mflowy-utils[plot]",
@@ -83,12 +84,12 @@ dependencies = [
 data_profile = "mflowy.data.tools:data_profile"
 eda = "mflowy.data.tools:eda"
 propose_questions = "mflowy.data.tools:propose_questions"
-clean_session_start = "mflowy.data.tools:clean_session_start"
-clean_observe = "mflowy.data.tools:clean_observe"
-clean_apply = "mflowy.data.tools:clean_apply"
-clean_rollback = "mflowy.data.tools:clean_rollback"
-clean_finish = "mflowy.data.tools:clean_finish"
-clean_abandon = "mflowy.data.tools:clean_abandon"
+load_or_start_cleaning = "mflowy.data.tools:load_or_start_cleaning"
+observe_cleaning = "mflowy.data.tools:observe_cleaning"
+apply_cleaning = "mflowy.data.tools:apply_cleaning"
+rollback_cleaning = "mflowy.data.tools:rollback_cleaning"
+finish_cleaning = "mflowy.data.tools:finish_cleaning"
+abandon_cleaning = "mflowy.data.tools:abandon_cleaning"
 
 [build-system]
 requires = ["hatchling"]

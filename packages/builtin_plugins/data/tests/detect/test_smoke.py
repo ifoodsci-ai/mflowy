@@ -61,14 +61,15 @@ def smoke_reports() -> list:
     from mflowy.data.detect.missing import missing
     from mflowy.data.detect.outliers import outliers
     from mflowy.data.detect.range_violation import range_violation
-    from mflowy.data.detect.stringly import stringly
-
     from mflowy.data.detect.rules import validate
+    from mflowy.data.detect.stringly import stringly
 
     df = _smoke_df()
     df.loc[df.index[-1], "x2"] = df.loc[df.index[-1], "x1"] - 10  # invariant 违例行（空行 NaN 不计）
     reports = [
-        validate(df, expected_values=SMOKE_CARD["expected_values"], invariants=SMOKE_CARD["invariants"]),  # #235 声明式两成员
+        validate(
+            df, expected_values=SMOKE_CARD["expected_values"], invariants=SMOKE_CARD["invariants"]
+        ),  # #235 声明式两成员
         missing(load=df),
         duplicates(load=df),
         outliers(load=df),
@@ -77,7 +78,9 @@ def smoke_reports() -> list:
         collinear(load=df),
         range_violation(load=df, ranges={"x1": [-3.0, 3.0]}),  # outlier 50.0 越界
         # 先验投影同构 _detect_all._prior_card（ID 分级键面——声明式键不进 suspected_id）
-        suspected_id(load=df, card={k: v for k, v in SMOKE_CARD.items() if k in ("composite_keys", "primary_key_columns")}),
+        suspected_id(
+            load=df, card={k: v for k, v in SMOKE_CARD.items() if k in ("composite_keys", "primary_key_columns")}
+        ),
     ]
     dup_df = df.copy()
     dup_df = pd.concat([dup_df, dup_df.head(3)]).reset_index(drop=True)  # duplicate 成员

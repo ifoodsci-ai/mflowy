@@ -1,6 +1,6 @@
 ---
 name: survey
-description: 数据领域建档问卷(mflowy)。用户上传数据后需要收集领域先验——目标列/标识列/单位/物理范围/受保护列——或提到"建档""数据问卷""开始清洗"时使用。嵌套研究流的外层剧本：data_profile(warm-up 证据) → 问卷 → eda(单变量+双变量+图) → dive-in 问卷(propose_questions 出题) → clean_session_start(card) 直进清洗 POMDP。仅适用于已配置 mflowy MCP server 的会话。
+description: 数据领域建档问卷(mflowy)。用户上传数据后需要收集领域先验——目标列/标识列/单位/物理范围/受保护列——或提到"建档""数据问卷""开始清洗"时使用。嵌套研究流的外层剧本：data_profile(warm-up 证据) → 问卷 → eda(单变量+双变量+图) → dive-in 问卷(propose_questions 出题) → load_or_start_cleaning(prior) 直进清洗 POMDP。仅适用于已配置 mflowy MCP server 的会话。
 disable-model-invocation: true
 ---
 
@@ -37,7 +37,7 @@ disable-model-invocation: true
 ### 4. 收口交棒
 
 - `card_partial` 攒齐必填（domain/target）与证据触发的可选项；
-- 调 `clean_session_start(file_path, card=<card_partial>)`——start 即全量校验
+- 调 `load_or_start_cleaning(file_path, prior=<card_partial>)`——start 即全量校验
   （fail-loud）并富化 never_drop，直进动作面；
 - 之后交棒 **clean skill** 回合循环；本剧本结束。
 
@@ -46,10 +46,10 @@ disable-model-invocation: true
 - **题型语法**：答案必须可编译进 DomainCard 字段——落不进类型契约的问题不要问；
 - 用户答不上来的项**宁缺勿编**——空值走默认，校验闸会拦不一致；
 - 无 target 的探索性数据：流程中断不支持（YAGNI）——如实告知用户；
-- 问卷完成于 `clean_session_start` 之前——开局后环境冻结，改卡 = 新 episode（重开）。
+- 问卷完成于 `load_or_start_cleaning` 之前——开局后环境冻结，改卡 = 新 episode（重开）。
 - 出题节奏由你控场（生成器不设上限，你按 3-5 问分批）；每问出示证据引用。
 
 ## 参考
 
 - 姊妹词表：statistic.univariate / statistic.bivariate（findings 溯源）；
-- 内层引擎工具：clean_session_start / clean_observe / clean_apply（clean skill 手册）。
+- 内层引擎工具：load_or_start_cleaning / observe_cleaning / apply_cleaning（clean skill 手册）。

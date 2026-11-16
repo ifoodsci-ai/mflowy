@@ -1,6 +1,6 @@
 ---
 name: clean
-description: 数据清洗 POMDP 回合操作手册(mflowy)。用户要求"开始清洗/自主清洗/修数据"，或清洗会话进行中(收到 session_id)时使用。配合 mflowy MCP 工具 clean_session_start / clean_observe / clean_apply / clean_rollback / clean_finish / clean_abandon 驱动回合循环——环境面在引擎，π(策略)是你。前置:survey skill 已产出 DomainCard。
+description: 数据清洗 POMDP 回合操作手册(mflowy)。用户要求"开始清洗/自主清洗/修数据"，或清洗会话进行中(收到 session_id)时使用。配合 mflowy MCP 工具 load_or_start_cleaning / observe_cleaning / apply_cleaning / rollback_cleaning / finish_cleaning / abandon_cleaning 驱动回合循环——环境面在引擎，π(策略)是你。前置:survey skill 已产出清洗先验卡 CleanPrior。
 disable-model-invocation: true
 ---
 
@@ -13,23 +13,23 @@ disable-model-invocation: true
 ## 开局
 
 ```
-clean_session_start(file_path, card=<DomainCard>, max_steps=15)   # 唯一主通道，直进动作面
+load_or_start_cleaning(sid=None, file_path, prior=<CleanPrior>, domain=, goal=, max_steps=15)   # 唯一主通道，返回 {sid, observation} 二联信封
 ```
 
-- 卡由 **survey skill**（warm-up/dive-in 问卷剧本）产出后传入——start 即全量校验
-  （列引用/物理范围 fail-loud）并富化 never_drop；never_drop / 目标列禁改 /
-  unit_hints / expected_ranges / defect_priority / 保留率下限全部生效；
+- 先验卡由 **survey skill**（warm-up/dive-in 问卷剧本）产出后传入——start 即全量
+  校验（列引用/物理范围/expected_values/invariants 公式编译 fail-loud）；never_drop /
+  目标列禁改 / unit_hints / expected_ranges / expected_values / invariants /
+  defect_priority / 保留率下限全部生效；domain/goal 纯叙事走开局显式参数（不进先验）；
 - 返回 s′：缺陷清单（`biz.defects` 计数 + `biz.problems` 逐条证据）+ 内生
   质量分 + 列画像（`columns`：dtype 族 / 分布读数）+ 预算。改卡 = 新 episode（重开会话）。
 
 ## 回合循环
 
-1. **读观测，自构动作**——引擎不出菜单：可执行算子 = clean 词表全集
-   （`list_nodes(namespace="clean")` 看全集、`get_node_info` 看参数面）；缺陷证据
-   在 `biz.problems`，列读数在 `biz.columns`。按下方决策指南
+1. **读观测，自构动作**——引擎不出菜单：可执行算子 = 观测自带 `actions`（运行期
+   clean 目录投影，纯词清单）；缺陷证据在 `biz.problems`，列读数在 `biz.columns`。按下方决策指南
    选算子与参数——指南是起点不是边界，词表内的算子与参数可自由组合（词表外的
    动作会被拒）。
-2. `clean_apply(session_id, node, params, finding_ids, reason)` 提交：守卫 → 转移 →
+2. `apply_cleaning(sid, action, params, finding_ids, reason)` 提交：守卫 → 转移 →
    免费观测（失败即免费异常——不耗预算、不落版本、不进决策日志；试探不确定动作
    就直接提交，负 reward 即回滚，全量真值决策）+ 决策日志 (s,a,r,s′)。响应自带
    **`validation.reward`**（本步 ΔΦ，舍入 4 位）与 **`biz`**——直接读数，不从日志做减法（#226 ① 四件：prior/biz/actions/validation）。
@@ -37,11 +37,10 @@ clean_session_start(file_path, card=<DomainCard>, max_steps=15)   # 唯一主通
      `finding_id`）——非空时校验 ⊆ 当前 findings，幻觉 id 免费失败；行级算子
      （drop_duplicate 等）/逃生舱可传空；
    - **`reason`**（必填非空）：本步决策理由——每步可审计；
-   - no-op 否决：不动 df 的提交被拒——保留不动 df 的处置走 `clean_finish` 的
-     keep 声明。
+   - no-op 否决：不动 df 的提交被拒——保留不动 df 的处置走 `finish_cleaning` 的 keep 声明。
 3. 读 s′ 决策：
    - reward > 0、缺陷减 → 继续 ①；
-   - reward < 0 / 引入新缺陷 / 误判 → `clean_rollback(session_id, to_version)`（版本树回退，
+   - reward < 0 / 引入新缺陷 / 误判 → `rollback_cleaning(sid, to_version)`（版本树回退，
      决策日志保留；预算不回补；响应 reward = 恢复 ΔΦ）；
    - 缺陷清单清空 / 预算耗尽 / 连续多步 reward≈0（平台期）→ 先 preview 再决定收局
      （停止没有引擎提示——收局时机由你从观测判断）。
@@ -62,6 +61,8 @@ clean_session_start(file_path, card=<DomainCard>, max_steps=15)   # 唯一主通
 | suspected_composite_id（疑似组合键） | 确认后 `drop_cols` 整组出特征 | join 语义保留原列，finish 时 keep 声明 |
 | prior_conflict（先验与数据矛盾） | 处置收敛为 **keep**——finish 时带理由声明（cite card.source 权威度；manual 源建议复核先验） | — |
 | range_violation（物理越界） | `range_clip`(ranges=卡 expected_ranges) | `drop_outside`(cols, lo, hi) 删越界行 |
+| value_violation（离散合法值违例，#235） | 违例值改写走 `python`(source=脚本)（确认的正确值）或 `cast_cols` 收敛 | 未知正确值 = 停下报告用户，勿臆改；确认不可修 → 收局 `keeps` 声明 |
+| invariant_violation（跨列不变式违例，#235） | 读 evidence 行号样本定位，`python`(source=脚本) 按业务规则修正 | 无自动修复算子——业务规则不明 = 报告用户裁定 |
 
 **先疑记法，后判离群**：range_violation / outlier_numeric 成批命中（非零星几个）时，
 先怀疑**记法混录**——同列两种记法差 10^k 倍（小数 vs 百分数、g vs kg、mm vs m），
@@ -75,7 +76,7 @@ clean_session_start(file_path, card=<DomainCard>, max_steps=15)   # 唯一主通
   判定为真实离群 → 回上表处置；暂不裁定 → 收局 `keeps` 声明附理由。
 
 观测常驻 `routing_hints`（defect_type → 推荐算子清单，提示非约束）；残留缺陷可
-带理由 keep 声明收局（`clean_finish` 的 `keeps`，不动 df、不吃步数）。
+带理由 keep 声明收局（`finish_cleaning` 的 `keeps`，不动 df、不吃步数）。
 
 **反模式**：对目标列填充/截断（守卫拒——行删除允许）；一步删掉大量行（保留率下限拒）；
 reward ≤ 0 后同方向加码；只追 Φ 忽略可学性（见收局的 skill 警戒线）。
@@ -83,7 +84,7 @@ reward ≤ 0 后同方向加码；只追 Φ 忽略可学性（见收局的 skill
 ## 收局
 
 ```
-clean_finish(session_id, keeps=<可选 keep 声明>, min_quality=<可选 θ 门>, preview=<可选只读探针>)
+finish_cleaning(sid, keeps=<可选 keep 声明>, min_quality=<可选 θ 门>, preview=<可选只读探针>)
 ```
 
 - `keeps = [{finding_id, reason}]`：残留缺陷的保留理由（逐条声明——收局审计面
@@ -105,7 +106,7 @@ clean_finish(session_id, keeps=<可选 keep 声明>, min_quality=<可选 θ 门>
 ## 弃局
 
 ```
-clean_abandon(session_id, reason=<可选，落盘供审计>)
+abandon_cleaning(sid, reason=<可选，落盘供审计>)
 ```
 
 - 用户中止清洗 / 改卡重开新 episode 前，显式终局旧会话——**不留僵尸**；
@@ -114,11 +115,14 @@ clean_abandon(session_id, reason=<可选，落盘供审计>)
 ## 纪律
 
 - **生命周期纪律**：要么 finish 要么 abandon——回合结束必居其一，不留僵尸；
-- **续局**：上下文死亡/新实例接手 = 拿 `session_id` 直接 `clean_observe(session_id)`
+- **续局**：上下文死亡/新实例接手 = 拿 `sid` 直接 `observe_cleaning(sid)`
   （幂等只读：响应自带 card/预算/步数/缺陷清单，无需额外查询）；
 - **预算观感**：max_steps 是硬预算，rollback 不回补——好钢用在 reward 最大的动作上；
 - 收局后 decision_log 是全程审计面（可重放）；
-- 你不做检测（观测免费自带）、不越词表（clean 目录外的动作会被拒）、不改 DomainCard。
+- **先验更新缝**（⑧）：会话中收获新认知（如确认某列合法值集/新不变式）走
+  `observe_cleaning(sid, prior_updates={...})`——agent 主动传参、合并校验后写盘，
+  检测 memo 随先验自动失效；不改的动作面参数（apply 参数由你翻译，机器零注入）；
+- 你不做检测（观测免费自带）、不越词表（`actions` 外的动作会被拒）、动作面不改先验。
 
 ## 参考
 
