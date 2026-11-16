@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### BREAKING：POMDP 会话基座重构·driver 切片（#226 裁定集①—④+⑥⑧ → 拆票 #234）
+
+`driver/pomdp.py` + `driver/session.py` 基座重写，两域（data/model）构造点随形状
+适配（实体化/typed Prior/工具动词化随拆票 #235/#236）：
+
+- **Observation 四件**（#226 ①）：`o.prior / o.biz / o.actions / o.validation`
+  嵌套子模型，每层 extra=forbid——`state_digest` 更名 `biz`（域自定形状不变）、
+  `recent_decisions` 并入 `o.validation`（决策证据面一件收口，只收引擎事实：
+  steps/max_steps/reward/finished/abandoned/recent_decisions）、`session_id` 出观测
+  （sid 是寻址不是观测内容）；`cumulative_reward` 缓收（⑥ 补 r 留重建门）
+- **生命周期 load_or_start + sid 绝对路径**（#226 ②）：Handle `start` →
+  `load_or_start(sid=None, *args) -> (sid, o)`——给 sid 加载、不给新建；sid = 会话
+  目录**绝对路径**（相对路径 fail-loud，#207 锚定后歧义）；sid+域尾巴开局入参同传
+  = 参数来源冲突 fail-loud（续局带新认知 = 旧产物 data 路径 + 新 prior 开新局）。
+  两域 `start_session` 适配：`sid` 首参 + 返回 `(sid, o)` 二联；MCP 会话开局工具
+  响应改**二联信封 `{sid, observation}`**（工具动词化改名随 #235/#236）
+- **步数记账单源化**（#226 ②）：壳按 counts_step 谓词在 apply commit 缝计步——
+  域内手动 `o.steps += 1` / `m["steps"]` 镜像双份退役
+- **observe 计算语义**（#226 ③）：对观测业务目标计算内存 o 并**更新磁盘 o**
+  ——「只读」指对真态只读（写的是观测派生面：biz 投影/prior 更新⑧/memo），零转移
+  边界维持（决策日志零追加、不吃步、盘上真态工件不动）；终态旗恒盘读（body 内
+  清旗不复活终局）
+- **盘上 memo 机制**（#226 ③）：`memo.json` 随会话目录锚定，open/load_or_start
+  随磁盘 o 一起水化、写穿原子（清洗域 `_REPORT_MEMO`/`_PROFILE_MEMO` 模块级内存
+  dict 的机制载体——域侧迁移随 #235）
+- **o_actions 词表投影钩子**（#226 ④）：`actions_projector` 与 counts_step 谓词
+  同构居所，写点刷新纯词清单（不带吃步标记——防 π 策略性作弊）；两域今日均不
+  投影（net-new）
+- **decision log 补 r**（#226 ⑥）：apply/rollback 的 commit 点壳从
+  `o.validation.reward` stamp 进记录（域先置 r 再 append）——(s,a,r,s′) 叙事
+  在日志层可重建，累计连事后重建自此可能
+- **先验生命周期契约**（#226 ⑧）：`observe(sid, *args)` 更新先验（协议面签名）；
+  动作面（apply/rollback）先验冻结牙齿在壳（原观测写缝冻结随 observe 更新缝
+  合法化迁移）；观测/执行二分纪律入 AGENTS.md 红线 10
+- 契约测试随重写（test_pomdp.py / test_pomdp_session.py 七键+双旗旧形状测试全数
+  改写为四件+新机制面）
+
 ### 贝叶斯优化推荐子系统（BO）落地（#171 决策图 → #175/#177/#178/#179/#180/#181/#182/#183/#184/#206/#210，feat·BREAKING）
 
 bo 域包 `mflowy-bo` 落地——**agent 工具工作流，非 POMDP 会话**（#177）：状态载体

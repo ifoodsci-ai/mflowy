@@ -182,9 +182,10 @@ def test_active_docs_use_pomdp_not_mdp():
 
 
 def test_domain_sessions_implement_handle_protocol():
-    """#89 结构等价钉测：两域会话函数组满足 POMDPSessionHandle 协议形状——
-    具名核心（start/observe/apply/rollback/finish/abandon，#117 换血）齐备、apply 的
-    sid/action 具名、响应类型 = 契约模型（活参考从 docstring 升级为被测事实）。"""
+    """#89 结构等价钉测（#226 ②随基座更新）：两域会话函数组满足 POMDPSessionHandle
+    协议形状——具名核心（load_or_start/observe/apply/rollback/finish/abandon）齐备、
+    load_or_start 的 sid 具名首参、apply 的 sid/action 具名、响应类型 = 契约模型
+    （活参考从 docstring 升级为被测事实；Handle 实体化 = #235/#236 ⑨）。"""
     import inspect
 
     from mflowy.data import cleaning_session as cs
@@ -196,7 +197,9 @@ def test_domain_sessions_implement_handle_protocol():
             fn = getattr(mod, fn_name, None)
             assert fn is not None, f"{mod.__name__} 缺 {fn_name}"
             params = list(inspect.signature(fn).parameters)
-            if op in ("apply",):
+            if op in ("load_or_start",):
+                assert params[0] == "sid", (mod.__name__, fn_name, params)
+            elif op in ("apply",):
                 assert params[:2] == ["session_id", "node"], (mod.__name__, fn_name, params)
             elif op in ("observe", "rollback", "finish", "abandon"):
                 assert params[0] == "session_id", (mod.__name__, fn_name, params)
@@ -204,7 +207,7 @@ def test_domain_sessions_implement_handle_protocol():
     _shape(
         cs,
         {
-            "start": "start_session",
+            "load_or_start": "start_session",
             "observe": "observe_session",
             "apply": "apply_action",
             "rollback": "rollback",
@@ -215,7 +218,7 @@ def test_domain_sessions_implement_handle_protocol():
     _shape(
         ms,
         {
-            "start": "start_session",
+            "load_or_start": "start_session",
             "observe": "observe_session",
             "apply": "apply_action",
             "rollback": "rollback",
@@ -225,12 +228,12 @@ def test_domain_sessions_implement_handle_protocol():
     )
 
     # 响应注解 = 契约模型（六操作面向 π 的三类返回面）
-    assert inspect.signature(cs.start_session).return_annotation.split("[")[0].endswith("Observation")
+    assert "Observation" in inspect.signature(cs.start_session).return_annotation  # (sid, o) 二联（#226 ②）
     assert inspect.signature(ms.apply_action).return_annotation.split("[")[0].endswith("Observation")
     assert "FinishVerdict" in inspect.signature(cs.finish_session).return_annotation  # 域尾巴 dict = preview 探针
     assert inspect.signature(ms.finish_session).return_annotation.split("[")[0].endswith("FinishVerdict")
-    # 协议面自检：六操作齐备（防 Handle 面漂移）
-    for op in ("start", "observe", "apply", "rollback", "finish", "abandon"):
+    # 协议面自检：六操作齐备（防 Handle 面漂移；start→load_or_start 随 #226 ②）
+    for op in ("load_or_start", "observe", "apply", "rollback", "finish", "abandon"):
         assert hasattr(POMDPSessionHandle, op), op
     assert inspect.signature(cs.observe_session).return_annotation.split("[")[0].endswith("Observation")
     assert inspect.signature(ms.observe_session).return_annotation.split("[")[0].endswith("Observation")

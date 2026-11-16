@@ -58,16 +58,15 @@ def _predict_df(run_id: str, data: str) -> pd.DataFrame:
 
 def _run_hpo_regression(csv: str) -> str:
     """回归最小搜索链 → session_id（两用例共用的前置段）。"""
-    s = ms.start_session(
-        csv,
-        "cv: 3",
+    sid, s = ms.start_session(
+        file_path=csv,
+        cv_card="cv: 3",
         card={"domain": "t", "target": "target"},
         task="regression",
         metric="mae",
         candidates=[{"family": "RF", "baseline": True}],
         max_steps=6,
     )
-    sid = s.session_id
     ms.apply_action(sid, "select_model", {"family": "RF"})
     ms.apply_action(sid, "run_hpo", {"n_trials": 2})
     return sid
@@ -136,16 +135,15 @@ class TestClassificationZeroChange:
         p = tmp_path / "cls.csv"
         pd.DataFrame({"x": x, "target": (x > 0).astype(int)}).to_csv(p, index=False)
 
-        s = ms.start_session(
-            str(p),
-            "cv: 3",
+        sid, s = ms.start_session(
+            file_path=str(p),
+            cv_card="cv: 3",
             card={"domain": "t", "target": "target"},
             task="classification",
             metric="f1",
             candidates=[{"family": "RF", "baseline": True}],
             max_steps=6,
         )
-        sid = s.session_id
         ms.apply_action(sid, "select_model", {"family": "RF"})
         ms.apply_action(sid, "run_hpo", {"n_trials": 2})
 

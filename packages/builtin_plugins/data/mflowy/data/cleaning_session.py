@@ -1,23 +1,23 @@
 """清洗 POMDP 会话（转移语义层，#89 会话基座上壳）：环境面的转移/观测/奖励/预算。
 
-壳（终态/预算门、决策日志 append-only、观测投影、prior 冻结、统一写序）住
-driver.POMDPSession——本模块只填转移语义：动作面分发（单步流编译执行
+壳（终态/预算门、决策日志 append-only、观测投影、单源计步、动作面 prior 冻结、
+统一写序）住 driver.POMDPSession——本模块只填转移语义：动作面分发（单步流编译执行
 Conf→Builder→DAG.run，#89 ②片——apply 与导出计划同构）、检测证据（算进
-state_digest——s′ 免费自带，
+o.biz——s′ 免费自带，
 检测算子是观测通道不是动作）、终局 U + θ 验收门、计划导出（Conf → flow_to_yaml
 单源序列化——apply 与导出同构，Builder 可全量重放）。选项面不设菜单（#113）：
 π 读观测 + clean 词表（平台工具 list_nodes/get_node_info 投影）自构动作。
 
 盘上（会话目录）：
-- observation.json / decision.log —— 壳两件（见 driver.session）
+- observation.json / decision.log / memo.json —— 壳三件（见 driver.session）
 - v{n}.parquet —— 版本工件；分配 = 决策日志派生 max+1，永不复用已 commit 版本
   （弃分支工件盘上永存——审计面）
 - plan.yaml —— 收局交付物（幂等重入确定性重建）
 
-决策日志 = 单记录版本树：v0 元数据住 state_digest["v0"]；每次 apply 一条
+决策日志 = 单记录版本树：v0 元数据住 o.biz["v0"]；每次 apply 一条
 {step, clean_op, intent, finding_ids, reason, params, s, s_next, quality_before/after,
-diff, v, file, artifact_sha256}（#113/#117——clean_op 执行名 + intent 派生 + 溯源/理由）；
-rollback/finish/abandon 是记录不是删行——截断在接口层不存在。
+diff, v, file, artifact_sha256, r}（#113/#117——clean_op 执行名 + intent 派生 + 溯源/理由；
+#226 ⑥ r 由壳 stamp）；rollback/finish/abandon 是记录不是删行——截断在接口层不存在。
 
 守卫：动作必须出自 clean 词表；never_drop 列（目标/受保护/时间，#112——ID 不在其列）存活；目标列
 值禁改（行删除允许）；问卷保留率下限（动作过激即拒——失败免费，试探走「提交 →
@@ -71,7 +71,8 @@ def _root() -> Path:
 
 
 def _open(session_id: str) -> POMDPSession:
-    return POMDPSession.open(_root() / session_id)
+    """按 sid（会话目录绝对路径，#226 ②）重水化——相对路径由壳 fail-loud。"""
+    return POMDPSession.open(session_id)
 
 
 def never_drop(card: Mapping[str, Any] | None) -> list[str]:
@@ -337,14 +338,12 @@ def _freeze_card(df: pd.DataFrame, card: dict) -> dict:
 # ── 观测/记录的域形状 ────────────────────────────────────────────────────────
 
 
-def _refresh_state_digest(
-    o: Observation, report: ErrorReport, quality: dict, *, v: int, df: pd.DataFrame, file: str
-) -> None:
-    """检测证据写进 state_digest（s′ 免费自带的落点，#89 ③片富化面）：
-    problems 问题投影 + columns 列画像 + current_file 当前版本工件——π 的全部
-    决策证据（π 纯消费观测，零 df 接触；apply 可选新鲜度引用源 = current_file）。"""
-    o.state_digest = {
-        **o.state_digest,
+def _refresh_biz(o: Observation, report: ErrorReport, quality: dict, *, v: int, df: pd.DataFrame, file: str) -> None:
+    """检测证据写进 o.biz（s′ 免费自带的落点，#89 ③片富化面；#226 ① state_digest
+    → biz 更名）：problems 问题投影 + columns 列画像 + current_file 当前版本工件——
+    π 的全部决策证据（π 纯消费观测，零 df 接触；apply 可选新鲜度引用源 = current_file）。"""
+    o.biz = {
+        **o.biz,
         "v": v,
         "digest": _digest(report),
         "defects": report.counts(),  # defect×count 派生快读键（事实源 = problems）
@@ -359,8 +358,8 @@ def _refresh_state_digest(
 
 
 def _current_file(o: Observation) -> str:
-    """当前版本工件名（v0 元数据随开局落 state_digest；apply 侧 v{n}.parquet）。"""
-    return o.state_digest["v0"]["file"] if o.state_digest["v"] == 0 else f"v{o.state_digest['v']}.parquet"
+    """当前版本工件名（v0 元数据随开局落 o.biz；apply 侧 v{n}.parquet）。"""
+    return o.biz["v0"]["file"] if o.biz["v"] == 0 else f"v{o.biz['v']}.parquet"
 
 
 def _versions(o: Observation, log) -> list[int]:
@@ -371,14 +370,35 @@ def _versions(o: Observation, log) -> list[int]:
 # ── 六操作（POMDPSessionHandle 活参考：模块级薄门面，只填转移语义） ─────────
 
 
-def start_session(file_path: str, card: dict | None = None, max_steps: int = 15) -> Observation:
-    """开局清洗会话（card 必填，唯一主通道直进动作面）：v0 快照 + 初始错误清单 + 质量分。
+def start_session(
+    sid: str | None = None,
+    file_path: str | None = None,
+    card: dict | None = None,
+    max_steps: int | None = None,
+) -> tuple[str, Observation]:
+    """开局/续载清洗会话（#226 ② 形状适配——工具动词化改名随 #235）：sid 给定 =
+    加载既有会话（此时任何域尾巴开局入参（file_path/card/max_steps）同传 = 参数
+    来源冲突 fail-loud；续局带新认知 = 旧会话产物 data 路径 + 新卡**开新局**）；
+    sid 缺省 = card 必填新开（问卷经剧本层 warm-up/dive-in 产出卡后开局，预算
+    缺省 15）。返回 (sid, o)——sid = 会话目录绝对路径（Handle 寻址面）。
 
-    问卷经剧本层（warm-up/dive-in）产出卡后开局——无卡开局随 P0 相位机退役；
-    episode = (数据, 冻结卡, 预算)，改卡 = 新 episode（prior 冻结牙齿在壳）。
+    episode = (数据, 冻结卡, 预算)——prior 动作面冻结（⑧牙齿在壳，更新走 observe）。
     """
+    if sid is not None:
+        conflicts = {"file_path": file_path, "card": card, "max_steps": max_steps}
+        given = sorted(k for k, v in conflicts.items() if v is not None)
+        if given:
+            raise ValueError(
+                f"参数来源冲突：sid（加载既有会话）与开局入参 {given} 不可同传——"
+                "续局带新认知 = 以旧会话产物数据路径 + 新卡开新局"
+            )
+        ss = POMDPSession.load_or_start(sid=sid)
+        return ss.sid, ss.observation
     if not card:
         raise ValueError("card 必填——问卷在剧本层完成（warm-up/dive-in），引擎不再提供无卡开局")
+    if not file_path:
+        raise ValueError("file_path 必填——新开局的原始数据源")
+    max_steps = 15 if max_steps is None else max_steps
     df = pd.read_parquet(file_path) if file_path.endswith(".parquet") else pd.read_csv(file_path)
     card = _freeze_card(df, card)
     report = _detect_all(df, card)
@@ -388,7 +408,7 @@ def start_session(file_path: str, card: dict | None = None, max_steps: int = 15)
     with ss.start_ctx(max_steps=max_steps, prior=card) as o:
         v0 = ss.dir / "v0.parquet"  # 工件先行（开局 commit = 观测落盘）
         df.reset_index(drop=True).to_parquet(v0, index=False)
-        o.state_digest = {
+        o.biz = {
             "source_file": str(file_path),
             "v0": {
                 "file": "v0.parquet",
@@ -397,8 +417,8 @@ def start_session(file_path: str, card: dict | None = None, max_steps: int = 15)
                 "artifact_sha256": sha256_of(v0),  # 工件溯源（版本内容地址单键；行指纹仅作 memo 键）
             },
         }
-        _refresh_state_digest(o, report, quality, v=0, df=df, file=str(v0))
-    return o
+        _refresh_biz(o, report, quality, v=0, df=df, file=str(v0))
+    return ss.sid, o
 
 
 def _session_experiment(session_id: str) -> str:
@@ -501,7 +521,7 @@ def apply_action(
     ss = _open(session_id)
     with ss.apply_ctx(node) as (o, log):
         if finding_ids:
-            known = {p["finding_id"] for p in o.state_digest.get("problems") or ()}
+            known = {p["finding_id"] for p in o.biz.get("problems") or ()}
             ghosts = sorted(set(finding_ids) - known)
             if ghosts:
                 raise ValueError(
@@ -542,6 +562,8 @@ def apply_action(
                     f"列保留率 {cr:.2f} < 问卷下限 {card['min_col_retention']}——动作过激被拒（回滚选择温和档位）"
                 )
 
+        # ⑥ 补 r：先置回合奖励再 append——壳在 commit 点 stamp 进记录（(s,a,r,s′) 可重建）
+        o.validation.reward = round(quality["score"] - before_quality["score"], 4)
         log.append(
             {
                 "step": len(log) + 1,
@@ -561,9 +583,7 @@ def apply_action(
                 "run_id": run_id,  # 执行血缘（单步流 DAG 的 clean 节点 run——mlflow 可溯）
             }
         )
-        o.steps += 1
-        o.reward = round(quality["score"] - before_quality["score"], 4)
-        _refresh_state_digest(o, report, quality, v=version, df=out, file=str(ss.dir / fname))
+        _refresh_biz(o, report, quality, v=version, df=out, file=str(ss.dir / fname))
     return o
 
 
@@ -578,23 +598,24 @@ def rollback(session_id: str, to_version: int) -> Observation:
         versions = _versions(o, log)
         if to_version not in versions:
             raise ValueError(f"版本 {to_version} 不存在（可用: {versions}）")
-        fname = o.state_digest["v0"]["file"] if to_version == 0 else f"v{to_version}.parquet"
-        pre_score = o.state_digest["quality"]["score"]
+        fname = o.biz["v0"]["file"] if to_version == 0 else f"v{to_version}.parquet"
+        pre_score = o.biz["quality"]["score"]
         df = pd.read_parquet(ss.dir / fname)
         report = _detect_all(df, o.prior)  # memo 命中——重访状态免费
         quality = _quality_score(report, card=o.prior)
+        o.validation.reward = round(quality["score"] - pre_score, 4)  # ⑥ 补 r：先置再 append
         log.append(
             {"action": "rollback", "to_v": to_version, "quality_before": pre_score, "quality_after": quality["score"]}
         )
-        o.reward = round(quality["score"] - pre_score, 4)
-        _refresh_state_digest(o, report, quality, v=to_version, df=df, file=str(ss.dir / fname))
+        _refresh_biz(o, report, quality, v=to_version, df=df, file=str(ss.dir / fname))
     return o
 
 
 def observe_session(session_id: str) -> Observation:
-    """观测（#117 取代 propose）：幂等只读零转移——回最近一次转移落盘的观测投影
-    （state_digest 由每次转移刷新：缺陷清单/质量分/列画像/当前版本）。续局/
-    re-orientation 锚点；终态会话照常可观测（finished/abandoned 旗即收局事实）。
+    """观测（#117 取代 propose，#226 ③ 计算语义）：对真态只读、观测派生面写盘、
+    零转移——回最近一次转移落盘的观测投影（o.biz 由每次转移刷新：缺陷清单/
+    质量分/列画像/当前版本）。续局/re-orientation 锚点；终态会话照常可观测
+    （validation 终态旗即收局事实）。
     """
     with _open(session_id).observe_ctx() as o:
         return o
@@ -621,19 +642,15 @@ def _plan_yaml(o: Observation, log) -> str:
             cur = r["v"]
         elif r.get("action") == "rollback":
             cur = r["to_v"]
-    if cur != o.state_digest["v"]:
+    if cur != o.biz["v"]:
         raise ValueError(  # 指针重放守卫（红线 1）：未知指针移动记录类型 = 拒绝静默导出失真计划
-            f"决策日志指针重放脱节（重放终 {cur} ≠ 当前指针 v{o.state_digest['v']}）"
+            f"决策日志指针重放脱节（重放终 {cur} ≠ 当前指针 v{o.biz['v']}）"
             "——存在未知的指针移动记录类型，计划导出拒绝静默失真"
         )
-    path = paths[o.state_digest["v"]]  # 与 final_path 同源寻址（_current_file 读同一指针）
+    path = paths[o.biz["v"]]  # 与 final_path 同源寻址（_current_file 读同一指针）
     flow: list[dict] = [
         # 计划头部补数据源——无 load 节点的 clean 片段参数边无上游供数，Builder 拦截
-        {
-            "load__file": NodeConf(
-                node_key="load__file", name="导入原始数据", params={"file_path": o.state_digest["source_file"]}
-            )
-        }
+        {"load__file": NodeConf(node_key="load__file", name="导入原始数据", params={"file_path": o.biz["source_file"]})}
     ]
     flow += [
         {
@@ -689,10 +706,10 @@ def finish_session(
     """
     ss = _open(session_id)
     o = ss.observation
-    if o.abandoned:
+    if o.validation.abandoned:
         raise RuntimeError("会话已弃局：不可收局（弃局不可复活，改卡重开走新会话）")
     if keeps:
-        known = {p["finding_id"] for p in o.state_digest.get("problems") or ()}
+        known = {p["finding_id"] for p in o.biz.get("problems") or ()}
         ghosts = sorted({k["finding_id"] for k in keeps} - known)
         if ghosts:
             raise ValueError(f"keep 声明引用不存在的 finding：{ghosts}（当前 problems 才可声明 keep）")
@@ -734,9 +751,9 @@ def finish_session(
     with ss.finish_ctx() as (fo, log):
         plan_yaml = _plan_yaml(fo, log)
         write_text_atomic(str(ss.dir / "plan.yaml"), plan_yaml)  # 交付物工件先行（原子，红线 3）
-        if not fo.finished:
-            fo.finished = True
-            fo.reward = 0.0 if fo.reward is None else fo.reward
+        if not fo.validation.finished:
+            fo.validation.finished = True
+            fo.validation.reward = 0.0 if fo.validation.reward is None else fo.validation.reward
             log.append({"action": "finish", "quality": quality["score"]})
     return FinishVerdict(
         accepted=True,

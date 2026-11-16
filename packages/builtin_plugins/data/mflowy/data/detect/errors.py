@@ -133,7 +133,7 @@ class Finding:
         return f"{self.defect_type.value}::{anchor}"
 
     def as_dict(self) -> dict[str, Any]:
-        """六字段全量投影（state_digest.problems 透传形态）：定位键互斥投影。"""
+        """六字段全量投影（o.biz.problems 透传形态）：定位键互斥投影。"""
         out: dict[str, Any] = {
             "finding_id": self.finding_id,
             "defect_type": self.defect_type.value,
@@ -166,7 +166,7 @@ class ErrorReport:
             object.__setattr__(f, "_finding_id", f.structural_key if n == 1 else f"{f.structural_key}#{n}")
 
     def counts(self) -> dict[str, int]:
-        """按缺陷类型分组的计数（state_digest.defects 派生快读键）。"""
+        """按缺陷类型分组的计数（o.biz.defects 派生快读键）。"""
         out: dict[str, int] = {}
         for e in self.errors:
             out[e.defect_type.value] = out.get(e.defect_type.value, 0) + 1

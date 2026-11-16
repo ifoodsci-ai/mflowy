@@ -38,8 +38,8 @@ class TestAnchorChain:
         """①锚定时会话落 <task_dir>/clean_sessions（目录自动物化）。"""
         token = pin_task_dir(str(tmp_path))
         try:
-            s = cs.start_session(_csv(tmp_path), card=CARD, max_steps=3)
-            assert (tmp_path / "clean_sessions" / s.session_id / "observation.json").is_file()
+            sid, s = cs.start_session(file_path=_csv(tmp_path), card=CARD, max_steps=3)
+            assert (tmp_path / "clean_sessions" / sid / "observation.json").is_file()
         finally:
             reset_task_dir(token)
 
@@ -47,23 +47,25 @@ class TestAnchorChain:
         """②无锚（直接 import）落 ~/.mflowy/clean_sessions——旧缺省路径逐字相同。"""
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         assert cs._root() == tmp_path / ".mflowy" / "clean_sessions"
-        s = cs.start_session(_csv(tmp_path), card=CARD, max_steps=3)  # 端到端钉
-        assert (tmp_path / ".mflowy" / "clean_sessions" / s.session_id / "observation.json").is_file()
+        sid, s = cs.start_session(file_path=_csv(tmp_path), card=CARD, max_steps=3)  # 端到端钉
+        assert (tmp_path / ".mflowy" / "clean_sessions" / sid / "observation.json").is_file()
 
     def test_old_session_reachable_by_absolute_path(self, tmp_path, no_anchor):
-        """③旧会话绝对路径直开仍可达；session_id 寻址限当前锚定语境（换锚即 miss）。"""
+        """③旧会话绝对路径直开跨锚仍可达（#226 ②：绝对 sid 寻址有意锚无关）；
+        不存在的绝对 sid fail-loud（零回退查找）。"""
         token = pin_task_dir(str(tmp_path))
         try:
-            s = cs.start_session(_csv(tmp_path), card=CARD, max_steps=3)
+            sid, s = cs.start_session(file_path=_csv(tmp_path), card=CARD, max_steps=3)
         finally:
             reset_task_dir(token)
 
         from mflowy.driver.session import POMDPSession
 
-        ss = POMDPSession.open(tmp_path / "clean_sessions" / s.session_id)
-        assert ss.id == s.session_id
+        ss = POMDPSession.open(tmp_path / "clean_sessions" / sid)
+        assert ss.id == Path(sid).name  # sid 绝对路径（②），壳 id = 目录名
+        cs._open(sid)  # 换锚后按绝对 sid 仍可达（新开局才受当前锚定语境约束）
         with pytest.raises(FileNotFoundError):
-            cs._open(s.session_id)  # 无锚 → ~/.mflowy 下无此 sid（零回退查找）
+            cs._open(str(tmp_path / "clean_sessions" / "cs_nope"))  # 不存在的绝对 sid——零回退
 
     def test_env_override_retired(self, tmp_path, monkeypatch, no_anchor):
         """env MFLOWY_CLEAN_SESSIONS 已退役（#207 BREAKING）——设值不再生效。"""
