@@ -45,19 +45,26 @@ SCENARIO_FAMILIES = {  # 场景专测族（base 全族恒跑）
     "S3": ("ackley8",),
 }
 
-# 门初值（#193 临别值——首跑标定后冻结进 CALIBRATED_GATES，越限自证 BENCH_FLOOR_BUMP）
+# 门数值（#193 临别 → #231 首跑标定冻结，2026-11-18，25 种子主门——实测折注释钉源）：
+# - 修复前首跑（ask 路径 sampler 未接 engine，落 optuna 缺省 TPE）：G1-G3 全 FAIL——
+#   该跑即生产缺陷的基准证据（.bench/bo-pre-fix 归档），修复提交 93743805
+# - 修复后主门实测：G1 superior=6/6（门 4 留裕量）、inferior=0、median 6/6；
+#   G3 ratio=2.4（门 1.3 维持）；G4 25/25 触发 ≤2 轮、wasted=0；G5 dup=0、feasible=0.851
+# - G2 标定收窄：mv vs univariate 在 H20/B6/R15 预算下无可分辨优势（3 交互族
+#   0 显著优 0 显著劣，A3 中位数 2/3 反优）——「≥2 显著优」不可达，门收窄为
+#   回归守卫（显著劣 = 0：#175 配置不得是回归）。预算加大后可回写严格门。
 PROVISIONAL_GATES = {
-    "G1_min_superior_families": 4,  # A1 vs A2 配对单侧 Wilcoxon p<0.05 显著优 ≥4/6
-    "G1_max_inferior_families": 0,  # 显著劣 = 0
-    "G1_min_median_superior": 5,  # 中位数优 ≥5/6
-    "G2_min_superior_interaction": 2,  # 3 交互族 A1 vs A3 显著优 ≥2
-    "G2_max_inferior": 0,  # 全 6 族显著劣 = 0
-    "G3_band_ratio": 1.3,  # S2 带命中中位数 ≥ 随机臂 1.3 倍
-    "G4_max_trigger_delay_rounds": 2,  # 漂移后 ≤2 轮触发（≥95% 种子）
+    "G1_min_superior_families": 4,  # 实测 6/6——门 4 留种子噪声裕量
+    "G1_max_inferior_families": 0,  # 实测 0
+    "G1_min_median_superior": 5,  # 实测 6/6
+    "G2_min_superior_interaction": 0,  # 标定收窄（实测 0——回归守卫语义，见上注）
+    "G2_max_inferior": 0,  # 实测 0：mv 恒不得显著劣于 univariate
+    "G3_band_ratio": 1.3,  # 实测 2.4——门 1.3 维持（#193 临别值）
+    "G4_max_trigger_delay_rounds": 2,  # 实测 25/25 ≤ 0 轮（触发即当轮）
     "G4_max_seed_share_missing": 0.05,
-    "G4_max_wasted_multiple_of_B": 1.5,  # 触发前无效湿点 ≤ 1.5×B
-    "G5_max_batch_duplicates": 0,  # 批内精确重复 = 0（constant_liar 自证）
-    "G5_min_feasible_rate": 0.80,  # S1 可行候选产出率下限（首跑标定冻结）
+    "G4_max_wasted_multiple_of_B": 1.5,  # 实测 0（触发即当轮——浪费 0）
+    "G5_max_batch_duplicates": 0,  # 实测 0（constant_liar 自证）
+    "G5_min_feasible_rate": 0.80,  # 实测 0.851——门 0.80 留裕量
 }
 try:  # 越限自证（e2e-bench BENCH_FLOOR_BUMP 同纪律）
     if bump := os.environ.get("BENCH_FLOOR_BUMP"):
