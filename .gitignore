@@ -45,3 +45,4 @@ examples/2026-10-11-challenge-02-errors-integrity*
 
 # ===== Git worktrees（agent 工作树检出，父仓规则不覆盖子模块）=====
 .worktrees/
+.bench/

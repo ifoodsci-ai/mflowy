@@ -1,4 +1,4 @@
-.PHONY: install build build-whl test test-cov typecheck lint fmt precommit clean help e2e-info e2e-statistic e2e-mcp e2e-bench e2e-remote e2e-remote-tools e2e ui
+.PHONY: install build build-whl test test-cov typecheck lint fmt precommit clean help e2e-info e2e-statistic e2e-mcp e2e-bench bo-bench e2e-remote e2e-remote-tools e2e ui
 
 # 默认目标
 help:
@@ -19,6 +19,7 @@ help:
 	@echo "  make clean            清理临时文件"
 	@echo "  make e2e              三入口分发冒烟（CLI/stdio 真实进程 + diabetes 全链，发布前人肉跑）"
 	@echo "  make e2e-bench        六基准冒烟门（iris/digits/titanic + 工业三链 + 分类会话链 + 应用面三工具，判据含指标下限）"
+	@echo "  make bo-bench         BO 推荐质量合成基准门（6 族×场景×臂×25 种子，G1–G5——#193/#231，人肉门）"
 	@echo "  make e2e-remote       S0/S1 平台契约回归（remote 系列 PR 门禁，需本地 k3s dev 集群）"
 	@echo "  make e2e-remote-tools  S2+ 工具面门禁（MCP stdio 通道，需已登录 + k3s 集群）"
 	@echo "  make ui [P=]          启动 MLflow UI 查看实验记录"
@@ -188,3 +189,10 @@ clean:
 	find . -type d -name .ruff_cache -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name mlflow.db -delete
 	find . -type d -name .mlruns -exec rm -rf {} + 2>/dev/null || true
+
+
+# bo-bench（#193/#231）：BO 推荐质量合成基准门——人肉门（发布前跑，不进 CI）。
+# 主门 25 种子全矩阵 ≈1h 串行；开发环：make bo-bench SEEDS=8
+# 门数值标定：首跑（研究分支 findings 归档）；optuna bump 必重跑（#193 维护纪律）。
+bo-bench:
+	uv run python scripts/_bo_bench.py --seeds $$(echo ${SEEDS:-25}) --out .bench/bo

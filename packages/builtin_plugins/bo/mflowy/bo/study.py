@@ -191,15 +191,30 @@ def assert_min_history(n: int) -> None:
         )
 
 
+SAMPLER_KINDS = ("tpe", "random", "tpe_univariate")
+"""引擎采样器词表：生产恒 ``tpe``（#175 单引擎裁定）；``random``/``tpe_univariate``
+仅 bo-bench 对比臂经 engine attr 显式换装（#193/#231——A2 随机基线 / A3 交互
+裁判臂），走同一 ask/prune/diversity/tell 真实工具面，零平行循环。"""
+
+
 def build_sampler(engine: dict[str, Any], n_existing_trials: int) -> Any:
     """TPE 单引擎（multivariate+constant_liar 显式开）；seed + 现存 trial 数派生
-    （见模块 docstring——确定性 + 不重放启动随机流）。"""
+    （见模块 docstring——确定性 + 不重放启动随机流）。bench 臂：engine["sampler"]
+    ∈ SAMPLER_KINDS 换装（random = A2 基线；tpe_univariate = A3 交互裁判臂）。"""
+    kind = engine.get("sampler", "tpe")
+    if kind not in SAMPLER_KINDS:
+        raise ValueError(f"engine.sampler 须为 {'/'.join(SAMPLER_KINDS)}——收到 {kind!r}")
+    seed = engine["seed"] + n_existing_trials
+    if kind == "random":
+        from optuna.samplers import RandomSampler
+
+        return RandomSampler(seed=seed)
     from optuna.samplers import TPESampler
 
     return TPESampler(
-        multivariate=engine["multivariate"],
+        multivariate=engine["multivariate"] if kind == "tpe" else False,
         constant_liar=engine["constant_liar"],
-        seed=engine["seed"] + n_existing_trials,
+        seed=seed,
     )
 
 
