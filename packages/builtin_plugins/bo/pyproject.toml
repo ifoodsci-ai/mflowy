@@ -8,6 +8,8 @@ requires-python = ">=3.12"
 # bo 居 model 之后（#175 Q2：utils ← driver ← data ← model ← bo ← mcp——search_input
 # 血统 + ModelLoader 引用合法）；零 extra 面（#184：bo 无独占依赖栈，不设 mflowy[bo]）
 dependencies = [
+    "scikit-learn>=1.5",  # #231：bench f_pre 代理（原经 model 传递——红线 6 显式声明）
+    "scipy>=1.14",  # #231：bench 函数族构造期优化 + 配对 Wilcoxon（同上）
     "mflowy-model",
     "mflowy-driver",  # search_input @node/log_search_input 直用 driver（import 即声明，红线 6）
     "mflowy-utils",

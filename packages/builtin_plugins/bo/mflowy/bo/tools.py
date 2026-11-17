@@ -43,9 +43,14 @@ from .types import SpaceDim
 
 
 def _open_with_dims(study_db: str) -> tuple[Any, dict[str, SpaceDim], Path]:
-    """开 study + 空间组（attrs 单源）+ db 路径。"""
+    """开 study + 空间组（attrs 单源）+ db 路径 + **engine sampler**。
+
+    sampler 必挂（#231 基准 G1 失败实测修复）：engine attr 声明 tpe(mv+cl) 而
+    open_study 缺省不挂时，ask 落 optuna 缺省 TPE（univariate/无 liar）——
+    #175「显式开」裁定在推荐路径从未生效。prune/tell 面不用 sampler，挂之无害。"""
     path = Path(study_db)
     st = _study.open_study(path, dims=None)
+    st.sampler = _study.build_sampler(st.user_attrs[_study.ATTR_ENGINE], len(st.get_trials(deepcopy=False)))
     dims = _study.parse_search_space(st.user_attrs[_study.ATTR_SPACE])
     return st, dims, path
 

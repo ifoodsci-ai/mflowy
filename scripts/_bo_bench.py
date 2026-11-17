@@ -1,8 +1,15 @@
 """bo-bench 矩阵 runner（#193 题 3 通过门 → 执行票 #231）：6 族 × 场景 × 臂 × 种子。
 
+口径注记（#193 裁定的实现偏差——首跑标定时记录）：
+- S2 带窗：裁定原文「1e6 网格钉定带内最优」→ 实现为 LHS 400 样本 2%/10% 分位带
+  （近最优窄带语义等价，网格钉定留门数值标定吸收）
+- G2「全 6 族显著劣 = 0」：A3 臂仅 3 交互族（#193 裁定自裁剪）→ 口径收窄为
+  「3 交互族显著劣 = 0」（gates.json detail 如实记录受测族集）
+- m2 regret：报告期由 final_best/known_optimum 后算（runs 记录面零冗余）
+
 人肉门（发布前跑，仿 e2e-bench 纪律——不进 CI）：
 
-    uv run python scripts/_bo_bench.py --seeds 25 --out .bench/bo        # 主门全矩阵
+    uv run python scripts/_bo_bench.py --seeds 25 --out .bench/bo        # 主门全矩阵（≈1.5h 串行）
     uv run python scripts/_bo_bench.py --seeds 8 --families rosenbrock4  # 开发环
 
 产出（``--out`` 目录）：
@@ -25,6 +32,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -53,7 +61,11 @@ PROVISIONAL_GATES = {
 }
 try:  # 越限自证（e2e-bench BENCH_FLOOR_BUMP 同纪律）
     if bump := os.environ.get("BENCH_FLOOR_BUMP"):
-        PROVISIONAL_GATES.update(json.loads(bump))
+        override = json.loads(bump)
+        unknown = sorted(set(override) - set(PROVISIONAL_GATES))
+        if unknown:  # 红线 1：拼错门名静默 no-op = fail-loud 面
+            raise SystemExit(f"BENCH_FLOOR_BUMP 未知门键 {unknown}（可用: {sorted(PROVISIONAL_GATES)}）")
+        PROVISIONAL_GATES.update(override)
 except json.JSONDecodeError as e:  # pragma: no cover
     raise SystemExit(f"BENCH_FLOOR_BUMP 须为 JSON dict——{e}") from e
 
@@ -147,10 +159,17 @@ def plot_trajectories(runs: dict, out: Path, seeds: int) -> None:
         fig.tight_layout()
         fig.savefig(out / f"traj_{family}_{scenario}_{arm}.png", dpi=150)
         plt.close(fig)
+        fig2, ax2 = plt.subplots(figsize=(4, 4))
+        ax2.boxplot([t[-1] for t in trajs], showfliers=True)
+        ax2.set_ylabel("末值（逐种子散布）")
+        ax2.set_title(f"{family}/{scenario}/{arm}")
+        fig2.tight_layout()
+        fig2.savefig(out / f"box_{family}_{scenario}_{arm}.png", dpi=150)
+        plt.close(fig2)
 
 
 def evaluate_gates(runs: dict, seeds: int) -> dict:
-    from mflowy.bo.bench import FAMILIES
+    from mflowy.bo.bench import BATCH_B, FAMILIES
 
     base_families = [f for f in FAMILIES if (f, "base", "A1", 1) in runs]
     g1: dict[str, Any] = {"superior": [], "inferior": [], "median_superior": 0}
@@ -227,12 +246,15 @@ def evaluate_gates(runs: dict, seeds: int) -> dict:
             "detail": g4,
             "pass": g4 is not None
             and g4["within_2_rounds_share"] >= 1 - PROVISIONAL_GATES["G4_max_seed_share_missing"]
-            and g4["wasted_median"] <= PROVISIONAL_GATES["G4_max_wasted_multiple_of_B"] * 6,
+            and g4["wasted_median"]
+            <= PROVISIONAL_GATES["G4_max_wasted_multiple_of_B"] * BATCH_B,  # 单源 = harness 协议常量
         },
         "G5": {
             "detail": g5,
             "pass": dups <= PROVISIONAL_GATES["G5_max_batch_duplicates"]
-            and g5.get("feasible_rate_median", 1.0) >= PROVISIONAL_GATES["G5_min_feasible_rate"],
+            and "feasible_rate_median" in g5
+            and g5["feasible_rate_median"]
+            >= PROVISIONAL_GATES["G5_min_feasible_rate"],  # S1 数据缺席 = fail（红线 1：不静默按满分过门）
         },
     }
     return verdict

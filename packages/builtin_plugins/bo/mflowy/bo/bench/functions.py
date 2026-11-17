@@ -4,7 +4,7 @@
 + 混合空间自建 2 族（类别变形 Hartmann / 变性悬崖——OptunaHub 无混合套件故自建，
 分类变量 per-category 位移/缩放 = categorical BO 文献通行 morphed base function）。
 全部已知最优解析可算（逐类最优取 max）；场景 overlay（S1 贴边/S2 带窗/S3 漂移）
-住 ``scenarios.py``——函数族零场景知识。
+住 ``harness.Scenario``——函数族零场景知识。
 """
 
 from __future__ import annotations
@@ -31,7 +31,6 @@ _H6_P = 1e-4 * np.array(
         [4047, 8828, 8732, 5743, 1091, 381],
     ]
 )
-HARTMANN6D_OPT = -3.3223676579307764  # 已知全局最优（文献标准值）
 
 
 def _hartmann6(x: np.ndarray) -> float:
@@ -39,7 +38,8 @@ def _hartmann6(x: np.ndarray) -> float:
     return float(-(s - 2.5) / 1.94 + 1.0)  # 仿 bayesmark 归一：最优 ≈ 0 量级
 
 
-def _denorm(params: dict, names: tuple[str, ...], lo: float = 0.0, hi: float = 1.0) -> np.ndarray:
+def _vec(params: dict, names: tuple[str, ...]) -> np.ndarray:
+    """参数字典 → 有序数值向量（连续维取值面）。"""
     return np.array([float(params[n]) for n in names])
 
 
@@ -70,7 +70,7 @@ class Rosenbrock4(Family):
     }
 
     def true_f(self, params):
-        x = _denorm(params, tuple(self.dims))
+        x = _vec(params, tuple(self.dims))
         return float(np.sum(100.0 * (x[1:] - x[:-1] ** 2) ** 2 + (1 - x[:-1]) ** 2))
 
 
@@ -93,7 +93,7 @@ class Hartmann6(Family):
         )
 
     def true_f(self, params):
-        return _hartmann6(_denorm(params, tuple(self.dims)))
+        return _hartmann6(_vec(params, tuple(self.dims)))
 
 
 class Ackley8(Family):
@@ -107,7 +107,7 @@ class Ackley8(Family):
     dims = {f"x{i}": {"kind": "continuous", "low": -32.768, "high": 32.768} for i in range(1, 9)}  # noqa: RUF012 —— 族常量字典（构造期冻结）
 
     def true_f(self, params):
-        x = _denorm(params, tuple(self.dims))
+        x = _vec(params, tuple(self.dims))
         return float(-20 * np.exp(-0.2 * np.sqrt(np.mean(x**2))) - np.exp(np.mean(np.cos(2 * np.pi * x))) + 20 + np.e)
 
 
@@ -128,7 +128,7 @@ class QuadraticCross6(Family):
         self.mu = rng.uniform(-2.0, 2.0, size=6)  # 峰在域内
 
     def true_f(self, params):
-        z = _denorm(params, tuple(self.dims)) - self.mu
+        z = _vec(params, tuple(self.dims)) - self.mu
         return float(z @ self.A @ z)
 
 
@@ -171,7 +171,7 @@ class MorphedHartmann(Family):
         self.known_optimum = min(self.class_optima.values())
 
     def true_f(self, params):
-        x = _denorm(params, tuple(k for k in self.dims if k != "variant"))
+        x = _vec(params, tuple(k for k in self.dims if k != "variant"))
         xc = np.clip(x + self.offsets[params["variant"]], 0.0, 1.0)
         return float(self.scales[params["variant"]] * _hartmann6(xc))
 

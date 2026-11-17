@@ -4,6 +4,8 @@
 冒烟预算：单臂 3 轮（≈10s）；全矩阵标定归 scripts/_bo_bench.py 人肉门，不进 make test。
 """
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 from mflowy.bo.bench import FAMILIES, SurrogateFPre, run_bench_arm
@@ -61,6 +63,43 @@ class TestFPre:
         fp = SurrogateFPre().fit(__import__("pandas").DataFrame(rows), y)
         point, width = fp.predict(rows[0])  # 含字符串类别——不抛即编码面成立
         assert np.isfinite(point) and width > 0
+
+
+class TestAskPathSampler:
+    def test_ask_path_honors_engine(self, tmp_path, monkeypatch):
+        """#231 修复钉测：ask 路径 sampler = engine 声明（#175 mv+cl 显式开真生效——
+        基准 G1 失败抓出的生产缺陷：attr 挂了、sampler 没接，落 optuna 缺省 TPE）。"""
+        import pandas as pd
+        from mflowy.bo import study as bo_study
+        from mflowy.bo import tools as bo_tools
+        from mflowy.bo.bench.functions import FAMILIES
+        from mflowy.bo.bench.harness import _lhs_sample
+
+        fam = FAMILIES["hartmann6"]
+        rows = _lhs_sample(fam.dims, 20, seed=1)
+        df = pd.DataFrame(rows)
+        df["y"] = [fam.true_f(r) for r in rows]
+        hist = tmp_path / "w.parquet"
+        df.to_parquet(hist)
+        init = bo_tools.bo_load_or_init(
+            study_name="sampler-pin",
+            model_run_id="x",
+            data=str(hist),
+            target_column="y",
+            direction="minimize",
+            search_space=fam.dims,
+        )
+        st, _, _ = bo_tools._open_with_dims(init["study_db"])
+        assert st.sampler._multivariate is True and st.sampler._constant_liar is True  # type: ignore[attr-defined]
+        # bench 臂换装（engine.sampler=random）同面生效
+        st2 = bo_study.open_study(Path(init["study_db"]))
+        engine = dict(st2.user_attrs[bo_study.ATTR_ENGINE])
+        engine["sampler"] = "random"
+        st2.set_user_attr(bo_study.ATTR_ENGINE, engine)
+        st3, _, _ = bo_tools._open_with_dims(init["study_db"])
+        from optuna.samplers import RandomSampler
+
+        assert isinstance(st3.sampler, RandomSampler)
 
 
 class TestSamplerKinds:
