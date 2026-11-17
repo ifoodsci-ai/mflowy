@@ -525,3 +525,32 @@ overrides:
 ## 12. 一句话总结
 
 **PILOT-AI4S（先验继承闭环优化测试系统）** 由 **Clean（POMDP 缺陷检测–清洗算子循环）、Model（主 agent + 每模型 HPO agent 嵌套 POMDP）、BO（Optuna + 预测模型虚拟代理）** 三个独立 agent 会话子系统构成；每个子系统以“继承与先验讨论建档”为第一步；湿实验作为外部环境更新结果 CSV，由**学习门禁**判断：预测≈真实且累计量达标则继续/收敛，差距过大则继承先验回到 Clean，形成可追溯、可复现、随闭环增厚的 AI4S 设计–构建–测试–学习循环。
+
+
+## bo-bench（BO 推荐质量合成基准，#193/#231）
+
+**人肉门**（发布前跑，不进 CI；optuna bump 必重跑——维护纪律）：
+
+```bash
+make bo-bench                 # 主门：6 族 × 场景 × 臂 × 25 种子（≈1.5h 串行）
+make bo-bench SEEDS=8         # 开发环
+```
+
+- **函数族 6**（`mflowy/bo/bench/functions.py`，全 numpy 自实现）：经典连续 4
+  （Rosenbrock 4D / Hartmann 6D / Ackley 8D / 受控交叉二次型 6D）+ 混合自建 2
+  （类别变形 Hartmann / 变性悬崖——OptunaHub 无混合套件）；已知最优解析可算
+- **场景 overlay**（`harness.py`）：S1 规则贴边（硬约束最优贴边——可行产出率）/
+  S2 带窗（match + 近最优窄带——带命中）/ S3 漂移（第 8 轮真值换形——负向触发
+  时延 + 湿预算浪费）
+- **f_pre 替身**（`fpre.py`）：sklearn GBR + OOF 残差分位恒宽区间（与真实 predict
+  契约同构；混合空间 one-hot 编码居替身）
+- **真实工具面**（#193 单源红线）：harness 消费 bo_load_or_init/bo_ask/bo_prune/
+  bo_diversity_check/bo_tell；对比臂经 `engine.sampler` 换装（study.SAMPLER_KINDS：
+  A1 tpe(mv+cl) 生产臂 / A2 random 基线 / A3 tpe_univariate 交互裁判臂——零平行循环）
+- **协议**：H20 warm-up / B6 批 / k5 过采样 / R15 轮 / 25 种子配对 Wilcoxon；
+  共同随机数跨臂共用 warm-up
+- **门 G1–G5**（`scripts/_bo_bench.py`）：vs 随机 / multivariate 验收 / 带命中 /
+  漂移时延 / 批语义——初值临别（#193），首跑标定冻结（`PROVISIONAL_GATES`），
+  越限自证 `BENCH_FLOOR_BUMP='{"G3_band_ratio": 1.2}'`
+- **产出**：`runs/*.json` 每臂度量（m1–m7）+ `traj_*.png` 收敛轨迹（种子中位数 +
+  IQR 带，#82 防护③ 收敛证据形态）+ `report.md`/`gates.json`
