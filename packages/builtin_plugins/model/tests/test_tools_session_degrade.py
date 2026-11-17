@@ -34,12 +34,14 @@ def test_session_degrade_hint(monkeypatch):
 
 
 def test_session_tool_face_degrades(monkeypatch):
-    """工具面（modeling_observe）同降级：提示先于会话 ID 校验到达调用方。"""
+    """工具面（observe_modeling，#236 动词化）同降级：提示先于会话 ID 校验到达调用方。"""
     _no_local_stack(monkeypatch)
     with pytest.raises(RuntimeError, match=r"mflowy\[local\]"):
-        tools.modeling_observe(session_id="never-touched")
+        tools.observe_modeling(session_id="never-touched")
 
 
 def test_session_warm_path_passthrough():
-    """全栈环境暖路径：_session 直返会话模块（零改写零包装）。"""
-    assert tools._session().__name__ == "mflowy.model.session"
+    """全栈环境暖路径：_session 直返会话实体（#236 ⑨——零改写零包装）。"""
+    from mflowy.model.session import ModelingSession
+
+    assert isinstance(tools._session(), ModelingSession)

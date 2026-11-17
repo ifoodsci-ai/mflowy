@@ -18,7 +18,12 @@ class TestEvidenceTable:
         y_true = _frame({"target": [1.0, 2.0, 3.0]})
         y_pred = _frame({"target": [1.5, 1.0, 3.6]})
         ev = oof_evidence_table(y_true, y_pred, None, TASKTYPE.REGRESSION)
-        assert list(ev.columns) == ["y_target", "y_pred_target", "error_target"]
+        assert list(ev.columns) == [
+            "indices",
+            "y_target",
+            "y_pred_target",
+            "error_target",
+        ]  # #236：indices 稳定行身份列
         np.testing.assert_allclose(ev["y_target"], [1.0, 2.0, 3.0])
         np.testing.assert_allclose(ev["y_pred_target"], [1.5, 1.0, 3.6])
         np.testing.assert_allclose(ev["error_target"], [-0.5, 1.0, -0.6])
@@ -29,7 +34,14 @@ class TestEvidenceTable:
         y_pred = _frame({"label": ["a", "b", "b"]})
         y_proba = np.array([[0.9, 0.1], [0.2, 0.8], [0.4, 0.6]])
         ev = oof_evidence_table(y_true, y_pred, y_proba, TASKTYPE.CLASSIFICATION)
-        assert list(ev.columns) == ["y_label", "y_pred_label", "error_label", "y_proba_a", "y_proba_b"]
+        assert list(ev.columns) == [
+            "indices",
+            "y_label",
+            "y_pred_label",
+            "error_label",
+            "y_proba_a",
+            "y_proba_b",
+        ]  # #236：indices 列
         assert ev["error_label"].tolist() == [0, 0, 1]
         np.testing.assert_allclose(ev["y_proba_a"], [0.9, 0.2, 0.4])
         np.testing.assert_allclose(ev["y_proba_b"], [0.1, 0.8, 0.6])

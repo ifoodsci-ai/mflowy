@@ -1,6 +1,6 @@
 ---
 name: model
-description: 建模训练 POMDP 回合操作手册(mflowy)。开局产物就绪后开始建模回合，或建模会话进行中(收到 session_id)时使用。配合 mflowy MCP 工具 modeling_session_start / modeling_observe / modeling_apply(action) / modeling_rollback / modeling_report_findings / modeling_finish / modeling_abandon 驱动回合循环——动作空间 = 八动作面（配置编辑 + 计算动作），环境面在引擎，π(策略)是你。会话恒单目标任务——多目标在会话外三层循环（多目标→多模型→单目标任务会话，每目标各开一会话）。前置:model-brief skill 已产出开局入参（cv_card = cv.split 配置 yaml 明文 + 显式协议参数，含 research-review 结构化候选）。
+description: 建模训练 POMDP 回合操作手册(mflowy)。开局产物就绪后开始建模回合，或建模会话进行中(收到 session_id)时使用。配合 mflowy MCP 工具 load_or_start_modeling / observe_modeling / apply_modeling(action) / rollback_modeling / report_findings_modeling / finish_modeling / abandon_modeling 驱动回合循环——动作空间 = 九动作面（配置编辑 + 计算动作 + 判读落诊），环境面在引擎，π(策略)是你。判读归你：统计证据经 modeling_statistics 取回（#226 ⑥ 规则判读退役），经 report_findings 落账。会话恒单目标任务——多目标在会话外三层循环（多目标→多模型→单目标任务会话，每目标各开一会话）。前置:model-brief skill 已产出开局入参（cv_card = cv.split 配置 yaml 明文 + 显式协议参数，含 research-review 结构化候选）。
 disable-model-invocation: true
 ---
 
@@ -14,8 +14,8 @@ disable-model-invocation: true
 ## 开局
 
 ```
-modeling_session_start(final_path, cv_card=<cv.split 配置 yaml 明文>,
-                        target=, task=, metric=, candidates=, max_steps=, id_columns=)   # 唯一主通道：显式参数 > card(DomainCard) 背景分层缺省
+load_or_start_modeling(sid=None, file_path, cv_card=<cv.split 配置 yaml 明文>,
+                        target=, task=, metric=, candidates=, max_steps=, id_columns=)   # 唯一主通道：显式参数 > card 背景；返回 {sid, observation} 二联信封
 ```
 
 - 协议由 **model-brief skill**（含 research-review 结构化候选）产出——candidates =
@@ -23,7 +23,7 @@ modeling_session_start(final_path, cv_card=<cv.split 配置 yaml 明文>,
   你回合内可覆盖——卡是先验不是边界）；start 即 D 物化冻结 + 单一预算起算；换协议 =
   新 episode（弃局重开）。
 
-## 回合：八动作面（`modeling_apply(action, params)`）
+## 回合：九动作面（`apply_modeling(sid, action, params)`）
 
 配置编辑（零步费零奖励，只改光标，生效于下一次 run_hpo；**单表 H**：同一参数
 唯一槽位——pin 覆盖空间或反向都是显式 last-write-wins，决策日志记前后值）：
@@ -35,27 +35,35 @@ modeling_session_start(final_path, cv_card=<cv.split 配置 yaml 明文>,
 计算动作（吃步；预算 = 实验数）：
 1. `run_hpo{n_trials}`——**search-only**：sqlite study 增量续跑（空间收窄/pin/加深
    继续，seed/scoring 变重开）；每 trial inner CV → u_inner/std；结束在 θ* 上出 OOF
-   预测 + 图集 + findings（diagnose 四算子：error_concentrated/slice_collapse/
-   fold_std/complexity_edge）；响应 `validation.reward` = **Δu_inner**（相对该键上次最优；#226 ① 四件观测）。
+   预测工件（带 indices 列 + 源数据指纹）；响应 `validation.reward` = **Δu_inner**
+   （相对该键上次最优；#226 ① 四件观测）。机器判读已退役（#226 ⑥）——统计证据
+   走独立工具 `modeling_statistics`（见下）。
 2. `final_train_test`——**先搜后店**：终训走 modeling 工具（JobProvider DAG）——
    交付的恒是**搜索时刻证据配置**（快照 ∪ θ*，搜后改 pin 不生效）→ 终训/终评/
    X_test·y_test·y_pred 副产物/plan 一体（交付的 plan_yaml 就是那次终训本身）→ holdout
    终评恰一次 → **combo 冻结**（同键不可再搜索）；reward = 0（终局效用 u 只进 verdict 面）。
 
-**读观测，自构动作**——引擎不出菜单：`modeling_observe(session_id)`（幂等只读）回
-决策面——`findings`（**只投影本 combo 键**，证据不跨 FE 组合；规则 findings 与你落诊
-的 LLM findings 均匀聚合）、`combo_key`、`models` 账本摘要（θ*/u_inner/冻结旗）、
-`has_cat`、`face`（各候选族超参面：动态维可收窄、静态常量可 pin）。
+**读观测，自构动作**——引擎不出菜单：`observe_modeling(sid)` 回决策面——`findings`
+（**只投影本 combo 键**，你落诊的判读——单源，机器规则判读已退役）、`combo_key`、
+`models` 账本摘要（θ*/u_inner/冻结旗）、`has_cat`、`face`（各候选族超参面）。
+
+**判读回路**（#226 ⑥——统计证据 → 你的推理 → 落账 → 决策）：
+
+```
+run_hpo 收账（board/observe——纯查询）
+  → modeling_statistics(sid, key)：统计证据表 + 图集（run 寻址；OOF/holdout 同构）
+  → 你推理（读证据表/图，判 overfit/underfit/fold-std/误差集中/切片塌陷…）
+  → report_findings_modeling(sid, key, findings)：结构化落账（o_biz，observe 可见）
+  → 据此决策下一步动作
+```
 
 决策指南（起点不是边界）：
 - **推进序**：baseline 候选先跑（定参照系）→ 未跑候选 `select_model` + `run_hpo`
   首搜（n_trials=10）→ 已搜 combo `final_train_test` 交付（holdout 恰一次）；
-- **findings → 动作**：`fold_std`（折间不稳）→ `run_hpo` 加深（n_trials ≈ max(8,
-  3×上次)）；过拟合族（`overfit_train_val_gap`/`overfit_val_loss_rise`/`drift`/
-  `complexity_edge`）→ 族正则参数 `set_hp_space` 收窄到上半区（静态面则 `set_hp` pin）；
-  欠拟合族（`underfit_high_close`/`underfit_loss_plateau`）→ `select_FE` 换档加信号 +
-  正则放宽到下半区；`error_concentrated` → `select_FE` 换编码/缩放重跑；
-  `slice_collapse` → 族有 `scale_pos_weight` 时 `set_hp` 提少数类权重（如 2.0）；
+- **证据 → 动作**（你的判读，机器只出证据）：折间不稳（fold_std 证据大）→
+  `run_hpo` 加深（n_trials ≈ max(8, 3×上次)）；train/val gap 大（过拟合证据）→
+  正则参数 `set_hp_space` 收窄上半区；两者同低（欠拟合）→ `select_FE` 换档加信号 +
+  正则放宽；误差集中/切片塌陷（证据表分组读数）→ 换编码/缩放重跑或提少数类权重；
 - **收局**：预算将尽 / board 平台期 / 交付面已足 → 走收局剧本（停止没有引擎提示）。
 
 **预算即决策**：只有计算动作吃步——配置编辑自由试错；好钢（run_hpo 深度）用在 board
@@ -63,17 +71,19 @@ modeling_session_start(final_path, cv_card=<cv.split 配置 yaml 明文>,
 
 ## 控制面
 
-- `modeling_rollback`：回退**光标**到上一快照（预算不回补；账本与盘上 study 永不
-  回退——append-only 审计面）；
-- `modeling_report_findings(key, findings)`：人读诊断落账本（kind ⊆ 词表、severity
-  ∈ [0,1]；决策日志审计）——规则算子覆盖不了的判断走这里；
+- `rollback_modeling(sid)`：回退**光标**到上一快照（预算不回补；账本与盘上 study
+  永不回退——append-only 审计面）；
+- `report_findings_modeling(sid, key, findings)`：你的判读落账（九动作面词表内——
+  `apply_modeling(sid, "report_findings", …)` 的薄别名；kind ⊆ 词表、severity ∈
+  [0,1]；决策日志审计）——**单源**：机器只出统计证据（modeling_statistics），
+  判断归你（#226 ⑥）；
 - **收局剧本固定序**（素材两工具 → 撰写 → 收编 → 交付）：
   1. `draw_taylor_diagram(session_id, run_ids)`：多终训 run 副产物画泰勒图（误差结构
      对比——终局排名的证据面；各模型 y_test 不一致会拒绝出图）；
   2. `modeling_report_skeleton(session_id)`：报告素材样板——表格数字从账本渲染
      （u_inner/θ*/u/rank 抄文件非默写）+ 图片清单（OOF 图集/终训副产物/泰勒图路径）
      + 叙事槽（「为什么是这个模型」）——宿主多模态读图后撰写终局报告；
-  3. `modeling_finish(session_id, pdf=...)`：**单动作收局**——引擎收编你的报告文件进
+  3. `finish_modeling(sid, pdf=...)`：**单动作收局**——引擎收编你的报告文件进
      deliverables（原子落盘；不编译不验内容——数字权威面是 verdict/board，报告是给
      人看的）+ verdict（u/findings/rank_consistency）；**pdf 必须在报告就绪后
      调用**（文件缺失 fail-loud）；重入 = 幂等重导出（交付报告不可变更——重写须弃局
@@ -81,15 +91,15 @@ modeling_session_start(final_path, cv_card=<cv.split 配置 yaml 明文>,
   4. **交付幕**（收编后、对话内完成——消费方 = 对话内的你与人；交付地址是当次裁量，
      不是引擎事实）：
      - **问址**：问用户交付地址（目录或路径，每人每局不同；用户不需要交付即止步）；
-     - **整理交付物**：把报告 pdf（modeling_finish 收编进 deliverables 的产物）与
+     - **整理交付物**：把报告 pdf（finish_modeling 收编进 deliverables 的产物）与
        泰勒图（taylor_diagram.png）等会话工件复制/整理到该地址——路径以
-       modeling_finish / draw_taylor_diagram 响应与 deliverables 清单为准；交付物
+       finish_modeling / draw_taylor_diagram 响应与 deliverables 清单为准；交付物
        已逃逸会话目录，会话本体仍是可按龄清理的工作态（sessions_gc 语义不动）；
      - **现写交付清单**：在该地址落一页清单（交付物逐件绝对路径 + verdict 摘要：
-       终训 run_id / findings / rank / 各模型 u）——素材 = modeling_finish 响应里的
+       终训 run_id / findings / rank / 各模型 u）——素材 = finish_modeling 响应里的
        verdict，**现写**而非依赖额外落盘机制；下游（含 #78 回流交棒）按清单顺藤
        摸瓜寻址。
-- `modeling_abandon(reason=...)`：用户中止/改协议重开前显式终局（不留僵尸）。
+- `abandon_modeling(sid, reason=...)`：用户中止/改协议重开前显式终局（不留僵尸）。
 
 ## 纪律
 

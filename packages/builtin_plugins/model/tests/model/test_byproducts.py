@@ -100,7 +100,7 @@ def test_training_behavior_writes_holdout_byproducts(xy):
 
     X_test, y_test, y_pred = _read("X_test.parquet"), _read("y_test.parquet"), _read("y_pred.parquet")
     assert list(X_test.columns) == list(ts.X_test.columns) and len(X_test) == len(ts.X_test)  # 解释输入面原样取回
-    assert list(y_pred.columns) == list(ts.y_test.columns)  # 行位对齐（三者同长）
+    assert list(y_pred.columns) == ["indices", *list(ts.y_test.columns)]  # #236：indices 首列（稳定行身份）+ 行位对齐
     assert len(X_test) == len(y_test) == len(y_pred)
     assert len(y_test) == len(ts.y_test)
     assert loader.holdout and loader.holdout["u"] is not None  # DAGResult 回读面

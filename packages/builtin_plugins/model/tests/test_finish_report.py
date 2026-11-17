@@ -20,8 +20,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-from mflowy.model import session as ms
-from mflowy.model.tools import draw_taylor_diagram, modeling_finish, modeling_report_skeleton
+from mflowy.model.session import ModelingSession
+from mflowy.model.tools import draw_taylor_diagram, finish_modeling, modeling_report_skeleton
+from mflowy.utils.mlflow import run_artifacts
 
 _K = "RF|passthrough|passthrough"
 _K2 = "XGB|passthrough|passthrough"
@@ -91,7 +92,7 @@ CV_CARD = "cv: 3"
 
 
 def _start(root, csv, fams=("RF",)):
-    return ms.start_session(
+    return ModelingSession().load_or_start(
         file_path=csv,
         cv_card=CV_CARD,
         card=CARD,
@@ -130,10 +131,10 @@ def _build_delivered(root, csv):
     """双模型终态会话：RF + XGB 各搜一次并 final_train_test（4 条管线）。"""
     sid, s = _start(root, csv, fams=("RF", "XGB"))
     for fam, params in (("RF", {"n_estimators": 15}), ("XGB", {"n_estimators": 15})):
-        ms.apply_action(sid, "select_model", {"family": fam})
-        ms.apply_action(sid, "set_hp", params)  # 收敛 trial 成本
-        ms.apply_action(sid, "run_hpo", {"n_trials": 2})
-        ms.apply_action(sid, "final_train_test")
+        ModelingSession().apply(sid, "select_model", {"family": fam})
+        ModelingSession().apply(sid, "set_hp", params)  # 收敛 trial 成本
+        ModelingSession().apply(sid, "run_hpo", {"n_trials": 2})
+        ModelingSession().apply(sid, "final_train_test")
     return sid, s
 
 
@@ -155,10 +156,10 @@ def delivered_fresh(sessions_root, reg_csv, shared_tracking):
 def delivered_rf(sessions_root, reg_csv, shared_tracking):
     """独立单模型终态会话：工具面接缝用例（双模型非必要——降重建成本）。"""
     sid, s = _start(sessions_root, reg_csv)
-    ms.apply_action(sid, "select_model", {"family": "RF"})
-    ms.apply_action(sid, "set_hp", {"n_estimators": 15})
-    ms.apply_action(sid, "run_hpo", {"n_trials": 2})
-    ms.apply_action(sid, "final_train_test")
+    ModelingSession().apply(sid, "select_model", {"family": "RF"})
+    ModelingSession().apply(sid, "set_hp", {"n_estimators": 15})
+    ModelingSession().apply(sid, "run_hpo", {"n_trials": 2})
+    ModelingSession().apply(sid, "final_train_test")
     return sid, s
 
 
@@ -166,29 +167,19 @@ def delivered_rf(sessions_root, reg_csv, shared_tracking):
 
 
 def test_run_hpo_writes_oof_plot_album(sessions_root, reg_csv, shared_tracking):
-    """OOF 观察面工件挂父 run 工件树（#95 项4：log_figure/log_table 归位）——run_id 寻址，session 镜像目录移除。"""
-    from mflowy.utils.mlflow import download_run_artifact, run_artifacts
-
-    sid, s = _start(sessions_root, reg_csv)
-    ms.apply_action(sid, "select_model", {"family": "RF"})
-    ms.apply_action(sid, "set_hp", {"n_estimators": 15})
-    ms.apply_action(sid, "run_hpo", {"n_trials": 2})
+    """#236：图集随判读退役迁出 run_hpo——搜索只产证据工件（indices + 指纹 tag）；
+    图集经 modeling_statistics 产（test_statistics 契约面），本测钉搜索侧工件契约。"""
+    sid, s = ModelingSession().load_or_start(
+        file_path=reg_csv, cv_card=CV_CARD, card=CARD, task="regression", metric="mae", max_steps=8
+    )
+    ModelingSession().apply(sid, "select_model", {"family": "RF"})
+    ModelingSession().apply(sid, "set_hp", {"n_estimators": 15})
+    ModelingSession().apply(sid, "run_hpo", {"n_trials": 2})
     m = _manifest(sessions_root, sid)
     oof = m["models"][_K]["oof"]
     arts = set(run_artifacts(oof["run_id"]))  # 真源 = 父 run 工件树清单
-    assert any("prediction_scatter" in p for p in oof["plots"])  # 回归图集指向 OOF 源
-    assert oof["plots"] and set(oof["plots"]) <= arts  # manifest 面与 run 工件树一致
-    assert oof["y_pred"] == "oof_y_pred.parquet"  # 指针 = run 工件名（run_id 已在 oof 面）
-    assert oof["y_pred"] in arts
-    oof_df = pd.read_parquet(download_run_artifact(oof["run_id"], oof["y_pred"]))
-    assert len(oof_df) == 96  # 120 行 × 0.8 train（cv=3 → outer test_size 缺省 0.2）
-    import matplotlib.pyplot as plt
-
-    assert not plt.get_fignums()  # #92 图集落盘即闭图（闭图随 log_figure 缝继承）
-    assert not (sessions_root / sid / "runs").exists()  # #95 镜像目录退役——寻址统一走 run 工件树
-    study_name = m["models"][_K]["study"]  # #95 项5：study storage 随父 run 只读投影
-    assert study_name in arts
-    assert (sessions_root / sid / study_name).exists()  # session 盘上真源不变（账本 append-only）
+    assert oof["y_pred"] in arts  # OOF 证据工件（#236 起带 indices 列）
+    assert oof["plots"] == []  # 图集槽位留空——随 modeling_statistics 产（#226 ⑥）
 
 
 # ── draw_taylor_diagram（副产物 fan-in + 同一性断言） ───────────────────────
@@ -268,7 +259,7 @@ def test_report_skeleton_renders_from_ledger(delivered, sessions_root):
     images = {img["key"]: img for img in out["images"]}
     assert set(images) == {_K, _K2}
     for img in images.values():
-        assert img["oof_plots"] and img["holdout_byproducts"] == {
+        assert img["holdout_byproducts"] == {  # #236：oof_plots 空槽（图集随 modeling_statistics 产）
             "X_test": "X_test.parquet",
             "y_test": "y_test.parquet",
             "y_pred": "y_pred.parquet",
@@ -296,14 +287,14 @@ def test_finish_missing_pdf_fail_loud(delivered, tmp_path):
     sid_delivered, delivered = delivered
     """收局带不存在的报告路径 = fail-loud（素材面先经 draw_taylor/skeleton 两工具）。"""
     with pytest.raises(ValueError, match="报告文件不存在"):
-        ms.finish_session(sid_delivered, pdf=str(_pdf(tmp_path, "nope.pdf").with_name("absent.pdf")))
+        ModelingSession().finish(sid_delivered, pdf=str(_pdf(tmp_path, "nope.pdf").with_name("absent.pdf")))
 
 
 def test_finish_pdf_required(delivered):
     sid_delivered, delivered = delivered
     """BREAKING：pdf 必填——preview 分支退役（无 pdf 调用即 TypeError）。"""
     with pytest.raises(TypeError):
-        ms.finish_session(sid_delivered)  # type: ignore[reportCallIssue]  # 负例：pdf 必填（TypeError）
+        ModelingSession().finish(sid_delivered)  # type: ignore[reportCallIssue]  # 负例：pdf 必填（TypeError）
 
 
 def test_finish_pdf_adoption_and_verdict(delivered_fresh, sessions_root, tmp_path):
@@ -311,7 +302,7 @@ def test_finish_pdf_adoption_and_verdict(delivered_fresh, sessions_root, tmp_pat
     """真收局：收编 π 产报告（tmp/rename 落 deliverables、内容不验）+ verdict 落账。"""
     sid = sid_delivered_fresh
     pdf = _pdf(tmp_path)
-    v = ms.finish_session(sid, pdf=str(pdf))
+    v = ModelingSession().finish(sid, pdf=str(pdf))
     assert type(v.accepted) is bool and isinstance(v.deliverables, dict)  # #89 过渡地板
     assert v.accepted is True
     assert {k: v.deliverables[k]["terminal_utility"] for k in (_K, _K2)} == v.terminal_utility["u"]
@@ -324,12 +315,12 @@ def test_finish_pdf_adoption_and_verdict(delivered_fresh, sessions_root, tmp_pat
         a["action"] == "finish" and "final_report.pdf" in json.dumps(a, ensure_ascii=False) for a in m["decision_log"]
     )
 
-    again = ms.finish_session(sid, pdf=str(pdf))
+    again = ModelingSession().finish(sid, pdf=str(pdf))
     assert again.deliverables == v.deliverables  # 重入幂等
     rewrite = tmp_path / "rewrite.pdf"
     rewrite.write_bytes(b"%PDF-1.4 v2")
     with pytest.raises(ValueError, match="不可变更"):
-        ms.finish_session(sid, pdf=str(rewrite))  # 交付报告不可变更（审计面）
+        ModelingSession().finish(sid, pdf=str(rewrite))  # 交付报告不可变更（审计面）
 
 
 def test_modeling_finish_tool_face(delivered_rf, tmp_path):
@@ -337,7 +328,7 @@ def test_modeling_finish_tool_face(delivered_rf, tmp_path):
     """接缝（session→tools）：modeling_finish 的 pdf 透传可达（工具面=会话面）。"""
     sid = sid_delivered_rf
     pdf = _pdf(tmp_path)
-    v = modeling_finish(session_id=sid, pdf=str(pdf))  # 工具面 = model_dump 后的 dict
+    v = finish_modeling(session_id=sid, pdf=str(pdf))  # 工具面 = model_dump 后的 dict
     assert v["accepted"] is True and v["terminal_utility"]["report"]["file"].startswith("deliverables/")
 
 

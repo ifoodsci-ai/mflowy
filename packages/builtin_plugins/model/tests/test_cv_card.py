@@ -14,8 +14,8 @@ import json
 import numpy as np
 import pandas as pd
 import pytest
-from mflowy.model import session as ms
 from mflowy.model.protocol import CVCard
+from mflowy.model.session import ModelingSession
 
 
 @pytest.fixture(autouse=True)
@@ -63,7 +63,7 @@ CV_CARD = "cv: 3"
 
 
 def _start(root, csv, card=None, candidates=None):
-    return ms.start_session(
+    return ModelingSession().load_or_start(
         file_path=csv,
         cv_card=CV_CARD,
         card=card or {"domain": "t", "target": "target"},
@@ -110,7 +110,7 @@ def test_cv_card_default_candidates_first_is_baseline(reg_csv):
 
 def test_start_default_candidates_open_all_families(sessions_root, reg_csv):
     """开局不带 candidates（无 research-review 先验）走缺省全族开放面。"""
-    sid, s = ms.start_session(
+    sid, s = ModelingSession().load_or_start(
         file_path=reg_csv, cv_card=CV_CARD, card={"domain": "t", "target": "target"}, task="regression", metric="mae"
     )
     assert s.prior is not None
@@ -163,14 +163,14 @@ def test_start_takes_cv_card_and_stores_candidates(sessions_root, reg_csv):
 def test_start_rejects_dict_cv_card(sessions_root, reg_csv):
     """BREAKING：cv_card 收窄为 cv.split 配置 yaml 明文——dict 协议卡形态退役（校验门 fail-loud）。"""
     with pytest.raises((ValueError, TypeError)):
-        ms.start_session(
+        ModelingSession().load_or_start(
             None,
             file_path=reg_csv,
             cv_card={"cv": 3, "task": "regression"},  # type: ignore[reportArgumentType]  # 负例：dict 协议卡退役
             card={"domain": "t", "target": "target"},
         )
     with pytest.raises(TypeError):
-        ms.start_session(reg_csv, card={"domain": "t", "target": "target"}, protocol_card="cv: 3")  # type: ignore[reportCallIssue]  # 负例：旧名退役（TypeError）
+        ModelingSession().load_or_start(reg_csv, card={"domain": "t", "target": "target"}, protocol_card="cv: 3")  # type: ignore[reportCallIssue]  # 负例：旧名退役（TypeError）
 
 
 # ── hints 注入与 π 覆盖 ─────────────────────────────────────────────────────
@@ -179,7 +179,7 @@ def test_start_rejects_dict_cv_card(sessions_root, reg_csv):
 def test_hints_seed_cursor_on_select(sessions_root, reg_csv):
     """select_model 注入该候选的 hints（缺省 pins/narrowing）与 seed。"""
     sid, s = _start(sessions_root, reg_csv)
-    r = ms.apply_action(sid, "select_model", {"family": "XGB"})
+    r = ModelingSession().apply(sid, "select_model", {"family": "XGB"})
     assert r.biz["cursor"]["H"] == {"max_depth": {"kind": "continuous", "lo": 3, "hi": 6, "step": None}}
     assert r.biz["cursor"]["seed"] == 7
     board = json.loads((sessions_root / sid / "board.json").read_text(encoding="utf-8"))
@@ -189,10 +189,10 @@ def test_hints_seed_cursor_on_select(sessions_root, reg_csv):
 def test_pi_override_wins_over_hints(sessions_root, reg_csv):
     """卡是先验不是边界：π set_hp/set_hp_space/set_seed 覆盖 hint 缺省。"""
     sid, s = _start(sessions_root, reg_csv)
-    ms.apply_action(sid, "select_model", {"family": "XGB"})
-    r = ms.apply_action(sid, "set_hp_space", {"max_depth": [4, 5]})
+    ModelingSession().apply(sid, "select_model", {"family": "XGB"})
+    r = ModelingSession().apply(sid, "set_hp_space", {"max_depth": [4, 5]})
     assert r.biz["cursor"]["H"]["max_depth"] == {"kind": "continuous", "lo": 4, "hi": 5, "step": None}
-    r2 = ms.apply_action(sid, "set_seed", {"seed": 123})
+    r2 = ModelingSession().apply(sid, "set_seed", {"seed": 123})
     assert r2.biz["cursor"]["seed"] == 123
 
 
@@ -203,7 +203,7 @@ def test_scalar_hint_pins(sessions_root, reg_csv):
         reg_csv,
         candidates=[{"family": "RF", "baseline": True, "space_hints": {"n_estimators": 50}}],
     )
-    r = ms.apply_action(sid, "select_model", {"family": "RF"})
+    r = ModelingSession().apply(sid, "select_model", {"family": "RF"})
     assert r.biz["cursor"]["H"] == {"n_estimators": 50}
 
 
@@ -212,7 +212,7 @@ def test_scalar_hint_pins(sessions_root, reg_csv):
 
 def test_observe_exposes_baseline_flags(sessions_root, reg_csv):
     sid, s = _start(sessions_root, reg_csv)
-    o = ms.observe_session(sid)
+    o = ModelingSession().observe(sid)
     flags = {c["family"]: c["baseline"] for c in (o.prior or {}).get("candidates") or []}
     assert flags == {"RF": True, "XGB": False}
     assert set(o.biz["face"]) == {"RF", "XGB"}  # 候选族超参面全集可见
@@ -288,7 +288,7 @@ def test_external_baseline_str_retired_fail_loud(reg_csv):
 def test_start_external_baseline_frozen_into_protocol(sessions_root, reg_csv):
     """开局透传冻结：external_baseline 进 prior.protocol（渲染面等「波动主导差距」
     挂层毕业——现状纯存档）。"""
-    sid, s = ms.start_session(
+    sid, s = ModelingSession().load_or_start(
         file_path=reg_csv,
         cv_card=CV_CARD,
         card={"domain": "t", "target": "target"},

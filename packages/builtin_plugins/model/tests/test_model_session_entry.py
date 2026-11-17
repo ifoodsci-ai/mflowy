@@ -6,7 +6,7 @@ import json
 import numpy as np
 import pandas as pd
 import pytest
-from mflowy.model import session as ms
+from mflowy.model.session import ModelingSession
 
 
 @pytest.fixture
@@ -38,15 +38,17 @@ def _start(root, csv, cv_card=CV_CARD, **kw):
     kw.setdefault("task", "regression")
     kw.setdefault("candidates", [{"family": "RF", "baseline": True}])
     kw.setdefault("max_steps", 4)
-    return ms.start_session(file_path=csv, cv_card=cv_card, card=kw.pop("card", CARD), **kw)
+    return ModelingSession().load_or_start(file_path=csv, cv_card=cv_card, card=kw.pop("card", CARD), **kw)
 
 
 def test_start_requires_cv_card(sessions_root, reg_csv):
     """cv_card（split yaml 明文）必填——协议谈判在剧本层（model-brief）。"""
     with pytest.raises(ValueError, match="cv_card 必填"):
-        ms.start_session(None, card=CARD)  # 负例：新开缺 cv_card（#226 ② 后 cv_card 可缺省 = 加载态，新开必填门在域）
+        ModelingSession().load_or_start(
+            None, card=CARD
+        )  # 负例：新开缺 cv_card（#226 ② 后 cv_card 可缺省 = 加载态，新开必填门在域）
     with pytest.raises(ValueError, match="cv_card 必填"):
-        ms.start_session(file_path=reg_csv, cv_card="   ", card=CARD, task="regression")
+        ModelingSession().load_or_start(file_path=reg_csv, cv_card="   ", card=CARD, task="regression")
 
 
 def test_start_rejects_non_split_keys(sessions_root, reg_csv):
@@ -72,11 +74,11 @@ def test_control_plane_not_in_vocab(sessions_root, reg_csv):
     sid, s = _start(sessions_root, reg_csv)
 
     with pytest.raises(ValueError, match="不在词表"):
-        ms.apply_action(sid, "edit", {"cat": "ordinal"})
+        ModelingSession().apply(sid, "edit", {"cat": "ordinal"})
     with pytest.raises(ValueError, match="不在词表"):
-        ms.apply_action(sid, "eval_mini", {})
+        ModelingSession().apply(sid, "eval_mini", {})
     with pytest.raises(ValueError, match="不在词表"):
-        ms.apply_action(sid, "rollback", {})
+        ModelingSession().apply(sid, "rollback", {})
 
 
 def test_start_validates_protocol_fail_loud(sessions_root, reg_csv):
@@ -104,16 +106,20 @@ def test_explicit_params_override_card_background(sessions_root, reg_csv):
     m = json.loads((sessions_root / sid / "observation.json").read_text(encoding="utf-8"))["prior"]
     assert m["target"] == "target"  # 显式 > card（CARD.target 同值——形式走显式面）
 
-    sid2, s2 = ms.start_session(
+    sid2, s2 = ModelingSession().load_or_start(
         file_path=reg_csv, cv_card=CV_CARD, task="regression", target="x"
     )  # 显式覆盖 card.target
     m2 = json.loads((sessions_root / sid2 / "observation.json").read_text(encoding="utf-8"))["prior"]
     assert m2["target"] == "x"
 
     with pytest.raises(ValueError, match="target 必填"):
-        ms.start_session(file_path=reg_csv, cv_card=CV_CARD, task="regression", card={"domain": "无 target 背景"})
+        ModelingSession().load_or_start(
+            file_path=reg_csv, cv_card=CV_CARD, task="regression", card={"domain": "无 target 背景"}
+        )
     with pytest.raises(ValueError, match="task 必填"):
-        ms.start_session(file_path=reg_csv, cv_card=CV_CARD, card={"domain": "无 task 背景", "target": "target"})
+        ModelingSession().load_or_start(
+            file_path=reg_csv, cv_card=CV_CARD, card={"domain": "无 task 背景", "target": "target"}
+        )
 
 
 def test_max_steps_zero_fail_loud(sessions_root, reg_csv):
@@ -152,12 +158,14 @@ def test_card_id_prior_tiers_feed_feature_exclusion(sessions_root, reg_csv):
         "composite_keys": [["batch", "uid"]],
     }
 
-    sid, s = ms.start_session(file_path=path, cv_card=CV_CARD, card=card, task="regression", metric="mae")
+    sid, s = ModelingSession().load_or_start(
+        file_path=path, cv_card=CV_CARD, card=card, task="regression", metric="mae"
+    )
 
     prior = s.prior or {}
     assert sorted(prior["id_columns"]) == ["batch", "uid"]  # known_id ∪ pk ∪ composite 成员
 
-    sid2, s2 = ms.start_session(
+    sid2, s2 = ModelingSession().load_or_start(
         file_path=path, cv_card=CV_CARD, card=card, task="regression", metric="mae", id_columns=["uid"]
     )
     assert (s2.prior or {})["id_columns"] == ["uid"]  # 显式参数覆盖
@@ -167,10 +175,10 @@ def test_load_or_start_sid_conflict_and_load_path(sessions_root, reg_csv):
     """#226 ② 域缝：sid+任何开局入参同传 = 参数来源冲突 fail-loud；纯 sid = 加载。"""
     sid, s = _start(sessions_root, reg_csv)
     with pytest.raises(ValueError, match="参数来源冲突"):
-        ms.start_session(sid, file_path=reg_csv, cv_card=CV_CARD)
+        ModelingSession().load_or_start(sid, file_path=reg_csv, cv_card=CV_CARD)
     with pytest.raises(ValueError, match="参数来源冲突"):
-        ms.start_session(sid=sid, target="target")  # 域尾巴（协议参数）与加载同传
+        ModelingSession().load_or_start(sid=sid, target="target")  # 域尾巴（协议参数）与加载同传
     with pytest.raises(ValueError, match="参数来源冲突"):
-        ms.start_session(sid=sid, card={"domain": "t"})  # 背景卡与加载同传
-    sid2, s2 = ms.start_session(sid=sid)  # 纯 sid = 加载（counts_step 随 _open 面恢复）
+        ModelingSession().load_or_start(sid=sid, card={"domain": "t"})  # 背景卡与加载同传
+    sid2, s2 = ModelingSession().load_or_start(sid=sid)  # 纯 sid = 加载（counts_step 随 _open 面恢复）
     assert sid2 == sid and s2.biz == s.biz and s2.validation.steps == s.validation.steps

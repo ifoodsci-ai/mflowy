@@ -62,7 +62,7 @@ from .types import (
     ModelLoader,
     ModelPipeline,
 )
-from .utils import abs_spearman_per_column, infer_metric
+from .utils import infer_metric
 
 logger = logging.getLogger(__name__)
 
@@ -301,6 +301,9 @@ def oof_evidence_table(
     与 holdout 副产物同契）。工件名沿用 ``oof_y_pred.parquet``——四面增强零寻址变更。
     """
     out = pd.DataFrame(index=y_true.index)
+    out["indices"] = (
+        y_true.index.to_numpy()
+    )  # #236 工件契约：原始数据稳定行身份（统计工具按此重构，显式对齐替代按位对齐）
     for t in y_true.columns:
         yt = y_true[t].to_numpy()
         yp = y_pred[t].to_numpy()
@@ -577,6 +580,7 @@ def training(
     from mflowy.utils.mlflow import log_table as _log_table
 
     y_pred_df = pd.DataFrame(y_pred, columns=split.y_test.columns)
+    y_pred_df.insert(0, "indices", split.y_test.index.to_numpy())  # #236 工件契约：稳定行身份（统计工具显式对齐）
     _log_table(split.X_test, HOLDOUT_BYPRODUCTS["X_test"], graceful=True)
     _log_table(split.y_test, HOLDOUT_BYPRODUCTS["y_test"], graceful=True)
     _log_table(y_pred_df, HOLDOUT_BYPRODUCTS["y_pred"], graceful=True)
@@ -645,101 +649,10 @@ def oof_predictions(
     return y_pred, y_proba
 
 
-def theta_probe(
-    split: TrainSplit, make_pipe: Callable[..., ModelPipeline], params: dict, scoring
-) -> tuple[dict, pd.DataFrame | None]:
-    """θ* 代表拟合探针（设计稿 2026-10-28 §3 段1；objective 纯度裁定：诊断只对
-    θ* 做，搜索热路径 = 纯训练+指标——trial 不携带任何额外操作）。train 内切
-    val 的**单次**代表拟合，双产物：
-
-    - ``scores``：train-fit/val 两段同尺得分（同一次拟合的苹果对苹果——欠拟合/
-      过拟合 gap 两体征的证据；evaluate 单源）
-    - 曲线 df：train/val 逐迭代损失（``get_loss_curve`` 统一提取面；早停剥离——
-      截断会吃掉「先降后升」的上翘段，全迭代观察）。OOB 族（RF）无曲线 → None
-      （族异构降级：曲线体征不产，得分对照常）；一次额外拟合的代价，只对 θ* 做。
-    """
-    X_fit, y_fit, X_val, y_val = split_val(split.X_train, split.y_train, split.task, groups=split.groups)
-    pipe = fit_with_eval(
-        make_pipe, X_fit, y_fit, eval_X=X_val, eval_y=y_val, fit_params={}, **_strip_early_stopping(params)
-    )
-
-    def _raw(X: pd.DataFrame, y: pd.DataFrame) -> float:
-        proba = pipe.predict_proba(X) if split.task == TASKTYPE.CLASSIFICATION else None
-        m = evaluate(split.task, y, pipe.predict(X), proba, scoring=scoring)
-        return float(next(iter(m.values()))[scoring])
-
-    scores = {"train": _raw(X_fit, y_fit), "val": _raw(X_val, y_val)}
-    try:
-        return scores, pipe.estimator.get_loss_curve()
-    except NotImplementedError:
-        return scores, None
-
-
-_OVERFIT_GAP = 0.3  # |U_inner − U_full| / |U_inner| 超此值记过拟合信号
-
-
-def holdout_findings(split: TrainSplit, y_pred: pd.DataFrame, u_inner: float | None, u: float) -> list[dict]:
-    """holdout 预测上的机械化 findings（不依赖 loader——y_pred 已算好）：过拟合信号/
-    切片塌陷/误差集中列（回流清洗的提示面）。
-
-    #66 从 holdout_report 抽出单源：DAG 终训路径（final_train_test）与 SDK 面
-    （holdout_report）共用同一诊断机器。
-    """
-    y_true = split.y_test.iloc[:, 0].to_numpy()
-    y_hat = y_pred.iloc[:, 0].to_numpy() if isinstance(y_pred, pd.DataFrame) else np.asarray(y_pred)
-
-    findings: list[dict] = []
-    if u_inner is not None and abs(u_inner) > 1e-9:
-        gap = abs(u_inner - u) / abs(u_inner)
-        if gap > _OVERFIT_GAP:
-            findings.append(
-                {
-                    # drift（设计稿 §3.2，改名自 overfit_gap——语义收窄：inner CV 乐观
-                    # 偏差/分布漂移；train/val 直接过拟合证据由 overfit_train_val_gap 承担）
-                    "kind": "drift",
-                    "severity": round(min(1.0, gap), 4),
-                    "evidence": {"u_inner": u_inner, "u": u, "gap_ratio": round(gap, 4)},
-                    "message": f"inner−holdout 差距 {gap:.0%}（>{_OVERFIT_GAP:.0%}）——CV 乐观偏差或分布漂移",
-                }
-            )
-    if split.task == TASKTYPE.CLASSIFICATION:
-        correct = y_hat == y_true
-        classes, counts = np.unique(y_true, return_counts=True)
-        recalls = {c: float(correct[y_true == c].mean()) for c in classes if (y_true == c).sum() > 0}
-        if recalls:
-            worst = min(recalls, key=lambda c: recalls[c])  # lambda 直取值——.get 的 Optional 返回面与 min 不合
-            mean_r = float(np.mean(list(recalls.values())))
-            if recalls[worst] < 0.5 * mean_r and counts[list(classes).index(worst)] >= 3:
-                findings.append(
-                    {
-                        "kind": "slice_collapse",
-                        "severity": round(min(1.0, 1 - recalls[worst] / max(mean_r, 1e-9)), 4),
-                        "evidence": {"slice": str(worst), "recall": recalls[worst], "mean_recall": round(mean_r, 4)},
-                        "message": f"切片 `{worst}` recall={recalls[worst]:.2f} 显著低于均值 {mean_r:.2f}——该类样本系统性失败",
-                    }
-                )
-    if split.task == TASKTYPE.REGRESSION:
-        resid = np.abs(y_hat - y_true)
-        worst_col, worst_rho = None, 0.0
-        for c, rho in abs_spearman_per_column(split.X_test, resid):
-            if rho > worst_rho:
-                worst_col, worst_rho = c, rho
-        if worst_col and worst_rho > 0.3:
-            findings.append(
-                {
-                    "kind": "error_concentrated_column",
-                    "severity": round(worst_rho, 4),
-                    "evidence": {"column": worst_col, "spearman_abs": round(worst_rho, 4)},
-                    "message": f"误差集中于列 `{worst_col}`（|ρ|={worst_rho:.2f}）——回流清洗域的首要候选（该列质量问题害了模型）",
-                }
-            )
-    return findings
-
-
 def holdout_report(loader: ModelLoader, split: TrainSplit, scoring: MetricName) -> dict:
     """SDK 直 import 面的独立终评入口：loader 在 holdout 上预测（不重训）→ u（归一，
-    ``terminal_u`` 单源）+ 全套指标 + findings（holdout_findings 单源——过拟合信号/
-    切片塌陷/误差集中列）。
+    ``terminal_u`` 单源）+ 全套指标（#226 ⑥/#236 判读退役：规则 findings 键移除
+    ——统计证据走 modeling_statistics 工具，判读归 agent）。
 
     与会话 finish 解耦——test 读即终局的语义由调用方（finish 每交付模型恰一次）承载。
     """
@@ -749,7 +662,6 @@ def holdout_report(loader: ModelLoader, split: TrainSplit, scoring: MetricName) 
     return {
         "u": round(terminal_u(metrics, scoring), 4),
         "metrics": metrics,
-        "findings": holdout_findings(split, y_pred, loader.u_inner, terminal_u(metrics, scoring)),
         "y_pred": y_pred,
         "y_proba": y_proba,
     }

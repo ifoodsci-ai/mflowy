@@ -20,7 +20,6 @@ from pydantic import Field
 from .job_provider import get_job_provider as _get_job_provider
 from .job_provider import set_job_provider as _set_job_provider
 from .job_provider.protocol import JobOutcome
-from .taxonomy import KNOWN_FINDING_KINDS
 from .templates import MODELING_TEMPLATE, count_model_steps, parse_steps_fragment
 
 try:  # SDK 仅 server 形态需要（[mcp] extra）——runner 路径零 SDK 可导入；
@@ -37,7 +36,8 @@ def _session():
     import importlib
 
     try:
-        return importlib.import_module(".session", __package__)
+        module = importlib.import_module(".session", __package__)
+        return module.ModelingSession()  # #236 ⑨ 实体面（模块级薄门面退役）
     except ModuleNotFoundError as e:
         raise RuntimeError(
             f"建模会话引擎依赖本地建模栈（{e}）——安装：pip install 'mflowy-model[local]'"
@@ -280,11 +280,11 @@ async def predict(
 
 # ── 建模会话工具（环境面在 model/session，π 在调用方 LLM） ───────────────────
 # 协议谈判在剧本层（model-brief + research-review skill）；start(cv_card)
-# 唯一主通道直进八动作面（#62：配置编辑 + 计算动作；done = finish）。
+# 唯一主通道直进九动作面（#62/#236：配置编辑 + 计算动作 + 判读落诊；done = finish）。
 # 会话恒单目标任务——多目标在会话外三层循环（多目标 → 多模型 → 单目标任务会话）。
 
 
-def modeling_session_start(
+def load_or_start_modeling(
     sid: Annotated[
         str | None,
         Field(description="会话目录绝对路径：给定 = 加载既有会话（开局入参不可同传）；缺省 = 新开"),
@@ -331,18 +331,18 @@ def modeling_session_start(
     物化冻结 D + 光标就位（协议不进动作空间）。返回二联信封 {sid, observation}
     ——sid 即后续所有会话工具的寻址面（会话目录绝对路径）。
 
-    何时使用 modeling_session_start：
+    何时使用 load_or_start_modeling：
     - model-brief 问卷（含 research-review 结构化候选）编译出 cv_card（split yaml
       明文）+ 显式协议参数后开局回合循环；多目标 = 每目标各开一个会话（三层循环）
     - 上下文丢失/跨进程续局：拿 sid 加载（开局入参与 sid 同传 = 参数来源冲突报错）
     """
     session = _session()
 
-    # TODO(#236)：工具动词化改名（load_or_start_modeling）随域切片——本处先落 ⑤ 的二联信封形状
-    sid_out, o = session.start_session(
+    # TODO(#226 ⑤ 后续)：submitted 状态信封自带 watch 命令（#225 remote 半边随用随加）
+    sid_out, o = session.load_or_start(
         sid,
-        file_path,
-        cv_card,
+        file_path=file_path,
+        cv_card=cv_card,
         target=target,
         task=task,
         metric=metric,
@@ -356,29 +356,29 @@ def modeling_session_start(
     return {"sid": sid_out, "observation": o.model_dump()}
 
 
-def modeling_observe(session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")]) -> dict:
+def observe_modeling(session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")]) -> dict:
     """观测建模会话（幂等只读零转移）：当前观测 + 读时决策面——本 combo 键 findings
     （规则与 LLM 落诊同粒度）、光标/combo_key、账本摘要（θ*/u_inner/冻结旗）、has_cat、
     候选族超参面（face：动态维可收窄、静态常量可 pin）。
 
-    选项面不设菜单：八动作面 + 观测证据自构 modeling_apply（词表外动作/未知参数会被拒）；
+    选项面不设菜单：九动作面 + 观测证据自构 apply_modeling（词表外动作/未知参数会被拒）；
     收局时机由你从观测（预算/账本）自决。
 
-    何时使用 modeling_observe：
+    何时使用 observe_modeling：
     - 每步决策前读决策面；续局 / 上下文丢失后重新定位（无副作用）
     - 终态会话同样可观测（finished/abandoned 旗即收局事实）
     """
     session = _session()
 
-    return session.observe_session(session_id).model_dump()
+    return session.observe(session_id).model_dump()
 
 
-def modeling_apply(
+def apply_modeling(
     session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")],
     node: Annotated[
         str,
         Field(
-            description="动作面名（八动作面）：select_model/set_hp/set_hp_space/set_seed/select_FE（配置编辑，"
+            description="动作面名（九动作面，#236）：select_model/set_hp/set_hp_space/set_seed/select_FE（配置编辑，"
             "零步费）或 run_hpo/final_train_test（计算动作，吃步）；done = modeling_finish"
         ),
     ],
@@ -390,26 +390,26 @@ def modeling_apply(
         ),
     ] = None,
 ) -> dict:
-    """执行回合动作（八动作面）：配置编辑只改光标（零步费零奖励，生效于下一次 run_hpo）；
+    """执行回合动作（九动作面）：配置编辑只改光标（零步费零奖励，生效于下一次 run_hpo）；
     run_hpo = 增量搜索 + OOF 观察面（reward = Δu_inner）；final_train_test = 先搜后店 +
     holdout 终评恰一次 + combo 冻结（reward = 0）。
 
     run_hpo 全程不碰 holdout（no-peeking choke point 在 final_train_test）；账本键 =
     (family, FE 组合)；study sqlite 落会话目录增量续跑（空间变继续，seed/scoring 变重开）。
 
-    何时使用 modeling_apply：
+    何时使用 apply_modeling：
     - select_model 定光标候选 → run_hpo 出首条账本 → final_train_test 终训交付
     - 加深/收窄/pin/换 FE 都是合法走法（配置编辑不吃预算）
     """
     session = _session()
 
-    return session.apply_action(session_id, node, params).model_dump()
+    return session.apply(session_id, node, params).model_dump()
 
 
-def modeling_rollback(session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")]) -> dict:
+def rollback_modeling(session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")]) -> dict:
     """回退光标到上一快照（决策日志保留；预算不回补；账本与盘上 study 永不回退）。
 
-    何时使用 modeling_rollback：
+    何时使用 rollback_modeling：
     - 配置编辑走错（pin/收窄/FE 换档）时弹回上一光标版本
     """
     session = _session()
@@ -417,7 +417,7 @@ def modeling_rollback(session_id: Annotated[str, Field(description="会话目录
     return session.rollback(session_id).model_dump()
 
 
-def modeling_finish(
+def finish_modeling(
     session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")],
     pdf: Annotated[
         str,
@@ -433,14 +433,14 @@ def modeling_finish(
     accepted 恒真（holdout 读在 final_train_test 恰一次，finish 只结算）；重入 =
     幂等重导出（交付报告不可变更——重写须弃局重开）。
 
-    何时使用 modeling_finish：
+    何时使用 finish_modeling：
     - 收局剧本固定序走完后（画泰勒 → 看 skeleton 素材 → 写报告 → finish(pdf)）；
       pdf 必须在报告文件就绪后调用——文件缺失 fail-loud，不会带着空交付物进终态
     """
 
     session = _session()
 
-    return session.finish_session(session_id, pdf=pdf).model_dump()
+    return session.finish(session_id, pdf=pdf).model_dump()
 
 
 def draw_taylor_diagram(
@@ -479,41 +479,63 @@ def modeling_report_skeleton(
     return session.report_skeleton(session_id)
 
 
-def modeling_report_findings(
+def modeling_statistics(
     session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")],
-    key: Annotated[str, Field(description="账本键（family|cat|num——models 键，run_hpo 响应可见）")],
-    findings: Annotated[
-        list[dict],
-        Field(
-            description="LLM findings 清单（ErrorReport schema）：{kind, severity ∈ [0,1], evidence?, message?}"
-            f"——kind ⊆ 词表（{'/'.join(sorted(KNOWN_FINDING_KINDS))}）"
-        ),
-    ],
+    key: Annotated[str, Field(description="combo 结构键（账本键——observe 的 models 面可查）")],
+    top_k: Annotated[int, Field(description="误差集中列取证上限（缺省 5）")] = 5,
 ) -> dict:
-    """LLM findings 落诊（#36 控制面）：不可机械化诊断进 models[key]——schema 校验、
-    决策日志审计、与规则 findings 均匀聚合（modeling_observe 投影不区分来源）。
+    """统计证据（#226 ⑥ 判读退役承接，#236）：run 寻址的声明式分析——证据表
+    （overall/误差集中列分组/目标分档）+ 图集，工件落统计 run；判读归你（经
+    report_findings_modeling 落账）。
 
-    何时使用 modeling_report_findings：
-    - 读 OOF 图集/产物清单后形成的人读诊断（规则算子覆盖不了的判断）落盘供观测与审计
+    指纹门：源数据换血（与工件旁记指纹不一致）fail-loud——按旧工件统计 = 撒谎的证据。
+
+    何时使用 modeling_statistics：
+    - run_hpo / final_train_test 后取统计证据（read 观测账本 → 本工具 → 推理 → 落账）
+    - 收局报告的误差结构叙述素材（与 draw_taylor_diagram 互补：单模型深证据 vs 多模型对比）
     """
     session = _session()
 
-    return session.report_findings(session_id, key, findings).model_dump()
+    return session.statistics(session_id, key, top_k=top_k)
 
 
-def modeling_abandon(
+def report_findings_modeling(
+    session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")],
+    key: Annotated[str, Field(description="落诊账本键（combo 结构键）")],
+    findings: Annotated[
+        list[dict],
+        Field(
+            description="agent 判读的结构化发现：[{kind, severity, evidence, message}]——"
+            "kind ⊆ 已知词表（fail-loud）；#226 ⑥ 判读退役后单源 source=llm"
+            "（统计证据经 modeling_statistics 取回，判读归你）"
+        ),
+    ],
+) -> dict:
+    """agent 判读落诊（#36/#226 ④⑥）：report_findings 动作（九动作面词表内）的
+    薄别名工具——schema 校验 + 决策日志审计，写进 models[key].findings（o_biz）。
+
+    何时使用 report_findings_modeling：
+    - run_hpo/终训后读统计证据（modeling_statistics 工具）推理分析，结构化落账
+      （observe 投影可见，支撑下一步决策）
+    """
+    session = _session()
+
+    return session.apply(session_id, "report_findings", {"key": key, "findings": findings}).model_dump()
+
+
+def abandon_modeling(
     session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")],
     reason: Annotated[str | None, Field(description="弃局原因（落盘供审计，如「改协议重开」）")] = None,
 ) -> dict:
     """弃局终局：置 abandoned、决策日志与模型账本保留、不导出交付物；已终态再弃即报错。
 
-    何时使用 modeling_abandon：
+    何时使用 abandon_modeling：
     - 用户中止建模 / 改协议开新 episode 前，显式终局旧会话（不留僵尸——要么 finish 要么 abandon）
     - 返回 ack：{session_id, abandoned, reason, steps}（steps = 弃局时已走步数）
     """
     session = _session()
 
-    return session.abandon_session(session_id, reason=reason)
+    return session.abandon(session_id, reason=reason)
 
 
 # ── 执行模式切换（#156 §4：local / remote 等价受理形态，进程级开关）──────────

@@ -9,17 +9,16 @@ remote provider，modeling_* 会话工具 fail-loud 带安装提示。
 
 ## 会话 POMDP 元素表（O/S/A/P·T/R）
 
-契约下限与校验器住 `driver/pomdp.py`（Observation / FinishVerdict）；本域语义如下（引擎 = `session.py`，s 元组与八动作面的完整定义见
-模块 docstring。转移确定性——无概率转移表；可观测性 = diagnose/规则覆盖面：board 聚合与
+契约下限与校验器住 `driver/pomdp.py`（Observation / FinishVerdict）；本域语义如下（引擎 = `session.py` 的 `ModelingSession` 实体（#236），s 元组与九动作面的完整定义见
+模块 docstring。转移确定性——无概率转移表；可观测性 = 统计证据覆盖面（#226 ⑥ 判读退役，#236）：board 聚合与
 findings 是真态的多对一投影——同聚合不同病灶不可分；u_inner/std 是隐藏真值的带噪估计
 （fold_std 观测即为此设）；report_findings（#36）= π 自带传感器的私有观测落账，补程序化观测
 函数的覆盖缺口）：
 
 | 元素          | 本域定义                                                                                   | 居所                                        |
 | ------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------- |
-| O 观测        | `_observe` 域加字段（candidates / cursor / board / budget）——簿记态全可见；OOF 观察面（见下节）随 run_hpo 免费出，病灶可见性以 diagnose/规则覆盖面为界 | `_observe` / `diagnose.py` / `report.py`    |
 | S 状态        | 真态 = s 元组（光标 m/H/seed/F, 账本 board, oof, budget, done, history）+ 未探 combo 的真值景观（不可直读，仅经带噪 u_inner 间接观测）；真源 = 盘上 sqlite study（append-only），账本条目为派生缓存 | 模块 docstring / `_board` / `_digest`       |
-| A 动作        | 八动作面：配置编辑 ×5（零步费零奖励）∪ 计算动作 ×2（吃步）∪ done（= finish 独立入口）；词表外 fail-loud 带清单 | `ACTIONS` / `COMPUTE_ACTIONS` / `apply_action` |
+| A 动作        | 九动作面（#236）：配置编辑 ×5（零步费零奖励）∪ 计算动作 ×2（吃步）∪ report_findings（判读落诊，零步费）∪ done（= finish 独立入口）；词表外 fail-loud 带清单 | `ACTIONS` / `COMPUTE_ACTIONS` / `ModelingSession.apply` |
 | P·T 转移      | 光标编辑推快照；run_hpo 增量追加 study（目标同一性判据）；final_train_test 冻结 combo（holdout 读恰一次）；rollback 只回退光标——账本 / 预算 / 盘上 study 永不回退 | `_select_*` / `_run_hpo` / `_final_train_test` / `rollback` |
 | R 奖励        | run_hpo = Δu_inner（新键 = u_inner 绝对值）；配置编辑与终训 r = 0；终局 = verdict（holdout u + rank 一致性，accepted 恒真） | `_run_hpo` / `finish_session`               |
 
@@ -69,7 +68,6 @@ MY_MODEL.mdp_family = {
 
 ## 会话观察面（#35/#64）
 
-- `diagnose.py`：OOF 观察面诊断算子（error_concentrated / slice_collapse / fold_std /
   complexity_edge + 体征面 underfit_high_close / underfit_loss_plateau /
   overfit_train_val_gap / overfit_val_loss_rise——train 折分与 θ* 曲线探针证据，
   设计稿 2026-10-28）——run_hpo 后自动接线（findings 落账本 + 响应浮出），零步数
@@ -77,7 +75,7 @@ MY_MODEL.mdp_family = {
   fan-in——`taylor_byproducts` 边函数断言各模型 y_test 逐位同一）/ 报告素材
   （`modeling_report_skeleton`：表格从账本渲染 + 图片清单 + 叙事槽）；终局报告不在
   引擎——π 撰写后 `finish(pdf)` 收编进 deliverables（tmp/rename 原子落盘，不编译不验内容）
-- 观测面：`modeling_observe` 幂等只读，读时投影 π 的决策面（本 combo 键 findings / 账本摘要 /
+- 观测面：`observe_modeling` 幂等只读，读时投影 π 的决策面（本 combo 键 findings / 账本摘要 /
   has_cat / 候选族超参面）——出题规则与菜单随 #120 退役，finding kind 词表单源 `taxonomy.py`
 
 ## JobProvider：compute 工具的执行委派
