@@ -42,5 +42,3 @@ disable-model-invocation: true
 ## 参考
 
 - 消费方：model-brief skill（编译进 CVCard）→ load_or_start_modeling
-- 族目录声明：`packages/builtin_plugins/model/mflowy/model/registry.py`
-  （`.mdp_family` = 目录标记 + structure + machinery）

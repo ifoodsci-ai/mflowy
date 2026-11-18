@@ -55,6 +55,5 @@ candidates=, max_steps=, id_columns=, card=<DomainCard 背景>)`——显式参�
 
 ## 参考
 
-- 类型与校验闸：`packages/builtin_plugins/model/mflowy/model/protocol.py`（CVCard.build）
 - 结构化候选：research-review skill（文献先验——candidates 带 baseline 锚点 /
   space_hints 注入搜索起点 / 候选 seed）
