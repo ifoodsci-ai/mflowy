@@ -90,7 +90,7 @@
 ## S5 拉取与本地查询（🟢 实现后即测；download-url 属 /experiments 下 files 面——CLI scope 放行依据同 S2，未逐路实测，复测 403 则记上游漂移票）
 
 - `download_platform_job_artifacts(job_id=J1, platform_experiment_id=E, target_dir=<已存在>)` → 解压落位 `target_dir/{J1}/`（zip 根 = workspace 根）；返回 `{job_id, platform_experiment_id, local_task_dir, file_count, mlflow_db:<path>}`；zip 本体即弃（target_dir 无 .zip 残留）
-- zip 内容断言（hpo 形态）：`mlflow.db` + `.mlruns/` 树 + `.mflowy/study/<run_id>.db` 活文件 + run 工件 `study.db`
+- zip 内容断言（hpo 形态）：`mlflow.db` + `.mlruns/` 树 + run 工件树内 `study.db`（#244 直驻——工件根即居所，dot-dir 活写已退役）
 - 重下载 → 原子替换（内容最新、无旧文件残留、幂等）
 - `get_run(tracking_uri="sqlite:///<target_dir>/{J1}/mlflow.db")` → 查到 J1 模型步 run，**取 run_id 供 S6**；返回工件路径已从 `file:///user-data/workspace/...` 改写为 `<target_dir>/{J1}/...` 本地路径（db 所在目录推导、单参式；不匹配前缀原样透传）
 - `get_experiment`/`get_run` 不传 tracking_uri → 机器默认库，既有行为回归不变
@@ -102,7 +102,7 @@
 三个 job 依次落在**同一平台实验 E**（同实验宿主多 Job）：
 
 - **J2 = hpo 续跑**：`inherit_platform_job_id=J1` + `resume_study_from=<S5 取得的 run_id>` → `succeeded`；断言：
-  - J2 zip 内 study 库 trial 计数 = J1 累计 + J2 新增（本地 sqlite 读 `.mflowy/study/<J2run>.db`）——增量续跑实证
+  - J2 zip 内 study 库 trial 计数 = J1 累计 + J2 新增（本地 sqlite 读 J1 模型步 run 工件树内 `study.db`——#244 零拷贝直驻增量）
   - J2 zip 的 mlflow.db 含 J1 runs（继承解包滚雪球）
 - **J3 = modeling 训练**（#161 载荷）：`inherit_platform_job_id=J2` → `succeeded`；zip 追加 `X_test/y_test/y_pred.parquet` + 评估图 + `.mlruns/models/m-<uuid>/`（logged model 本体，#155 双形态）
 - **J4 = explanation**：`model=<J3 模型步 run_id>` + `inherit_platform_job_id=J3` + `platform_experiment_id=E` → `succeeded`——**跨 Job 寻址**硬前提实证（前序 run 只在该实验继承链的 mlflow.db 里可寻址）

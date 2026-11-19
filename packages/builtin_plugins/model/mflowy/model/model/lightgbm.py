@@ -40,6 +40,11 @@ def LGBM(
     train_split: TrainSplit,
     x_preprocessors: ColumnTransformer | None = None,
     n_trials: Annotated[int, "优化试验次数"] = 100,
+    inherit_study_run_id: Annotated[
+        str | None,
+        "增量续跑源模型步 run_id（#244 节点参数寻址）：解析其 study 工件——tag 相对路径零拷贝直驻增量"
+        "（缺件回退 download）；多 model 节点各自寻址互不污染，仅 search 行为（参数含搜索空间）可用",
+    ] = None,
     scoring: Annotated[MetricName | None, "评估指标，None 时按任务自动选（回归 MAE/分类 F1）"] = None,
     num_leaves: Annotated[int | ContinuousSpace[int], "叶子节点数"] = ContinuousSpace(15, 127, 1),
     max_depth: Annotated[int | ContinuousSpace[int], "树最大深度（标量 -1 不限制，搜索空间不含 -1）"] = ContinuousSpace(
@@ -92,6 +97,8 @@ def LGBM(
         reg_lambda=reg_lambda,
         scale_pos_weight=scale_pos_weight,
     )
+    if inherit_study_run_id is not None and not param_space:
+        raise ValueError("inherit_study_run_id 仅 search 行为（参数含搜索空间）可用——全 pin = training 行为无 study")
     if param_space:  # search 行为：只碰 inner CV，产物 = 搜索证据
         study = hyperparameters_search(
             param_space,
@@ -101,6 +108,7 @@ def LGBM(
             make_pipe=make_pipe,
             base_params=initial_params,
             seed=random_state,
+            inherit_study_run_id=inherit_study_run_id,
         )
         return search_evidence(study, "LGBM", metric)
     return training(  # training 行为

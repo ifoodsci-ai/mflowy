@@ -298,6 +298,19 @@ def _window_or_skip(subject, *, what: str, graceful: bool):
     raise RuntimeError(f"{what}须在 active run 窗口内（无窗口即无居所）")
 
 
+def local_artifact_root(uri: str) -> Path | None:
+    """工件根 URI → 本地路径（file scheme / sqlite tracking 裸路径两形态）；非本地根
+    （s3/http/mlflow-artifacts…）None——直写/锚驻只对本地工件树成立（#244 单源）。"""
+    from urllib.parse import unquote, urlparse
+
+    parsed = urlparse(uri)
+    if parsed.scheme == "file":
+        return Path(unquote(parsed.path))
+    if parsed.scheme == "":
+        return Path(uri)
+    return None
+
+
 def _artifact_shell(
     artifact_file: str,
     writer: Callable[[str], Any],
@@ -315,17 +328,12 @@ def _artifact_shell(
       fail-loud——mlflow fluent 无窗口时静默自建孤儿 run 污染默认实验，守卫必须前置
     - 返回 writer 的返回值（如 ``log_model`` 的 model_uri）
     """
-    from urllib.parse import unquote, urlparse
-
     run = _window_or_skip(artifact_file, what="工件落盘", graceful=graceful)
     if run is None:
         return None
     uri = f"{run.info.artifact_uri}/{artifact_file}"
-    parsed = urlparse(uri)
-    if parsed.scheme == "file":
-        destination = str(Path(unquote(parsed.path)))
-    elif parsed.scheme == "":
-        destination = uri  # sqlite tracking 缺省 artifact root 的裸路径形态
+    if (local := local_artifact_root(uri)) is not None:
+        destination = str(local)
     elif direct_write:
         raise ValueError(f"artifact 根非本地（{uri}）——直写只支持本地工件树")
     else:
@@ -383,8 +391,7 @@ def log_model(pipe, name: str = "final", **kwargs) -> str | None:
 def log_file(src, *, artifact_file: str | None = None, graceful: bool = False):
     """本地文件原样挂 run 工件树（mlflow.log_artifact 经落盘壳）——原始文件面
     （如 study sqlite 的只读投影，#95 项5）；工件名 = 源文件名，``artifact_file``
-    可改挂载名（#158：活文件 ``{run_id}.db`` 以 ``study.db`` 名落 run——续跑链按名
-    寻址；mlflow.log_artifact 无改名参数，经 tmp 拷贝换名挂载）。"""
+    可改挂载名（mlflow.log_artifact 无改名参数，经 tmp 拷贝换名挂载）。"""
     import shutil
     import tempfile
     from pathlib import Path
@@ -399,6 +406,30 @@ def log_file(src, *, artifact_file: str | None = None, graceful: bool = False):
         staged = Path(td) / dest
         shutil.copyfile(src, staged)
         return _artifact_shell(dest, lambda _: mlflow.log_artifact(str(staged)), graceful=graceful)
+
+
+def active_artifact_root(*, local_only: bool = False) -> Path | None:
+    """active run 的工件根本地路径（#244）：无 active run → None；非本地根
+    ``local_only=True`` fail-loud（study 直驻只对本地工件树成立），否则 None。"""
+    import mlflow
+
+    run = mlflow.active_run()
+    if run is None:
+        return None
+    local = local_artifact_root(run.info.artifact_uri or "")
+    if local is None and local_only:
+        raise ValueError(f"active run 工件根非本地（{run.info.artifact_uri}）——直驻只支持本地工件树")
+    return local
+
+
+def run_tags_and_artifact_uri(run_id: str) -> tuple[dict[str, str], str]:
+    """按 run_id 查 tags 与 artifact 根 URI（run 寻址最小投影——#244 study 定位经
+    tag 相对路径解析，tracking API 单点）。"""
+    import mlflow
+
+    setup()
+    run = mlflow.MlflowClient().get_run(run_id)
+    return dict(run.data.tags), run.info.artifact_uri or ""
 
 
 def run_artifacts(run_id: str) -> list[str]:

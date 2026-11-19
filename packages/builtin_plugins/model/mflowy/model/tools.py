@@ -105,7 +105,9 @@ async def hyperparameters_search(
     resume_study_from: Annotated[
         str | None,
         Field(
-            description="续跑源模型步 run_id（可选）——取回该 run 的 study.db 增量续跑（复用前史不从头采样）；remote 模式须同时传 inherit_platform_job_id（前史经继承解包寻址）"
+            description="续跑源模型步 run_id（可选，单 study 通道——多 model 步用节点参数 "
+            "inherit_study_run_id 各自寻址）——零拷贝增量（前史 run 工件树直驻）；恢复树缺件回退 "
+            "download；remote 模式须同时传 inherit_platform_job_id（前史经继承解包寻址）"
         ),
     ] = None,
     platform_experiment_id: Annotated[
@@ -125,8 +127,9 @@ async def hyperparameters_search(
     何时使用 hyperparameters_search：
     - 候选扫描期：多族/多空间并排出 θ* 与 u_inner 证据（交付集外不白付终训）
     - 扫描后用 modeling 工具传全 pin 参数（θ* 落地）做终训交付
-    - 对同一模型迭代多轮 HPO：传 resume_study_from=<前轮模型步 run_id>——增量续跑
-      不从头采样（run 级 study 落工件 study.db，缺省每次新 study）
+    - 对同一模型迭代多轮 HPO：传 resume_study_from=<前轮模型步 run_id>（单模型步）
+      或 model 步参数 inherit_study_run_id=<run_id>（多模型步各自寻址）——零拷贝增量
+      续跑不从头采样（study 直驻 run 工件根 study.db，tag mflowy.study_db 留痕，缺省每次新 study）
 
 
     受理面（JobOutcome）：local 完成等待（finished 内嵌 DAGResult）；remote 受理即返
