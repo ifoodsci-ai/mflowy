@@ -28,6 +28,7 @@
 | **沙箱节点族泛化** | agent 现场生成计算的通道仅 `load.python`/`clean.python` 两个沙箱节点（外部 .py + 固定 df 契约）；方向：泛化为「声明所属 namespace + 满足该组输出契约」的通用沙箱节点，经 validate 面校验后进图——用族输出契约校验（见上条）换「agent 扩词表」的回路，不引入运行期注册/热重载 |
 | **工业实验闭环（PILOT）** | 三子系统闭环 `Clean→Model→BO→Wet-lab↺` 落地后的纵深：uncertainty/OOD 接口上游化（依赖链见 #76）、先验档案 schema 机制化（现 = 剧本承载）、Model→BO 不确定度列随上游 CV+ 落地回归；系统设计与落位对照见 [bo 包 README](../packages/builtin_plugins/bo/README.md) |
 | **BO 多目标扩展** | 产率×纯度 Pareto 等双目标（首版单目标已裁 [#174](https://github.com/ifoodsci-ai/mflowy/issues/174)）；TPE/NSGAII 多目标能力在位（[#175](https://github.com/ifoodsci-ai/mflowy/issues/175)）、扩展不换引擎；触发 = 真实双目标需求且上游供多目标列（[追踪 #188](https://github.com/ifoodsci-ai/mflowy/issues/188)） |
+| **NN 多任务学习（MTL）** | 同输入异构输出 heads（回归+分类混型）延期（[#238](https://github.com/ifoodsci-ai/mflowy/issues/238) 2026-11-19 裁定：MLP OutputConfig 判别联合收窄纯单任务，dict heads 潜伏面随单任务迁移收窄删除）。已查明事实：x_y 单目标为 0.x 刻意裁定（「多目标会话外分层循环」）、树系 MULTI_REGRESSION 多目标回归为存量能力（单任务**类型**语义保留，混型才属 MTL）、TASKTYPE 14 处 equal-compare 消费面加第三值需逐一审计 fail-loud。回来时开放问题（含讨论倾向，非裁定）：x_y 多目标面重开（targets 复数 + from_y 混型冲突 raise→推导翻转）、TASKTYPE 第三值（值串偏离 mlflow model_type 对齐需记档）、混型推导规则（倾向 dtype 二分 + 低基数整数列 fail-loud）、heads 容器形状与 == y 列面校验（倾向 dict[col] 复用单任务成员）、混型模型 predict_proba 契约（倾向不暴露）、评估/绘图面 per-col 化；触发 = 真实多任务需求首消费者 |
 | 数据合成          | CTGAN + 约束 pipeline                                |
 | 超参采样器扩充    | Random / Grid / CMA-ES（当前仅 TPE）                  |
 | 缺失值专项可视化  | 当前由数值分布图间接覆盖                              |
