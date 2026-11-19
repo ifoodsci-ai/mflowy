@@ -29,18 +29,20 @@ uv run mflowy-mcp                   # MCP server（stdio）
 - extras 内联进 `--from "mflowy[mcp,local]"`——uvx 的 `--extra` 需新版 uv
 - 入口名 `mflowy-mcp` 刻意避开 mcp SDK 同名 CLI（`mcp.cli:app`）
 
-## 分层
+## DDD分层
+
+三层与七 distribution 对位（票面投影）：**应用层**（工具面与入口）← **领域层**（业务语义）← **驱动层**（基座与基础设施）——依赖方向不变量同源（单向向上、内核零域感知，机器面 = `tests/test_workspace.py`）。设计对位：领域居中、上层组合下层、基础设施零领域感知——POMDP 倒置（#245–#247，合同 = #226 2026-11-19 裁定集）即此对齐的兑现：`Handler[S,P]` 领域接口、`POMDPSession` 应用壳。
 
 uv workspace 七 distribution（PEP 420 namespace，版本锁步，`tests/test_workspace.py` 断言）。extras = 形态选择器：域包直装（mflowy-data / mflowy-model / mflowy-bo），聚合包 `[mcp]`（server 形态——SDK+遥测+三域词表，纯远程瘦装；bo 零 extra 面）/`[local]`（model 包本地建模重栈，[deep] 真合并）二选一组合（`mflowy[mcp,local]` = server+本地栈；聚合 `[data]`/`[model]`/`[deep]` 已退役）。
 
-| 层     | 位置                              | 职责                                                       |
-| ------ | --------------------------------- | ---------------------------------------------------------- |
-| MCP    | `packages/mcp/mflowy/mcp/`        | 工具注册面、stdio server、runner、遥测                     |
-| Data   | `packages/builtin_plugins/data/mflowy/data/`      | 清洗 POMDP 动作域（load/statistic/detect/clean/plot + DomainCard 先验分级 + 缺陷封闭枚举/Finding 契约 + 路由提示表） |
-| Model  | `packages/builtin_plugins/model/mflowy/model/`    | 建模 POMDP 动作域（x_y/cv/x_transformer/model + plot——cv 族 = split 参数构建/load 引用加载）+ JobProvider + diagnose/report 观察面 |
-| BO     | `packages/builtin_plugins/bo/mflowy/bo/`          | 贝叶斯优化推荐工作流域（**非 POMDP 会话**，#177——agent 工具工作流 + study sqlite db）：六工具 + BOCard 契约 + 学习信号 + search_input 节点（自 model 真迁移，#175） |
-| Driver | `packages/driver/mflowy/driver/`  | YAML→DAG 编译调度、@node/@edge 插件 SDK、POMDP 会话基座（`pomdp` 契约——Observation 四件 o.prior/o.biz/o.actions/o.validation + Handle 六操作 load_or_start/observe/apply/rollback/finish/abandon；`session` 壳——单源计步/盘上 memo/o_actions 投影钩子/补 r 机制） |
-| Utils  | `packages/utils/mflowy/utils/`    | mlflow seam、OAuth 2.1 客户端（login/token 库）、脚本安全扫描、capture/path/logging/jinja |
+| DDD 层 | distribution | 位置 | 职责 |
+| ------ | ------------ | ---- | ---- |
+| 应用 | mcp | `packages/mcp/mflowy/mcp/` | 工具注册面、stdio server、runner、遥测 |
+| 领域 | data | `packages/builtin_plugins/data/mflowy/data/` | 清洗 POMDP 动作域（load/statistic/detect/clean/plot + DomainCard 先验分级 + 缺陷封闭枚举/Finding 契约 + 路由提示表） |
+| 领域 | model | `packages/builtin_plugins/model/mflowy/model/` | 建模 POMDP 动作域（x_y/cv/x_transformer/model + plot——cv 族 = split 参数构建/load 引用加载）+ JobProvider + diagnose/report 观察面 |
+| 领域 | bo | `packages/builtin_plugins/bo/mflowy/bo/` | 贝叶斯优化推荐工作流域（**非 POMDP 会话**，#177——agent 工具工作流 + study sqlite db）：六工具 + BOCard 契约 + 学习信号 + search_input 节点（自 model 真迁移，#175） |
+| 驱动 | driver | `packages/driver/mflowy/driver/` | YAML→DAG 编译调度、@node/@edge 插件 SDK、POMDP 会话基座（`pomdp` 契约——Observation 四件 o.prior/o.biz/o.actions/o.validation + Handle 六操作 load_or_start/observe/apply/rollback/finish/abandon；`session` 壳——单源计步/盘上 memo/o_actions 投影钩子/补 r 机制） |
+| 驱动 | utils | `packages/utils/mflowy/utils/` | mlflow seam、OAuth 2.1 客户端（login/token 库）、脚本安全扫描、capture/path/logging/jinja |
 
 依赖方向保持单向：utils ← driver ← data ← model ← bo ← mcp（内核零域感知、两 POMDP 域隔离、bo 工作流域居 model 之后——`tests/test_workspace.py` 断言，改动 import 保持全绿）。模块内相对导入、跨模块绝对导入。
 
@@ -48,11 +50,15 @@ uv workspace 七 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 
 插件身份静态声明：`@node(namespace=...)` 标记（裸命名参数=参数边，Annotated=用户可配）+ 域包 pyproject `[project.entry-points."mflowy.builtin_plugins"]` 手写条目（0.2.0 起构建期 AST 扫描钩子退役，与第三方包声明方式同构），运行期 `driver/discover.py` 按注册表（装饰器写入 `<node_key, Node>`，#126 零属性挂载）解析——发现表键 = 注册表键，声明与注册不一致（未装饰/错 namespace/别名键）加载期 fail-loud（#140 身份桥退役）；忘声明由 CR 交叉检查兜底（见「添加能力」）。
 
-## 工程设计与执行纪律（DDD 三层）
-
-三层 = 包分层的票面投影：**应用层**（工具面与入口）← **领域层**（业务语义）← **驱动层**（基座与基础设施）——依赖方向不变量同源（单向向上、内核零域感知，机器面 = `tests/test_workspace.py`）。设计对位：领域居中、上层组合下层、基础设施零领域感知——POMDP 倒置（#245–#247，合同 = #226 2026-11-19 裁定集）即此对齐的兑现：`Handler[S,P]` 领域接口、`POMDPSession` 应用壳。
+## 工程设计与执行纪律
 
 **双读法（执行纪律）**：读图**自顶向下**（应用 → 领域 → 驱动）——理解全局票的范围与动机；排程**自底向上**（驱动基座 → 域件 → 应用面）——合入序 = 读图序之逆。
+
+**结构纪律**（泛化，不限 nn——分层越清晰，复用与测试越简单；#237 图级裁定，#239 划界检验）：
+
+- **单元抽取**：抽取重复且固定的结构为单元——单元的组合结构不受任何参数影响；变体 = 不同单元类，不是参数化单单元。残差/分支等新结构需求直接改 forward（按需换 nn.ModuleList/Sequential 组合），不预建参数门——留门 = 纪律本身，不预建变体机制。
+- **参数面**：参数是固化结构下实际所需的数值，不含任何修改结构的参数。判据（#239 划界）：**组合结构开关**（加/删/换堆叠组件——activation/use_batch_norm 属之）不进节点/estimator 参数面，辖第三方透传镜像门；**模式所需数值**（hidden_dims/dropout 属之）与**操作语义载荷**（策略/数学值/分析对象——method/base/task 属之）照常保留。
+- **UT 面**：UT 不测工程纪律——纪律走 CR 门禁；UT 只钉行为契约（禁断言参数面/结构选择本身；依赖结构事实的行为断言不算钉纪律，保留）。
 
 ## 质量红线（每个变更遵守）
 
