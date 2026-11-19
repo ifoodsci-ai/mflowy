@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed（剧本面治理）：kaggle-competition 迁出项目 skills（#233）
+
+- kaggle 竞赛外环剧本**非本项目技能**（外部 kaggle MCP + 自带 scripts，零 mflowy
+  工具耦合）——整体迁出 git 跟踪，用户级 `~/.agents/skills/` 自理；repo skills 自此
+  ⇔ mflowy 工具承载，零例外条款（#243 发现面「kaggle-competition 不加」条款随之
+  作废——余 7 技能恰全引 mflowy 工具）。术语回潮测试的 kaggle 排除面同步清理。
+
 ### BREAKING：POMDP 会话基座重构·model 切片（#226 ⑦⑨⑤⑥④ + 统计工具独立化补充裁定 → 拆票 #236）
 
 model 域全量落位（`ModelingSession` 实体化，模块级薄门面退役）：

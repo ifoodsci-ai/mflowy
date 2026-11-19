@@ -159,8 +159,7 @@ def test_active_docs_use_pomdp_not_mdp():
 
     排除面各有其据：CHANGELOG（已发布历史条目——追加式纪律）、docs/research（历史
     设计快照，文件名即 mdp）、benchmark_readiness_report（自declared 一次性评估
-    快照）、.agents/skills/kaggle-competition（「外环 MDP」为该 skill 自身的形式化
-    设计词）、代码文件（.mdp_family 为代码锚点，标识符不随术语改名——
+    快照）、代码文件（.mdp_family 为代码锚点，标识符不随术语改名——
     Handle 已随 #89 改名 POMDPSessionHandle）；CONTEXT.md 的 _Avoid_ 行例外——禁用别名表本就该点名旧称。"""
     import re
 
@@ -171,7 +170,7 @@ def test_active_docs_use_pomdp_not_mdp():
         *sorted((ROOT / "packages").rglob("README.md")),  # 含 builtin_plugins/{data,model} 两级深
         *sorted((ROOT / "docs").glob("*.md")),
     ]
-    files += sorted(p for p in (ROOT / ".agents" / "skills").rglob("*.md") if "kaggle-competition" not in p.parts)
+    files += sorted((ROOT / ".agents" / "skills").rglob("*.md"))
 
     for f in files:
         text = f.read_text(encoding="utf-8")
