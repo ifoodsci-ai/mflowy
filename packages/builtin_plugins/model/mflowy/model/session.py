@@ -101,9 +101,10 @@ def _counts_step(action: str) -> bool:
     return action in COMPUTE_ACTIONS
 
 
-def _open(session_id: str) -> POMDPSession:
-    """按 sid（会话目录绝对路径，#226 ②）重水化——相对路径由壳 fail-loud。"""
-    return POMDPSession.open(session_id, counts_step=_counts_step)
+def _open(observation_json: str) -> POMDPSession:
+    """按 observation_json（状态文件绝对路径，#226 ②/#242 正名）重水化——相对
+    路径/名不符由壳 fail-loud。"""
+    return POMDPSession.open(observation_json, counts_step=_counts_step)
 
 
 # ── 域状态文件（board.json）：光标/快照栈/账本/verdict 缓存 ──────────────────
@@ -250,13 +251,14 @@ def _parse_split_yaml(cv_card: str) -> dict:
 
 
 class ModelingSession:
-    """model 域 POMDP 会话实体（#226 ⑨ 合规修复，#236）：typed 六操作、无状态 sid
-    寻址。先验 = ModelPrior（冻结协议，⑦）——episode 内动作面冻结（牙齿在壳）；
+    """model 域 POMDP 会话实体（#226 ⑨ 合规修复，#236）：typed 六操作、无状态
+    observation_json 寻址（#242 正名——状态文件本体锚，bo study_db 同构）。
+    先验 = ModelPrior（冻结协议，⑦）——episode 内动作面冻结（牙齿在壳）；
     apply 参数由 agent 基于上下文中的 o 翻译（红线 10——机器面零注入）。"""
 
     def load_or_start(
         self,
-        sid: str | None = None,
+        observation_json: str | None = None,
         *,
         file_path: str | None = None,
         cv_card: str | None = None,
@@ -270,16 +272,17 @@ class ModelingSession:
         external_baseline: dict | None = None,
         card: dict | None = None,
     ) -> tuple[str, Observation]:
-        """开局/续载（#226 ②⑤，#236 实体化）：sid 给定 = 加载（任何开局入参同传 =
-        参数来源冲突 fail-loud；minted-but-unstarted 孤儿目录给专属报错——物化中断
-        所致，重开即愈）；sid 缺省 = cv_card 必填新开（D 物化冻结 + 光标就位，物化
-        收进 start_ctx body——孤儿窗收窄到 mint 级）。返回 (sid, o)。
+        """开局/续载（#226 ②⑤，#236 实体化）：observation_json 给定 = 加载（任何
+        开局入参同传 = 参数来源冲突 fail-loud；minted-but-unstarted 孤儿目录给专属
+        报错——物化中断所致，重开即愈）；缺省 = cv_card 必填新开（D 物化冻结 +
+        光标就位，物化收进 start_ctx body——孤儿窗收窄到 mint 级）。
+        返回 (observation_json, o)。
 
         **显式参数 > card（背景）分层缺省**——合并结果冻结进 ModelPrior prior
         （episode 背景状态，⑧动作面冻结牙齿在壳）；两处同显式来源的冲突仍由
         校验门 fail-loud。改协议 = 新 episode（弃局重开）。
         """
-        if sid is not None:
+        if observation_json is not None:
             conflicts = {
                 "file_path": file_path,
                 "cv_card": cv_card,
@@ -296,17 +299,18 @@ class ModelingSession:
             given = sorted(k for k, v in conflicts.items() if v is not None)
             if given:
                 raise ValueError(
-                    f"参数来源冲突：sid（加载既有会话）与开局入参 {given} 不可同传——"
+                    f"参数来源冲突：observation_json（加载既有会话）与开局入参 {given} 不可同传——"
                     "续局带新认知 = 以旧会话产物数据路径 + 新协议开新局"
                 )
             from pathlib import Path as _Path
 
-            if _Path(sid).is_dir() and not (_Path(sid) / "observation.json").exists():
+            p = _Path(observation_json)
+            if p.is_absolute() and p.parent.is_dir() and not p.exists():
                 raise ValueError(  # minted-but-unstarted（#236）：确定性判据（目录在、开局观测缺）
-                    f"会话目录存在但未开局（minted-but-unstarted——开局物化中断所致），孤儿不可续，请开新局: {sid}"
+                    f"会话目录存在但未开局（minted-but-unstarted——开局物化中断所致），孤儿不可续，请开新局: {p.parent}"
                 )
-            ss = POMDPSession.load_or_start(sid=sid, counts_step=_counts_step)
-            return ss.sid, ss.observation
+            ss = POMDPSession.load_or_start(observation_json=observation_json, counts_step=_counts_step)
+            return ss.observation_json, ss.observation
         goal = goal or ""
         card = card or {}
         if not cv_card or not str(cv_card).strip():
@@ -383,9 +387,9 @@ class ModelingSession:
             m["source_fingerprint"] = _fp(df)  # #236 工件契约锚（原始帧一次计算——单源进 m/biz）
             o.biz = _state_projection(m)
             _board_write(ss, board)  # 域状态先行（开局 commit = 观测落盘）
-        return ss.sid, o
+        return ss.observation_json, o
 
-    def apply(self, sid: str, action: str, params: dict | None = None) -> Observation:
+    def apply(self, observation_json: str, action: str, params: dict | None = None) -> Observation:
         """执行一个回合动作：action ∈ 九动作面词表（配置编辑 + 计算动作 + 落诊，
         #226 ④/#236 report_findings 收编；done = finish 控制面独立入口）。
 
@@ -398,7 +402,7 @@ class ModelingSession:
                 f"动作 `{action}` 不在词表（九动作面 = {list(ACTIONS)}；done = finish 控制面独立入口，"
                 "rollback/finish/abandon 同为独立入口）"
             )
-        ss = _open(sid)
+        ss = _open(observation_json)
         with ss.apply_ctx(action) as (o, log):
             board = _board_load(ss)
             m = _mview(ss, o, board)
@@ -415,10 +419,10 @@ class ModelingSession:
             dispatch[action](ss, o, m, board, log, params)
         return o
 
-    def rollback(self, sid: str) -> Observation:
+    def rollback(self, observation_json: str) -> Observation:
         """回退光标到上一快照（决策日志追加 rollback 记录；预算不回补；账本/study 永不
         回退——盘上 append-only）。"""
-        ss = _open(sid)
+        ss = _open(observation_json)
         with ss.rollback_ctx() as (o, log):
             board = _board_load(ss)
             m = _mview(ss, o, board)
@@ -446,12 +450,12 @@ class ModelingSession:
             o.biz = _state_projection(m)
         return o
 
-    def abandon(self, sid: str, reason: str | None = None) -> dict[str, Any]:
+    def abandon(self, observation_json: str, reason: str | None = None) -> dict[str, Any]:
         """弃局终局：委托壳 abandon（幂等）——置 abandoned、记录进决策日志、保留
         决策日志与模型账本、不导出交付物；已收局不可弃（终态互斥）。"""
-        return _open(sid).abandon(reason=reason)
+        return _open(observation_json).abandon(reason=reason)
 
-    def finish(self, sid: str, *, pdf: str) -> FinishVerdict:
+    def finish(self, observation_json: str, *, pdf: str) -> FinishVerdict:
         """收局（done，#66 单动作——报告是 π 的产物，引擎只收编不编译）：
 
         收编 π 产报告进 deliverables（复制 + tmp/rename 原子落盘；文件缺失 fail-loud）
@@ -465,7 +469,7 @@ class ModelingSession:
         final_train_test；accepted 恒真的例外路径，reason 即续局指引）；有交付面时
         accepted 恒真（holdout 读在 final_train_test 恰一次，finish 只结算）。
         """
-        ss = _open(sid)
+        ss = _open(observation_json)
         with ss.finish_ctx() as (o, log):  # 幂等重入 = 壳只读路径（已收局零落盘）
             board = _board_load(ss)
             m = _mview(ss, o, board)
@@ -505,7 +509,7 @@ class ModelingSession:
             m = _mview(ss, o, board)
             return _verdict_response(m, list(ss.decision_log))
 
-    def observe(self, sid: str) -> Observation:
+    def observe(self, observation_json: str) -> Observation:
         """观测（幂等只读零转移，#117 取代 propose）：盘上观测 + 读时决策面投影。
 
         - 本 combo 键 findings（#66 作用域——规则与 LLM 落诊同粒度，证据不跨 FE 组合）
@@ -515,7 +519,7 @@ class ModelingSession:
           证据上浮；选项面 = 全候选，不截断）
         投影只回调用方（壳 observe_ctx 零写）；终态会话照常可观测。
         """
-        ss = _open(sid)
+        ss = _open(observation_json)
         with ss.observe_ctx() as o:
             m = _mview(ss, o, _board_load(ss))
             cursor = m["cursor"]
@@ -541,7 +545,7 @@ class ModelingSession:
             }
         return o
 
-    def statistics(self, sid: str, key: str, top_k: int = 5) -> dict:
+    def statistics(self, observation_json: str, key: str, top_k: int = 5) -> dict:
         """统计证据（#226 ⑥ 判读退役承接 + 补充裁定统计步独立成工具，#236）：
         run 寻址（oof run 或终训 run）声明式分析——证据表 + 图集经 JobProvider 执行
         （R1：全计算工具走 provider），工件落统计 run。零会话转移（只读 board/prior）。
@@ -551,7 +555,7 @@ class ModelingSession:
         from mflowy.driver.config import NodeConf
         from mflowy.driver.serializer import flow_to_yaml
 
-        ss = _open(sid)
+        ss = _open(observation_json)
         m = _mview(ss, ss.observation, _board_load(ss))
         entry = m["models"].get(key)
         if entry is None:
@@ -613,13 +617,13 @@ class ModelingSession:
             raise RuntimeError("统计 DAG 无完成的 model__statistics 节点——证据不达")
         return dict(node.value)
 
-    def taylor_report(self, sid: str, run_ids: list[str]) -> dict:
+    def taylor_report(self, observation_json: str, run_ids: list[str]) -> dict:
         """泰勒聚合门面（draw_taylor_diagram 工具面）：ledger 反查 label（combo key）
         + 终训面校验（fail-loud 带可用清单）+ 副产物 fan-in（taylor_byproducts 边函数
         ——y_test 逐位同一断言）+ 图落会话目录。"""
         from mflowy.model.report import taylor_for_runs
 
-        ss = _open(sid)
+        ss = _open(observation_json)
         m = _mview(ss, ss.observation, _board_load(ss))
         rid_to_key = {v["run_id"]: k for k, v in m["models"].items() if v.get("run_id")}
         unknown = [r for r in run_ids if r not in rid_to_key]
@@ -631,11 +635,11 @@ class ModelingSession:
         out = taylor_for_runs(runs, m["task"], ss.dir)
         return {**out, "figure": out["figure"] if out["figure"] is None else str(out["figure"])}
 
-    def report_skeleton(self, sid: str) -> dict:
+    def report_skeleton(self, observation_json: str) -> dict:
         """报告素材样板（#66 只读零副作用）：表格从账本渲染（数字抄写归引擎——π 不
         默写 u_inner/θ*/u/rank）+ 图片清单（各 combo 的 OOF 图集、终训副产物指针、
         泰勒图路径）+ 叙事槽样板（判断归 π）。"""
-        ss = _open(sid)
+        ss = _open(observation_json)
         m = _mview(ss, ss.observation, _board_load(ss))
         d = ss.dir
         from mflowy.model.report import TAYLOR_FIGURE  # 图名单源——与写入方共享常量（#83）
@@ -679,7 +683,7 @@ class ModelingSession:
                 }
             )
         return {
-            "session_id": sid,
+            "observation_json": observation_json,
             "tables": {"board": board_rows},
             "rank_consistency": _rank_consistency(m, frozen),
             "images": images,
@@ -1421,10 +1425,11 @@ def _verdict_response(m: dict, decision_log: list) -> FinishVerdict:
     deliverables = {
         k: {
             "plan_yaml": _plan_yaml(m, k),
-            "loader": {  # sid 相对寻址 + 冻结世代（#89 M5：带版本文件名）
-                "session_id": m["session_id"],
-                "file": f"loader_{_key_file(k)}_v{m['models'][k].get('loader_v', 1)}.pkl",
-            },
+            # loader 本体绝对路径（#242 债清偿：session_id/目录名两段式相对引用退役——
+            # 机器铸造原样可持；文件名自带冻结世代指针（#89 M5））
+            "loader": str(
+                _root() / m["session_id"] / f"loader_{_key_file(k)}_v{m['models'][k].get('loader_v', 1)}.pkl"
+            ),
             "run_id": m["models"][k]["run_id"],
             "terminal_utility": v["models"][k]["u"],
             "findings": v["models"][k]["findings"],
@@ -1526,7 +1531,7 @@ def _digest(m: dict) -> str:
 
 def save_loader(session_id: str, loader, key: str, v: int = 1) -> None:
     """final_train_test 后持久化 loader 门面（键 = 结构键 + _v{n} 冻结世代；
-    多模型会话各持一份，sid 相对寻址）。
+    多模型会话各持一份，会话内相对寻址）。
 
     M5（#89 ④片）：freeze-once（combo 冻结后不可再终训）⇒ 世代恒 1——版本号
     显式落名（规格字面：带版本文件名，与 data 域 v{n}.parquet 同纪律）；写走

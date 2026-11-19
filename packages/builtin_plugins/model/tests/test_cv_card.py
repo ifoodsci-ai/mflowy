@@ -10,6 +10,7 @@
 """
 
 import json
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -110,7 +111,7 @@ def test_cv_card_default_candidates_first_is_baseline(reg_csv):
 
 def test_start_default_candidates_open_all_families(sessions_root, reg_csv):
     """开局不带 candidates（无 research-review 先验）走缺省全族开放面。"""
-    sid, s = ModelingSession().load_or_start(
+    observation_json, s = ModelingSession().load_or_start(
         file_path=reg_csv, cv_card=CV_CARD, card={"domain": "t", "target": "target"}, task="regression", metric="mae"
     )
     assert s.prior is not None
@@ -153,9 +154,9 @@ def test_bad_hints_fail_loud(reg_csv):
 
 
 def test_start_takes_cv_card_and_stores_candidates(sessions_root, reg_csv):
-    sid, s = _start(sessions_root, reg_csv)
-    assert isinstance(sid, str) and type(s.validation.steps) is int  # #89 过渡地板
-    m = json.loads((sessions_root / sid / "observation.json").read_text(encoding="utf-8"))["prior"]
+    observation_json, s = _start(sessions_root, reg_csv)
+    assert isinstance(observation_json, str) and type(s.validation.steps) is int  # #89 过渡地板
+    m = json.loads((Path(observation_json)).read_text(encoding="utf-8"))["prior"]
     assert [c["family"] for c in m["candidates"]] == ["RF", "XGB"]
     assert m["candidates"][0]["baseline"] is True
 
@@ -178,32 +179,32 @@ def test_start_rejects_dict_cv_card(sessions_root, reg_csv):
 
 def test_hints_seed_cursor_on_select(sessions_root, reg_csv):
     """select_model 注入该候选的 hints（缺省 pins/narrowing）与 seed。"""
-    sid, s = _start(sessions_root, reg_csv)
-    r = ModelingSession().apply(sid, "select_model", {"family": "XGB"})
+    observation_json, s = _start(sessions_root, reg_csv)
+    r = ModelingSession().apply(observation_json, "select_model", {"family": "XGB"})
     assert r.biz["cursor"]["H"] == {"max_depth": {"kind": "continuous", "lo": 3, "hi": 6, "step": None}}
     assert r.biz["cursor"]["seed"] == 7
-    board = json.loads((sessions_root / sid / "board.json").read_text(encoding="utf-8"))
+    board = json.loads((Path(observation_json).parent / "board.json").read_text(encoding="utf-8"))
     assert board["cursor"]["seed"] == 7  # 有效种子随候选缺省落光标（board = 光标居所）
 
 
 def test_pi_override_wins_over_hints(sessions_root, reg_csv):
     """卡是先验不是边界：π set_hp/set_hp_space/set_seed 覆盖 hint 缺省。"""
-    sid, s = _start(sessions_root, reg_csv)
-    ModelingSession().apply(sid, "select_model", {"family": "XGB"})
-    r = ModelingSession().apply(sid, "set_hp_space", {"max_depth": [4, 5]})
+    observation_json, s = _start(sessions_root, reg_csv)
+    ModelingSession().apply(observation_json, "select_model", {"family": "XGB"})
+    r = ModelingSession().apply(observation_json, "set_hp_space", {"max_depth": [4, 5]})
     assert r.biz["cursor"]["H"]["max_depth"] == {"kind": "continuous", "lo": 4, "hi": 5, "step": None}
-    r2 = ModelingSession().apply(sid, "set_seed", {"seed": 123})
+    r2 = ModelingSession().apply(observation_json, "set_seed", {"seed": 123})
     assert r2.biz["cursor"]["seed"] == 123
 
 
 def test_scalar_hint_pins(sessions_root, reg_csv):
     """标量 hint = pin（初始空间决策：文献知识注入搜索起点）。"""
-    sid, s = _start(
+    observation_json, s = _start(
         sessions_root,
         reg_csv,
         candidates=[{"family": "RF", "baseline": True, "space_hints": {"n_estimators": 50}}],
     )
-    r = ModelingSession().apply(sid, "select_model", {"family": "RF"})
+    r = ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
     assert r.biz["cursor"]["H"] == {"n_estimators": 50}
 
 
@@ -211,8 +212,8 @@ def test_scalar_hint_pins(sessions_root, reg_csv):
 
 
 def test_observe_exposes_baseline_flags(sessions_root, reg_csv):
-    sid, s = _start(sessions_root, reg_csv)
-    o = ModelingSession().observe(sid)
+    observation_json, s = _start(sessions_root, reg_csv)
+    o = ModelingSession().observe(observation_json)
     flags = {c["family"]: c["baseline"] for c in (o.prior or {}).get("candidates") or []}
     assert flags == {"RF": True, "XGB": False}
     assert set(o.biz["face"]) == {"RF", "XGB"}  # 候选族超参面全集可见
@@ -288,7 +289,7 @@ def test_external_baseline_str_retired_fail_loud(reg_csv):
 def test_start_external_baseline_frozen_into_protocol(sessions_root, reg_csv):
     """开局透传冻结：external_baseline 进 prior.protocol（渲染面等「波动主导差距」
     挂层毕业——现状纯存档）。"""
-    sid, s = ModelingSession().load_or_start(
+    observation_json, s = ModelingSession().load_or_start(
         file_path=reg_csv,
         cv_card=CV_CARD,
         card={"domain": "t", "target": "target"},

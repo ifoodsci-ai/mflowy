@@ -48,4 +48,4 @@ def test_apply_cleaning_schema_has_no_dry_run():
     schema = asyncio.run(server.list_tools())[0].input_schema
 
     assert "dry_run" not in schema.get("properties", {})
-    assert {"session_id", "action", "params"} <= set(schema.get("properties", {}))
+    assert {"observation_json", "action", "params"} <= set(schema.get("properties", {}))

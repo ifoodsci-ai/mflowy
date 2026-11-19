@@ -138,10 +138,9 @@ JSONL 事实流，一行一条 (s,a,r,s′)，rollback/finish/abandon 是记录�
 _Avoid_: manifest.json（0.2.0 随 #89 溶解——协议状态进观测摘要、历史进决策日志、域状态进域文件）
 
 **Observation（契约模型）**:
-`Observation`：七键封闭契约（session_id / prior / state_digest / reward / steps /
-max_steps / recent_decisions）+ 终态双旗，pydantic `extra="forbid"`——域尾巴归位
-prior（冻结卡）与 state_digest（结构化状态摘要）；`recent_decisions` = 决策日志尾
-部截断（TOP_K_DECISIONS=5，观测有界）。
+`Observation`：四件封闭契约（#226 ①——prior / biz / actions / validation），
+pydantic `extra="forbid"`；寻址不出观测（session_id/锚均禁入——#226 ①/#242：
+会话寻址锚 = observation_json 状态文件本体路径，bo study_db 同构）。
 _Avoid_: Activation / 菜单 / 候选（#113/#120 退役——菜单是不完整过滤器，隐藏合法选项；π 可见面 = 动作词表全集）；should_stop 与停止建议（π 从观测自决收局，预算硬边界由守卫独立表达）；proposal 键与 Candidate（随 #89 拆分/退役）
 
 ### 数据清洗子系统（Clean）

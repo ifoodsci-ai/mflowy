@@ -36,19 +36,19 @@ class TestExports:
             importlib.import_module("mflowy.driver.rule")
 
     def test_handle_six_ops(self):
-        """Handle = 无状态 sid 寻址服务面：六操作（start→load_or_start ②，#117 observe
+        """Handle = 无状态 observation_json 寻址服务面（#242 状态文件本体锚）：六操作（start→load_or_start ②，#117 observe
         入局）。具名核心 + ``*args: Any`` 域尾巴；observe 带 *args 更新先验（⑧）。"""
         for op in ("load_or_start", "observe", "apply", "rollback", "finish", "abandon"):
             assert hasattr(POMDPSessionHandle, op), op
         for gone in ("start", "propose"):
             assert not hasattr(POMDPSessionHandle, gone)
         sig = inspect.signature(POMDPSessionHandle.apply)
-        assert list(sig.parameters)[:3] == ["self", "sid", "action"]
+        assert list(sig.parameters)[:3] == ["self", "observation_json", "action"]
         assert any(p.kind is inspect.Parameter.VAR_POSITIONAL for p in sig.parameters.values())
         los = inspect.signature(POMDPSessionHandle.load_or_start)
-        assert list(los.parameters) == ["self", "sid", "args"]
+        assert list(los.parameters) == ["self", "observation_json", "args"]
         observe = inspect.signature(POMDPSessionHandle.observe)
-        assert list(observe.parameters) == ["self", "sid", "args"]
+        assert list(observe.parameters) == ["self", "observation_json", "args"]
         assert observe.return_annotation in (Observation, "Observation")  # 幂等：回观测本身
 
 
@@ -86,7 +86,7 @@ class TestObservationModel:
         """封闭契约（每层 extra=forbid）：顶层未知键、退役键（session_id/state_digest/
         顶层 recent_decisions/should_stop/report）与 validation 层未知键全拒。"""
         with pytest.raises(ValidationError):
-            Observation.model_validate(_observation(session_id="s1"))  # ① sid 出观测——寻址不是观测
+            Observation.model_validate(_observation(session_id="s1"))  # ① session_id 出观测——寻址不是观测
         with pytest.raises(ValidationError):
             Observation.model_validate(_observation(state_digest={"v": 0}))  # ① 更名 biz
         with pytest.raises(ValidationError):

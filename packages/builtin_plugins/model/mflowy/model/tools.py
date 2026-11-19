@@ -284,10 +284,20 @@ async def predict(
 # 会话恒单目标任务——多目标在会话外三层循环（多目标 → 多模型 → 单目标任务会话）。
 
 
+# 会话寻址锚参数单源（#242：状态文件本体锚——bo study_db 同构；
+# 描述即回传面：load_or_start_modeling 二联信封的 observation_json）
+_Anchor = Annotated[
+    str, Field(description="状态文件 observation.json 绝对路径（load_or_start_modeling 返回的 observation_json）")
+]
+
+
 def load_or_start_modeling(
-    sid: Annotated[
+    observation_json: Annotated[
         str | None,
-        Field(description="会话目录绝对路径：给定 = 加载既有会话（开局入参不可同传）；缺省 = 新开"),
+        Field(
+            description="状态文件 observation.json 绝对路径（#242 状态文件本体锚，bo study_db 同构）："
+            "给定 = 加载既有会话（开局入参不可同传）；缺省 = 新开"
+        ),
     ] = None,
     file_path: Annotated[
         str | None, Field(description="数据文件绝对路径（清洗会话终态 parquet/csv），新开必填")
@@ -327,20 +337,21 @@ def load_or_start_modeling(
         dict | None, Field(description="DomainCard（survey 产物）背景：target/task/id_columns 的兜底层")
     ] = None,
 ) -> dict:
-    """开局/续载建模会话（#226 ②）：sid 给定 = 加载既有会话；缺省 = x_y+split
-    物化冻结 D + 光标就位（协议不进动作空间）。返回二联信封 {sid, observation}
-    ——sid 即后续所有会话工具的寻址面（会话目录绝对路径）。
+    """开局/续载建模会话（#226 ②）：observation_json 给定 = 加载既有会话；缺省 =
+    x_y+split 物化冻结 D + 光标就位（协议不进动作空间）。返回二联信封
+    {observation_json, observation}——observation_json 即后续所有会话工具的寻址面
+    （状态文件绝对路径，#242）。
 
     何时使用 load_or_start_modeling：
     - model-brief 问卷（含 research-review 结构化候选）编译出 cv_card（split yaml
       明文）+ 显式协议参数后开局回合循环；多目标 = 每目标各开一个会话（三层循环）
-    - 上下文丢失/跨进程续局：拿 sid 加载（开局入参与 sid 同传 = 参数来源冲突报错）
+    - 上下文丢失/跨进程续局：拿 observation_json 加载（开局入参与其同传 = 参数来源冲突报错）
     """
     session = _session()
 
     # TODO(#226 ⑤ 后续)：submitted 状态信封自带 watch 命令（#225 remote 半边随用随加）
-    sid_out, o = session.load_or_start(
-        sid,
+    observation_json_out, o = session.load_or_start(
+        observation_json,
         file_path=file_path,
         cv_card=cv_card,
         target=target,
@@ -353,10 +364,12 @@ def load_or_start_modeling(
         external_baseline=external_baseline,
         card=card,
     )
-    return {"sid": sid_out, "observation": o.model_dump()}
+    return {"observation_json": observation_json_out, "observation": o.model_dump()}
 
 
-def observe_modeling(session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")]) -> dict:
+def observe_modeling(
+    observation_json: _Anchor,
+) -> dict:
     """观测建模会话（幂等只读零转移）：当前观测 + 读时决策面——本 combo 键 findings
     （规则与 LLM 落诊同粒度）、光标/combo_key、账本摘要（θ*/u_inner/冻结旗）、has_cat、
     候选族超参面（face：动态维可收窄、静态常量可 pin）。
@@ -370,11 +383,11 @@ def observe_modeling(session_id: Annotated[str, Field(description="会话目录�
     """
     session = _session()
 
-    return session.observe(session_id).model_dump()
+    return session.observe(observation_json).model_dump()
 
 
 def apply_modeling(
-    session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")],
+    observation_json: _Anchor,
     node: Annotated[
         str,
         Field(
@@ -403,10 +416,12 @@ def apply_modeling(
     """
     session = _session()
 
-    return session.apply(session_id, node, params).model_dump()
+    return session.apply(observation_json, node, params).model_dump()
 
 
-def rollback_modeling(session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")]) -> dict:
+def rollback_modeling(
+    observation_json: _Anchor,
+) -> dict:
     """回退光标到上一快照（决策日志保留；预算不回补；账本与盘上 study 永不回退）。
 
     何时使用 rollback_modeling：
@@ -414,11 +429,11 @@ def rollback_modeling(session_id: Annotated[str, Field(description="会话目录
     """
     session = _session()
 
-    return session.rollback(session_id).model_dump()
+    return session.rollback(observation_json).model_dump()
 
 
 def finish_modeling(
-    session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")],
+    observation_json: _Anchor,
     pdf: Annotated[
         str,
         Field(
@@ -440,11 +455,17 @@ def finish_modeling(
 
     session = _session()
 
-    return session.finish(session_id, pdf=pdf).model_dump()
+    return session.finish(observation_json, pdf=pdf).model_dump()
 
 
 def draw_taylor_diagram(
-    session_id: Annotated[str, Field(description="建模会话目录绝对路径（sid；副产物按 run 寻址、图落会话目录）")],
+    observation_json: Annotated[
+        str,
+        Field(
+            description="状态文件 observation.json 绝对路径（load_or_start_modeling 返回的 observation_json；"
+            "副产物按 run 寻址、图落会话目录 = 其父目录）"
+        ),
+    ],
     run_ids: Annotated[
         list[str], Field(description="final_train_test 的 run_id 清单（账本 entry.run_id；≥2 个才有对比面）")
     ],
@@ -461,11 +482,11 @@ def draw_taylor_diagram(
     """
     session = _session()
 
-    return session.taylor_report(session_id, run_ids)
+    return session.taylor_report(observation_json, run_ids)
 
 
 def modeling_report_skeleton(
-    session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")],
+    observation_json: _Anchor,
 ) -> dict:
     """报告素材样板（只读零副作用）：表格从账本渲染（u_inner/θ*/u/rank——数字抄写
     归引擎，你不默写）+ 图片清单（各 combo 的 OOF 图集、终训副产物指针、泰勒图路径）
@@ -476,11 +497,11 @@ def modeling_report_skeleton(
     """
     session = _session()
 
-    return session.report_skeleton(session_id)
+    return session.report_skeleton(observation_json)
 
 
 def modeling_statistics(
-    session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")],
+    observation_json: _Anchor,
     key: Annotated[str, Field(description="combo 结构键（账本键——observe 的 models 面可查）")],
     top_k: Annotated[int, Field(description="误差集中列取证上限（缺省 5）")] = 5,
 ) -> dict:
@@ -496,11 +517,11 @@ def modeling_statistics(
     """
     session = _session()
 
-    return session.statistics(session_id, key, top_k=top_k)
+    return session.statistics(observation_json, key, top_k=top_k)
 
 
 def report_findings_modeling(
-    session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")],
+    observation_json: _Anchor,
     key: Annotated[str, Field(description="落诊账本键（combo 结构键）")],
     findings: Annotated[
         list[dict],
@@ -520,22 +541,22 @@ def report_findings_modeling(
     """
     session = _session()
 
-    return session.apply(session_id, "report_findings", {"key": key, "findings": findings}).model_dump()
+    return session.apply(observation_json, "report_findings", {"key": key, "findings": findings}).model_dump()
 
 
 def abandon_modeling(
-    session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")],
+    observation_json: _Anchor,
     reason: Annotated[str | None, Field(description="弃局原因（落盘供审计，如「改协议重开」）")] = None,
 ) -> dict:
     """弃局终局：置 abandoned、决策日志与模型账本保留、不导出交付物；已终态再弃即报错。
 
     何时使用 abandon_modeling：
     - 用户中止建模 / 改协议开新 episode 前，显式终局旧会话（不留僵尸——要么 finish 要么 abandon）
-    - 返回 ack：{session_id, abandoned, reason, steps}（steps = 弃局时已走步数）
+    - 返回 ack：{observation_json, abandoned, reason, steps}（steps = 弃局时已走步数）
     """
     session = _session()
 
-    return session.abandon(session_id, reason=reason)
+    return session.abandon(observation_json, reason=reason)
 
 
 # ── 执行模式切换（#156 §4：local / remote 等价受理形态，进程级开关）──────────

@@ -52,7 +52,7 @@ class Observation(BaseModel):
       作弊），投影经域词表钩子（与 counts_step 谓词同构居所）
     - ``validation``：引擎事实一件收口（见 ``ObservationValidation``）
 
-    ``session_id`` 出观测——sid 是寻址不是观测内容（#226 ①）；
+    ``session_id`` 出观测——寻址（observation_json，#242）不是观测内容（#226 ①）；
     ``cumulative_reward`` 缓收不做（#226 ⑥——补 r 机制留全量重建门）。
     """
 
@@ -90,29 +90,33 @@ class FinishVerdict(BaseModel):
 class POMDPSessionHandle(Protocol):
     """POMDP 会话服务面：第三方域作者实现一个 POMDP 环境的类型锚点（会话 SDK）。
 
-    无状态 sid 寻址——每调用从盘重水化（会话比 agent 上下文与包版本长寿）。
+    无状态 observation_json 寻址（#242 正名——状态文件本体锚，bo study_db
+    同构）——每调用从盘重水化（会话比 agent 上下文与包版本长寿）。
     统一"具名核心 + ``*args: Any`` 域尾巴"：域选项（preview/min_quality/deliver_keys，
     语义域定）不进契约签名；``action`` 取自域动作词表。
 
     生命周期（#226 ②⑧）：
 
-    - ``load_or_start(sid=None, *args) -> (sid, o)``：sid 给定 = 加载（sid = 会话
-      目录**绝对路径**，相对路径/不存在 fail-loud）；sid 缺省 = 新建（``*args``
-      初始化先验）。**sid + 域尾巴开局入参同传 = 参数来源冲突 fail-loud**——续局
+    - ``load_or_start(observation_json=None, *args) -> (observation_json, o)``：
+      observation_json 给定 = 加载（= 状态文件 observation.json **绝对路径**，
+      相对路径/不存在 fail-loud）；缺省 = 新建（``*args`` 初始化先验）。
+      **observation_json + 域尾巴开局入参同传 = 参数来源冲突 fail-loud**——续局
       带新认知 = 以旧会话产物 data 路径 + 新 prior **开新局**（集链语义），不开
       旧局换卡
-    - ``observe(sid, *args)``：``*args`` 更新先验（先验可读，agent 基于已读先验
-      上下文主动传参）；计算语义见 ``session`` 模块 observe_ctx——对真态只读、
-      观测派生面写盘、零转移（无决策日志条目/不吃步），终态会话照常可观测
-      （#117 取代 propose）
+    - ``observe(observation_json, *args)``：``*args`` 更新先验（先验可读，agent
+      基于已读先验上下文主动传参）；计算语义见 ``session`` 模块 observe_ctx——
+      对真态只读、观测派生面写盘、零转移（无决策日志条目/不吃步），终态会话
+      照常可观测（#117 取代 propose）
     - **观测/执行二分纪律**（#226 ⑧）：observe 可从内存 o 翻译内部组合函数参数；
       apply 必须由 agent 基于上下文中的 o 翻译参数，机器面不得从 o 翻译 apply
       参数——新增节点零机器面注入接线
     """
 
-    def load_or_start(self, sid: str | None = None, *args: Any) -> tuple[str, Observation]: ...
-    def observe(self, sid: str, *args: Any) -> Observation: ...
-    def apply(self, sid: str, action: str, params: Mapping[str, Any] | None = None, *args: Any) -> Observation: ...
-    def rollback(self, sid: str, *args: Any) -> Observation: ...
-    def finish(self, sid: str, *args: Any) -> FinishVerdict: ...
-    def abandon(self, sid: str, reason: str | None = None) -> Mapping[str, Any]: ...
+    def load_or_start(self, observation_json: str | None = None, *args: Any) -> tuple[str, Observation]: ...
+    def observe(self, observation_json: str, *args: Any) -> Observation: ...
+    def apply(
+        self, observation_json: str, action: str, params: Mapping[str, Any] | None = None, *args: Any
+    ) -> Observation: ...
+    def rollback(self, observation_json: str, *args: Any) -> Observation: ...
+    def finish(self, observation_json: str, *args: Any) -> FinishVerdict: ...
+    def abandon(self, observation_json: str, reason: str | None = None) -> Mapping[str, Any]: ...

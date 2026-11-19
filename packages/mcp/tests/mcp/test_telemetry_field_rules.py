@@ -179,3 +179,9 @@ def test_redact_fields_error_text_block_untouched():
     event.response = {"content": [{"type": "text", "text": "登录超时：browser flow expired"}]}
     telemetry.redact_fields(event)
     assert event.response["content"][0]["text"] == "登录超时：browser flow expired"
+
+
+def test_redacted_argument_keys_cover_session_anchor():
+    """#242 随参数正名跟进：会话锚 observation_json（状态文件绝对路径）不进 mcp.parameters——
+    旧键 session_id 并防（存量客户端）。"""
+    assert {"observation_json", "session_id", "context"} <= set(telemetry._REDACTED_ARGUMENT_KEYS)

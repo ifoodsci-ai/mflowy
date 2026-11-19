@@ -96,10 +96,10 @@ def _start(root, csv, card=CARD, fams=("RF",), max_steps=8, metric="mae", **kw):
     )
 
 
-def _state(root, sid):
+def _state(root, observation_json):
     """盘上状态合并视图：observation（prior/split/steps）+ board（cursor/models/verdict）。"""
-    o = json.loads((root / sid / "observation.json").read_text(encoding="utf-8"))
-    b = json.loads((root / sid / "board.json").read_text(encoding="utf-8"))
+    o = json.loads(Path(observation_json).read_text(encoding="utf-8"))
+    b = json.loads((Path(observation_json).parent / "board.json").read_text(encoding="utf-8"))
     return {
         **o["prior"],
         "split": o["biz"]["split"],
@@ -112,15 +112,23 @@ def _state(root, sid):
     }
 
 
-def _log(root, sid):
-    return [json.loads(x) for x in (root / sid / "decision.log").read_text(encoding="utf-8").splitlines() if x.strip()]
+def _log(root, observation_json):
+    return [
+        json.loads(x)
+        for x in (Path(observation_json).parent / "decision.log").read_text(encoding="utf-8").splitlines()
+        if x.strip()
+    ]
 
 
 def _hpo(root, csv, **params):
     """最短合法链：start → select_model → run_hpo。"""
-    sid, s = _start(root, csv)
-    ModelingSession().apply(sid, "select_model", {"family": "RF"})
-    return sid, s, ModelingSession().apply(sid, "run_hpo", {"n_trials": params.pop("n_trials", 2), **params})
+    observation_json, s = _start(root, csv)
+    ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
+    return (
+        observation_json,
+        s,
+        ModelingSession().apply(observation_json, "run_hpo", {"n_trials": params.pop("n_trials", 2), **params}),
+    )
 
 
 def _pdf(tmp_path, name="final_report.pdf") -> str:
@@ -135,7 +143,7 @@ def _pdf(tmp_path, name="final_report.pdf") -> str:
 
 def test_start_cursor_and_budget(sessions_root, reg_csv):
     """start：光标空位（m=None/H/seed 空、F 双 passthrough——#66 单表 H 无 h_space 成员）+ split 物化。"""
-    sid, s = _start(sessions_root, reg_csv)
+    observation_json, s = _start(sessions_root, reg_csv)
     _floor_observation(s)
     assert s.validation.reward is None and s.validation.steps == 0 and s.validation.max_steps == 8
     assert s.biz["cursor"] == {
@@ -144,8 +152,8 @@ def test_start_cursor_and_budget(sessions_root, reg_csv):
         "seed": None,
         "F": {"cat": "passthrough", "num": "passthrough"},
     }
-    assert (sessions_root / sid / "split.pkl").exists()
-    m = _state(sessions_root, sid)
+    assert (Path(observation_json).parent / "split.pkl").exists()
+    m = _state(sessions_root, observation_json)
     assert m["split"]["run_id"]  # #66 划分身份 = run_id 引用（终训 plan 的 from_run_id 源）
 
 
@@ -153,102 +161,101 @@ def test_start_cursor_and_budget(sessions_root, reg_csv):
 
 
 def test_select_model_sets_cursor_zero_cost(sessions_root, reg_csv):
-    sid, s = _start(sessions_root, reg_csv)
-    r = ModelingSession().apply(sid, "select_model", {"family": "RF"})
+    observation_json, s = _start(sessions_root, reg_csv)
+    r = ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
     _floor_observation(r)
     assert r.biz["cursor"]["m"] == "RF" and r.validation.steps == 0 and r.validation.reward == 0  # 配置编辑零步费零奖励
     with pytest.raises(ValueError, match="候选"):
-        ModelingSession().apply(sid, "select_model", {"family": "NOPE"})
+        ModelingSession().apply(observation_json, "select_model", {"family": "NOPE"})
 
 
 def test_set_hp_pins_scalar(sessions_root, reg_csv):
-    sid, s = _start(sessions_root, reg_csv)
-    ModelingSession().apply(sid, "select_model", {"family": "RF"})
-    r = ModelingSession().apply(sid, "set_hp", {"n_estimators": 25})
+    observation_json, s = _start(sessions_root, reg_csv)
+    ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
+    r = ModelingSession().apply(observation_json, "set_hp", {"n_estimators": 25})
     assert r.biz["cursor"]["H"] == {"n_estimators": 25} and r.validation.steps == 0
     with pytest.raises(ValueError, match="not_a_param"):
-        ModelingSession().apply(sid, "set_hp", {"not_a_param": 1})
+        ModelingSession().apply(observation_json, "set_hp", {"not_a_param": 1})
     with pytest.raises(ValueError, match="set_seed"):
-        ModelingSession().apply(sid, "set_hp", {"random_state": 5})  # 种子走专用动作
+        ModelingSession().apply(observation_json, "set_hp", {"random_state": 5})  # 种子走专用动作
     sid2, s2 = _start(sessions_root, reg_csv)
     with pytest.raises(RuntimeError, match="select_model"):
         ModelingSession().apply(sid2, "set_hp", {"n_estimators": 25})  # 未选模型
 
 
 def test_set_hp_space_narrows_and_switch_clears_pins(sessions_root, reg_csv):
-    sid, s = _start(sessions_root, reg_csv, fams=("RF", "XGB"))
-    ModelingSession().apply(sid, "select_model", {"family": "RF"})
-    r = ModelingSession().apply(sid, "set_hp_space", {"max_depth": [3, 5]})
+    observation_json, s = _start(sessions_root, reg_csv, fams=("RF", "XGB"))
+    ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
+    r = ModelingSession().apply(observation_json, "set_hp_space", {"max_depth": [3, 5]})
     assert r.biz["cursor"]["H"]["max_depth"] == {"kind": "continuous", "lo": 3, "hi": 5, "step": None}
     with pytest.raises(ValueError, match="静态"):
-        ModelingSession().apply(sid, "set_hp_space", {"n_estimators": [10, 20]})  # RF 缺省静态常量
+        ModelingSession().apply(observation_json, "set_hp_space", {"n_estimators": [10, 20]})  # RF 缺省静态常量
     # 切族清 pin/空间（另一族签名不适用）；同族重选保留
-    ModelingSession().apply(sid, "set_hp", {"n_estimators": 25})
-    r2 = ModelingSession().apply(sid, "select_model", {"family": "RF"})
+    ModelingSession().apply(observation_json, "set_hp", {"n_estimators": 25})
+    r2 = ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
     assert r2.biz["cursor"]["H"] == {
         "n_estimators": 25,
         "max_depth": {"kind": "continuous", "lo": 3, "hi": 5, "step": None},
     }
-    r3 = ModelingSession().apply(sid, "select_model", {"family": "XGB"})
+    r3 = ModelingSession().apply(observation_json, "select_model", {"family": "XGB"})
     assert r3.biz["cursor"]["H"] == {}
 
 
 def test_cursor_single_table_last_write_wins(sessions_root, reg_csv):
     """#66 单表 H：set_hp/set_hp_space 写同一槽位——覆盖显式可观测（note 记前后值）、
     rollback 弹栈回退；同参数不可能同时持有 pin 与空间两份值。"""
-    sid, s = _start(sessions_root, reg_csv)
-    sid = sid
-    ModelingSession().apply(sid, "select_model", {"family": "RF"})
-    ModelingSession().apply(sid, "set_hp_space", {"max_depth": [3, 5]})
-    r = ModelingSession().apply(sid, "set_hp", {"max_depth": 4})  # 空间 → pin（显式覆盖）
+    observation_json, s = _start(sessions_root, reg_csv)
+    ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
+    ModelingSession().apply(observation_json, "set_hp_space", {"max_depth": [3, 5]})
+    r = ModelingSession().apply(observation_json, "set_hp", {"max_depth": 4})  # 空间 → pin（显式覆盖）
     assert r.biz["cursor"]["H"]["max_depth"] == 4  # 唯一槽位，空间值不再并存
-    note = _log(sessions_root, sid)[-1]["note"]
+    note = _log(sessions_root, observation_json)[-1]["note"]
     assert "max_depth" in note and "pin 4" in note and "空间" in note  # 覆盖前后值入决策日志
 
-    r2 = ModelingSession().apply(sid, "set_hp_space", {"max_depth": [4, 6]})  # pin → 空间（显式覆盖）
+    r2 = ModelingSession().apply(observation_json, "set_hp_space", {"max_depth": [4, 6]})  # pin → 空间（显式覆盖）
     assert r2.biz["cursor"]["H"]["max_depth"] == {"kind": "continuous", "lo": 4, "hi": 6, "step": None}
-    note2 = _log(sessions_root, sid)[-1]["note"]
+    note2 = _log(sessions_root, observation_json)[-1]["note"]
     assert "pin 4" in note2 and "空间" in note2
 
-    rr = ModelingSession().rollback(sid)  # 弹栈回退最后一次写（set_hp_space）
+    rr = ModelingSession().rollback(observation_json)  # 弹栈回退最后一次写（set_hp_space）
     assert rr.biz["cursor"]["H"]["max_depth"] == 4
-    manifest = _state(sessions_root, sid)
+    manifest = _state(sessions_root, observation_json)
     assert "h_space" not in manifest["cursor"] and all("h_space" not in snap for snap in manifest["snapshots"])
 
 
 def test_set_seed_updates_cursor(sessions_root, reg_csv):
-    sid, s = _start(sessions_root, reg_csv)
-    r = ModelingSession().apply(sid, "set_seed", {"seed": 7})
+    observation_json, s = _start(sessions_root, reg_csv)
+    r = ModelingSession().apply(observation_json, "set_seed", {"seed": 7})
     assert r.biz["cursor"]["seed"] == 7 and r.validation.steps == 0
     with pytest.raises((TypeError, ValueError)):
-        ModelingSession().apply(sid, "set_seed", {"seed": "bad"})
+        ModelingSession().apply(observation_json, "set_seed", {"seed": "bad"})
 
 
 def test_select_fe_guards_and_slot_update(sessions_root, cat_csv):
     """FE = 光标槽位：守卫按 cursor.m 的 structure；零步费。"""
-    sid, s = _start(sessions_root, cat_csv)
+    observation_json, s = _start(sessions_root, cat_csv)
     with pytest.raises(RuntimeError, match="select_model"):
-        ModelingSession().apply(sid, "select_FE", {"node": "onehot_encoder"})
-    ModelingSession().apply(sid, "select_model", {"family": "RF"})
-    ModelingSession().apply(sid, "run_hpo", {"n_trials": 1})  # 最小装配 ordinal 随 run 生效
-    r = ModelingSession().apply(sid, "select_FE", {"node": "onehot_encoder"})
+        ModelingSession().apply(observation_json, "select_FE", {"node": "onehot_encoder"})
+    ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
+    ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1})  # 最小装配 ordinal 随 run 生效
+    r = ModelingSession().apply(observation_json, "select_FE", {"node": "onehot_encoder"})
     assert r.biz["cursor"]["F"]["cat"] == "onehot" and r.validation.steps == 1  # 只有 run_hpo 吃步
     with pytest.raises(ValueError, match="已是"):
-        ModelingSession().apply(sid, "select_FE", {"node": "onehot_encoder"})
+        ModelingSession().apply(observation_json, "select_FE", {"node": "onehot_encoder"})
     with pytest.raises(ValueError, match="冗余"):
-        ModelingSession().apply(sid, "select_FE", {"node": "standard_scaler"})  # RF scaling_need=False
+        ModelingSession().apply(observation_json, "select_FE", {"node": "standard_scaler"})  # RF scaling_need=False
     with pytest.raises(ValueError, match="词表"):
-        ModelingSession().apply(sid, "select_FE", {"node": "nope_encoder"})
+        ModelingSession().apply(observation_json, "select_FE", {"node": "nope_encoder"})
 
 
 def test_run_hpo_returns_delta_reward_and_writes_study(sessions_root, reg_csv):
     """run_hpo：新键 reward = u_inner；study sqlite 落会话目录；OOF 观察面挂 run。"""
-    sid, s, r = _hpo(sessions_root, reg_csv, n_trials=2)
+    observation_json, s, r = _hpo(sessions_root, reg_csv, n_trials=2)
     _floor_observation(r)
     assert r.validation.reward is not None and r.validation.steps == 1
     assert r.biz["board"][_K_RF]["u_inner"] == r.validation.reward
-    m = _state(sessions_root, sid)
-    assert (sessions_root / sid / m["models"][_K_RF]["study"]).exists()
+    m = _state(sessions_root, observation_json)
+    assert (Path(observation_json).parent / m["models"][_K_RF]["study"]).exists()
     oof = m["models"][_K_RF]["oof"]
     assert oof["run_id"]  # OOF 工件挂父 run 工件树（#95 项4）——真源 = run_artifacts 清单
     from mflowy.utils.mlflow import run_artifacts
@@ -262,12 +269,12 @@ def test_run_hpo_returns_delta_reward_and_writes_study(sessions_root, reg_csv):
 def test_run_hpo_trials_stay_pure_search_evidence(sessions_root, reg_csv):
     """objective 纯度（θ* 探针裁定的对偶面）：trial user_attrs 只携带搜索证据
     （scores）——诊断类读写（train 折分等）不进搜索热路径，体征证据住 θ* 探针。"""
-    sid, s, _ = _hpo(sessions_root, reg_csv, n_trials=2)
-    m = _state(sessions_root, sid)
+    observation_json, s, _ = _hpo(sessions_root, reg_csv, n_trials=2)
+    m = _state(sessions_root, observation_json)
     import optuna
 
     study_file = m["models"][_K_RF]["study"]
-    study = optuna.load_study(study_name=_K_RF, storage=f"sqlite:///{sessions_root / sid / study_file}")
+    study = optuna.load_study(study_name=_K_RF, storage=f"sqlite:///{Path(observation_json).parent / study_file}")
     best = study.best_trial
     assert set(best.user_attrs) == {"scores"}  # 纯搜索证据——诊断零残留
 
@@ -277,11 +284,11 @@ def test_final_train_test_freezes_and_reads_holdout_once(sessions_root, reg_csv,
 
     #66：终训走 modeling 工具（JobProvider DAG）——u_full/副产物指针/plan 同一工件
     （交付的 plan_yaml 就是那次终训本身，重放承诺与执行事实同一）。"""
-    sid, s, _ = _hpo(sessions_root, reg_csv, n_trials=2)
-    r = ModelingSession().apply(sid, "final_train_test")
+    observation_json, s, _ = _hpo(sessions_root, reg_csv, n_trials=2)
+    r = ModelingSession().apply(observation_json, "final_train_test")
     _floor_observation(r)
     assert r.validation.reward == 0 and r.validation.steps == 2
-    m = _state(sessions_root, sid)
+    m = _state(sessions_root, observation_json)
     entry = m["models"][_K_RF]
     assert entry["frozen"] and entry["u"] is not None and entry["run_id"]
     # 副产物指针（s 自描述）：X_test/y_test/y_pred parquet 随终训 run 落 mlflow 工件
@@ -290,23 +297,22 @@ def test_final_train_test_freezes_and_reads_holdout_once(sessions_root, reg_csv,
 
     arts = run_artifacts(entry["run_id"])
     assert {"X_test.parquet", "y_test.parquet", "y_pred.parquet"} <= set(arts)
-    assert (sessions_root / sid / f"loader_{_K_RF.replace('|', '__')}_v1.pkl").exists()
+    assert (Path(observation_json).parent / f"loader_{_K_RF.replace('|', '__')}_v1.pkl").exists()
     with pytest.raises(RuntimeError, match="冻结"):
-        ModelingSession().apply(sid, "run_hpo", {"n_trials": 1})
+        ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1})
     with pytest.raises(RuntimeError, match="冻结"):
-        ModelingSession().apply(sid, "final_train_test")
+        ModelingSession().apply(observation_json, "final_train_test")
 
 
 def test_final_train_test_delivers_search_time_evidence(sessions_root, reg_csv):
     """story 11：终训交付的恒是被 inner CV 评估过的证据配置——搜后误改 pin 不进
     唯一一次 holdout 读（final_params = 搜索时刻快照 ∪ θ*，plan 同源）。"""
-    sid, s, _ = _hpo(sessions_root, reg_csv, n_trials=2)
-    sid = sid
-    m_before = _state(sessions_root, sid)
+    observation_json, s, _ = _hpo(sessions_root, reg_csv, n_trials=2)
+    m_before = _state(sessions_root, observation_json)
     evidence = dict(m_before["models"][_K_RF]["evidence"])
-    ModelingSession().apply(sid, "set_hp", {"n_estimators": 999})  # 搜后改 pin（噪声注入）
-    ModelingSession().apply(sid, "final_train_test")
-    entry = _state(sessions_root, sid)["models"][_K_RF]
+    ModelingSession().apply(observation_json, "set_hp", {"n_estimators": 999})  # 搜后改 pin（噪声注入）
+    ModelingSession().apply(observation_json, "final_train_test")
+    entry = _state(sessions_root, observation_json)["models"][_K_RF]
     assert entry["final_params"]["n_estimators"] == evidence["n_estimators"]  # 快照胜出
     assert entry["final_params"]["n_estimators"] != 999
     assert set(entry["final_params"]) >= set(entry["best_params"])  # θ* 并入
@@ -314,10 +320,10 @@ def test_final_train_test_delivers_search_time_evidence(sessions_root, reg_csv):
 
 def test_final_train_test_requires_prior_search(sessions_root, reg_csv):
     """先搜后门店：未搜直训不合法（候选清单带已搜键）。"""
-    sid, s = _start(sessions_root, reg_csv)
-    ModelingSession().apply(sid, "select_model", {"family": "RF"})
+    observation_json, s = _start(sessions_root, reg_csv)
+    ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
     with pytest.raises(ValueError, match="先搜后店"):
-        ModelingSession().apply(sid, "final_train_test")
+        ModelingSession().apply(observation_json, "final_train_test")
     with pytest.raises(RuntimeError, match="select_model"):
         sid2, _s2 = _start(sessions_root, reg_csv)
         ModelingSession().apply(sid2, "final_train_test")
@@ -331,7 +337,7 @@ def test_id_columns_same_data_face(sessions_root, reg_csv, tmp_path):
     p = tmp_path / "reg_id.csv"
     df.to_csv(p, index=False)
 
-    sid, s = ModelingSession().load_or_start(
+    observation_json, s = ModelingSession().load_or_start(
         file_path=str(p),
         cv_card=CV_CARD,
         card=CARD,
@@ -340,18 +346,17 @@ def test_id_columns_same_data_face(sessions_root, reg_csv, tmp_path):
         candidates=[{"family": "RF", "baseline": True}],
         max_steps=8,
     )
-    sid = sid
-    ModelingSession().apply(sid, "select_model", {"family": "RF"})
-    ModelingSession().apply(sid, "set_hp", {"n_estimators": 15})
-    ModelingSession().apply(sid, "run_hpo", {"n_trials": 1})
-    r = ModelingSession().apply(sid, "final_train_test")
+    ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
+    ModelingSession().apply(observation_json, "set_hp", {"n_estimators": 15})
+    ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1})
+    r = ModelingSession().apply(observation_json, "final_train_test")
 
     import pickle as _pkl
 
-    with open(sessions_root / sid / "split.pkl", "rb") as f:
+    with open(Path(observation_json).parent / "split.pkl", "rb") as f:
         ts = _pkl.load(f)
     assert "row_id" not in ts.X_train.columns and "row_id" not in ts.X_test.columns  # 会话面剔除
-    v = ModelingSession().finish(sid, pdf=_pdf(tmp_path))
+    v = ModelingSession().finish(observation_json, pdf=_pdf(tmp_path))
     yml_text = v.deliverables[_K_RF]["plan_yaml"]
     assert "id_columns:" in yml_text and "row_id" in yml_text  # plan 面显式携带（重放同面）
     assert r.biz["board"][_K_RF]["u"] is not None  # 终训 DAG 正常跑通（x_y 剔除后无 ID 列）
@@ -361,40 +366,40 @@ def test_id_columns_same_data_face(sessions_root, reg_csv, tmp_path):
 
 
 def test_budget_only_counts_compute_actions(sessions_root, reg_csv):
-    sid, s = _start(sessions_root, reg_csv, max_steps=1)
-    ModelingSession().apply(sid, "select_model", {"family": "RF"})
-    ModelingSession().apply(sid, "set_seed", {"seed": 3})  # 零步费——预算不吃
-    ModelingSession().apply(sid, "run_hpo", {"n_trials": 1})
+    observation_json, s = _start(sessions_root, reg_csv, max_steps=1)
+    ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
+    ModelingSession().apply(observation_json, "set_seed", {"seed": 3})  # 零步费——预算不吃
+    ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1})
     with pytest.raises(RuntimeError, match="预算"):
-        ModelingSession().apply(sid, "run_hpo", {"n_trials": 1})
+        ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1})
 
 
 def test_terminal_empty_action_face(sessions_root, reg_csv, tmp_path):
-    sid, s, _ = _hpo(sessions_root, reg_csv, n_trials=1)
-    ModelingSession().apply(sid, "final_train_test")
-    ModelingSession().finish(sid, pdf=_pdf(tmp_path))
-    assert ModelingSession().observe(sid).validation.finished is True  # 终态照常可观测（观测不是动作）
+    observation_json, s, _ = _hpo(sessions_root, reg_csv, n_trials=1)
+    ModelingSession().apply(observation_json, "final_train_test")
+    ModelingSession().finish(observation_json, pdf=_pdf(tmp_path))
+    assert ModelingSession().observe(observation_json).validation.finished is True  # 终态照常可观测（观测不是动作）
     with pytest.raises(RuntimeError, match="终态"):
-        ModelingSession().apply(sid, "run_hpo", {"n_trials": 1})
+        ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1})
     with pytest.raises(RuntimeError, match="终态"):
-        ModelingSession().apply(sid, "select_model", {"family": "RF"})
+        ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
 
 
 def test_word_list_is_eight_faces(sessions_root, reg_csv):
     """词表 = 八动作面（done=finish 控制面独立入口）；旧词表词（族名直 apply）退役。"""
-    sid, s = _start(sessions_root, reg_csv)
+    observation_json, s = _start(sessions_root, reg_csv)
     with pytest.raises(ValueError, match="词表"):
-        ModelingSession().apply(sid, "RF", {"n_trials": 1})
+        ModelingSession().apply(observation_json, "RF", {"n_trials": 1})
     with pytest.raises(ValueError, match="词表"):
-        ModelingSession().apply(sid, "ordinal_encoder")
+        ModelingSession().apply(observation_json, "ordinal_encoder")
 
 
 def test_run_hpo_rejects_extra_params(sessions_root, reg_csv):
     """run_hpo 参数面 = n_trials——pin/收窄走配置动作（防第三入口）。"""
-    sid, s = _start(sessions_root, reg_csv)
-    ModelingSession().apply(sid, "select_model", {"family": "RF"})
+    observation_json, s = _start(sessions_root, reg_csv)
+    ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
     with pytest.raises(ValueError, match="set_hp"):
-        ModelingSession().apply(sid, "run_hpo", {"n_trials": 1, "max_depth": 4})
+        ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1, "max_depth": 4})
 
 
 # ── 增量 study：目标同一性判据 ───────────────────────────────────────────────
@@ -402,35 +407,35 @@ def test_run_hpo_rejects_extra_params(sessions_root, reg_csv):
 
 def test_rerun_deepens_reuses_trials(sessions_root, reg_csv):
     """重跑加深 = 增量续跑：trial 数累计（2+3=5），不从头。"""
-    sid, s, _ = _hpo(sessions_root, reg_csv, n_trials=2)
-    r2 = ModelingSession().apply(sid, "run_hpo", {"n_trials": 3})
-    m = _state(sessions_root, sid)
+    observation_json, s, _ = _hpo(sessions_root, reg_csv, n_trials=2)
+    r2 = ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 3})
+    m = _state(sessions_root, observation_json)
     assert m["models"][_K_RF]["n_trials_at_last_eval"] == 5
     assert r2.validation.steps == 2
 
 
 def test_space_narrowing_continues_but_seed_reopens(sessions_root, reg_csv):
     """空间收窄继续（判据=目标同一性）；seed 变 = 目标变 = study 重开（trial 清零）。"""
-    sid, s, _ = _hpo(sessions_root, reg_csv, n_trials=2)
-    ModelingSession().apply(sid, "set_hp_space", {"max_depth": [3, 5]})
-    r2 = ModelingSession().apply(sid, "run_hpo", {"n_trials": 2})
-    m = _state(sessions_root, sid)
+    observation_json, s, _ = _hpo(sessions_root, reg_csv, n_trials=2)
+    ModelingSession().apply(observation_json, "set_hp_space", {"max_depth": [3, 5]})
+    r2 = ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 2})
+    m = _state(sessions_root, observation_json)
     assert m["models"][_K_RF]["n_trials_at_last_eval"] == 4  # 收窄继续
 
-    ModelingSession().apply(sid, "set_seed", {"seed": 99})
-    ModelingSession().apply(sid, "run_hpo", {"n_trials": 1})
-    m2 = _state(sessions_root, sid)
+    ModelingSession().apply(observation_json, "set_seed", {"seed": 99})
+    ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1})
+    m2 = _state(sessions_root, observation_json)
     assert m2["models"][_K_RF]["n_trials_at_last_eval"] == 1  # seed 变重开
     assert r2.validation.reward is not None
 
 
 def test_delta_reward_relative_to_last_eval(sessions_root, reg_csv, monkeypatch):
     """Δu_inner 数值断言：第二次 run 的 reward = 新最优 − 账本上次最优。"""
-    sid, s, r1 = _hpo(sessions_root, reg_csv, n_trials=2)
-    m = _state(sessions_root, sid)
+    observation_json, s, r1 = _hpo(sessions_root, reg_csv, n_trials=2)
+    m = _state(sessions_root, observation_json)
     prev = m["models"][_K_RF]["u_inner"]
-    r2 = ModelingSession().apply(sid, "run_hpo", {"n_trials": 4})
-    m2 = _state(sessions_root, sid)
+    r2 = ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 4})
+    m2 = _state(sessions_root, observation_json)
     assert r2.validation.reward == pytest.approx(m2["models"][_K_RF]["u_inner"] - prev, abs=1e-6)
     assert r1.validation.reward == prev  # 新键 reward = u_inner
 
@@ -440,19 +445,19 @@ def test_delta_reward_relative_to_last_eval(sessions_root, reg_csv, monkeypatch)
 
 def test_rollback_cursor_only_board_never_diverges(sessions_root, reg_csv):
     """rollback：光标（H/F）回退、study/账本保留——盘上 append-only 真源不分叉。"""
-    sid, s, _ = _hpo(sessions_root, reg_csv, n_trials=2)
-    ModelingSession().apply(sid, "set_hp", {"n_estimators": 55})
-    r = ModelingSession().rollback(sid)
+    observation_json, s, _ = _hpo(sessions_root, reg_csv, n_trials=2)
+    ModelingSession().apply(observation_json, "set_hp", {"n_estimators": 55})
+    r = ModelingSession().rollback(observation_json)
     assert r.biz["cursor"]["H"] == {}  # set_hp 回退
-    m = _state(sessions_root, sid)
+    m = _state(sessions_root, observation_json)
     assert m["models"][_K_RF]["n_trials_at_last_eval"] == 2  # 账本不动
-    assert (sessions_root / sid / m["models"][_K_RF]["study"]).exists()  # study 保留
+    assert (Path(observation_json).parent / m["models"][_K_RF]["study"]).exists()  # study 保留
 
 
 def test_rollback_restores_fe_slot(sessions_root, cat_csv):
-    sid, s, _ = _hpo(sessions_root, cat_csv, n_trials=1)  # 最小装配 ordinal
-    ModelingSession().apply(sid, "select_FE", {"node": "onehot_encoder"})
-    r = ModelingSession().rollback(sid)
+    observation_json, s, _ = _hpo(sessions_root, cat_csv, n_trials=1)  # 最小装配 ordinal
+    ModelingSession().apply(observation_json, "select_FE", {"node": "onehot_encoder"})
+    r = ModelingSession().rollback(observation_json)
     assert r.biz["cursor"]["F"]["cat"] == "ordinal" and r.validation.steps == 1  # 步数不回补
 
 
@@ -460,10 +465,10 @@ def test_rollback_restores_fe_slot(sessions_root, cat_csv):
 
 
 def test_finish_delivers_frozen_combos_idempotent(sessions_root, reg_csv, tmp_path):
-    sid, s, _ = _hpo(sessions_root, reg_csv, n_trials=2)
-    ModelingSession().apply(sid, "final_train_test")
-    v = ModelingSession().finish(sid, pdf=_pdf(tmp_path))
-    again = ModelingSession().finish(sid, pdf=_pdf(tmp_path))  # 同报告源重入 = 幂等重导出
+    observation_json, s, _ = _hpo(sessions_root, reg_csv, n_trials=2)
+    ModelingSession().apply(observation_json, "final_train_test")
+    v = ModelingSession().finish(observation_json, pdf=_pdf(tmp_path))
+    again = ModelingSession().finish(observation_json, pdf=_pdf(tmp_path))  # 同报告源重入 = 幂等重导出
     _floor_verdict(v)
     assert v.accepted is True
     assert v.terminal_utility["u"][_K_RF] is not None
@@ -475,24 +480,24 @@ def test_finish_delivers_frozen_combos_idempotent(sessions_root, reg_csv, tmp_pa
 def test_finish_requires_frozen_combo(sessions_root, reg_csv):
     """无 final_train_test 过的 combo → 拒收 verdict（拒收后可续局——与 data 域 θ 门
     同一契约路；文件检查在冻结面之后，拒收不触达）。"""
-    sid, s, _ = _hpo(sessions_root, reg_csv, n_trials=1)
-    rej = ModelingSession().finish(sid, pdf="/no/such/report.pdf")
+    observation_json, s, _ = _hpo(sessions_root, reg_csv, n_trials=1)
+    rej = ModelingSession().finish(observation_json, pdf="/no/such/report.pdf")
     assert rej.accepted is False and "final_train_test" in (rej.reason or "")
     assert rej.deliverables == {} and rej.decision_log  # 无交付面、审计面在场
     # 拒收后可续局：终训后同 pdf 路径收局成功（文件此时才被检查）
-    ModelingSession().apply(sid, "final_train_test")
+    ModelingSession().apply(observation_json, "final_train_test")
     with pytest.raises(ValueError, match="报告文件不存在"):
-        ModelingSession().finish(sid, pdf="/no/such/report.pdf")
+        ModelingSession().finish(observation_json, pdf="/no/such/report.pdf")
 
 
 def test_finish_plan_replays(sessions_root, reg_csv, tmp_path):
     """接缝（model→driver）：终训即 plan 执行——交付的 plan_yaml（from_run_id 引用
     会话划分 + 证据配置全 pin）重放走 training 行为，产物与账本指针同一。"""
-    sid, s, _ = _hpo(sessions_root, reg_csv, n_trials=2)
-    ModelingSession().apply(sid, "final_train_test")
-    v = ModelingSession().finish(sid, pdf=_pdf(tmp_path))
+    observation_json, s, _ = _hpo(sessions_root, reg_csv, n_trials=2)
+    ModelingSession().apply(observation_json, "final_train_test")
+    v = ModelingSession().finish(observation_json, pdf=_pdf(tmp_path))
     yml_text = v.deliverables[_K_RF]["plan_yaml"]
-    m = _state(sessions_root, sid)
+    m = _state(sessions_root, observation_json)
     assert "- cv__load:" in yml_text and m["split"]["run_id"] in yml_text  # 划分按引用复用
     assert "target: " in yml_text and "targets:" not in yml_text  # 单目标任务面
 
@@ -510,14 +515,14 @@ def test_finish_plan_replays(sessions_root, reg_csv, tmp_path):
 
 
 def test_abandon_closes_all_planes(sessions_root, reg_csv):
-    sid, s, _ = _hpo(sessions_root, reg_csv, n_trials=1)
-    ack = ModelingSession().abandon(sid, reason="改协议重开")
+    observation_json, s, _ = _hpo(sessions_root, reg_csv, n_trials=1)
+    ack = ModelingSession().abandon(observation_json, reason="改协议重开")
     assert ack["abandoned"] is True
-    assert ModelingSession().observe(sid).validation.abandoned is True
+    assert ModelingSession().observe(observation_json).validation.abandoned is True
     with pytest.raises(RuntimeError, match="终态"):
-        ModelingSession().apply(sid, "run_hpo", {"n_trials": 1})
+        ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1})
     with pytest.raises(RuntimeError, match="弃局"):  # 壳 finish_ctx 的弃局门（改协议重开走新会话）
-        ModelingSession().finish(sid, pdf="/no/such/report.pdf")
+        ModelingSession().finish(observation_json, pdf="/no/such/report.pdf")
 
 
 # ── observe：读时投影（#117/#120——菜单退役，π 读观测自构动作） ──────────────
@@ -529,25 +534,24 @@ def test_findings_drive_only_same_combo(sessions_root, cat_csv):
 
     #84 注记：确定性依赖 run_hpo 的盘上 study sampler 带 seed（`_open_study`）——
     曾走未钉缺省 sampler，θ* 每进程漂移导致本用例非确定性失败。"""
-    sid, s = _start(sessions_root, cat_csv)
-    sid = sid
-    ModelingSession().apply(sid, "select_model", {"family": "RF"})
-    ModelingSession().apply(sid, "run_hpo", {"n_trials": 1})  # RF|ordinal（最小装配）
-    ModelingSession().apply(sid, "select_FE", {"node": "onehot_encoder"})
-    ModelingSession().apply(sid, "run_hpo", {"n_trials": 1})  # RF|onehot
+    observation_json, s = _start(sessions_root, cat_csv)
+    ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
+    ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1})  # RF|ordinal（最小装配）
+    ModelingSession().apply(observation_json, "select_FE", {"node": "onehot_encoder"})
+    ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1})  # RF|onehot
     k_ordinal = "RF|ordinal|passthrough"
     ModelingSession().apply(
-        sid,
+        observation_json,
         "report_findings",
         {
             "key": k_ordinal,
             "findings": [{"kind": "fold_std", "severity": 0.9, "evidence": {"cv": 0.5}, "message": "折间不稳-ordinal"}],
         },
     )  # #236：report_findings 收编九动作面（工具面 report_findings_modeling 薄别名）
-    o = ModelingSession().observe(sid)  # 光标在 RF|onehot
+    o = ModelingSession().observe(observation_json)  # 光标在 RF|onehot
     assert all(f.get("message") != "折间不稳-ordinal" for f in o.biz["findings"])  # 证据不跨 FE 组合
-    ModelingSession().apply(sid, "select_FE", {"node": "ordinal_encoder"})  # 光标回 RF|ordinal
-    o2 = ModelingSession().observe(sid)
+    ModelingSession().apply(observation_json, "select_FE", {"node": "ordinal_encoder"})  # 光标回 RF|ordinal
+    o2 = ModelingSession().observe(observation_json)
     assert any(f.get("message") == "折间不稳-ordinal" and f["key"] == k_ordinal for f in o2.biz["findings"])
 
 
@@ -556,11 +560,10 @@ def test_run_hpo_theta_deterministic_across_studies(sessions_root, cat_csv):
     ——sampler 随 seed 建（曾未钉：每个新 study 的缺省 TPESampler 各自吃熵，θ* 漂移）。"""
     thetas = []
     for _ in range(2):
-        sid, s = _start(sessions_root, cat_csv)
-        sid = sid
-        ModelingSession().apply(sid, "select_model", {"family": "RF"})
-        ModelingSession().apply(sid, "run_hpo", {"n_trials": 1})
-        thetas.append(_state(sessions_root, sid)["models"]["RF|ordinal|passthrough"]["best_params"])
+        observation_json, s = _start(sessions_root, cat_csv)
+        ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
+        ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1})
+        thetas.append(_state(sessions_root, observation_json)["models"]["RF|ordinal|passthrough"]["best_params"])
     assert thetas[0] == thetas[1], thetas
 
 
@@ -569,28 +572,34 @@ def test_observe_projection_covers_decision_faces(sessions_root, reg_csv):
     静态常量可 pin）；选模型后 = combo 键；搜索后 = 账本摘要（θ*/u_inner/冻结旗）。
     #226 ③ 计算语义：observe 对真态只读（决策日志/真态工件逐字节不动）、观测派生
     面（observation.json）写盘。"""
-    sid, s = _start(sessions_root, reg_csv, fams=("RF", "XGB"))
-    o = ModelingSession().observe(sid)
+    observation_json, s = _start(sessions_root, reg_csv, fams=("RF", "XGB"))
+    o = ModelingSession().observe(observation_json)
     _floor_observation(o)
     assert set(o.biz["face"]) == {"RF", "XGB"}  # 候选族超参面全集（不截断选项）
     assert set(o.biz["face"]["RF"]) == {"dynamic", "static"}
     assert o.biz["combo_key"] is None and o.biz["models"] == {}
 
-    ModelingSession().apply(sid, "select_model", {"family": "RF"})
-    assert ModelingSession().observe(sid).biz["combo_key"] == _K_RF
+    ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
+    assert ModelingSession().observe(observation_json).biz["combo_key"] == _K_RF
 
-    ModelingSession().apply(sid, "run_hpo", {"n_trials": 1})
+    ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1})
     disk = {
-        p.name: p.read_bytes() for p in (sessions_root / sid).iterdir() if p.is_file() if p.name != "observation.json"
+        p.name: p.read_bytes()
+        for p in Path(observation_json).parent.iterdir()
+        if p.is_file()
+        if p.name != "observation.json"
     }
-    entry = ModelingSession().observe(sid).biz["models"][_K_RF]
+    entry = ModelingSession().observe(observation_json).biz["models"][_K_RF]
     assert entry["u_inner"] is not None and entry["best_params"] and entry["frozen"] is False
     assert {
-        p.name: p.read_bytes() for p in (sessions_root / sid).iterdir() if p.is_file() if p.name != "observation.json"
+        p.name: p.read_bytes()
+        for p in Path(observation_json).parent.iterdir()
+        if p.is_file()
+        if p.name != "observation.json"
     } == disk  # 零转移：真态工件与决策日志逐字节不动
 
-    ModelingSession().apply(sid, "final_train_test")
-    assert ModelingSession().observe(sid).biz["models"][_K_RF]["frozen"] is True  # 冻结事实可见
+    ModelingSession().apply(observation_json, "final_train_test")
+    assert ModelingSession().observe(observation_json).biz["models"][_K_RF]["frozen"] is True  # 冻结事实可见
 
 
 # ── split 身份 tag 落 run ───────────────────────────────────────────────────
@@ -598,13 +607,15 @@ def test_observe_projection_covers_decision_faces(sessions_root, reg_csv):
 
 def test_run_tags_carry_split_identity(sessions_root, reg_csv):
     """mlflow 拿血缘认证不拿工件：run tag 补划分身份（run_id 引用/session 归属）。"""
-    sid, s, _ = _hpo(sessions_root, reg_csv, n_trials=1)
-    m = _state(sessions_root, sid)
+    observation_json, s, _ = _hpo(sessions_root, reg_csv, n_trials=1)
+    m = _state(sessions_root, observation_json)
     import mlflow
 
     tags = mlflow.get_run(m["models"][_K_RF]["oof"]["run_id"]).data.tags
     assert tags["mflowy.split_run_id"] == m["split"]["run_id"]
-    assert tags["mflowy.session_id"] == Path(sid).name  # tag 面短名（内部寻址），sid 绝对路径
+    assert (
+        tags["mflowy.session_id"] == Path(observation_json).parent.name
+    )  # tag 面短名（内部寻址），锚 = 状态文件绝对路径
 
 
 # ── B2 分类会话回归钉（#72）：run_hpo 的 OOF proba 路径（sklearn encode=True 传
@@ -633,7 +644,7 @@ def cls_csv(tmp_path) -> str:
 
 def _cls_hpo(root, csv, family: str):
     """最短分类合法链：start(classification) → select_model → run_hpo。"""
-    sid, s = ModelingSession().load_or_start(
+    observation_json, s = ModelingSession().load_or_start(
         file_path=csv,
         cv_card=CV_CARD,
         card={"domain": "分类测试", "target": "target"},
@@ -642,16 +653,16 @@ def _cls_hpo(root, csv, family: str):
         max_steps=8,
         candidates=[{"family": f, "baseline": f == family} for f in ("RF", "XGB", "LGBM", "CAT")],
     )
-    ModelingSession().apply(sid, "select_model", {"family": family})
-    return sid, s, ModelingSession().apply(sid, "run_hpo", {"n_trials": 1})
+    ModelingSession().apply(observation_json, "select_model", {"family": family})
+    return observation_json, s, ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1})
 
 
 @pytest.mark.parametrize("family", ["RF", "XGB", "LGBM", "CAT"])
 def test_classification_run_hpo_all_families(sessions_root, cls_csv, family):
     """分类会话 run_hpo 族面回归：搜索 + OOF（含 proba encode 路径）全绿，产物落 run。"""
-    sid, s, r = _cls_hpo(sessions_root, cls_csv, family)
+    observation_json, s, r = _cls_hpo(sessions_root, cls_csv, family)
     key = f"{family}|passthrough|passthrough"
-    m = _state(sessions_root, sid)
+    m = _state(sessions_root, observation_json)
     entry = m["models"][key]
     assert entry["u_inner"] is not None and entry["oof"]["run_id"]
     from mflowy.utils.mlflow import download_run_artifact
@@ -664,7 +675,7 @@ def test_classification_run_hpo_all_families(sessions_root, cls_csv, family):
 def test_classification_run_hpo_mlp(sessions_root, cls_csv):
     """分类会话 run_hpo MLP（torch 环境守卫）：全 pin 退化形（n_trials=1）+ OOF proba。"""
     pytest.importorskip("torch")
-    sid, s = ModelingSession().load_or_start(
+    observation_json, s = ModelingSession().load_or_start(
         file_path=cls_csv,
         cv_card=CV_CARD,
         card={"domain": "分类测试", "target": "target"},
@@ -673,10 +684,10 @@ def test_classification_run_hpo_mlp(sessions_root, cls_csv):
         max_steps=8,
         candidates=[{"family": "MLP", "baseline": True}],
     )
-    ModelingSession().apply(sid, "select_model", {"family": "MLP"})
-    ModelingSession().apply(sid, "set_hp", {"max_epochs": 2, "batch_size": 16, "hidden_dims": [8]})
-    r = ModelingSession().apply(sid, "run_hpo", {"n_trials": 1})
-    m = _state(sessions_root, sid)
+    ModelingSession().apply(observation_json, "select_model", {"family": "MLP"})
+    ModelingSession().apply(observation_json, "set_hp", {"max_epochs": 2, "batch_size": 16, "hidden_dims": [8]})
+    r = ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1})
+    m = _state(sessions_root, observation_json)
     entry = m["models"]["MLP|passthrough|passthrough"]
     assert entry["u_inner"] is not None and r.validation.reward is not None
 
@@ -707,28 +718,27 @@ def test_rollback_after_rerun_preserves_deliverables(sessions_root, reg_csv, tmp
     """
     from mflowy.utils.file import sha256_of
 
-    sid, s = _start(sessions_root, reg_csv, fams=("RF", "XGB"))
-    ModelingSession().apply(sid, "select_model", {"family": "RF"})
-    ModelingSession().apply(sid, "run_hpo", {"n_trials": 2})
-    sid = sid
-    ModelingSession().apply(sid, "final_train_test")  # RF 冻结 + loader/plan 落盘
-    loader_file = sessions_root / sid / f"loader_{_K_RF.replace('|', '__')}_v1.pkl"
-    plan_file = sessions_root / sid / "plans" / f"final_{_K_RF.replace('|', '__')}_v1.yaml"
+    observation_json, s = _start(sessions_root, reg_csv, fams=("RF", "XGB"))
+    ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
+    ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 2})
+    ModelingSession().apply(observation_json, "final_train_test")  # RF 冻结 + loader/plan 落盘
+    loader_file = Path(observation_json).parent / f"loader_{_K_RF.replace('|', '__')}_v1.pkl"
+    plan_file = Path(observation_json).parent / "plans" / f"final_{_K_RF.replace('|', '__')}_v1.yaml"
     sha_before = sha256_of(loader_file)
     assert plan_file.exists()
 
-    ModelingSession().rollback(sid)  # 光标回退（账本/冻结面不动——盘上 append-only）
-    ModelingSession().apply(sid, "select_model", {"family": "XGB"})  # 重跑另一 combo
-    ModelingSession().apply(sid, "set_hp", {"n_estimators": 15})
-    ModelingSession().apply(sid, "run_hpo", {"n_trials": 2})
-    ModelingSession().apply(sid, "final_train_test")
+    ModelingSession().rollback(observation_json)  # 光标回退（账本/冻结面不动——盘上 append-only）
+    ModelingSession().apply(observation_json, "select_model", {"family": "XGB"})  # 重跑另一 combo
+    ModelingSession().apply(observation_json, "set_hp", {"n_estimators": 15})
+    ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 2})
+    ModelingSession().apply(observation_json, "final_train_test")
 
     # 旧分支工件零变更；指针仍可载
     assert sha256_of(loader_file) == sha_before
-    assert ms.load_loader(sid, _K_RF) is not None
+    assert ms.load_loader(Path(observation_json).parent.name, _K_RF) is not None  # loader 寻址面 = 会话目录名（id）
 
-    v = ModelingSession().finish(sid, pdf=_pdf(tmp_path))
+    v = ModelingSession().finish(observation_json, pdf=_pdf(tmp_path))
     delivered = v.deliverables
     assert set(delivered) == {_K_RF, "XGB|passthrough|passthrough"}  # 双冻结 combo 全交付
-    assert delivered[_K_RF]["loader"]["file"] == loader_file.name  # 带世代指针 = 盘上实物名
-    assert (sessions_root / sid / delivered[_K_RF]["loader"]["file"]).exists()
+    assert Path(delivered[_K_RF]["loader"]) == loader_file  # 绝对路径直传（#242 债清偿），文件名自带世代指针
+    assert loader_file.is_file()

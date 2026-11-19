@@ -285,6 +285,12 @@ def wire_agentcat(server: MCPServer):
     logger.info("agentcat 遥测已启")
 
 
+# 遥测不携带的工具入参键（#242/#243）：会话寻址锚 observation_json = 状态文件本机
+# 绝对路径（旧键 session_id 并防）、SDK 注入 context——遥测 session_id 仅由调用方经
+# CLI 元旗标注入，不做锚自动提取
+_REDACTED_ARGUMENT_KEYS = ("observation_json", "session_id", "context")
+
+
 def _patch_otlp_exporter() -> None:
     """agentcat 2.0.2 的 OTLP 导出不携带工具 I/O —— 换装补齐 parameters/response 的导出器子类。
 
@@ -357,8 +363,8 @@ def _patch_otlp_exporter() -> None:
             attrs = super()._get_span_attributes(event)
 
             if event.parameters and (parameters := event.parameters.get("arguments", None)):
-                parameters.pop("session_id", None)
-                parameters.pop("context", None)
+                for key in _REDACTED_ARGUMENT_KEYS:
+                    parameters.pop(key, None)
                 attrs.append(
                     {
                         "key": "mcp.parameters",
