@@ -493,14 +493,14 @@ async def run_s6(session: ClientSession, stage: Path, eid: str, j1: str, model_r
         {"job_id": j2, "platform_experiment_id": eid, "target_dir": str(target)},
     )
     j2_dir = target / j2
-    # resume 无活写（storage = 取回的 study.db）——增量结果在 J2 模型步 run 的
-    # study.db 工件里；zip 内两份（J1 解包带入 + J2 新写），任一 ≥4 即增量实证
+    # #244 零拷贝：resume 解析 tag 相对路径 → 前史（J1 模型步 run）工件树内 study.db
+    # 直驻增量——J2 模型步 run 无拷回副本；zip 内一份（J1 树带入），≥4 即增量实证
     import sqlite3
 
     study_dbs = sorted(j2_dir.glob(".mlruns/*/artifacts/study.db"))
     counts = [sqlite3.connect(db).execute("select count(*) from trials").fetchone()[0] for db in study_dbs]
     if max(counts, default=0) >= 4:
-        ok(f"J2 study 增量（study.db trials={counts}，前史 2 + 本轮 2）")
+        ok(f"J2 study 增量（study.db trials={counts}，前史 2 + 本轮 2——前史树内直驻）")
     else:
         bad("J2 study 增量", str(counts))
     result, _ = await call(
@@ -511,8 +511,8 @@ async def run_s6(session: ClientSession, stage: Path, eid: str, j1: str, model_r
     ok("J2 mlflow.db 含 J1 runs（继承滚雪球）") if has_j1 else bad(
         "J1 run 不在 J2 库", str([r["run_id"][:8] for r in runs2])
     )
-    # J2 模型步 run（续跑新写——run_id 不同于继承带入的 J1 model_run_id）；S7 消费
-    # 其 study.db 工件改写断言（#221 修复：此前 None 恒假，断言永不执行）
+    # J2 模型步 run（续跑新写——run_id 不同于继承带入的 J1 model_run_id；#244 零拷贝
+    # 下其工件树无 study.db 副本——study 单源居 J1 树）；S7 消费其工件改写断言
     j2_model_run = next(
         (r["run_id"] for r in runs2 if str(r.get("node", "")).startswith("model__") and r["run_id"] != model_run_id),
         None,
@@ -612,9 +612,9 @@ async def run_s6(session: ClientSession, stage: Path, eid: str, j1: str, model_r
         result, _ = await call(session, "get_run", {"run_id": j2_model_run, "tracking_uri": uri3})
         if isinstance(result, dict):
             paths = [result["info"]["artifact_uri"]] + [a["path"] for a in result.get("artifacts", [])]
-            ok("run 工件改写（含 study.db）") if all("/user-data" not in p2 for p2 in paths) else bad(
-                "工件改写漏", str(paths[:3])
-            )
+            ok("run 工件改写（#244 零拷贝下无 study.db 副本——study 单源居 J1 树）") if all(
+                "/user-data" not in p2 for p2 in paths
+            ) else bad("工件改写漏", str(paths[:3]))
             ok("工件树可寻址（artifacts/）") if any(
                 p2.endswith("artifacts") or p2.endswith("artifacts/") for p2 in paths
             ) else bad("工件树缺", str(paths[:3]))

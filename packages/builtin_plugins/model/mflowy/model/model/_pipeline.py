@@ -377,6 +377,7 @@ def hyperparameters_search(
     fit_params: dict | None = None,
     study=None,
     seed: int | None = None,
+    inherit_study_run_id: str | None = None,
 ):
     """search 行为（#62 两行为之一）：只碰 inner CV——评分面按数据规模自决策
     （``_inner_cv_plan`` 单源：K 折 ``cross_val_score`` / train 内切 val 手动路径），
@@ -385,6 +386,10 @@ def hyperparameters_search(
     ``study`` 缺省自建（一次性 DAG 路径）；传入已有 study 则增量续跑（会话 sqlite
     真源——空间收窄/pin/加深续跑，目标变由调用方重开后传入）。返回 study 本体，
     θ*/u_inner/std 派生自 study（best trial 的 params/value/user_attrs["scores"]）。
+
+    ``inherit_study_run_id``（#244 节点参数寻址）：给定时锚定前史模型步 run 的
+    study——零拷贝优先（tag 相对路径解析 → 前史 run 工件树内直驻增量），缺件回退
+    download 落家本 run；多 model 节点各自寻址互不污染。
 
     ``seed`` **仅在 ``study=None``（自建 study）路径消费**——传入 study 时其 sampler
     由开 study 方随 seed 挂（#84：会话侧 `_open_study`；此处不再二次播种）。
@@ -460,7 +465,11 @@ def hyperparameters_search(
         return objective(trial, **suggest_params(trial, param_space))
 
     if study is None:
-        study = search_ml(param_space, objective, n_trials=n_trials, direction=direction, seed=seed)
+        if inherit_study_run_id is not None:
+            with study_module.inherited_study(inherit_study_run_id):  # #244 前史锚（零拷贝优先）
+                study = search_ml(param_space, objective, n_trials=n_trials, direction=direction, seed=seed)
+        else:
+            study = search_ml(param_space, objective, n_trials=n_trials, direction=direction, seed=seed)
     else:
         study.optimize(_suggesting, n_trials=n_trials)
 
@@ -470,10 +479,14 @@ def hyperparameters_search(
     if len(scores):
         metrics[f"{scoring}_std"] = float(np.std(scores))
     mlflow_util.log_metrics(metrics, graceful=True)  # 直调形态（窗外）降级——不散守 active_run
-    # #158 §3：搜索终把活 study 落该模型步 run（名 study.db——run 已分模型）。
-    # 续跑链：download_run_artifact(run_id, "study.db") → set_study_storage → 增量
-    if (db := study_module.study_db_path_used()) is not None:
-        mlflow_util.log_file(Path(db), artifact_file="study.db", graceful=True)
+    # #244：study 直驻本 run 工件根（零拷贝）——搜索终 tag 记当前 run 工件根相对
+    # 路径（对齐 log_table 的工件路径记录模式，经 tracking API 可解析——续跑链：
+    # inherit_study_run_id → tag 相对路径 → 直驻增量）。外部锚（前史 run 树内增量）
+    # 不拷回不留痕——study 单源居前史 run 树。
+    if (db := study_module.study_db_path_used()) is not None and (
+        (root := mlflow_util.active_artifact_root()) is not None and Path(db).parent == root
+    ):
+        mlflow_util.set_tags({study_module.STUDY_TRACE_TAG: str(Path(db).relative_to(root))})
     std_repr = f"{np.std(scores):.4f}" if len(scores) else "n/a"
     print(f"best_{scoring}={study.best_value:.4f}, trial={best.number}, std={std_repr}, params={best.params}")
     return study

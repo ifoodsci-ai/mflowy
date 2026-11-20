@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import shutil
 from collections.abc import Callable
+from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from pathlib import Path
@@ -42,23 +44,33 @@ class DiscreteSpace[T: int | float | str | bool](list[T]):
 
 type ParameterSearchSpace = ContinuousSpace | DiscreteSpace
 
-# ── study 落库锚（#89 ①修正：JobProvider.hyperparameters_search 的 study_storage_path 通道） ──
-# 非空时 search() 建 study 走该 sqlite + load_if_exists——同一路径重复搜索即增量
-# 续跑（复用前史）；一库一 study（名 = 路径词干）。会话域内直连路径
-# （_open_study，study_name = 结构键）不经此锚——两路径命名约定各自自洽。
+# ── study 落库锚（#244 零拷贝单源化） ──────────────────────────────────────
+# 链上恒名三源（study 名 / 工件名 / 留痕 tag）：名随文件词干漂移会让续跑
+# load_if_exists 落空（#158 事后剖）。会话域内直连路径（_open_study，
+# study_name = 结构键）不经此锚——两路径命名约定各自自洽。
+STUDY_NAME = "study"
+STUDY_ARTIFACT_FILE = "study.db"
+STUDY_TRACE_TAG = "mflowy.study_db"
+
+# 显式锚（#89 ①修正）：非空时 search() 建 study 走该 sqlite + load_if_exists——
+# 同一路径重复搜索即增量续跑（复用前史）；零拷贝续跑锚的即前史 run 工件树内本体。
 _study_storage: ContextVar[str | None] = ContextVar("mflowy_study_storage", default=None)
-# run 作用域活写开关（#158 §3：hyperparameters_search 流程置位——study 落
-# ``{task_dir}/.mflowy/study/{run_id}.db``，zip 往返带出、失败 run 也有活文件兜底）
+# run 作用域活写开关（#158 §3 → #244 语义固化）：hyperparameters_search 流程置位
+# ——无显式锚时 study 直驻 **active run 工件根**（位置对齐 log_artifact，zip 往返
+# 带出、失败 run 也有活文件兜底；搜索终 tag 相对路径留痕，零拷贝）
 _study_live: ContextVar[bool] = ContextVar("mflowy_study_live", default=False)
-# 本次 search 实际落库路径（供搜索尾 log_artifact 以 ``study.db`` 名落 run——
-# 单线程 DAG 内「search() → 落工件」紧邻，无交错）
+# 缺件回退的下载暂存种子（job 级 resume 通道）：search() live 锚落家时搬入本 run
+# 工件根（一次搬运即正典居所），消费即清——单 study 契约（多 model 步续跑须节点
+# 参数 inherit_study_run_id 各自寻址）
+_study_seed: ContextVar[str | None] = ContextVar("mflowy_study_seed", default=None)
+# 本次 search 实际落库路径（供搜索尾 tag 留痕判定——单线程 DAG 内「search() →
+# 留痕」紧邻，无交错）
 _study_db_path_used: ContextVar[str | None] = ContextVar("mflowy_study_db_path_used", default=None)
 
 
 def set_study_storage(path: str | None) -> Token[str | None]:
-    """锚定 search() 的 study 落库位置（显式路径——续跑经 ``download_run_artifact``
-    取回的 study.db 即锚此；job_provider 线程内 set，用毕 reset——token 语义同
-    set_task_dir）。"""
+    """锚定 search() 的 study 落库位置（显式路径——零拷贝续跑锚前史 run 工件树内
+    本体；job_provider 线程内 set，用毕 reset——token 语义同 set_task_dir）。"""
     return _study_storage.set(path)
 
 
@@ -67,7 +79,7 @@ def reset_study_storage(token: Token[str | None]) -> None:
 
 
 def set_study_live(flag: bool) -> Token[bool]:
-    """置位 run 作用域活写（无显式锚时 search() 落 run 级 dot-dir）。"""
+    """置位 run 作用域活写（无显式锚时 search() 直驻 active run 工件根）。"""
     return _study_live.set(flag)
 
 
@@ -75,9 +87,74 @@ def reset_study_live(token: Token[bool]) -> None:
     _study_live.reset(token)
 
 
+def set_study_seed(path: str | None) -> Token[str | None]:
+    """置位下载暂存种子（缺件回退路径——恢复树缺件时 ``download_run_artifact``
+    取回的 study.db；search() live 锚落家时搬入，消费即清）。"""
+    return _study_seed.set(path)
+
+
+def reset_study_seed(token: Token[str | None]) -> None:
+    _study_seed.reset(token)
+
+
 def study_db_path_used() -> str | None:
     """最近一次 search() 的实际落库 sqlite 路径（未落库/内存态 = None）。"""
     return _study_db_path_used.get()
+
+
+def assert_inherit_search_face(inherit_study_run_id: str | None, param_space: dict) -> None:
+    """节点面守卫（单源）：inherit_study_run_id 仅 search 行为（参数含搜索空间）可用
+    ——全 pin（training 行为）同传 = 语义误用 fail-loud。"""
+    if inherit_study_run_id is not None and not param_space:
+        raise ValueError("inherit_study_run_id 仅 search 行为（参数含搜索空间）可用——全 pin = training 行为无 study")
+
+
+def locate_study(run_id: str) -> tuple[str | None, str]:
+    """run 寻址定位前史 study 工件（#244 零拷贝链解析面）：tag（``STUDY_TRACE_TAG``）
+    相对路径优先、工件清单回退（#199 存量 run）；返回 ``(本地直驻路径 | None, 相对路径名)``。
+
+    - 本地工件树（file scheme / 裸路径根）且文件在 → 直驻路径（零拷贝增量）
+    - None = 非本地根/缺件——调用方走 download 回退（搬入本 run 工件根落家）
+    - tag 与工件清单皆缺 → fail-loud 附清单（仅可续跑 hyperparameters_search 产出的 run）
+    """
+    from mflowy.utils.mlflow import local_artifact_root, run_artifacts, run_tags_and_artifact_uri
+
+    arts = run_artifacts(run_id)
+    tags, artifact_uri = run_tags_and_artifact_uri(run_id)
+    rel = tags.get(STUDY_TRACE_TAG) or next((a for a in arts if a == STUDY_ARTIFACT_FILE), None)
+    if rel is None:
+        raise ValueError(
+            f"study 续跑源 run {run_id!r} 无 study 工件（tag {STUDY_TRACE_TAG} 与工件清单均缺，"
+            f"现有工件: {arts or '无'}）——仅可续跑 hyperparameters_search 产出的 run"
+        )
+    root = local_artifact_root(artifact_uri)
+    if root is not None and (candidate := root / rel).is_file():
+        return str(candidate), rel
+    return None, rel
+
+
+@contextmanager
+def inherited_study(run_id: str):
+    """节点级前史 study 锚定（#244，模型步 run 窗口内）：定位前史 study——本地工件
+    树在 → 零拷贝直锚（前史 run 树内增量，搜索终不拷回不留痕——study 单源居前史
+    run 树）；缺件/非本地根 → download 回退搬入本 run 工件根落家（一次搬运即
+    正典居所）。"""
+    from mflowy.utils.mlflow import active_artifact_root, download_run_artifact
+
+    local, rel = locate_study(run_id)
+    if local is None:
+        root = active_artifact_root(local_only=True)
+        if root is None:
+            raise RuntimeError("缺件回退须在模型步 run 窗口内落家（无 active run 即无居所）")
+        dest = root / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(download_run_artifact(run_id, rel), dest)
+        local = str(dest)
+    token = set_study_storage(local)
+    try:
+        yield
+    finally:
+        reset_study_storage(token)
 
 
 def suggest_params(trial: Trial, param_space: dict[str, ParameterSearchSpace]) -> dict[str, Any]:
@@ -136,20 +213,25 @@ def search[T: float | tuple[float, ...]](
 
     path = _study_storage.get()
     if path is None and _study_live.get():
-        # run 作用域活写（#158 §3）：run 窗口内锚到 task_dir dot-dir——单 job 单
-        # model 步实践规范，多模型走多 job；zip 全量带出供跨 Job 续跑
-        import mlflow
-        from mflowy.utils.path import task_dir
+        # run 作用域活写（#158 §3 → #244 语义固化）：直驻 active run 工件根（位置
+        # 对齐 log_artifact——工件树即正典居所，零拷贝；失败 run 也有活文件兜底）；
+        # 非本地工件根 fail-loud（sqlite 直写只对本地树成立）。下载暂存种子（缺件
+        # 回退）在此搬入落家，消费即清
+        from mflowy.utils.mlflow import active_artifact_root
 
-        if (run := mlflow.active_run()) is not None:
-            path = str(task_dir() / ".mflowy" / "study" / f"{run.info.run_id}.db")
+        if (root := active_artifact_root(local_only=True)) is not None:
+            path = str(root / STUDY_ARTIFACT_FILE)
+            if (seed := _study_seed.get()) is not None:
+                Path(path).parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(seed, path)
+                _study_seed.set(None)
     if path:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         # 落库锚生效（#89 ①修正 / #158 续跑）：sqlite + load_if_exists——同库重复
-        # 搜索复用前史（增量续跑）。study 名 = 链上恒名 "study"（#158：活文件以
-        # run_id 区分于磁盘，名随文件词干漂移会让续跑 load_if_exists 落空）
+        # 搜索复用前史（增量续跑）。study 名 = 链上恒名（名随文件词干漂移会让续跑
+        # load_if_exists 落空）
         study = optuna.create_study(
-            study_name="study",
+            study_name=STUDY_NAME,
             storage=f"sqlite:///{path}",
             load_if_exists=True,
             sampler=sampler,

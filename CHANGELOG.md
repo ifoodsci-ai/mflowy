@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### BREAKING：study 存储零拷贝单源化（#244）——直驻 run 工件根 / tag 留痕 / 节点参数寻址
+
+hyperparameters_search 的 study 状态往返从「每轮 run 工件拷回」改为「artifact_root
+直驻 + tag 零拷贝留痕 + 节点参数寻址」（喂 #225 Round 2 / #218 remote 化）：
+
+- **直驻**：`_study_storage` 为空时（#158 §3 活写语义固化）study 落 **active run
+  工件根** `{artifact_root}/study.db`（位置对齐 `log_artifact`——工件树即正典居所，
+  零拷贝；失败 run 也有活文件兜底）；`{task_dir}/.mflowy/study/{run_id}.db`
+  dot-dir 活写与搜索终 `log_file` 拷回退役。非本地工件根 fail-loud（sqlite 直写
+  只对本地树成立）
+- **留痕**：搜索终 tag `mflowy.study_db` 记当前 run 工件根**相对路径**——对齐
+  mlflow 原始工件记录接口的路径记录模式（`log_table` 同款），经 tracking API 可解析
+- **节点参数寻址**：`model__XGB/LGBM/CAT/RF` 新增 Annotated 参数
+  `inherit_study_run_id`（入 param_schema，YAML 预检面自动覆盖）——tag 相对路径
+  解析 → 前史 run 工件树内直驻增量（零拷贝单源：本轮 run 不拷回不留痕）；一个 DAG
+  多 model 节点各自寻址互不污染（diabetes 4×n_trials / steel_defect 3×n_trials
+  组合面保持）。全 pin（training 行为）同传该参数 fail-loud
+- **`resume_study_from` 语义降级**（#199）：单 study 通道（多 model 步 DAG 改用
+  节点参数，同传 fail-loud）；解析零拷贝优先，恢复树缺件/非本地根回退
+  `download_run_artifact`——下载暂存种子由 live 锚搬入本 run 工件根落家（一次
+  搬运即正典居所）
+- 链上恒名三源常量化（`STUDY_NAME`/`STUDY_ARTIFACT_FILE`/`STUDY_TRACE_TAG`，
+  `study.py` 单源）；utils 新增 `active_artifact_root`/`run_tags_and_artifact_uri`
+  seam，本地工件根解析提炼 `_local_artifact_root` 单源（工件壳共用）
+
 ### BREAKING：会话寻址参数正名——sid/session_id → `observation_json`（#242）
 
 锚定语义升级：会话工具族寻址参数从「会话目录绝对路径」（`sid`/`session_id` 两拼法

@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 from mflowy.driver.builder import Builder
 from mflowy.driver.serializer import flow_to_yaml
@@ -77,6 +78,30 @@ def _require_steps(steps_text: str) -> str:
     return steps_text
 
 
+def _gate_resume_face(steps_text: str, resume_study_from: str) -> None:
+    """``resume_study_from`` 提交侧门（#244，fail-loud 红线 1）：job 级单 study 通道
+    ——多 model 步 DAG 用节点参数 ``inherit_study_run_id`` 各自寻址；两通道同传 =
+    参数来源冲突（节点锚静默遮蔽 job 锚 = 静默丢弃，拒绝）。"""
+    import yaml as _yaml
+
+    parsed = _yaml.safe_load(steps_text)
+    model_steps = [
+        ((step or {}).get(next(iter(step))) or {}).get("params") or {}
+        for step in parsed or []
+        if isinstance(step, dict) and str(next(iter(step))).startswith("model__")
+    ]
+    if len(model_steps) > 1:
+        raise ValueError(
+            "resume_study_from = 单 study 续跑通道（job 级）——多 model 步 DAG "
+            "用节点参数 inherit_study_run_id 各自寻址（互不污染，#244）"
+        )
+    if any(p.get("inherit_study_run_id") is not None for p in model_steps):
+        raise ValueError(
+            f"参数来源冲突：resume_study_from={resume_study_from!r}（job 级锚）与节点参数 "
+            "inherit_study_run_id（模型步锚）不可同传——节点级寻址请只用节点参数"
+        )
+
+
 def _build_modeling_steps(
     modeling_steps: str,
     model: str,
@@ -123,37 +148,47 @@ class LocalJobProvider:
     ) -> JobOutcome:
         """搜索-only DAG：model 步带搜索空间 → search 行为（inner CV 选参，不终训不碰 holdout）。
 
-        study 落库（#158 §3，``study_storage_path`` 退役）：缺省 = run 作用域活写
-        ``{task_dir}/.mflowy/study/{run_id}.db``（搜索终以 ``study.db`` 名落该模型步
-        run——zip 往返带出，失败 run 也有活文件兜底）；``resume_study_from=<run_id>``
-        = 续跑（``download_run_artifact`` 取回该 run 的 study.db → load_if_exists 增量，
-        复用前史）。remote 蕴含 inherit（前史 run 只在继承链 mlflow.db 里可寻址）。
+        study 落库（#244 零拷贝单源化，``study_storage_path``/dot-dir 活写退役）：
+        缺省 = 直驻该模型步 run 工件根 ``{artifact_root}/study.db``（搜索终 tag
+        ``mflowy.study_db`` 记相对路径留痕——工件树即正典居所，零拷贝；失败 run 也有
+        活文件兜底）；``resume_study_from=<run_id>`` = 续跑（**单 study 通道**：零拷贝
+        优先——前史 run 工件树内直驻增量；恢复树缺件回退 download 落家本 run）。多
+        model 步 DAG 续跑走节点参数 ``inherit_study_run_id`` 各自寻址。remote 蕴含
+        inherit（前史 run 只在继承链 mlflow.db 里可寻址）。
         """
 
         def _run():
             from mflowy.model.model.study import (
+                locate_study,
                 reset_study_live,
+                reset_study_seed,
                 reset_study_storage,
                 set_study_live,
+                set_study_seed,
                 set_study_storage,
             )
 
             steps_text = _require_steps(modeling_steps)
             _anchor_task_dir(steps_text)
-            token_storage = token_live = None
+            if resume_study_from:
+                _gate_resume_face(steps_text, resume_study_from)
+            token_storage = token_seed = token_live = None
+            seed_path: str | None = None
             try:
                 if resume_study_from:
-                    from mflowy.utils.mlflow import download_run_artifact, run_artifacts
+                    from mflowy.utils.mlflow import download_run_artifact
 
-                    arts = run_artifacts(resume_study_from)
-                    if "study.db" not in arts:
-                        raise ValueError(
-                            f"resume_study_from={resume_study_from!r} 的 run 无 study.db 工件"
-                            f"（现有工件: {arts or '无'}）——仅可续跑 hyperparameters_search 产出的 run"
-                        )
-                    token_storage = set_study_storage(str(download_run_artifact(resume_study_from, "study.db")))
+                    local, rel = locate_study(resume_study_from)  # 无 study 工件 fail-loud 附清单
+                    if local is not None:
+                        token_storage = set_study_storage(local)  # 零拷贝：前史 run 工件树内直驻增量
+                    else:
+                        # 缺件/非本地根回退：下载暂存种子——置位 live（search() 落家本 run
+                        # 工件根时搬入，一次搬运即正典居所）
+                        seed_path = download_run_artifact(resume_study_from, rel)
+                        token_seed = set_study_seed(seed_path)
+                        token_live = set_study_live(True)
                 else:
-                    token_live = set_study_live(True)  # run 作用域活写（无前史 = 新 study）
+                    token_live = set_study_live(True)  # run 作用域直驻（无前史 = 新 study）
                 builder = Builder(
                     HYPERPARAMETERS_SEARCH_TEMPLATE,
                     env={"name": name, "description": desc, "modeling_steps": steps_text},
@@ -163,6 +198,13 @@ class LocalJobProvider:
             finally:
                 if token_storage is not None:
                     reset_study_storage(token_storage)
+                if token_seed is not None:
+                    if seed_path is not None and Path(seed_path).is_file():
+                        raise ValueError(  # 种子未被搬入（consumption = move）——静默丢弃即缺陷
+                            "resume_study_from 的下载种子未被消费（无 search 行为 model 步）——"
+                            "续跑通道要求 model 步带搜索空间"
+                        )
+                    reset_study_seed(token_seed)
                 if token_live is not None:
                     reset_study_live(token_live)
 
