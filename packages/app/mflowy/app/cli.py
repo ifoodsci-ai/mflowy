@@ -165,25 +165,24 @@ def build_tool_parser(fn, prog: str) -> argparse.ArgumentParser:
         if param.kind in (param.VAR_POSITIONAL, param.VAR_KEYWORD):
             continue
         annotation = hints.get(name, param.annotation)
-        help_text, arg_type, required = _field_help(param, annotation)
+        help_text, arg_type, _required = _field_help(param, annotation)
         kind = _classify(_unwrap_annotated(annotation)[0])
+        # required 不在 argparse 层强制（--kwargs-json 逃生舱须能独立满足必填）——
+        # 缺参由 pydantic 运行时校验 fail-loud（exit 2，help 里【必填】标注常在）
         if kind == "bool":
             parser.add_argument(
                 _kebab(name),
                 help=help_text,
                 default=_SUPPRESS,
-                required=required,
                 action=argparse.BooleanOptionalAction,
             )
         else:
-            parser.add_argument(
-                _kebab(name),
-                help=help_text,
-                default=_SUPPRESS,
-                required=required,
-                type=arg_type,  # 标量 argparse 类型转换；json 形态收原始串（metavar 提示）
-                metavar=("JSON" if arg_type is None else None),
-            )
+            # 标量 argparse 类型转换；json 形态收原始串（metavar 提示）——type=None
+            # 是「不转换」的合法形态（argparse 类型重载在 pyright 面按 kwargs 显式分支）
+            if arg_type is not None:
+                parser.add_argument(_kebab(name), help=help_text, default=_SUPPRESS, type=arg_type)
+            else:
+                parser.add_argument(_kebab(name), help=help_text, default=_SUPPRESS, metavar="JSON")
     parser.add_argument(
         "--kwargs-json",
         metavar="JSON",

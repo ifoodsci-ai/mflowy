@@ -116,16 +116,33 @@ class TestFlagCompilation:
         assert ei.value.code == 2
         assert "非合法 JSON" in capsys.readouterr().err
 
-    def test_required_flag_missing_usage_error(self, monkeypatch, capsys):
+    def test_required_flag_missing_fail_at_pydantic(self, monkeypatch, capsys):
+        """缺必填参：argparse 层不强制（--kwargs-json 须能独立满足），pydantic
+        运行时校验 fail-loud（exit 2，单源纪律——旗标层零校验）。"""
+
         def tool(must: Annotated[str, Field(description="必填项")]):
-            return must
+            return must  # pragma: no cover —— 校验先于调用
 
         _patch_eps(monkeypatch, t=tool)
         monkeypatch.setattr("sys.argv", ["mflowy", "t"])
         with pytest.raises(SystemExit) as ei:
             cli.main()
         assert ei.value.code == 2
-        assert "--must" in capsys.readouterr().err
+        err = capsys.readouterr().err
+        assert "must" in err and "required" in err.lower()
+
+    def test_required_param_satisfiable_via_kwargs_json_alone(self, monkeypatch, capsys):
+        """--kwargs-json 逃生舱可独立满足必填参（argparse 不强制 required 的理由）。"""
+
+        def tool(must: Annotated[str, Field(description="必填项")]):
+            return {"got": must}
+
+        _patch_eps(monkeypatch, t=tool)
+        monkeypatch.setattr("sys.argv", ["mflowy", "t", "--kwargs-json", '{"must": "v"}'])
+        with pytest.raises(SystemExit) as ei:
+            cli.main()
+        assert ei.value.code == 0
+        assert json.loads(capsys.readouterr().out)["got"] == "v"
 
     def test_field_description_lands_in_help(self):
         parser = cli.build_tool_parser(_probe_tool, prog="mflowy probe_tool")
