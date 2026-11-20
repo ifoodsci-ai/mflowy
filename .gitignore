@@ -42,6 +42,8 @@ examples/2026-10-11-challenge-02-errors-integrity*
 .kaggle/ps-s6e10/SPEC.md
 .zcode-survey/01-starch-extrusion.xlsx
 .mimosa
+# 临时草稿区（agent 调研/拷问侦察笔记，误入 af5ac99f 后补 ignore）
+.scratch/
 
 # ===== Git worktrees（agent 工作树检出，父仓规则不覆盖子模块）=====
 .worktrees/
