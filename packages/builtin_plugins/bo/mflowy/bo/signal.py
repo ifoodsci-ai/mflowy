@@ -101,5 +101,5 @@ def signal_suggestion(state: dict[str, Any]) -> str | None:
             )
         else:
             lines.append(f"- 负向累计门：{state['negative']}/{state['negative_gate']} 条推荐严重不符（漂移告警信号）")
-        lines.append("- 建议：人点火重跑上游链（clean → modeling），更新预测模型后经 bo_load_or_init 重进")
+        lines.append("- 建议：人点火重跑上游链（clean → modeling），更新预测模型后经 bo_load_or_start 重进")
     return "\n".join(lines)

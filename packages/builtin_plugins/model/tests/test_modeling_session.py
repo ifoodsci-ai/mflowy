@@ -547,7 +547,7 @@ def test_findings_drive_only_same_combo(sessions_root, cat_csv):
             "key": k_ordinal,
             "findings": [{"kind": "fold_std", "severity": 0.9, "evidence": {"cv": 0.5}, "message": "折间不稳-ordinal"}],
         },
-    )  # #236：report_findings 收编九动作面（工具面 report_findings_modeling 薄别名）
+    )  # #236：report_findings 收编九动作面（工具面 modeling_report_findings 薄别名）
     o = ModelingSession().observe(observation_json)  # 光标在 RF|onehot
     assert all(f.get("message") != "折间不稳-ordinal" for f in o.biz["findings"])  # 证据不跨 FE 组合
     ModelingSession().apply(observation_json, "select_FE", {"node": "ordinal_encoder"})  # 光标回 RF|ordinal

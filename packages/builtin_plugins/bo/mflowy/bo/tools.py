@@ -106,7 +106,7 @@ def _write_atomic(path: Path, writer: Any) -> None:
 # ── ① 开局：init / continue / rebuild（#180 R1 + #182 R5 修订）────────────────
 
 
-def bo_load_or_init(
+def bo_load_or_start(
     study_name: Annotated[str, Field(description="study 名（决定落位 <task_dir>/bo_studies/<study_name>/study.db）")],
     model_run_id: Annotated[
         str, Field(description="预测模型 run_id（模型 = 调用入参非身份——换模型仅重置学习信号，#182）")
@@ -142,7 +142,7 @@ def bo_load_or_init(
     """开局 / 重进 bo study（三形态一入口：init ← 历史 parquet；continue ← 既有 db；
     rebuild ← db 迁移式重建）。
 
-    何时使用 bo_load_or_init：
+    何时使用 bo_load_or_start：
     - 首次开局：data（湿实验历史 ≥20 行，#183 机器门）+ target_column + direction +
       search_space → 建新 study（历史行 = COMPLETE trial）
     - 重进/换模型：db（可带新 run_id → 学习信号归档重置一气呵成）
@@ -257,7 +257,7 @@ def _require_identity_attrs(st: Any) -> None:
         if key not in st.user_attrs
     ]
     if missing:
-        raise ValueError(f"study db 缺身份键 {missing}——非 bo_load_or_init 产物（db = 全部状态的唯一真源）")
+        raise ValueError(f"study db 缺身份键 {missing}——非 bo_load_or_start 产物（db = 全部状态的唯一真源）")
 
 
 def _continue_study(st: Any, source_path: Path, *, model_run_id: str) -> dict[str, Any]:
@@ -278,7 +278,7 @@ def _continue_study(st: Any, source_path: Path, *, model_run_id: str) -> dict[st
 
 
 def bo_ask(
-    study_db: Annotated[str, Field(description="study db 绝对路径（bo_load_or_init 返回的 study_db）")],
+    study_db: Annotated[str, Field(description="study db 绝对路径（bo_load_or_start 返回的 study_db）")],
     n_candidates: Annotated[
         int,
         Field(

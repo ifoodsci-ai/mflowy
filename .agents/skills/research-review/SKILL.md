@@ -41,4 +41,4 @@ disable-model-invocation: true
 
 ## 参考
 
-- 消费方：model-brief skill（编译进 CVCard）→ load_or_start_modeling
+- 消费方：model-brief skill（编译进 CVCard）→ modeling_load_or_start

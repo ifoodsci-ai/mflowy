@@ -84,12 +84,12 @@ dependencies = [
 data_profile = "mflowy.data.tools:data_profile"
 eda = "mflowy.data.tools:eda"
 propose_questions = "mflowy.data.tools:propose_questions"
-load_or_start_cleaning = "mflowy.data.tools:load_or_start_cleaning"
-observe_cleaning = "mflowy.data.tools:observe_cleaning"
-apply_cleaning = "mflowy.data.tools:apply_cleaning"
-rollback_cleaning = "mflowy.data.tools:rollback_cleaning"
-finish_cleaning = "mflowy.data.tools:finish_cleaning"
-abandon_cleaning = "mflowy.data.tools:abandon_cleaning"
+data_load_or_start = "mflowy.data.tools:data_load_or_start"
+data_observe = "mflowy.data.tools:data_observe"
+data_apply = "mflowy.data.tools:data_apply"
+data_rollback = "mflowy.data.tools:data_rollback"
+data_finish = "mflowy.data.tools:data_finish"
+data_abandon = "mflowy.data.tools:data_abandon"
 
 [build-system]
 requires = ["hatchling"]

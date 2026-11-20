@@ -33,7 +33,7 @@ def history(tmp_path) -> pd.DataFrame:
 
 @pytest.fixture
 def study(tmp_path, history) -> dict:
-    out = tools.bo_load_or_init(
+    out = tools.bo_load_or_start(
         study_name="s1",
         model_run_id="run-A",
         data=str(tmp_path / "wet_history.parquet"),
@@ -49,16 +49,16 @@ def study(tmp_path, history) -> dict:
 # ── 开局：init / 20 门 / 撞名 / 双面拦截 ───────────────────────────────────────
 
 
-def test_load_or_init_requires_data_or_db(tmp_path):
+def test_load_or_start_requires_data_or_db(tmp_path):
     with pytest.raises(ValueError, match="至少一个"):
-        tools.bo_load_or_init(study_name="s1", model_run_id="r")
+        tools.bo_load_or_start(study_name="s1", model_run_id="r")
 
 
 def test_init_min_history_gate(tmp_path, history):
     short = history.head(10)
     short.to_parquet(tmp_path / "short.parquet")
     with pytest.raises(ValueError, match="开局最小历史量 20"):
-        tools.bo_load_or_init(
+        tools.bo_load_or_start(
             study_name="s2",
             model_run_id="r",
             data=str(tmp_path / "short.parquet"),
@@ -70,7 +70,7 @@ def test_init_min_history_gate(tmp_path, history):
 
 def test_init_name_collision_fails_loud(tmp_path, study):
     with pytest.raises(FileExistsError, match="撞名"):
-        tools.bo_load_or_init(
+        tools.bo_load_or_start(
             study_name="s1",
             model_run_id="r",
             data=_history_parquet(tmp_path),
@@ -86,9 +86,9 @@ def _history_parquet(tmp_path) -> str:
 
 def test_init_requires_space_direction_target(tmp_path, history):
     with pytest.raises(ValueError, match="必填"):
-        tools.bo_load_or_init(study_name="s3", model_run_id="r", data=_history_parquet(tmp_path))
+        tools.bo_load_or_start(study_name="s3", model_run_id="r", data=_history_parquet(tmp_path))
     with pytest.raises(ValueError, match="schema 同构"):
-        tools.bo_load_or_init(
+        tools.bo_load_or_start(
             study_name="s3",
             model_run_id="r",
             data=_history_parquet(tmp_path),
@@ -100,7 +100,7 @@ def test_init_requires_space_direction_target(tmp_path, history):
 
 def test_match_init_requires_band(tmp_path, history):
     with pytest.raises(ValueError, match="需要 band"):
-        tools.bo_load_or_init(
+        tools.bo_load_or_start(
             study_name="s4",
             model_run_id="r",
             data=_history_parquet(tmp_path),
@@ -108,7 +108,7 @@ def test_match_init_requires_band(tmp_path, history):
             direction="match",
             search_space=SPACE,
         )
-    out = tools.bo_load_or_init(
+    out = tools.bo_load_or_start(
         study_name="s4",
         model_run_id="r",
         data=_history_parquet(tmp_path),
@@ -272,7 +272,7 @@ def test_tell_fail_loud_forms(study):
 
 
 def test_tell_match_band_required(tmp_path, history):
-    out = tools.bo_load_or_init(
+    out = tools.bo_load_or_start(
         study_name="m1",
         model_run_id="r",
         data=str(tmp_path / "wet_history.parquet"),
@@ -331,13 +331,13 @@ def test_signal_run_id_rebind_archives_epoch(study):
         [{"trial": ask["trials"][0]["trial"], "status": "done", "measured_value": 42.0, "label": "close"}],
         positive_gate=100,
     )
-    re = tools.bo_load_or_init(study_name="s1", model_run_id="run-B", db=study["study_db"])
+    re = tools.bo_load_or_start(study_name="s1", model_run_id="run-B", db=study["study_db"])
     assert re["action"] == "continue"
     assert re["run_id_rebind"]["archived_run_id"] == "run-A"
     assert re["run_id_rebind"]["reset"]["positive"] == 0  # 清零一气呵成
     # 重绑已归档 run_id（回滚旧模型）= 覆盖该键归档、重新计数（#182 R3——A→B→A：
     # B 纪元归档进 archive[B]，A 的旧归档被清出待本纪元关闭覆写）
-    re2 = tools.bo_load_or_init(study_name="s1", model_run_id="run-A", db=study["study_db"])
+    re2 = tools.bo_load_or_start(study_name="s1", model_run_id="run-A", db=study["study_db"])
     assert re2["run_id_rebind"]["archived_run_id"] == "run-B"
     from mflowy.bo import study as study_mod
 
@@ -392,7 +392,7 @@ def test_rebuild_bounds_change_migrates_terminal_states(study, tmp_path):
         "high": 95.0,
         "dtype": "float",
     }  # 物理边界变（放宽——收窄越界即 fail-loud，见下例）
-    out = tools.bo_load_or_init(
+    out = tools.bo_load_or_start(
         study_name="rebuilt",
         model_run_id="run-A",
         db=study["study_db"],
@@ -411,7 +411,7 @@ def test_rebuild_out_of_bounds_fails_loud(study, tmp_path, history):
     narrowed = dict(SPACE)
     narrowed["temperature"] = {"kind": "continuous", "low": 20.0, "high": 21.0, "dtype": "float"}
     with pytest.raises(ValueError, match="temperature"):
-        tools.bo_load_or_init(
+        tools.bo_load_or_start(
             study_name="rebuilt2",
             model_run_id="run-A",
             db=study["study_db"],
@@ -431,7 +431,7 @@ def test_rebuild_new_dim_drops_negative_and_backfills(study, tmp_path, history):
     )
     wider = dict(SPACE)
     wider["ph"] = {"kind": "continuous", "low": 5.0, "high": 8.0, "dtype": "float"}  # 新增搜索维
-    out = tools.bo_load_or_init(
+    out = tools.bo_load_or_start(
         study_name="rebuilt3",
         model_run_id="run-A",
         db=study["study_db"],
@@ -449,14 +449,14 @@ def test_rebuild_new_dim_drops_negative_and_backfills(study, tmp_path, history):
 
 def test_continue_rejects_ambiguous_anchors(study, tmp_path, history):
     with pytest.raises(ValueError, match="不收 data"):
-        tools.bo_load_or_init(
+        tools.bo_load_or_start(
             study_name="s1",
             model_run_id="run-A",
             db=study["study_db"],
             data=str(tmp_path / "wet_history.parquet"),
         )  # 无 search_space + data 同传 = 意图不明
     with pytest.raises(ValueError, match="须一并传入"):
-        tools.bo_load_or_init(
+        tools.bo_load_or_start(
             study_name="s1",
             model_run_id="run-A",
             db=study["study_db"],
