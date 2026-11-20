@@ -1,6 +1,6 @@
 # Roadmap
 
-功能路线图。已实现能力以 MCP `tools/list` 与模块注册表为准——本表只做能力概览，
+功能路线图。已实现能力以 CLI `mflowy --help`（工具）与模块注册表（节点）为准——本表只做能力概览，
 不逐项复述参数细节（防漂移）；规划项落地后在 [CHANGELOG.md](../CHANGELOG.md)
 记录并从下表移除。
 
@@ -12,7 +12,7 @@
 | **预测模型训练子系统（Model）** | CV 策略（split / SplitSpec）、特征工程、模型族（XGBoost / LightGBM / CatBoost / RandomForest / MLP，本地建模重栈住 model 包 `[local]`）、评估与解释、建模 POMDP 会话（八动作面、combo 冻结、OOF 观察面、diagnose、findings、finish 收编）、compute 工具（modeling / hyperparameters_search / explanation / predict，JobProvider 委派——inverse_optimization 已随 BO 落地退役）、model-brief / research-review 剧本 | [model 域 README](../packages/builtin_plugins/model/README.md) |
 | **贝叶斯优化推荐子系统（BO）** | 六工具工作流（开局/推荐/剪枝/多样性/回填/导出——agent 编排、恒本地零模型触碰）、BOCard 先验卡契约（空间组/策略组 + hard 规则表达式树）、study sqlite db 状态载体（TPE 单引擎、迁移式开局、在途避让）、推荐级计数制学习信号（epoch 按 run_id 归档重置）、bo-prior / bo-suggestion 剧本 | [bo 域 README](../packages/builtin_plugins/bo/README.md) |
 | **引擎（driver）** | YAML→DAG 增量编译（编译即校验）、平铺键控叙事、参数边三层寻址、LIFO 调度 + 失败血缘剪枝、@node/@edge 插件 SDK、POMDP 会话基座（壳 = 机制，域 Handle = 业务接口） | [driver README](../packages/driver/README.md) |
-| **平台（mcp）** | MCP server（stdio）/ JSON runner / 直接 import 三入口、平台工具组、遥测与同意门、mlflow 观测、OAuth 2.1 登录、会话回收 | [mcp README](../packages/mcp/README.md) |
+| **平台（app）** | CLI（旗标编译）/ mflowy-job 容器 / 直接 import 三入口、平台工具组、遥测与同意门、mlflow 观测、OAuth 2.1 登录、会话回收 | [app README](../packages/app/README.md) |
 | **底座（utils）** | mlflow 封装、jinja 沙箱、脚本安全门、stdout 捕获、原子写；实验追踪（MLflow 全量记录 + 数据血缘 tag） | [utils README](../packages/utils/README.md) |
 | **研究流剧本** | survey / clean / model-brief / model / research-review / bo-prior / bo-suggestion——全部 `disable-model-invocation`（人点火） | [`.agents/skills/`](../.agents/skills/) |
 

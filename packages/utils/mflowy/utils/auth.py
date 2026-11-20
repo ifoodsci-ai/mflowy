@@ -387,6 +387,9 @@ def login(
     worker = threading.Thread(target=server.serve_forever, daemon=True)
     worker.start()
     try:
+        # 终端打印授权链接（#243 CLI login）：浏览器拉起与否都留痕——headless/远程
+        # 场景可复制手动打开（stderr 通道：stdout 是业务数据）
+        logger.info("授权链接（未自动打开浏览器时手动访问）：%s", authorize_url)
         if not webbrowser.open(authorize_url):
             raise RuntimeError(
                 f"无法拉起本机浏览器。请在同一台机器手动打开：\n  {authorize_url}\n"

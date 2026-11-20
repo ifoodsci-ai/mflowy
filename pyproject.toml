@@ -1,12 +1,12 @@
 [project]
 name = "mflowy"
 version = "0.2.0"
-description = "MCP-native ML capability layer for autonomous data-analysis / model-training / prediction agents — enumerable MCP tool catalog composed into traceable YAML-DAG experiment workflows"
+description = "CLI-first ML capability layer for autonomous data-analysis / model-training / prediction agents — enumerable CLI tool catalog composed into traceable YAML-DAG experiment workflows"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
 authors = [{ name = "lincode7", email = "15587025323@163.com" }]
-keywords = ["mcp", "machine-learning", "workflow", "mlflow", "data-analysis", "yaml"]
+keywords = ["cli", "machine-learning", "workflow", "mlflow", "data-analysis", "yaml"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -20,7 +20,7 @@ classifiers = [
 dependencies = [
     "mflowy-utils",
     "mflowy-driver",
-    "mflowy-mcp",
+    "mflowy-app",
 ]
 
 [project.urls]
@@ -29,23 +29,13 @@ Issues = "https://github.com/ifoodsci-ai/mflowy/issues"
 Documentation = "https://github.com/ifoodsci-ai/mflowy#readme"
 
 [project.optional-dependencies]
-# extras = 形态选择器（#216 裁定/#217 落地 + #210 bo 纳入）：域包直装
-# （mflowy-data / mflowy-model / mflowy-bo），聚合 extras 只选形态——[mcp] =
-# server 形态（SDK+遥测+三域完整词表；remote 平台工具的引擎住 model 包
-# platform_client，server 分发形态必须可用——懒加载 + 零降级：缺则调用
-# fail-loud；纯远程瘦装 server，零本地建模重栈；bo 六工具随 #210 纳入——
-# server 完全面先例 #159，落实 model ← bo ← mcp 依赖链）；[local] = 本地建模
-# 重栈（model 包 [local]，[deep] 真合并）。聚合 [data]/[model]/[deep] 已退役（BREAKING）
-mcp = [
-    "mflowy-mcp[mcp]",
-    "mflowy-data",
-    "mflowy-model",
-    "mflowy-bo",
-]
+# 单一安装形态（#243）：CLI 即全词表（mflowy-app 硬带三域包），[mcp] extra
+# 已随 MCP server 退役删除、不设 [app] extra；唯一 extra [local] = 本地建模
+# 重栈（model 包 [local]，[deep] 真合并）——纯远程瘦装 CLI 零 torch
 local = ["mflowy-model[local]"]
 
 [tool.uv.workspace]
-members = ["packages/utils", "packages/driver", "packages/builtin_plugins/*", "packages/mcp"]
+members = ["packages/utils", "packages/driver", "packages/builtin_plugins/*", "packages/app"]
 
 [tool.uv.sources]
 mflowy-utils = { workspace = true }
@@ -53,7 +43,7 @@ mflowy-driver = { workspace = true }
 mflowy-data = { workspace = true }
 mflowy-model = { workspace = true }
 mflowy-bo = { workspace = true }
-mflowy-mcp = { workspace = true }
+mflowy-app = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]
@@ -109,8 +99,8 @@ dev = [
     "pre-commit>=3.0",
     # 类型门（#42 决议→#91）：pyright basic；本地/CI 同版本（make typecheck）
     "pyright>=1.1.414",
-    # 测试面含 telemetry/schema 契约（模块级 import SDK）——dev 环境须带 server 形态
-    "mflowy-mcp[mcp]",
+    # 测试面含 CLI/遥测契约（mflowy-app 硬依赖面，聚合包已带）
+    "mflowy-app",
     # 测试直读 PNG dpi 元数据（figure 落盘纪律断言）——import 即声明，不靠 matplotlib 传递
     "pillow>=10.0",
 ]

@@ -18,7 +18,7 @@ Requirements: Python 3.12+ and [uv](https://docs.astral.sh/uv/).
 ```bash
 git clone https://github.com/ifoodsci-ai/mflowy.git
 cd mflowy
-uv sync --all-extras --all-groups   # all deps (mcp + local + dev)
+uv sync --all-extras --all-groups   # all deps (local + dev)
 make test                           # full test suite
 make lint                           # ruff check
 make fmt                            # ruff format
@@ -42,17 +42,18 @@ make fmt                            # ruff format
    - New compute entities register via the `@node` decorator — no manual wiring.
    - Keep new dependencies out of `base` unless truly needed; data-stack
      stacks go into the owning domain package (data/model) or its extras (e.g. model's
-     `[local]`); aggregate-package extras are form selectors (`[mcp]`/`[local]`).
+     `[local]`); the aggregate package has a single extra (`[local]`) — CLI ships the full
+     vocabulary by default (single install form, #243).
 3. **Test** — add tests mirroring the code path (`tests/` mirrors `mflowy/`).
    Run `make test` before pushing.
 4. **Lint** — `make lint && make fmt`.
 5. **Docs** — tool behavior changes update the **docstring** (it compiles into
-   the MCP schema users actually see; see [AGENTS.md](AGENTS.md) —
+   the CLI help users actually see; see [AGENTS.md](AGENTS.md) —
    Documentation Model).
 6. **Commit** — Conventional Commits style with a Chinese description:
 
    ```
-   feat(mcp): 新增 xxx 工具
+   feat(app): 新增 xxx 工具
    fix(driver): 修复 xxx 解析问题
    docs(examples): 补充 xxx 案例
    ```
@@ -68,14 +69,15 @@ make fmt                            # ruff format
 - [docs/roadmap.md](docs/roadmap.md) — feature roadmap
 - [packages/driver/README.md](packages/driver/README.md) — DAG kernel: design philosophy & architecture
 - [packages/builtin_plugins/model/README.md](packages/builtin_plugins/model/README.md) — modeling domain catalog & remote execution (JobProvider)
-- [packages/mcp/README.md](packages/mcp/README.md) — MCP tools, platform login & telemetry
+- [packages/app/README.md](packages/app/README.md) — CLI, tools, platform login & telemetry
 
 ## Telemetry
 
-MCP tool-call telemetry is **consent-based** (default `ask` via MCP elicitation;
-see [PRIVACY.md](PRIVACY.md)). Instrumentation lives at the protocol layer —
-agentcat wraps the `MCPServer` in `packages/mcp/mflowy/mcp/server.py` via
-`packages/mcp/mflowy/mcp/telemetry.py:wire_agentcat` — so **do not** add per-tool wrappers
-or emit telemetry from `packages/mcp/mflowy/mcp/tools.py`. Any change to what is collected,
-where it goes, or how consent works must update [PRIVACY.md](PRIVACY.md) in
+CLI tool-call telemetry is **consent-based** (TTY first-ask / non-TTY default-on
+with a stderr opt-out line; see [PRIVACY.md](PRIVACY.md)). Instrumentation lives
+at the dispatch layer — the CLI observes every call via
+`packages/app/mflowy/app/telemetry.py:report_call` — so **do not** add per-tool
+wrappers or emit telemetry from `packages/app/mflowy/app/tools.py`. Any change to
+what is collected, where it goes, or how consent works must update
+[PRIVACY.md](PRIVACY.md) in
 the same PR.

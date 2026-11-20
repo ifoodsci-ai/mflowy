@@ -21,7 +21,7 @@ def _mk_session(root: Path, sid: str, days_old: float) -> None:
 
 class TestExplicitRoot:
     def test_default_dry_run_lists_without_deleting(self, tmp_path):
-        from mflowy.mcp.tools import sessions_gc
+        from mflowy.app.tools import sessions_gc
 
         _mk_session(tmp_path, "old", 40)
         report = sessions_gc(root=str(tmp_path))
@@ -30,7 +30,7 @@ class TestExplicitRoot:
         assert (tmp_path / "old").is_dir()  # 缺省只列不删
 
     def test_execute_deletes_and_keeps_fresh(self, tmp_path):
-        from mflowy.mcp.tools import sessions_gc
+        from mflowy.app.tools import sessions_gc
 
         _mk_session(tmp_path, "old", 40)
         _mk_session(tmp_path, "fresh", 1)
@@ -43,7 +43,7 @@ class TestExplicitRoot:
 class TestConventionScan:
     def test_discovers_sessions_roots_under_home(self, tmp_path, monkeypatch):
         """缺省扫描 ~/.mflowy/*_sessions：全部约定 root 的过期会话聚合出账。"""
-        from mflowy.mcp.tools import sessions_gc
+        from mflowy.app.tools import sessions_gc
 
         home = tmp_path / "home"
         base = home / ".mflowy"
@@ -60,7 +60,7 @@ class TestConventionScan:
         assert all((base / n / "s1").is_dir() for n in ("clean_sessions", "modeling_sessions"))
 
     def test_no_roots_found_returns_empty_report(self, tmp_path, monkeypatch):
-        from mflowy.mcp.tools import sessions_gc
+        from mflowy.app.tools import sessions_gc
 
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         report = sessions_gc()
@@ -69,7 +69,7 @@ class TestConventionScan:
     def test_bound_anchor_scans_under_task_dir(self, tmp_path):
         """task_dir 绑定（钉住/锚参数推导同机制）时缺省扫 <anchor>/*_sessions——
         task_dir 下会话根可被回收（#207 缺省扫描面对齐）。"""
-        from mflowy.mcp.tools import sessions_gc
+        from mflowy.app.tools import sessions_gc
         from mflowy.utils.path import pin_task_dir, reset_task_dir
 
         anchor = tmp_path / "workspace"

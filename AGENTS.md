@@ -6,7 +6,7 @@ AI 编码 agent 在本仓库的唯一指引。代码是真相源——本文件�
 
 ## Project
 
-MFlowy：YAML 配置驱动的模块化 ML 工作流引擎，全部能力以 **MCP tools**（pyfunc）暴露——MCP server（stdio）、JSON runner（K8s Job 容器）、直接 import 三入口。业务系统 = PILOT 三子系统闭环（[bo 包 README](packages/builtin_plugins/bo/README.md)）：Clean / Model / BO 三域已落地。
+MFlowy：YAML 配置驱动的模块化 ML 工作流引擎，全部能力以 **CLI tools**（pyfunc，#243 SKILLS+CLI 替代 SKILLS+MCP）暴露——CLI（旗标编译面）、mflowy-job（K8s Job 容器）、直接 import 三入口。业务系统 = PILOT 三子系统闭环（[bo 包 README](packages/builtin_plugins/bo/README.md)）：Clean / Model / BO 三域已落地。
 
 **Language**: Python 3.12 | 代码注释与文档：中文
 
@@ -18,35 +18,35 @@ make test                           # 全量测试
 make typecheck                      # pyright basic 类型门（packages+tests；压制纪律见 #91）
 make lint && make fmt               # ruff
 uv run mflowy list-nodes            # 能力词表
-uv run mflowy-mcp                   # MCP server（stdio）
+uv run mflowy --help                # CLI 分组工具清单；<tool> -h 看全参与用法
 ```
 
-用户态分发（PyPI/uvx/wheel/Docker）见 [README](README.md) 与 `docker/`；MCP 客户端 stdio 配置见 [`.mcp.json.example`](.mcp.json.example)。
+用户态分发（PyPI/uvx/wheel/Docker）见 [README](README.md) 与 `docker/`；agent 接入 = subprocess 调 `mflowy <tool> --flags`（发现面 = `mflowy --help`）。
 
 **uvx 陷阱**（uvx 不读 pyproject 的 `[tool.uv.sources]`）：
 
-- torch CPU 索引（`--index https://download.pytorch.org/whl/cpu` + `unsafe-best-match`）为 [local] 必需（`mflowy[mcp,local]`——torch 随 [local] 真合并随行；纯 `mflowy[mcp]` 瘦装零 torch）——缺省时 torch 解析为 CUDA 全家桶（2–3GB）
-- extras 内联进 `--from "mflowy[mcp,local]"`——uvx 的 `--extra` 需新版 uv
-- 入口名 `mflowy-mcp` 刻意避开 mcp SDK 同名 CLI（`mcp.cli:app`）
+- torch CPU 索引（`--index https://download.pytorch.org/whl/cpu` + `unsafe-best-match`）为 [local] 必需（`mflowy[local]`——torch 随 [local] 真合并随行；裸装 `mflowy` 纯远程瘦装零 torch）——缺省时 torch 解析为 CUDA 全家桶（2–3GB）
+- extras 内联进 `--from "mflowy[local]"`——uvx 的 `--extra` 需新版 uv
+- 入口收敛（#243）：`mflowy`（CLI）/ `mflowy-job`（容器）两 console script；`mflowy-mcp` 已随 MCP server 退役
 
 ## DDD分层
 
 三层与七 distribution 对位（票面投影）：**应用层**（工具面与入口）← **领域层**（业务语义）← **驱动层**（基座与基础设施）——依赖方向不变量同源（单向向上、内核零域感知，机器面 = `tests/test_workspace.py`）。设计对位：领域居中、上层组合下层、基础设施零领域感知——POMDP 倒置（#245–#247，合同 = #226 2026-11-19 裁定集）即此对齐的兑现：`Handler[S,P]` 领域接口、`POMDPSession` 应用壳。
 
-uv workspace 七 distribution（PEP 420 namespace，版本锁步，`tests/test_workspace.py` 断言）。extras = 形态选择器：域包直装（mflowy-data / mflowy-model / mflowy-bo），聚合包 `[mcp]`（server 形态——SDK+遥测+三域词表，纯远程瘦装；bo 零 extra 面）/`[local]`（model 包本地建模重栈，[deep] 真合并）二选一组合（`mflowy[mcp,local]` = server+本地栈；聚合 `[data]`/`[model]`/`[deep]` 已退役）。
+uv workspace 七 distribution（PEP 420 namespace，版本锁步，`tests/test_workspace.py` 断言）。单一安装形态（#243）：mflowy-app 硬带三域包——装 mflowy 即全词表（CLI 即能力面）；唯一 extra `[local]`（model 包本地建模重栈，[deep] 真合并），`[mcp]` 已随 MCP server 退役删除、不设 [app] extra。
 
 | DDD 层 | distribution | 位置 | 职责 |
 | ------ | ------------ | ---- | ---- |
-| 应用 | mcp | `packages/mcp/mflowy/mcp/` | 工具注册面、stdio server、runner、遥测 |
+| 应用 | app | `packages/app/mflowy/app/` | 工具注册面、CLI（旗标编译）、JSON 分发内核（runner）、jobwrap、遥测 |
 | 领域 | data | `packages/builtin_plugins/data/mflowy/data/` | 清洗 POMDP 动作域（load/statistic/detect/clean/plot + DomainCard 先验分级 + 缺陷封闭枚举/Finding 契约 + 路由提示表） |
 | 领域 | model | `packages/builtin_plugins/model/mflowy/model/` | 建模 POMDP 动作域（x_y/cv/x_transformer/model + plot——cv 族 = split 参数构建/load 引用加载）+ JobProvider + diagnose/report 观察面 |
 | 领域 | bo | `packages/builtin_plugins/bo/mflowy/bo/` | 贝叶斯优化推荐工作流域（**非 POMDP 会话**，#177——agent 工具工作流 + study sqlite db）：六工具 + BOCard 契约 + 学习信号 + search_input 节点（自 model 真迁移，#175） |
 | 驱动 | driver | `packages/driver/mflowy/driver/` | YAML→DAG 编译调度、@node/@edge 插件 SDK、POMDP 会话基座（`pomdp` 契约——Observation 四件 o.prior/o.biz/o.actions/o.validation + Handle 六操作 load_or_start/observe/apply/rollback/finish/abandon；`session` 壳——单源计步/盘上 memo/o_actions 投影钩子/补 r 机制） |
 | 驱动 | utils | `packages/utils/mflowy/utils/` | mlflow seam、OAuth 2.1 客户端（login/token 库）、脚本安全扫描、capture/path/logging/jinja |
 
-依赖方向保持单向：utils ← driver ← data ← model ← bo ← mcp（内核零域感知、两 POMDP 域隔离、bo 工作流域居 model 之后——`tests/test_workspace.py` 断言，改动 import 保持全绿）。模块内相对导入、跨模块绝对导入。
+依赖方向保持单向：utils ← driver ← data ← model ← bo ← app（内核零域感知、两 POMDP 域隔离、bo 工作流域居 model 之后、app 硬依赖三域包——`tests/test_workspace.py` 断言，改动 import 保持全绿）。模块内相对导入、跨模块绝对导入。
 
-工具七组共 41 个（真源 = `tools/list`）：平台 10（info 3 + mlflow 观测 2（`get_experiment`/`get_run`，可选单参 `tracking_uri` 查远程下载库）+ 会话回收 1 + 登录 1，本地；实验就绪 1 + 任务日志 1 + 产物拉取 1（`ensure_platform_experiment`/`get_platform_job_logs`/`download_platform_job_artifacts`，平台 API 面——引擎住 model 包 platform_client 懒加载，`mflowy[mcp]` 聚合含 model））；compute 6（四件 + `switch_job_provider` 执行模式切换 + `modeling_statistics` 统计证据（#226 ⑥ 判读退役承接——run 寻址走 JobProvider，#236），受理面 = JobOutcome——`inverse_optimization` 已随 BO 落地退役，#179）；本地分析 5（`data_profile`/`eda`/`propose_questions`/`draw_taylor_diagram`/`modeling_report_skeleton`）；YAML 预检 1（`validate_modeling_steps`）；POMDP 会话 13（域前缀族 `<biz>_<verb>`，#248：data 域 `data_load_or_start`/`data_observe`/`data_apply`/`data_rollback`/`data_finish`/`data_abandon` + model 域 `modeling_load_or_start`/`modeling_observe`/`modeling_apply`/`modeling_rollback`/`modeling_finish`/`modeling_abandon`/`modeling_report_findings`（薄别名，#236）——引擎在两域 session 实体，动作面 = modeling 九动作面）；BO 推荐 6（`bo_load_or_start`/`bo_ask`/`bo_prune`/`bo_diversity_check`/`bo_tell`/`bo_export_dataset`——全无状态、恒本地、零模型触碰，#180/#184）。
+工具七组共 41 个（真源 = `mflowy --help`）：平台 10（info 3 + mlflow 观测 2（`get_experiment`/`get_run`，可选单参 `tracking_uri` 查远程下载库）+ 会话回收 1 + 登录 1，本地；实验就绪 1 + 任务日志 1 + 产物拉取 1（`ensure_platform_experiment`/`get_platform_job_logs`/`download_platform_job_artifacts`，平台 API 面——引擎住 model 包 platform_client 懒加载，mflowy-app 硬依赖含 model））；compute 6（四件 + `switch_job_provider` 执行模式切换（写 `~/.mflowy/settings.json` 的 `job_provider` 键，解析序 env 钉住 > settings > 缺省 local，#243） + `modeling_statistics` 统计证据（#226 ⑥ 判读退役承接——run 寻址走 JobProvider，#236），受理面 = JobOutcome——`inverse_optimization` 已随 BO 落地退役，#179）；本地分析 5（`data_profile`/`eda`/`propose_questions`/`draw_taylor_diagram`/`modeling_report_skeleton`）；YAML 预检 1（`validate_modeling_steps`）；POMDP 会话 13（域前缀族 `<biz>_<verb>`，#248：data 域 `data_load_or_start`/`data_observe`/`data_apply`/`data_rollback`/`data_finish`/`data_abandon` + model 域 `modeling_load_or_start`/`modeling_observe`/`modeling_apply`/`modeling_rollback`/`modeling_finish`/`modeling_abandon`/`modeling_report_findings`（薄别名，#236）——引擎在两域 session 实体，动作面 = modeling 九动作面）；BO 推荐 6（`bo_load_or_start`/`bo_ask`/`bo_prune`/`bo_diversity_check`/`bo_tell`/`bo_export_dataset`——全无状态、恒本地、零模型触碰，#180/#184）。
 
 插件身份静态声明：`@node(namespace=...)` 标记（裸命名参数=参数边，Annotated=用户可配）+ 域包 pyproject `[project.entry-points."mflowy.builtin_plugins"]` 手写条目（0.2.0 起构建期 AST 扫描钩子退役，与第三方包声明方式同构），运行期 `driver/discover.py` 按注册表（装饰器写入 `<node_key, Node>`，#126 零属性挂载）解析——发现表键 = 注册表键，声明与注册不一致（未装饰/错 namespace/别名键）加载期 fail-loud（#140 身份桥退役）；忘声明由 CR 交叉检查兜底（见「添加能力」）。
 
@@ -65,7 +65,7 @@ uv workspace 七 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 1. **fail-loud**：未知键、撞名、缺依赖一律 raise 并带候选清单。凡是"静默覆盖 / 静默丢弃 / 白名单过滤后继续"的写法都是缺陷。参数来源冲突（YAML params 撞参数边名、用户 pin 撞引擎管理轴）显式报错——宁可拒绝一次合法输入，绝不静默改写语义。
 2. **单源**：一个事实一处定义。签名=约束=文档=校验（同一台 pydantic 机器）；fn 反射（typing/inspect）只居 `driver/reflect.py`，装饰期冻结进 Node/Edge 契约面、消费方读冻结核（#138，工具包外存量台账由 `tests/test_reflection_core.py` 锁定）；词表=运行期目录；默认值=函数签名。第二份拷贝出现即收敛（提共享件），任其分叉即债。
 3. **原子提交**：manifest/版本工件落盘走 tmp+rename；保持"先写工件、后写 manifest"的 commit 顺序；回滚把内存态与盘上工件一起回退——只回退一半 = 不一致交付。
-4. **通道纪律**：`print`（stdout）= 业务数据，只出现在捕获窗口内（`capture_prints`/redirect——MCP stdio 下裸 print 毁掉 JSON-RPC 通道）；`logger`（stderr）= 过程诊断。同一信息只走一条通道。
+4. **通道纪律**：`print`（stdout）= 业务数据，只出现在捕获窗口内（`capture_prints`/redirect——CLI 查询类回显 JSON 供调用方解析，裸 print 混入即污染结构化输出）；`logger`（stderr）= 过程诊断。同一信息只走一条通道。
 5. **缺依赖=优雅降级**：extra 缺失时词表/会话对相关节点降级标注（`bindings=None`/跳过+warning），其余能力照常；词表 miss 与 import 失败按类型二分（`CatalogMiss` vs 裸 `ModuleNotFoundError`）。
 6. **依赖声明完整**：import 了什么就声明什么——靠传递依赖侥幸工作的 import 是缺陷（当前存量：scipy）。
 7. **测试钉契约**：行为变更带契约测试；架构不变量（依赖方向/版本锁步/注册表镜像）住 `tests/`；测试替身只打 adapter 缝位（`_DEFAULT_CATALOG`/`Tracking` seam）；测试随包镜像 `packages/<pkg>/tests/** ↔ mflowy/<pkg>/**`，跨域接缝用例住消费侧包；接缝测试真跑产物，以 mock 为主的地方补真跑。
@@ -76,23 +76,23 @@ uv workspace 七 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 
 ## 添加能力
 
-**新插件节点**（三站，缺一即断）：① 按域建模块（`packages/<data|model>/mflowy/<pkg>/<能力族>/`），入口加 `@node(namespace=...)`（归组）或 `@node()`（非归组）、纯变换边加 `@edge`（edges ns）；签名纪律：节点函数参数 **Annotated=节点自身参数**（`param_schema`——get_node/MCP info → YAML 模板面）；**非 Annotated=参数边**（`upstreams_schema`——接线上游**节点或边**函数的输出）；**边函数参数只能指向节点**（不吃边——边链成环无从发生），无 Annotated 面。② 同 PR 在域包 pyproject `[project.entry-points."mflowy.builtin_plugins"]` 手写声明——节点 `namespace.node_name`（非归组裸名）、边 `edges.node_name`，值 `模块路径:函数名`；③ `uv sync` 后 `list-nodes` 可见。判据：镜像路径有测试 + `list-nodes` 可见。
+**新插件节点**（三站，缺一即断）：① 按域建模块（`packages/<data|model>/mflowy/<pkg>/<能力族>/`），入口加 `@node(namespace=...)`（归组）或 `@node()`（非归组）、纯变换边加 `@edge`（edges ns）；签名纪律：节点函数参数 **Annotated=节点自身参数**（`param_schema`——get_node_info → YAML 模板面）；**非 Annotated=参数边**（`upstreams_schema`——接线上游**节点或边**函数的输出）；**边函数参数只能指向节点**（不吃边——边链成环无从发生），无 Annotated 面。② 同 PR 在域包 pyproject `[project.entry-points."mflowy.builtin_plugins"]` 手写声明——节点 `namespace.node_name`（非归组裸名）、边 `edges.node_name`，值 `模块路径:函数名`；③ `uv sync` 后 `list-nodes` 可见。判据：镜像路径有测试 + `list-nodes` 可见。
 
 注册漂移不设镜像测试（2026-10 决策，限 `mflowy.builtin_plugins` 节点/边声明面——`mflowy.tools` 工具面两侧均沿用镜像测试）——CR 必查三项：**新 `@node`/`@edge` 必有声明、声明必有函数、entry point 名 namespace 段与装饰器 `namespace=` 逐字一致**；机器门在加载期按键查表（#140：未装饰/错 namespace/别名键统一「声明与注册不一致」fail-loud，翻 #126「只查装饰不比名」裁定），忘声明仍是静默面（目录无名即不可达），靠 CR + `list-nodes` 交叉检查。
 
-**新 compute 工具**（JobProvider 委派，7 站点缺一即断）：
+**新 compute 工具**（JobProvider 委派，7 站点缺一即断；原 ctx SDK 注入形参已随 #243 退役——headers 恒协议缺省 None）：
 
 1. `packages/builtin_plugins/model/mflowy/model/job_provider/protocol.py` — 方法签名（`headers` 形参 = 请求 `_meta` 直传，runner 场景恒 None）
 2. `packages/builtin_plugins/model/mflowy/model/job_provider/local.py` — 本地编排实现
 3. 远程 provider 实现（module:Class 自定义包）— build command + `_dispatch`
-4. `packages/builtin_plugins/model/mflowy/model/tools.py` — 工具包装 + docstring（schema 由此编译）
+4. `packages/builtin_plugins/model/mflowy/model/tools.py` — 工具包装 + docstring（CLI 旗标/help 由此编译）
 5. `packages/builtin_plugins/model/pyproject.toml` `[project.entry-points."mflowy.tools"]` — 静态注册条目
 6. `packages/builtin_plugins/model/mflowy/model/templates.py` + `templates/*.yaml.j2` — 模板
 7. `packages/builtin_plugins/model/tests/` — headers 契约 + provider 用例；工具清单从 `JobProvider` 协议自省生成（单源）
 
-判据：`tools/list` 出现新工具且镜像/契约测试通过。本地分析类工具走 4/5 两站（server 经 entry points 自动注册）。
+判据：`mflowy --help` 出现新工具且镜像/契约测试通过。本地分析类工具走 4/5 两站（CLI 分发面经 entry points 自动注册）。
 
-**新平台工具**（两站，缺一即断）：① `packages/mcp/mflowy/mcp/tools.py` 公有函数（Annotated 签名 + docstring 即 schema；非工具 helper 必须 `_` 前缀——模块公有面即函数面）；② 同 PR 在 `packages/mcp/pyproject.toml [project.entry-points."mflowy.tools"]` 静态声明 + `uv sync`。判据：镜像契约 `packages/mcp/tests/mcp/test_platform_tools_registry.py` 绿（声明面 ↔ 函数面双向差集）。
+**新平台工具**（两站，缺一即断）：① `packages/app/mflowy/app/tools.py` 公有函数（Annotated 签名 + docstring 即帮助面；非工具 helper 必须 `_` 前缀——模块公有面即函数面）；② 同 PR 在 `packages/app/pyproject.toml [project.entry-points."mflowy.tools"]` 静态声明 + `uv sync`。判据：镜像契约 `packages/app/tests/app/test_platform_tools_registry.py` 绿（声明面 ↔ 函数面双向差集）。
 
 **第三方插件包**（活参考 = `packages/builtin_plugins/data/` + `packages/builtin_plugins/model/`）：以 mflowy 为 base 依赖，声明 `[project.entry-points."mflowy.plugins"]`（`namespace.node` / 裸 `node`），随 `uv --with` / 镜像 `MFLOWY_EXTRA_MODULES` 安装即生效。
 
@@ -106,7 +106,7 @@ uv workspace 七 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 | 动 driver / YAML / 写插件  | [packages/driver/README.md](packages/driver/README.md)                                 |
 | 查能力目录 / 边函数 / 遥测 | [packages/builtin_plugins/data/README.md](packages/builtin_plugins/data/README.md) + [packages/builtin_plugins/model/README.md](packages/builtin_plugins/model/README.md) |
 | 写远程 provider（JobProvider 协议/自定义执行环境） | [packages/builtin_plugins/model/README.md](packages/builtin_plugins/model/README.md)（预测模型训练子系统——协议与实现住 model 域包） |
-| 平台登录 / 遥测同意门      | [packages/mcp/README.md](packages/mcp/README.md)                                       |
+| 平台登录 / CLI / 遥测同意门 | [packages/app/README.md](packages/app/README.md)                                       |
 | 用户方法论 / 案例叙事      | [docs/research-flow.md](docs/research-flow.md)（五律总纲 + 五幕叙事入口）              |
 | 查数据清洗方法论（先验 / 检测算子 / 清洗算子矩阵） | [docs/method/data-cleaning.md](docs/method/data-cleaning.md)（研究领域知识，零词表绑定） |
 | 查建模方法论（模型矩阵 / CV-HPO / 特征工程 / 评估） | [docs/method/model-training.md](docs/method/model-training.md)（研究领域知识，零词表绑定） |

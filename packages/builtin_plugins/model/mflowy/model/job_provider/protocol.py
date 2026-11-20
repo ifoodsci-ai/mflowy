@@ -13,8 +13,8 @@ from typing import Literal, Protocol
 from mflowy.driver.dag import DAGResult
 from pydantic import BaseModel, ConfigDict, model_validator
 
-# headers 形参的共享类型（请求 _meta 直传；runner 场景恒 None）——protocol/local
-# 两处签名单源引用（#58），工具包装侧的 ctx 提取语义见 tools.py docstring。
+# headers 形参的共享类型（#243 起 _meta 直传面随 MCP 通道退役，恒 None）——
+# protocol/local 两处签名单源引用（#58），保留为 provider 契约面。
 # 值类型 object：SDK `_meta` 是 TypedDict（RequestParamsMeta，非 str→str 映射），
 # TypedDict 可赋 Mapping[str, object]——str→str 头（契约测试形态）仍兼容
 type Headers = Mapping[str, object] | None

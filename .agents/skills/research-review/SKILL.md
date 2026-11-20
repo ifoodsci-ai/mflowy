@@ -41,4 +41,5 @@ disable-model-invocation: true
 
 ## 参考
 
+- 工具发现：记不清工具名或参数面时，先 `mflowy --help` 看分组清单、`mflowy <tool> --help` 看全参与用法；
 - 消费方：model-brief skill（编译进 CVCard）→ modeling_load_or_start

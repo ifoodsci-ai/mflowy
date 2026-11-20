@@ -55,5 +55,6 @@ candidates=, max_steps=, id_columns=, card=<DomainCard 背景>)`——显式参�
 
 ## 参考
 
+- 工具发现：记不清工具名或参数面时，先 `mflowy --help` 看分组清单、`mflowy <tool> --help` 看全参与用法；
 - 结构化候选：research-review skill（文献先验——candidates 带 baseline 锚点 /
   space_hints 注入搜索起点 / 候选 seed）

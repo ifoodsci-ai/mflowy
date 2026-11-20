@@ -2,9 +2,9 @@
 
 注册：pyproject 手工声明 entry points 组 ``mflowy.tools``；JobProvider 协议与
 Local 实现随域居住（``job_provider/``，``MFLOWY_JOB_PROVIDER=module:Class`` 可换远程）。
-仅 compute 工具带 ``ctx: Context | None`` 形参（SDK 注入，``_meta`` 透传 provider.headers；
-runner / 直接 import 调用时不注入）。本地分析类（draw_taylor_diagram/
-modeling_report_skeleton）不走 JobProvider——两站点直调。
+compute 工具的 ``ctx`` SDK 注入形参已随 #243 MCP 通道退役删除（``_meta`` 透传面
+消亡——provider.headers 恒 None，协议形参保留为契约面）。本地分析类
+（draw_taylor_diagram/modeling_report_skeleton）不走 JobProvider——两站点直调。
 
 入参纪律：非数据文件的文件输入一律问**明文字符串**（modeling_steps = yaml 文本，
 不假设调用方与引擎共享文件系统）；数据文件（csv/parquet/pdf 等）保持路径。
@@ -21,11 +21,6 @@ from .job_provider import get_job_provider as _get_job_provider
 from .job_provider import set_job_provider as _set_job_provider
 from .job_provider.protocol import JobOutcome
 from .templates import MODELING_TEMPLATE, count_model_steps, parse_steps_fragment
-
-try:  # SDK 仅 server 形态需要（[mcp] extra）——runner 路径零 SDK 可导入；
-    from mcp.server.mcpserver import Context
-except ImportError:  # pragma: no cover — 无 [mcp] extra 的 runner/import 安装形态
-    from typing import Any as Context  # 注解占位：``Context | None`` 可被 get_type_hints 求值；永不实例化
 
 
 def _session():
@@ -120,7 +115,6 @@ async def hyperparameters_search(
             description="继承源任务 job_id（可选）——解包其可继承 zip 恢复前序追踪态与数据；引用前序 run（model/experiment_id）时必填；local 模式忽略"
         ),
     ] = None,
-    ctx: Context | None = None,
 ) -> JobOutcome:
     """提交超参搜索任务（search-only：model 步只碰 inner CV，不终训不碰 holdout）。
 
@@ -144,7 +138,6 @@ async def hyperparameters_search(
         resume_study_from=resume_study_from,
         platform_experiment_id=platform_experiment_id,
         inherit_platform_job_id=inherit_platform_job_id,
-        headers=ctx.request_context.meta if ctx else None,
     )
 
 
@@ -173,7 +166,6 @@ async def modeling(
             description="继承源任务 job_id（可选）——解包其可继承 zip 恢复前序追踪态与数据；引用前序 run（model/experiment_id）时必填；local 模式忽略"
         ),
     ] = None,
-    ctx: Context | None = None,
 ) -> JobOutcome:
     """提交 mflowy 终训任务（training 行为：model 步全 pin → 全量拟合 + holdout 终评）。
 
@@ -195,7 +187,6 @@ async def modeling(
         prune_missing=prune_missing,
         platform_experiment_id=platform_experiment_id,
         inherit_platform_job_id=inherit_platform_job_id,
-        headers=ctx.request_context.meta if ctx else None,
     )
 
 
@@ -221,7 +212,6 @@ async def explanation(
             description="继承源任务 job_id（可选）——解包其可继承 zip 恢复前序追踪态与数据；引用前序 run（model/experiment_id）时必填；local 模式忽略"
         ),
     ] = None,
-    ctx: Context | None = None,
 ) -> JobOutcome:
     """提交 SHAP 解释性分析任务。
 
@@ -242,7 +232,6 @@ async def explanation(
         lowess_frac=lowess_frac,
         platform_experiment_id=platform_experiment_id,
         inherit_platform_job_id=inherit_platform_job_id,
-        headers=ctx.request_context.meta if ctx else None,
     )
 
 
@@ -260,7 +249,6 @@ async def predict(
             description="继承源任务 job_id（可选）——解包其可继承 zip 恢复前序追踪态与数据；引用前序 run（model/experiment_id）时必填；local 模式忽略"
         ),
     ] = None,
-    ctx: Context | None = None,
 ) -> JobOutcome:
     """加载已训练模型对新数据做预测。
 
@@ -277,7 +265,6 @@ async def predict(
         model=model,
         platform_experiment_id=platform_experiment_id,
         inherit_platform_job_id=inherit_platform_job_id,
-        headers=ctx.request_context.meta if ctx else None,
     )
 
 
@@ -562,7 +549,7 @@ def modeling_abandon(
     return session.abandon(observation_json, reason=reason)
 
 
-# ── 执行模式切换（#156 §4：local / remote 等价受理形态，进程级开关）──────────
+# ── 执行模式切换（#156 §4 / #243：受理单源 settings.json 的 job_provider 键）──
 
 
 def switch_job_provider(
@@ -579,17 +566,22 @@ def switch_job_provider(
     - 本地算力不足时切到 remote（先 ensure_platform_experiment 就绪实验与文件）
     - 查询当前 active 模式与可切换集（remote 的受理网关等 reason 信息）
 
-    可切换集合 = {local, remote} ∪ {env MFLOWY_JOB_PROVIDER 已配置的 module:Class}；
-    切换为进程级单例（不影响在途调用），幂等。
+    切换 = 写全局配置根 ``~/.mflowy/settings.json`` 的 ``job_provider`` 键（跨
+    进程持久——CLI 每次调用重解析；同时刷新本进程单例，直接 import 宿主即时
+    生效）；解析序 env MFLOWY_JOB_PROVIDER 钉住 > settings.json > 缺省 local
+    （镜像 route_task_dir 惯例）。可切换集合 = {local, remote} ∪ {env 已配置的
+    module:Class}；env 钉住期间切换 = 参数来源冲突 fail-loud（写盘被钉住键
+    遮蔽，绝不静默失效）。
     """
     import os
 
-    from .job_provider import _load_provider_class, get_job_provider
+    from mflowy.utils.settings import write_key
+
+    from .job_provider import _load_provider_class, get_job_provider, resolve_provider_spec
 
     active = type(get_job_provider()).__name__
-    active_name = {"LocalJobProvider": "local", "RemoteJobProvider": "remote"}.get(
-        active, os.environ.get("MFLOWY_JOB_PROVIDER", active)
-    )
+    resolved = resolve_provider_spec()
+    active_name = {"LocalJobProvider": "local", "RemoteJobProvider": "remote"}.get(active, resolved)
 
     env_spec = os.environ.get("MFLOWY_JOB_PROVIDER", "")
     entries: list[dict] = [
@@ -618,22 +610,37 @@ def switch_job_provider(
     if provider is None:
         return {"active": active_name, "providers": entries}
 
+    if env_spec and provider != env_spec:
+        raise ValueError(
+            f"参数来源冲突：env MFLOWY_JOB_PROVIDER 已钉住 {env_spec!r}——settings.json 切换被钉住键遮蔽"
+            f"（要切 {provider!r} 请改 env 而非本工具）"
+        )
+
+    # 顺序纪律（红线 3 原子性）：先落盘后刷进程单例——盘写失败则两侧都不动，
+    # 只回退一半（单例已切、盘上未记）即不一致交付
     if provider == "local":
-        from .job_provider.local import LocalJobProvider
-
-        _set_job_provider(LocalJobProvider())
+        target = "local"
     elif provider == "remote":
-        from .job_provider.remote import RemoteJobProvider
-
-        _set_job_provider(RemoteJobProvider())
+        target = "remote"
     elif provider == env_spec and env_spec:
-        _set_job_provider(_load_provider_class(env_spec)())
+        target = env_spec
     else:
         names = [e["name"] for e in entries]
         raise ValueError(
             f"未知执行模式 {provider!r}——可选：{names}（module:Class 仅经 env MFLOWY_JOB_PROVIDER 预配置，不收工具入参）"
         )
-    return {"active": provider, "switched": True}
+    write_key("job_provider", target)
+    if target == "local":
+        from .job_provider.local import LocalJobProvider
+
+        _set_job_provider(LocalJobProvider())
+    elif target == "remote":
+        from .job_provider.remote import RemoteJobProvider
+
+        _set_job_provider(RemoteJobProvider())
+    else:
+        _set_job_provider(_load_provider_class(target)())
+    return {"active": target, "switched": True, "persisted": "~/.mflowy/settings.json job_provider"}
 
 
 def _remote_base_reason() -> str:

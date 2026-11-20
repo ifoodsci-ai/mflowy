@@ -7,6 +7,8 @@
 """
 
 import asyncio
+import json
+from pathlib import Path
 
 import mflowy.model.job_provider as jp
 import pytest
@@ -23,10 +25,21 @@ def _dag(status: str = "finished") -> DAGResult:
 
 
 @pytest.fixture(autouse=True)
-def _provider_reset():
+def _provider_reset(tmp_path, monkeypatch):
+    """隔离三面：进程单例、env、settings.json（#243 切换写全局配置根——不隔离即
+    污染宿主 ~/.mflowy/settings.json）。"""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MFLOWY_JOB_PROVIDER", raising=False)
     jp.set_job_provider(None)
     yield
     jp.set_job_provider(None)
+
+
+def _read_job_provider_key(tmp_path) -> object:
+    path = Path(tmp_path) / ".mflowy" / "settings.json"
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8")).get("job_provider")
 
 
 # ── JobOutcome 互斥不变量（构造期 fail-loud + 契约测试钉）───────────────────
@@ -106,12 +119,83 @@ def test_switch_query_lists_local_remote_active(monkeypatch):
     assert names["remote"]["available"] is True and "base_url=" in names["remote"]["reason"]
 
 
-def test_switch_to_remote_and_back(monkeypatch):
+def test_switch_to_remote_and_back(tmp_path, monkeypatch):
     monkeypatch.setenv("MFLOWY_PLATFORM_JOB_PRESET", "cpu-standard")
     assert switch_job_provider("remote")["active"] == "remote"
     assert type(jp.get_job_provider()).__name__ == "RemoteJobProvider"
     assert switch_job_provider("local")["active"] == "local"
     assert type(jp.get_job_provider()).__name__ == "LocalJobProvider"
+
+
+def test_switch_persists_to_settings_json(tmp_path, monkeypatch):
+    """#243：切换 = 写全局配置根 job_provider 键（跨进程持久）+ 本进程单例即时刷新。"""
+    monkeypatch.setenv("MFLOWY_PLATFORM_JOB_PRESET", "cpu-standard")
+    result = switch_job_provider("remote")
+    assert result["persisted"] == "~/.mflowy/settings.json job_provider"
+    assert _read_job_provider_key(tmp_path) == "remote"
+
+
+def test_switch_disk_write_failure_leaves_no_phantom(monkeypatch, tmp_path):
+    """红线 3 原子性：盘写失败 → 进程单例不动（先落盘后刷单例，绝不半切换）。"""
+    monkeypatch.setenv("MFLOWY_PLATFORM_JOB_PRESET", "cpu-standard")
+    monkeypatch.setattr("mflowy.utils.settings.write_key", lambda *a, **k: (_ for _ in ()).throw(OSError("disk full")))
+    with pytest.raises(OSError, match="disk full"):
+        switch_job_provider("remote")
+    assert type(jp.get_job_provider()).__name__ == "LocalJobProvider"  # 单例未切
+    assert _read_job_provider_key(tmp_path) is None  # 盘上未记
+
+
+def test_switch_under_pinned_env_conflicts_fail_loud(monkeypatch):
+    """env 钉住期间切换 = 参数来源冲突 fail-loud（写盘被钉住键遮蔽，绝不静默失效）。"""
+    monkeypatch.setenv("MFLOWY_JOB_PROVIDER", "local")
+    monkeypatch.setenv("MFLOWY_PLATFORM_JOB_PRESET", "cpu-standard")
+    with pytest.raises(ValueError, match=r"参数来源冲突.*钉住"):
+        switch_job_provider("remote")
+
+
+def test_switch_env_to_same_spec_allowed(monkeypatch):
+    """env 钉住值与目标一致 → 幂等切换（无遮蔽即无冲突）。"""
+    monkeypatch.setenv("MFLOWY_JOB_PROVIDER", "local")
+    assert switch_job_provider("local")["switched"] is True
+
+
+def test_resolution_env_pins_over_settings(tmp_path, monkeypatch):
+    """解析序（#243）：env 钉住 > settings.json > 缺省 local——镜像 route_task_dir 惯例。"""
+    from mflowy.utils.settings import write_key
+
+    write_key("job_provider", "remote")
+    monkeypatch.setenv("MFLOWY_JOB_PROVIDER", "local")
+    jp.set_job_provider(None)
+    assert jp.resolve_provider_spec() == "local"  # env 压过 settings
+    assert type(jp.get_job_provider()).__name__ == "LocalJobProvider"
+
+
+def test_resolution_settings_over_default(tmp_path, monkeypatch):
+    """settings.json job_provider 键生效（无 env 时）——CLI 每调用重解析的持久面。"""
+    from mflowy.utils.settings import write_key
+
+    write_key("job_provider", "local")
+    jp.set_job_provider(None)
+    assert jp.resolve_provider_spec() == "local"
+    write_key("job_provider", "remote")
+    jp.set_job_provider(None)
+    assert jp.resolve_provider_spec() == "remote"
+
+
+def test_resolution_defaults_local(tmp_path, monkeypatch):
+    jp.set_job_provider(None)
+    assert jp.resolve_provider_spec() == "local"
+
+
+def test_query_active_reflects_resolved_spec(tmp_path, monkeypatch):
+    """查询态 active = 解析序产物（settings 写 remote 后查询即报 remote）。"""
+    from mflowy.utils.settings import write_key
+
+    write_key("job_provider", "remote")
+    monkeypatch.setenv("MFLOWY_PLATFORM_JOB_PRESET", "cpu-standard")
+    result = switch_job_provider()
+    assert result["active"] == "remote"
+    assert next(e for e in result["providers"] if e["name"] == "remote")["active"] is True
 
 
 def test_switch_rejects_unknown_and_arbitrary_module_spec(monkeypatch):

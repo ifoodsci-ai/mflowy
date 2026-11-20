@@ -1,6 +1,6 @@
 ---
 name: survey
-description: 数据领域建档问卷(mflowy)。用户上传数据后需要收集领域先验——目标列/标识列/单位/物理范围/受保护列——或提到"建档""数据问卷""开始清洗"时使用。嵌套研究流的外层剧本：data_profile(warm-up 证据) → 问卷 → eda(单变量+双变量+图) → dive-in 问卷(propose_questions 出题) → data_load_or_start(prior) 直进清洗 POMDP。仅适用于已配置 mflowy MCP server 的会话。
+description: 数据领域建档问卷(mflowy)。用户上传数据后需要收集领域先验——目标列/标识列/单位/物理范围/受保护列——或提到"建档""数据问卷""开始清洗"时使用。嵌套研究流的外层剧本：data_profile(warm-up 证据) → 问卷 → eda(单变量+双变量+图) → dive-in 问卷(propose_questions 出题) → data_load_or_start(prior) 直进清洗 POMDP。仅适用于已安装 mflowy CLI 的会话（`mflowy --help` 可用即在场）。
 disable-model-invocation: true
 ---
 
@@ -51,5 +51,6 @@ disable-model-invocation: true
 
 ## 参考
 
+- 工具发现：记不清工具名或参数面时，先 `mflowy --help` 看分组清单、`mflowy <tool> --help` 看全参与用法（--prior 嵌套字段面同此揭示）；
 - 姊妹词表：statistic.univariate / statistic.bivariate（findings 溯源）；
 - 内层引擎工具：data_load_or_start / data_observe / data_apply（clean skill 手册）。

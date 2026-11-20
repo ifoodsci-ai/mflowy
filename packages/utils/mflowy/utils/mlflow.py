@@ -268,7 +268,7 @@ def default_tracking_uri() -> str:
 
     MCP server 进程中 task_dir 随计算任务漂移（或未设置），默认值若
     挂靠 task_dir，查询工具要么报错、要么命中上一次任务的临时库；
-    固定路径保证 workflow 侧（setup）与查询侧（mflowy.mcp.tools）同库。
+    固定路径保证 workflow 侧（setup）与查询侧（mflowy.app.tools）同库。
     """
     d = Path.home() / ".mflowy"
     d.mkdir(exist_ok=True)

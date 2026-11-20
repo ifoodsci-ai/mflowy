@@ -3,7 +3,7 @@
 > bo = agent 调 BO 工具的工作流，**非 POMDP 会话**（#177 裁定）：状态载体 = study
 > sqlite db（`<task_dir>/bo_studies/<study_name>/study.db`，长寿命可继承资产），
 > 引擎 = TPE 单引擎（`multivariate=True, constant_liar=True` 显式开，#175——torch
-> 全线离开 bo）。依赖方向 `utils ← driver ← data ← model ← bo ← mcp`（可 import
+> 全线离开 bo）。依赖方向 `utils ← driver ← data ← model ← bo ← app`（可 import
 > mflowy.model；`search_input` 节点随本包真迁移自 model，#175 Q2）。
 
 **六工具**（`mflowy.tools` entry points 声明；签名/schema = docstring 单源，真源见

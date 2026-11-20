@@ -1,14 +1,14 @@
-"""mflowy 平台 MCP 工具 — 词表查询 / mlflow 观测 / 工件读取 / 身份指纹 / 会话回收。
+"""mflowy 平台工具 — 词表查询 / mlflow 观测 / 工件读取 / 身份指纹 / 会话回收。
 
 域工具（数据/建模）不住此层：域包自持 ``tools.py`` 并经 entry points 组
-``mflowy.tools`` 注册，server/runner 发现即用（安装形态即通道——裸 host 只有
-平台工具，装哪个域包多哪批工具）。本模块保持零域包导入：remote 系列平台工具
+``mflowy.tools`` 注册，CLI 分发面发现即用（安装形态即通道——裸装只有平台
+工具，装哪个域包多哪批工具）。本模块保持零域包导入：remote 系列平台工具
 （ensure/logs/download，#153）消费 model 包 platform_client，**函数体内懒加载**
 ——注册无条件（entry points 静态），执行随安装形态（裸 host 无 model 时
 fail-loud ImportError，不设降级机器，#159 §5）。
 
-模块公有面即平台工具函数面（镜像契约钉在 tests/mcp/）；非工具 helper 必须
-``_`` 前缀——server/runner 共用的注册辅助件 ``_tool_entry_points`` 即此形态。
+模块公有面即平台工具函数面（镜像契约钉在 tests/app/）；非工具 helper 必须
+``_`` 前缀——CLI 分发面与 runner 共用的注册辅助件 ``_tool_entry_points`` 即此形态。
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from pydantic import Field
 
 
 def _tool_entry_points():
-    """``mflowy.tools`` 组唯一消费口（server.register 与 runner 分发表共享）。
+    """``mflowy.tools`` 组唯一消费口（CLI 发现面与 runner 分发表共享）。
 
     撞名 fail-loud（红线 1）：SDK 撞名只警告且静默保第一个、dict 后写覆盖即
     静默遮蔽——两静默面在入口处统一拒绝，候选清单随报。
@@ -220,8 +220,8 @@ def _local_path(uri: str) -> str:
     return str(Path(unquote(parsed.path))) if parsed.scheme == "file" else uri
 
 
-# 远程镜像契约字面常量（#159 §4：**非 env 读取**——本地同名 env 属 MCP 路由缺省语义，
-# 与远端镜像烧 ENV 契约无关；镜像面见 docker/Dockerfile 烧 ENV、容器面见 jobwrap）。
+# 远程镜像契约字面常量（#159 §4：**非 env 读取**——与远端镜像烧 ENV 契约无关；
+# 镜像面见 docker/Dockerfile 烧 ENV、容器面见 jobwrap）。
 # 观察面单参推导（#160 终稿）：工件 URI 命中此前缀 → 改写为 tracking db 同根本地路径。
 REMOTE_TASK_DIR = "/user-data/workspace"
 
@@ -437,7 +437,7 @@ def _validate_file_manifest(files: list[str]) -> list[Path]:
     resolved: list[Path] = []
     seen: dict[str, Path] = {}
     for raw in files:
-        p = resolve_input_path(raw)  # 通道纪律：MCP 拒收相对路径（#159 §6）
+        p = resolve_input_path(raw)  # 相对路径按执行 cwd 解析（#159 §6）
         if p.name.startswith("."):
             raise ValueError(
                 f"清单含 dotfile（{raw}）——上游 list 面不显示隐藏文件，逐次同步将判缺失死循环重传，整次拒绝"
@@ -506,7 +506,7 @@ def ensure_platform_experiment(
     files: Annotated[
         list[str] | None,
         Field(
-            description="本地文件清单（绝对路径；MCP 通道拒收相对路径）——增量同步到 uploads："
+            description="本地文件清单（绝对路径；相对路径按执行 cwd 解析）——增量同步到 uploads："
             "MD5↔etag 全等跳过、不等覆盖更新；不删除远端未列文件"
         ),
     ] = None,
@@ -593,7 +593,7 @@ def download_platform_job_artifacts(
     target_dir: Annotated[
         str,
         Field(
-            description="解压根目录（须已存在；MCP 通道须绝对路径）——解压进 target_dir/{job_id}/，原子替换可重复调用"
+            description="解压根目录（须已存在；绝对路径，相对按执行 cwd 解析）——解压进 target_dir/{job_id}/，原子替换可重复调用"
         ),
     ],
 ) -> dict:

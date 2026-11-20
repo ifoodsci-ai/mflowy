@@ -1,12 +1,11 @@
-"""JobProvider headers 透传契约 — 请求 _meta → provider.headers（清单从 Protocol 自省单源生成）。
+"""JobProvider 委派契约 — 工具面 ↔ 协议面（清单从 Protocol 自省单源生成）。
 
-契约：
+契约（#243 后）：
 - 仅 compute（hyperparameters_search/modeling/explanation/predict）经 JobProvider 委派（inverse_optimization 已随 BO 落地退役，#179 R4）；
-  ctx（Context | None）由 SDK 注入（不进 input schema），ctx.request_context.meta
-  （客户端 call_tool(meta=...) 直传）原样透传给 JobProvider 同名 headers 形参
-- _meta 缺失 / JSON runner 直调（无 ctx）→ headers=None
+  ctx SDK 注入形参已随 MCP 通道退役删除——provider.headers 恒 None（协议形参
+  保留为契约面），工具包装不再显式传 headers
 - Protocol 与 LocalJobProvider 的委派方法均带 headers 形参
-- 本地分析工具住数据域（mflowy.data.tools），无 ctx 契约见 data 侧测试
+- 本地分析工具住数据域（mflowy.data.tools），无委派契约见 data 侧测试
 
 单源纪律（#58）：工具×方法清单、样本参数、RecordingProvider 全部从
 ``JobProvider`` Protocol 运行期自省派生——新增 compute 方法（协议加一 method）
@@ -17,8 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-from types import SimpleNamespace
-from typing import Any, cast
+from typing import cast
 
 import mflowy.model.job_provider as jp
 import pytest
@@ -30,7 +28,7 @@ PROVIDER_METHODS = sorted(
     name for name, member in inspect.getmembers(JobProvider, inspect.isfunction) if not name.startswith("_")
 )
 
-# 必填参数样本（按形参注解类型出哑值；headers/带缺省者不进样本——透传断言只关 headers）
+# 必填参数样本（按形参注解类型出哑值；headers/带缺省者不进样本）
 _DUMMY_OF_TYPE = {"str": "n", "int": 1, "float": 0.3, "bool": False}
 
 
@@ -85,101 +83,44 @@ def test_sample_kwargs_are_typed_dummies_not_all_none():
 
 
 @pytest.mark.parametrize("tool", PROVIDER_METHODS)
-def test_headers_passthrough_with_ctx(tool):
+def test_delegation_passes_kwargs_headers_default_none(tool):
+    """委派调用透传业务 kwargs；headers 不由工具面注入（#243 后恒协议缺省 None）。"""
     provider = RecordingProvider()
     jp.set_job_provider(cast("JobProvider", provider))  # 记录替身：结构实现 protocol 面
-    headers = {"X-User-ID": "u-1", "X-Org-ID": "org-9", "Authorization": "Bearer t"}
-    ctx = _ctx_with_meta(headers)
 
-    result = asyncio.run(getattr(tools, tool)(**DELEGATED_TOOLS[tool], ctx=ctx))
+    result = asyncio.run(getattr(tools, tool)(**DELEGATED_TOOLS[tool]))
 
     assert result == "ok"
-    assert provider.calls[-1]["headers"] == headers
+    call = provider.calls[-1]
+    for key, value in DELEGATED_TOOLS[tool].items():
+        assert call[key] == value, f"{tool} 委派丢参 {key}"
+    assert call.get("headers", None) is None
 
 
-def test_headers_none_when_meta_absent():
-    provider = RecordingProvider()
-    jp.set_job_provider(cast("JobProvider", provider))  # 记录替身：结构实现 protocol 面
-
-    asyncio.run(tools.predict(data="a.csv", model="XGB=abc", ctx=_ctx_with_meta(None)))
-
-    assert provider.calls[0]["headers"] is None
-
-
-@pytest.mark.parametrize("tool", PROVIDER_METHODS)
-def test_headers_none_without_ctx(tool):
-    provider = RecordingProvider()
-    jp.set_job_provider(cast("JobProvider", provider))  # 记录替身：结构实现 protocol 面
-
-    asyncio.run(getattr(tools, tool)(**DELEGATED_TOOLS[tool]))
-
-    assert provider.calls[-1]["headers"] is None
-
-
-def test_ctx_hidden_from_tool_schema():
-    from mcp.server.mcpserver import MCPServer
-
-    server = MCPServer(name="schema-test")
-    for fname in PROVIDER_METHODS:
-        server.tool(name=f"mflowy_{fname}")(getattr(tools, fname))
-
-    result = asyncio.run(server.list_tools())
-    assert len(result) == len(PROVIDER_METHODS)
-    for t in result:
-        assert "ctx" not in t.input_schema.get("properties", {})
-        assert "headers" not in t.input_schema.get("properties", {})
-
-
-@pytest.mark.parametrize("method", PROVIDER_METHODS)
-def test_provider_contract_has_headers_param(method):
+def test_protocol_impls_carry_headers_parameter():
+    """协议与 Local 实现的委派方法均带 headers 形参（契约面保留——#156/#243）。"""
     from mflowy.model.job_provider.local import LocalJobProvider
 
-    for cls in (JobProvider, LocalJobProvider):
-        param = inspect.signature(getattr(cls, method)).parameters.get("headers")
-        assert param is not None, f"{cls.__name__}.{method} 缺 headers 形参"
-        assert param.default is None
+    for owner in (JobProvider, LocalJobProvider):
+        for name in PROVIDER_METHODS:
+            sig = inspect.signature(getattr(owner, name), eval_str=True)
+            assert "headers" in sig.parameters, f"{owner.__name__}.{name} 缺 headers 形参"
 
 
-@pytest.mark.parametrize("method", PROVIDER_METHODS)
-def test_tool_wrapper_covers_protocol_params(method):
-    """工具包装签名 ⊇ 协议方法参数（headers 的源是 ctx）——协议加参而工具未跟即红。"""
-    tool_params = inspect.signature(getattr(tools, method)).parameters
-    assert "ctx" in tool_params, f"{method} 工具缺 ctx 形参（headers 透传源）"
-    for name, p in inspect.signature(getattr(JobProvider, method)).parameters.items():
-        if name in ("self", "headers"):
-            continue
-        assert name in tool_params, f"{method} 工具缺协议参数 {name}"
-        assert tool_params[name].default == p.default, f"{method}.{name} 缺省与协议分叉"
+def test_ctx_retired_from_tool_signatures():
+    """ctx SDK 注入形参已退役（#243）：compute 工具签名面零 ctx/headers 残留。"""
+    for name in PROVIDER_METHODS:
+        params = set(inspect.signature(getattr(tools, name)).parameters)
+        assert "ctx" not in params, f"{name} 残留 ctx 形参"
+        assert "headers" not in params, f"{name} 残留 headers 形参"
 
 
-def _ctx_with_meta(meta: dict[str, str] | None) -> Any:
-    """结构替身：只实现 request_context.meta 面（Context 鸭子型，SDK 同形读法）。"""
-    return SimpleNamespace(request_context=SimpleNamespace(meta=meta))
-
-
-def test_hyperparameters_search_resume_param_passthrough():
-    """#158 §3：resume_study_from 可选参贯通 Protocol/Local/MCP 三面（缺省 None =
-    run 作用域活写新 study）；study_storage_path 已随 0.2.0 门禁退役。"""
-    import inspect
-
-    from mflowy.model.job_provider.local import LocalJobProvider
-    from mflowy.model.job_provider.protocol import JobProvider
-    from mflowy.model.tools import hyperparameters_search as tool
-
-    for fn in (JobProvider.hyperparameters_search, LocalJobProvider.hyperparameters_search, tool):
-        params = inspect.signature(fn).parameters
-        assert "resume_study_from" in params, fn
-        assert params["resume_study_from"].default is None
-        assert "study_storage_path" not in params, fn
-
-
-@pytest.mark.parametrize("tool", PROVIDER_METHODS)
-def test_platform_params_passthrough(tool):
-    """#156 §6：compute 工具对两模式专属参数的运行期透传（签名覆盖之外的行为用例）。"""
+def test_runtime_evidence_no_meta_passthrough():
+    """`_meta` 直传面消亡的运行面证据：predict 直调（CLI/导入形态）不再吃 ctx。"""
     provider = RecordingProvider()
     jp.set_job_provider(cast("JobProvider", provider))
-    asyncio.run(
-        getattr(tools, tool)(**DELEGATED_TOOLS[tool], platform_experiment_id="exp-px", inherit_platform_job_id="job-px")
-    )
-    last = provider.calls[-1]
-    assert last["platform_experiment_id"] == "exp-px" and last["inherit_platform_job_id"] == "job-px"
+
+    asyncio.run(tools.predict(data="a.csv", model="XGB=abc"))
+
+    assert provider.calls[0].get("headers", None) is None
+    assert provider.calls[0]["data"] == "a.csv"

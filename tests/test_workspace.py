@@ -6,11 +6,11 @@ import tomllib
 import pytest
 
 ROOT = pathlib.Path(__file__).parent.parent
-# 名 → 包目录（相对 ROOT）：两域包住 builtin_plugins/ 分组（与 entry points 组 mflowy.builtin_plugins 对齐）
+# 名 → 包目录（相对 ROOT）：三域包住 builtin_plugins/ 分组（与 entry points 组 mflowy.builtin_plugins 对齐）
 PACKAGES = {
     "utils": "packages/utils",
     "driver": "packages/driver",
-    "mcp": "packages/mcp",
+    "app": "packages/app",
     "data": "packages/builtin_plugins/data",
     "model": "packages/builtin_plugins/model",
     "bo": "packages/builtin_plugins/bo",
@@ -73,15 +73,15 @@ def _pkg_meta(rel: str) -> dict:
         return tomllib.load(f)["project"]
 
 
-def test_mcp_extra_is_optional_not_hard():
-    """入口形态分离：SDK/遥测三依赖住 [mcp] extra（server 形态），非硬依赖——
-    裸装 mflowy 即可用 runner/cmd，不拖 SDK"""
-    meta = _pkg_meta("packages/mcp/pyproject.toml")
+def test_app_single_install_form():
+    """单一安装形态（#243）：mflowy-app = driver + utils + 三域包 + py-machineid——
+    零 extras、零 MCP SDK、零 agentcat（CLI 即全词表）"""
+    meta = _pkg_meta("packages/app/pyproject.toml")
     hard = " ".join(meta["dependencies"])
-    assert "mcp>=" not in hard and "agentcat" not in hard and "machineid" not in hard
-    mcp_extra = meta["optional-dependencies"]["mcp"]
-    joined = " ".join(mcp_extra)
-    assert "mcp>=2.0.0" in joined and "agentcat" in joined and "py-machineid" in joined
+    assert "mcp>=" not in hard and "agentcat" not in hard
+    for dep in ("mflowy-driver", "mflowy-utils", "mflowy-data", "mflowy-model", "mflowy-bo", "py-machineid"):
+        assert dep in hard, f"mflowy-app 缺基础依赖 {dep}"
+    assert not meta.get("optional-dependencies"), "mflowy-app 不设 extras（单一安装形态）"
 
 
 def test_aggregate_extras_are_form_selectors():
@@ -102,13 +102,12 @@ def test_aggregate_extras_are_form_selectors():
 
 
 def test_console_scripts():
-    """入口面：mflowy=CLI（runner）、mflowy-mcp=MCP server（双入口重命名，旧名消亡）；
-    mflowy-job=远程任务容器入口（#158 wrap 提交面，切片④）"""
-    scripts = _pkg_meta("packages/mcp/pyproject.toml")["scripts"]
+    """入口面（#243）：mflowy=CLI（旗标编译面）、mflowy-job=远程任务容器入口
+    （#158 wrap 提交面）；mflowy-mcp 已随 MCP server 退役删除"""
+    scripts = _pkg_meta("packages/app/pyproject.toml")["scripts"]
     assert scripts == {
-        "mflowy": "mflowy.mcp.runner:main",
-        "mflowy-mcp": "mflowy.mcp.server:main",
-        "mflowy-job": "mflowy.mcp.jobwrap:main",
+        "mflowy": "mflowy.app.cli:main",
+        "mflowy-job": "mflowy.app.jobwrap:main",
     }
 
 

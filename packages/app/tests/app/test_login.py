@@ -4,7 +4,7 @@
 「工具面 = auth 公有面」这一件事（schema 描述约定由 test_tools_schema 钉）。
 """
 
-from mflowy.mcp import tools
+from mflowy.app import tools
 from mflowy.utils import auth
 
 

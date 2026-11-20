@@ -56,15 +56,15 @@ jobs:
           path: coverage.xml
           if-no-files-found: error
 
-  # 瘦装门（#216 Q6.3/#217 + #210 bo 纳入修订）：[mcp] 单 extra = server 完全面
-  # ——零本地建模重栈（重栈全进 model 包 [local] 后，no-torch 门随 [deep] 真合并
-  # 消亡）；bo 随 [mcp] 牵入 optuna（#175 硬依赖，by design——ask 恒本地故 bo 引擎
-  # 属 server 面，torch 仍隔离）。环境级验证：零重栈自证（optuna 除外）+ bo 工具
-  # 可用 + 词表降级标注（model ns requires→local + 条目 upstream=null）+
-  # get_node_info 降级面（available=false + 安装提示）+ remote 提交路径（mock
-  # provider 受理即返）+ server stdio 冒烟；全量重栈环境见 test/typecheck 门（--all-extras）
+  # 瘦装门（#216 Q6.3/#217 + #210 + #243 单一安装形态）：裸装聚合包 = CLI 完全面
+  # ——零本地建模重栈（重栈全进 model 包 [local]）；bo 随 app 硬依赖牵入 optuna
+  # （#175 硬依赖，by design——ask 恒本地故 bo 引擎属 CLI 面，torch 仍隔离）。
+  # 环境级验证：零重栈自证（optuna 除外）+ bo 工具可用 + 词表降级标注（model ns
+  # requires→local + 条目 upstream=null）+ get_node_info 降级面（available=false +
+  # 安装提示）+ remote 提交路径（mock provider 受理即返）+ CLI 冒烟；全量重栈
+  # 环境见 test/typecheck 门（--all-extras）
   thin:
-    name: thin (mcp-only server, remote-ready)
+    name: thin (bare install, remote-ready)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -72,8 +72,8 @@ jobs:
         with:
           python-version: "3.12"
           enable-cache: true
-      - name: Install deps (mcp extra only)
-        run: uv sync --all-groups --extra mcp
+      - name: Install deps (bare aggregate, no local)
+        run: uv sync --all-groups
         env:
           UV_DEFAULT_INDEX: https://pypi.org/simple
       - name: 瘦装断言（零重栈 + bo 工具可用 + 词表 requires→local 降级 + get_node_info 降级面）
@@ -83,12 +83,12 @@ jobs:
 
           # sklearn 不在清单：mlflow（utils 硬依赖）传递随行——但五族模块统一 import
           # shap，缺 shap 即全族降级（RF 亦然），不依赖 sklearn 在缺的假设。
-          # optuna 不在禁装清单：bo 随 [mcp] 牵入（#210——mflowy-bo 硬依赖，by design）
+          # optuna 不在禁装清单：bo 随 app 硬依赖牵入（#210——mflowy-bo 硬依赖，by design）
           for mod in ("lightgbm", "xgboost", "catboost", "shap", "torch"):
               assert importlib.util.find_spec(mod) is None, f"瘦装环境不应装重栈 {mod}"
           # bo 六工具随 server 完全面在场（ask 恒本地——optuna 属 server 面）
+          from mflowy.app.tools import get_node_info, list_nodes
           from mflowy.bo.tools import bo_ask, bo_tell
-          from mflowy.mcp.tools import get_node_info, list_nodes
 
           ns = next(n for n in list_nodes(namespace="model") if n["namespace"] == "model")
           xgb = next(e for e in ns["nodes"] if e["name"] == "model__XGB")
@@ -125,14 +125,16 @@ jobs:
                   return JobOutcome.submitted(job_id="mock-job", platform_experiment_id="mock-exp")
           PY
           out=$(MFLOWY_JOB_PROVIDER=mock_provider:MockProvider PYTHONPATH="$RUNNER_TEMP/mockprov" \
-            uv run mflowy hyperparameters_search '{"modeling_steps": "- name: 冒烟\n  namespace: load\n  node_name: python\n  params:\n    source: thin:gate", "name": "thin-gate", "desc": "mock submit"}')
+            uv run mflowy hyperparameters_search --kwargs-json '{"modeling_steps": "- name: 冒烟\n  namespace: load\n  node_name: python\n  params:\n    source: thin:gate", "name": "thin-gate", "desc": "mock submit"}')
           printf '%s\n' "$out"
           printf '%s\n' "$out" | grep -q submitted
-      - name: server stdio 冒烟（瘦装可启）
-        run: uv run python scripts/_e2e_mcp.py
+      - name: CLI 冒烟（瘦装旗标面可启）
+        run: uv run python scripts/_e2e_cli.py
+        env:
+          MFLOWY_TELEMETRY: off
 
   # 类型门（#42 决议→#91）：pyright basic 全仓（packages+tests），error 阻断、
-  # warning 不挡；全量依赖安装（import 解析需要 mcp/local extras）；runner 预装 Node
+  # warning 不挡；全量依赖安装（import 解析需要 local extra）；runner 预装 Node
   typecheck:
     name: typecheck (pyright)
     runs-on: ubuntu-latest

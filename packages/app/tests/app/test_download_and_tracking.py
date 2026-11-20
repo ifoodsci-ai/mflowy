@@ -10,8 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from mflowy.mcp import tools
-from mflowy.utils.path import _EntryChannel
+from mflowy.app import tools
 
 
 @pytest.fixture
@@ -80,13 +79,13 @@ def test_download_target_dir_missing_fail_loud(tmp_path, download_stage):
         tools.download_platform_job_artifacts("job-9", "exp-1", str(tmp_path / "nope"))
 
 
-def test_download_mcp_channel_rejects_relative_target(tmp_path, download_stage):
-    token = _EntryChannel.set("mcp")
-    try:
-        with pytest.raises(ValueError, match="相对路径"):
-            tools.download_platform_job_artifacts("job-9", "exp-1", "rel/dir")
-    finally:
-        _EntryChannel.reset(token)
+def test_download_relative_target_resolves_against_cwd(tmp_path, download_stage, monkeypatch):
+    """#243 通道收敛：相对 target_dir 按执行 cwd 解析（原 MCP 通道拒收面随通道退役）。"""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "rel" / "dir").mkdir(parents=True)  # target_dir 契约：须已存在
+    _make_zip(download_stage / "job-9.zip", {"a.txt": b"1"})
+    result = tools.download_platform_job_artifacts("job-9", "exp-1", "rel/dir")
+    assert result["local_task_dir"] == str(tmp_path / "rel/dir" / "job-9")
 
 
 def test_download_bad_zip_fail_loud(tmp_path, download_stage):

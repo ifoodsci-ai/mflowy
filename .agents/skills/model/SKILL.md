@@ -1,6 +1,6 @@
 ---
 name: model
-description: 建模训练 POMDP 回合操作手册(mflowy)。开局产物就绪后开始建模回合，或建模会话进行中(收到 observation_json)时使用。配合 mflowy MCP 工具 modeling_load_or_start / modeling_observe / modeling_apply(action) / modeling_rollback / modeling_report_findings / modeling_finish / modeling_abandon 驱动回合循环——动作空间 = 九动作面（配置编辑 + 计算动作 + 判读落诊），环境面在引擎，π(策略)是你。判读归你：统计证据经 modeling_statistics 取回（#226 ⑥ 规则判读退役），经 report_findings 落账。会话恒单目标任务——多目标在会话外三层循环（多目标→多模型→单目标任务会话，每目标各开一会话）。前置:model-brief skill 已产出开局入参（cv_card = cv.split 配置 yaml 明文 + 显式协议参数，含 research-review 结构化候选）。
+description: 建模训练 POMDP 回合操作手册(mflowy)。开局产物就绪后开始建模回合，或建模会话进行中(收到 observation_json)时使用。配合 mflowy CLI 工具 modeling_load_or_start / modeling_observe / modeling_apply(action) / modeling_rollback / modeling_report_findings / modeling_finish / modeling_abandon 驱动回合循环——动作空间 = 九动作面（配置编辑 + 计算动作 + 判读落诊），环境面在引擎，π(策略)是你。判读归你：统计证据经 modeling_statistics 取回（#226 ⑥ 规则判读退役），经 report_findings 落账。会话恒单目标任务——多目标在会话外三层循环（多目标→多模型→单目标任务会话，每目标各开一会话）。前置:model-brief skill 已产出开局入参（cv_card = cv.split 配置 yaml 明文 + 显式协议参数，含 research-review 结构化候选）。
 disable-model-invocation: true
 ---
 
@@ -112,5 +112,6 @@ run_hpo 收账（board/observe——纯查询）
 
 ## 参考
 
+- 工具发现：记不清工具名或参数面时，先 `mflowy --help` 看分组清单、`mflowy <tool> --help` 看全参与用法（--cv-card/--candidates 嵌套字段面同此揭示）；
 - 设计依据：Jamieson & Talwalkar 2016（SH）——Δu_inner 奖励即 diminishing-return 信号
 - 快照（取代前的回路设计）：docs/research/2026-10-09-modeling-mdp-design.md
