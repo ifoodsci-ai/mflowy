@@ -24,17 +24,15 @@ from __future__ import annotations
 import argparse
 import inspect
 import json
+import re
 import sys
 import types
 import typing
 from typing import Any, get_args, get_origin, get_type_hints
 
-# 旗标缺省统一 SUPPRESS：namespace 只含显式传入的旗标（缺省交给 pydantic 运行时
-# 层），显式面 = 冲突检测与「必填在旗标层required」的事实源。
+# 旗标缺省统一 SUPPRESS：namespace 只含显式传入的旗标（缺省与必填校验都交给
+# pydantic 运行时层），显式面 = --kwargs-json 同键冲突检测的事实源。
 _SUPPRESS = argparse.SUPPRESS
-
-# 遥测元旗标（CLI 层剥离，不进 pyfunc 签名）
-_META_FLAGS = ("telemetry_session_id", "telemetry_intent")
 
 
 def _kebab(name: str) -> str:
@@ -124,8 +122,8 @@ def _expand_model(tp: Any) -> str:
     return "\n".join(lines)
 
 
-def _field_help(param: inspect.Parameter, annotation: Any) -> tuple[str, str | None, bool]:
-    """参数 → (help 文案, argparse type, required)。help = Field description + 类型/缺省标注。"""
+def _field_help(param: inspect.Parameter, annotation: Any) -> tuple[str, str | None]:
+    """参数 → (help 文案, argparse type)。help = Field description + 类型/缺省标注。"""
     from pydantic.fields import FieldInfo
 
     tp, metadata = _unwrap_annotated(annotation)
@@ -148,7 +146,7 @@ def _field_help(param: inspect.Parameter, annotation: Any) -> tuple[str, str | N
         if expanded:
             help_text += f"\n{expanded}"
     arg_type: str | None = {"int": int, "float": float, "str": str}.get(kind)
-    return help_text, arg_type, not optional
+    return help_text, arg_type
 
 
 def build_tool_parser(fn, prog: str) -> argparse.ArgumentParser:
@@ -165,7 +163,7 @@ def build_tool_parser(fn, prog: str) -> argparse.ArgumentParser:
         if param.kind in (param.VAR_POSITIONAL, param.VAR_KEYWORD):
             continue
         annotation = hints.get(name, param.annotation)
-        help_text, arg_type, _required = _field_help(param, annotation)
+        help_text, arg_type = _field_help(param, annotation)
         kind = _classify(_unwrap_annotated(annotation)[0])
         # required 不在 argparse 层强制（--kwargs-json 逃生舱须能独立满足必填）——
         # 缺参由 pydantic 运行时校验 fail-loud（exit 2，help 里【必填】标注常在）
@@ -279,8 +277,6 @@ def _group_label(ep) -> str:
 
 def _one_liner(fn) -> str:
     """「何时使用」首条（含缩进折行折叠；无则 docstring 首段）——mflowy -h 清单的一行介。"""
-    import re
-
     doc = inspect.getdoc(fn) or ""
     lines = doc.splitlines()
     for i, line in enumerate(lines):
