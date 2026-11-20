@@ -7,6 +7,7 @@ FinishVerdict 模型；盘上 = observation.json + decision.log（单记录版�
 """
 
 import json
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -27,16 +28,16 @@ def sessions_root(tmp_path, monkeypatch):
     reset_task_dir(token)
 
 
-def _obs(sessions_root, sid) -> dict:
+def _obs(sessions_root, observation_json) -> dict:
     """盘上观测投影（JSON 面——与域内模型面互证）。"""
-    return json.loads((sessions_root / sid / "observation.json").read_text(encoding="utf-8"))
+    return json.loads(Path(observation_json).read_text(encoding="utf-8"))
 
 
-def _log(sessions_root, sid) -> list:
+def _log(sessions_root, observation_json) -> list:
     """盘上决策日志全量（append-only 事实流）。"""
     return [
         json.loads(line)
-        for line in (sessions_root / sid / "decision.log").read_text(encoding="utf-8").splitlines()
+        for line in (Path(observation_json).parent / "decision.log").read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
 
@@ -73,26 +74,26 @@ def test_session_lifecycle_stdout_pure(sessions_root, dirty_csv, capsys):
     start/observe/apply/rollback/finish 全走 _detect_all（观测通道）；detect
     算子去 print（见 tests/detect/test_channel_purity.py）后，引擎路径任何
     一步都不得向真实流泄漏回显。"""
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
     assert capsys.readouterr().out == ""
 
-    CleaningSession().observe(sid)
+    CleaningSession().observe(observation_json)
     assert capsys.readouterr().out == ""
 
-    CleaningSession().apply(sid, "drop_duplicate", {}, reason="测试决策")
+    CleaningSession().apply(observation_json, "drop_duplicate", {}, reason="测试决策")
     assert capsys.readouterr().out == ""
 
-    CleaningSession().apply(sid, "fill_median", {"cols": ["hole"]}, reason="测试决策")
+    CleaningSession().apply(observation_json, "fill_median", {"cols": ["hole"]}, reason="测试决策")
     assert capsys.readouterr().out == ""
 
-    CleaningSession().rollback(sid, to_version=0)
+    CleaningSession().rollback(observation_json, to_version=0)
     assert capsys.readouterr().out == ""
 
-    CleaningSession().apply(sid, "drop_duplicate", {}, reason="测试决策")
-    CleaningSession().apply(sid, "fill_median", {"cols": ["hole"]}, reason="测试决策")
+    CleaningSession().apply(observation_json, "drop_duplicate", {}, reason="测试决策")
+    CleaningSession().apply(observation_json, "fill_median", {"cols": ["hole"]}, reason="测试决策")
     assert capsys.readouterr().out == ""
 
-    r = CleaningSession().finish(sid)
+    r = CleaningSession().finish(observation_json)
     assert isinstance(r, FinishVerdict)
     assert capsys.readouterr().out == ""
     assert "plan_yaml" in r.deliverables  # 纯净之外，业务交付物照常
@@ -100,10 +101,10 @@ def test_session_lifecycle_stdout_pure(sessions_root, dirty_csv, capsys):
 
 def test_start_session_snapshots_and_scores(sessions_root, dirty_csv):
     """start:v0 快照 + 初始错误清单 + 质量分 + DomainCard 落位（prior 冻结面）。"""
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
 
-    assert sid
-    assert (sessions_root / sid / "v0.parquet").exists()
+    assert observation_json
+    assert (Path(observation_json).parent / "v0.parquet").exists()
     assert s.biz["v"] == 0
     assert s.biz["defects"].get("high_null", 0) >= 1
     assert s.biz["defects"].get("duplicate", 0) >= 1
@@ -116,15 +117,15 @@ def test_start_session_snapshots_and_scores(sessions_root, dirty_csv):
 
 def test_apply_action_improves_quality_and_logs(sessions_root, dirty_csv):
     """apply fill_median:缺失清除、质量上升、决策日志记账、目标列不被捏造。"""
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
 
-    r = CleaningSession().apply(sid, "fill_median", {"cols": ["hole"]}, reason="测试决策")
+    r = CleaningSession().apply(observation_json, "fill_median", {"cols": ["hole"]}, reason="测试决策")
 
     assert r.biz["v"] == 1
     assert r.biz["quality"]["score"] > s.biz["quality"]["score"]
     assert r.biz["defects"].get("high_null", 0) == 0
     # 决策日志 (s,a,r,s')——单记录版本树（v/file/sha 与走法同条）
-    log = _log(sessions_root, sid)
+    log = _log(sessions_root, observation_json)
     assert len(log) == 1
     assert log[0]["clean_op"] == "fill_median" and log[0]["v"] == 1
     assert log[0]["intent"] == "fix" and log[0]["reason"] == "测试决策"
@@ -132,7 +133,7 @@ def test_apply_action_improves_quality_and_logs(sessions_root, dirty_csv):
     assert log[0]["diff"]["cols_added"] == []  # 单一副作用:fill 只填值,不捆绑指示列
     assert r.validation.recent_decisions[-1]["clean_op"] == "fill_median"  # 观测投影 = 日志尾
     # 目标列守卫:值不被填充/修改
-    df = current_df(sid)
+    df = current_df(observation_json)
     raw = pd.read_csv(dirty_csv)
     assert set(df["target"]) <= set(raw["target"])
 
@@ -144,16 +145,16 @@ def test_failed_apply_is_free(sessions_root, dirty_csv):
     不确定动作的试探面 = 「提交 → 免费 s′ → 负 reward 即 rollback」（全量真值
     决策，试错价格明确 = 一步预算），不再有样本预览。
     """
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
 
     # ②片起转移走单步流 DAG——节点异常聚合进 DAGResult.error（类型归一，消息保留）
     with pytest.raises((ValueError, RuntimeError), match="不在数据框中"):
-        CleaningSession().apply(sid, "drop_cols", {"cols": ["nope"]}, reason="测试决策")
+        CleaningSession().apply(observation_json, "drop_cols", {"cols": ["nope"]}, reason="测试决策")
 
-    r = CleaningSession().apply(sid, "fill_median", {"cols": ["hole"]}, reason="测试决策")
+    r = CleaningSession().apply(observation_json, "fill_median", {"cols": ["hole"]}, reason="测试决策")
     assert r.validation.steps == 1  # 失败尝试不计步
     assert r.biz["v"] == 1  # 失败尝试不落版本
-    assert len(_log(sessions_root, sid)) == 1  # 失败尝试不进决策日志
+    assert len(_log(sessions_root, observation_json)) == 1  # 失败尝试不进决策日志
 
 
 def test_observation_computed_once_per_state(sessions_root, dirty_csv, monkeypatch):
@@ -174,26 +175,28 @@ def test_observation_computed_once_per_state(sessions_root, dirty_csv, monkeypat
     monkeypatch.setattr(cs, "detect_missing", counting)
     # memo 已盘上化（#235：随会话目录锚定）——本测新会话即新 memo，无需跨测试隔离
 
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)  # state₀ 计算 → 1
-    CleaningSession().apply(sid, "drop_duplicate", {}, reason="测试决策")  # before 命中 + state₁ 计算 → 2
-    CleaningSession().apply(sid, "fill_median", {"cols": ["hole"]}, reason="测试决策")  # before 命中 + state₂ 计算 → 3
-    CleaningSession().observe(sid)  # 读投影零检测 → 3
-    CleaningSession().finish(sid, preview=True)  # 命中 state₂ → 3
-    CleaningSession().finish(sid)  # 幂等路径命中 state₂ → 3
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)  # state₀ 计算 → 1
+    CleaningSession().apply(observation_json, "drop_duplicate", {}, reason="测试决策")  # before 命中 + state₁ 计算 → 2
+    CleaningSession().apply(
+        observation_json, "fill_median", {"cols": ["hole"]}, reason="测试决策"
+    )  # before 命中 + state₂ 计算 → 3
+    CleaningSession().observe(observation_json)  # 读投影零检测 → 3
+    CleaningSession().finish(observation_json, preview=True)  # 命中 state₂ → 3
+    CleaningSession().finish(observation_json)  # 幂等路径命中 state₂ → 3
 
     assert calls["n"] == 3
 
 
 def test_apply_rejects_non_clean_node(sessions_root, dirty_csv):
     """动作必须出自 clean 词表——越表 fail-loud；finish 伪动作显式拒绝。"""
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
 
     with pytest.raises(ValueError, match="clean"):
-        CleaningSession().apply(sid, "profile", {}, reason="测试决策")
+        CleaningSession().apply(observation_json, "profile", {}, reason="测试决策")
     with pytest.raises(ValueError, match="clean"):
-        CleaningSession().apply(sid, "no_such_node", {}, reason="测试决策")
+        CleaningSession().apply(observation_json, "no_such_node", {}, reason="测试决策")
     with pytest.raises(ValueError, match="操作面"):
-        CleaningSession().apply(sid, "finish", {}, reason="测试决策")  # #89：finish 提议走 clean_finish
+        CleaningSession().apply(observation_json, "finish", {}, reason="测试决策")  # #89：finish 提议走 clean_finish
 
 
 def test_apply_import_failure_propagates_not_misdiagnosed(sessions_root, dirty_csv, monkeypatch):
@@ -206,59 +209,59 @@ def test_apply_import_failure_propagates_not_misdiagnosed(sessions_root, dirty_c
     def _boom(*args, **kwargs):
         raise ModuleNotFoundError("No module named 'fancydep'", name="fancydep")
 
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
     monkeypatch.setattr(cs, "get_node", _boom)
     with pytest.raises(ModuleNotFoundError, match="fancydep"):
-        CleaningSession().apply(sid, "fill_median", {"cols": ["hole"]}, reason="测试决策")
+        CleaningSession().apply(observation_json, "fill_median", {"cols": ["hole"]}, reason="测试决策")
 
 
 def test_rollback_restores_version(sessions_root, dirty_csv):
     """rollback:v1 回 v0,质量与缺陷复原（指针回拨——工件与日志不可篡改）。"""
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
-    after = CleaningSession().apply(sid, "fill_median", {"cols": ["hole"]}, reason="测试决策")
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    after = CleaningSession().apply(observation_json, "fill_median", {"cols": ["hole"]}, reason="测试决策")
 
-    r = CleaningSession().rollback(sid, to_version=0)
+    r = CleaningSession().rollback(observation_json, to_version=0)
 
     assert r.biz["v"] == 0
     assert r.biz["quality"]["score"] == pytest.approx(s.biz["quality"]["score"])
     assert r.biz["defects"].get("high_null", 0) >= 1
     assert after.biz["v"] == 1
     # append-only：rollback 是记录不是删行
-    log = _log(sessions_root, sid)
+    log = _log(sessions_root, observation_json)
     assert [e.get("clean_op", e.get("action")) for e in log] == ["fill_median", "rollback"]
 
 
 def test_rollback_to_abandoned_branch_keeps_artifacts(sessions_root, dirty_csv):
     """#89 M5 语义：回滚后重跑不覆写弃分支——版本号永不复用、工件永存可回。"""
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
-    CleaningSession().apply(sid, "fill_median", {"cols": ["hole"]}, reason="测试决策")  # v1
-    CleaningSession().rollback(sid, to_version=0)  # 弃 v1 分支
-    r = CleaningSession().apply(sid, "drop_duplicate", {}, reason="测试决策")  # 新走法 → v2（不覆写 v1）
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    CleaningSession().apply(observation_json, "fill_median", {"cols": ["hole"]}, reason="测试决策")  # v1
+    CleaningSession().rollback(observation_json, to_version=0)  # 弃 v1 分支
+    r = CleaningSession().apply(observation_json, "drop_duplicate", {}, reason="测试决策")  # 新走法 → v2（不覆写 v1）
 
     assert r.biz["v"] == 2
-    assert (sessions_root / sid / "v1.parquet").exists()  # 弃分支工件在盘
-    assert {e["v"] for e in _log(sessions_root, sid) if "v" in e} == {1, 2}
-    back = CleaningSession().rollback(sid, to_version=1)  # 弃分支可回（append-only 红利）
+    assert (Path(observation_json).parent / "v1.parquet").exists()  # 弃分支工件在盘
+    assert {e["v"] for e in _log(sessions_root, observation_json) if "v" in e} == {1, 2}
+    back = CleaningSession().rollback(observation_json, to_version=1)  # 弃分支可回（append-only 红利）
     assert back.biz["v"] == 1
 
 
 def test_observe_is_idempotent_zero_side_effect_read(sessions_root, dirty_csv):
     """#117 observe：幂等只读零转移——回最近转移的观测本身，盘上零变化（续局锚点）。"""
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
-    r = CleaningSession().apply(sid, "fill_median", {"cols": ["hole"]}, reason="测试决策")
-    disk = {p.name: p.read_bytes() for p in (sessions_root / sid).iterdir() if p.is_file()}
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    r = CleaningSession().apply(observation_json, "fill_median", {"cols": ["hole"]}, reason="测试决策")
+    disk = {p.name: p.read_bytes() for p in Path(observation_json).parent.iterdir() if p.is_file()}
 
-    o1 = CleaningSession().observe(sid)
-    o2 = CleaningSession().observe(sid)
+    o1 = CleaningSession().observe(observation_json)
+    o2 = CleaningSession().observe(observation_json)
 
     assert isinstance(o1, Observation) and o1 == o2 == r  # 幂等：同态同观测
-    assert {p.name: p.read_bytes() for p in (sessions_root / sid).iterdir() if p.is_file()} == disk
+    assert {p.name: p.read_bytes() for p in Path(observation_json).parent.iterdir() if p.is_file()} == disk
 
 
 def test_observation_carries_column_evidence(sessions_root, dirty_csv):
     """菜单退役后证据居所 = 观测：列画像带 dtype 族与数值分布读数（稳健档 vs 正态档的
     选择基于读数而非标签——原 fill 候选的 col_shape 证据上浮到观测常驻面）。"""
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
     cols = s.biz["columns"]
 
     assert cols["hole"]["family"] == "numeric" and cols["sid"]["family"] == "categorical"
@@ -276,11 +279,11 @@ def test_freshness_stats_evaluated_at_apply(sessions_root, tmp_path):
     path = tmp_path / "fresh.csv"
     df.to_csv(path, index=False)
 
-    sid, s = CleaningSession().load_or_start(file_path=str(path), prior={})
-    CleaningSession().apply(sid, "cap_iqr", {"cols": ["x"], "k": 1.5}, reason="测试决策")
-    r = CleaningSession().apply(sid, "fill_mean", {"cols": ["x"]}, reason="测试决策")
+    observation_json, s = CleaningSession().load_or_start(file_path=str(path), prior={})
+    CleaningSession().apply(observation_json, "cap_iqr", {"cols": ["x"], "k": 1.5}, reason="测试决策")
+    r = CleaningSession().apply(observation_json, "fill_mean", {"cols": ["x"]}, reason="测试决策")
 
-    df2 = current_df(sid)
+    df2 = current_df(observation_json)
     assert df2["x"].iloc[4] == pytest.approx(17.875)
     assert df2["x"].iloc[4] != pytest.approx(26.5)  # 若参数在观测期烙定均值则会得到污染值
     assert r.biz["defects"].get("high_null", 0) == 0
@@ -306,111 +309,111 @@ def test_whitebox_loop_covers_load_hygiene(sessions_root, tmp_path):
     path = tmp_path / "hygiene.csv"
     df.to_csv(path, index=False)
 
-    sid, s = CleaningSession().load_or_start(file_path=str(path), prior={"id_columns": ["sid"]})
+    observation_json, s = CleaningSession().load_or_start(file_path=str(path), prior={"id_columns": ["sid"]})
     problems = s.biz["problems"]
     assert {p["defect_type"] for p in problems} >= {"empty_row", "high_null"}  # 同屏可见
     assert "dead" in {p["column"] for p in problems if p["defect_type"] == "high_null"}
     assert "const" not in {p["column"] for p in problems if p["defect_type"] == "constant_col"}  # 空行未删,常量未浮现
 
-    r = CleaningSession().apply(sid, "drop_missing_rows", {"how": "all"}, reason="测试决策")
+    r = CleaningSession().apply(observation_json, "drop_missing_rows", {"how": "all"}, reason="测试决策")
     assert "const" in {p["column"] for p in r.biz["problems"] if p["defect_type"] == "constant_col"}
 
 
 def test_budget_stops_apply(sessions_root, dirty_csv):
     """预算(max_steps)耗尽 → apply 拒绝并给出终止信号。"""
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD, max_steps=1)
-    CleaningSession().apply(sid, "fill_median", {"cols": ["hole"]}, reason="测试决策")
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD, max_steps=1)
+    CleaningSession().apply(observation_json, "fill_median", {"cols": ["hole"]}, reason="测试决策")
 
     with pytest.raises(RuntimeError, match="预算"):
-        CleaningSession().apply(sid, "drop_duplicate", {}, reason="测试决策")
+        CleaningSession().apply(observation_json, "drop_duplicate", {}, reason="测试决策")
 
 
 def test_real_responses_are_contract_models(sessions_root, dirty_csv):
     """#30/#89 合规：真实响应即契约模型（封闭、可往返）——结构等价从对账升级为
     类型同一（clean 会话 = 会话 SDK 的活参考实现）。"""
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
     assert isinstance(s, Observation)
     assert Observation.model_validate(s.model_dump()) == s  # 封闭模型往返
 
-    assert isinstance(CleaningSession().observe(sid), Observation)
+    assert isinstance(CleaningSession().observe(observation_json), Observation)
 
-    r = CleaningSession().apply(sid, "fill_median", {"cols": ["hole"]}, reason="测试决策")
+    r = CleaningSession().apply(observation_json, "fill_median", {"cols": ["hole"]}, reason="测试决策")
     assert isinstance(r, Observation) and r.validation.reward is not None
-    rb = CleaningSession().rollback(sid, to_version=0)
+    rb = CleaningSession().rollback(observation_json, to_version=0)
     assert isinstance(rb, Observation)
 
-    rej = CleaningSession().finish(sid, min_quality=0.999)  # 拒收路
+    rej = CleaningSession().finish(observation_json, min_quality=0.999)  # 拒收路
     assert isinstance(rej, FinishVerdict) and rej.accepted is False and rej.reason
-    acc = CleaningSession().finish(sid)  # accepted 路
+    acc = CleaningSession().finish(observation_json)  # accepted 路
     assert isinstance(acc, FinishVerdict) and acc.accepted is True
 
 
 def test_abandon_terminalizes_session(sessions_root, dirty_csv):
     """#30 弃局：abandon 终态化——ack 回执、决策日志追加 abandon 记录、观测带终态旗、
     动作/收局面关闭。"""
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
-    CleaningSession().apply(sid, "drop_duplicate", {}, reason="测试决策")
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    CleaningSession().apply(observation_json, "drop_duplicate", {}, reason="测试决策")
 
-    ack = CleaningSession().abandon(sid, reason="改卡重开")
+    ack = CleaningSession().abandon(observation_json, reason="改卡重开")
 
-    assert ack == {"session_id": sid, "abandoned": True, "reason": "改卡重开", "steps": 1}
-    obs = _obs(sessions_root, sid)
+    assert ack == {"observation_json": observation_json, "abandoned": True, "reason": "改卡重开", "steps": 1}
+    obs = _obs(sessions_root, observation_json)
     assert obs["validation"]["abandoned"] is True
-    log = _log(sessions_root, sid)
+    log = _log(sessions_root, observation_json)
     assert log[-1]["action"] == "abandon" and log[-1]["reason"] == "改卡重开"  # 审计进日志
     assert len(log) == 2  # apply + abandon——决策历史保留
-    assert CleaningSession().observe(sid).validation.abandoned is True  # 终态照常可观测
+    assert CleaningSession().observe(observation_json).validation.abandoned is True  # 终态照常可观测
     with pytest.raises(RuntimeError, match="终态"):
-        CleaningSession().apply(sid, "fill_median", {"cols": ["hole"]}, reason="测试决策")
+        CleaningSession().apply(observation_json, "fill_median", {"cols": ["hole"]}, reason="测试决策")
     with pytest.raises(RuntimeError, match="终态"):
-        CleaningSession().rollback(sid, to_version=0)  # 弃局承诺保留版本树——不可截断
+        CleaningSession().rollback(observation_json, to_version=0)  # 弃局承诺保留版本树——不可截断
     with pytest.raises(RuntimeError, match="不可收局"):
-        CleaningSession().finish(sid)  # 弃局不可复活（终态互斥不变式）
+        CleaningSession().finish(observation_json)  # 弃局不可复活（终态互斥不变式）
 
 
 def test_finish_reentry_recovers_deliverables(sessions_root, dirty_csv):
     """#30 review 裁定：已收局重入 finish = 幂等重导出（π 丢包自愈），弃局不可复活。"""
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
-    CleaningSession().apply(sid, "drop_duplicate", {}, reason="测试决策")
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    CleaningSession().apply(observation_json, "drop_duplicate", {}, reason="测试决策")
 
-    first = CleaningSession().finish(sid)
-    again = CleaningSession().finish(sid)  # 响应丢失后的重试
+    first = CleaningSession().finish(observation_json)
+    again = CleaningSession().finish(observation_json)  # 响应丢失后的重试
     assert isinstance(first, FinishVerdict) and isinstance(again, FinishVerdict)
 
     assert again.accepted is True
     assert again.deliverables == first.deliverables  # 幂等：同一 plan 与终态路径
-    assert len(_log(sessions_root, sid)) == 2  # 双 commit 不可能——单条 finish 记录
+    assert len(_log(sessions_root, observation_json)) == 2  # 双 commit 不可能——单条 finish 记录
 
 
 def test_rollback_blocked_at_terminal(sessions_root, dirty_csv):
     """终态不可回滚——版本树是审计面（弃局承诺保留、收局后重放对账依赖完整树）。"""
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
-    CleaningSession().apply(sid, "drop_duplicate", {}, reason="测试决策")
-    CleaningSession().finish(sid)
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    CleaningSession().apply(observation_json, "drop_duplicate", {}, reason="测试决策")
+    CleaningSession().finish(observation_json)
     with pytest.raises(RuntimeError, match="终态"):
-        CleaningSession().rollback(sid, to_version=0)
+        CleaningSession().rollback(observation_json, to_version=0)
 
 
 def test_abandon_after_finish_raises(sessions_root, dirty_csv):
     """已收局不可弃（终态互斥——壳的牙）。"""
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
-    CleaningSession().finish(sid)
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    CleaningSession().finish(observation_json)
     with pytest.raises(RuntimeError, match="已终态"):
-        CleaningSession().abandon(sid)
+        CleaningSession().abandon(observation_json)
 
 
 def test_start_reward_none_digest_present(sessions_root, dirty_csv):
     """#30 显式化：start 响应 reward=None（无转移）+ digest 在场（= v0 记录 digest）。"""
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
     assert s.validation.reward is None
     assert s.biz["digest"] == s.biz["v0"]["digest"]
 
 
 def test_apply_reward_equals_delta_quality(sessions_root, dirty_csv):
     """#30 显式化：apply 响应 reward = ΔΦ（决策记录 after−before 上浮为显式键，舍入 4 位）。"""
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
-    r = CleaningSession().apply(sid, "fill_median", {"cols": ["hole"]}, reason="测试决策")
-    rec = _log(sessions_root, sid)[-1]
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    r = CleaningSession().apply(observation_json, "fill_median", {"cols": ["hole"]}, reason="测试决策")
+    rec = _log(sessions_root, observation_json)[-1]
     assert r.validation.reward == pytest.approx(round(rec["quality_after"] - rec["quality_before"], 4))
     assert r.biz["digest"] != s.biz["digest"]  # 状态已转移
     assert r.biz["digest"] == rec["s_next"]
@@ -418,23 +421,23 @@ def test_apply_reward_equals_delta_quality(sessions_root, dirty_csv):
 
 def test_rollback_reward_is_recovery_delta(sessions_root, dirty_csv):
     """#30 显式化：rollback 响应 reward = 恢复 ΔΦ——撤销改进为负、no-op 回滚恰为零。"""
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
-    CleaningSession().apply(sid, "fill_median", {"cols": ["hole"]}, reason="测试决策")
-    r = CleaningSession().rollback(sid, to_version=0)
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    CleaningSession().apply(observation_json, "fill_median", {"cols": ["hole"]}, reason="测试决策")
+    r = CleaningSession().rollback(observation_json, to_version=0)
     assert r.validation.reward is not None and r.validation.reward < 0  # 撤掉一次质量改进
     assert r.biz["digest"] == s.biz["digest"]  # 回到 v0 状态
 
-    CleaningSession().apply(sid, "fill_median", {"cols": ["hole"]}, reason="测试决策")  # 回到 v1
-    noop = CleaningSession().rollback(sid, to_version=1)  # 回滚到当前版本 = 零转移
+    CleaningSession().apply(observation_json, "fill_median", {"cols": ["hole"]}, reason="测试决策")  # 回到 v1
+    noop = CleaningSession().rollback(observation_json, to_version=1)  # 回滚到当前版本 = 零转移
     assert noop.validation.reward == 0.0
 
 
 def test_observe_after_finish_reports_terminal(sessions_root, dirty_csv):
     """#117 观测不是动作：收局后 observe 照常回观测（finished 旗）——与 apply 的终态拒绝互补。"""
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
-    assert CleaningSession().observe(sid).validation.finished is False
-    CleaningSession().finish(sid)
-    assert CleaningSession().observe(sid).validation.finished is True
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    assert CleaningSession().observe(observation_json).validation.finished is False
+    CleaningSession().finish(observation_json)
+    assert CleaningSession().observe(observation_json).validation.finished is True
 
 
 def test_version_artifact_sha_in_records(sessions_root, dirty_csv):
@@ -443,45 +446,45 @@ def test_version_artifact_sha_in_records(sessions_root, dirty_csv):
     v0 sha 一致（确定性，重放对账的地基）。"""
     from mflowy.utils.file import sha256_of
 
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
-    assert s.biz["v0"]["artifact_sha256"] == sha256_of(sessions_root / sid / "v0.parquet")
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    assert s.biz["v0"]["artifact_sha256"] == sha256_of(Path(observation_json).parent / "v0.parquet")
 
-    CleaningSession().apply(sid, "fill_median", {"cols": ["hole"]}, reason="测试决策")
-    rec = _log(sessions_root, sid)[0]
-    assert rec["artifact_sha256"] == sha256_of(sessions_root / sid / "v1.parquet")
+    CleaningSession().apply(observation_json, "fill_median", {"cols": ["hole"]}, reason="测试决策")
+    rec = _log(sessions_root, observation_json)[0]
+    assert rec["artifact_sha256"] == sha256_of(Path(observation_json).parent / "v1.parquet")
     assert rec["artifact_sha256"] != s.biz["v0"]["artifact_sha256"]  # 内容变 → 地址变
 
-    sid, s2 = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    observation_json, s2 = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
     assert s2.biz["v0"]["artifact_sha256"] == s.biz["v0"]["artifact_sha256"]  # 同数据同地址
 
 
 def test_finish_preview_zero_side_effects(sessions_root, dirty_csv):
     """#30 preview：零副作用只读探针——观测无 mutation、不导出 plan、θ 门不生效、会话可继续 apply。"""
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
-    CleaningSession().apply(sid, "drop_duplicate", {}, reason="测试决策")
-    obs_before = _obs(sessions_root, sid)
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    CleaningSession().apply(observation_json, "drop_duplicate", {}, reason="测试决策")
+    obs_before = _obs(sessions_root, observation_json)
 
-    r = CleaningSession().finish(sid, preview=True, min_quality=0.999)
+    r = CleaningSession().finish(observation_json, preview=True, min_quality=0.999)
     assert isinstance(r, FinishVerdict)  # #235 收编：preview 同为裁决面（手拼 dict 退役）
 
     assert r.accepted is True and r.reason is None  # 探针非裁决（θ 门不生效）
     assert r.terminal_utility["preview"] is True and "skill" in r.terminal_utility
     assert r.terminal_utility["final_quality"]["score"] > 0  # 键名与真收局对齐
     assert r.deliverables == {}  # 不导出
-    assert _obs(sessions_root, sid) == obs_before  # 零 mutation（finished 仍 False）
-    r2 = CleaningSession().apply(sid, "fill_median", {"cols": ["hole"]}, reason="测试决策")  # 会话仍活
+    assert _obs(sessions_root, observation_json) == obs_before  # 零 mutation（finished 仍 False）
+    r2 = CleaningSession().apply(observation_json, "fill_median", {"cols": ["hole"]}, reason="测试决策")  # 会话仍活
     assert r2.biz["v"] == 2
 
 
 def test_finish_terminal_utility_top_level(sessions_root, dirty_csv):
     """#30 升顶：terminal_utility 顶层键，拒收/accepted 两路一致（值域域定 payload）。"""
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
-    rej = CleaningSession().finish(sid, min_quality=0.999)
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    rej = CleaningSession().finish(observation_json, min_quality=0.999)
     assert isinstance(rej, FinishVerdict)
     assert rej.accepted is False and rej.reason
     assert set(rej.terminal_utility) >= {"task", "metric", "skill", "final_quality", "final_report", "steps"}
 
-    acc = CleaningSession().finish(sid)  # 拒收后无门重收
+    acc = CleaningSession().finish(observation_json)  # 拒收后无门重收
     assert isinstance(acc, FinishVerdict)
     assert acc.accepted is True
     assert acc.terminal_utility == rej.terminal_utility  # 同终态同 U（seed 固定）
@@ -493,11 +496,11 @@ def test_finish_exports_plan_and_final(sessions_root, dirty_csv):
     #89：计划从 Conf 经 flow_to_yaml 单源序列化（apply 与导出同构）；头部带
     load 节点——Builder 可独立重放（见 test_finish_plan_replays）。
     """
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
-    CleaningSession().apply(sid, "drop_duplicate", {}, reason="测试决策")
-    CleaningSession().apply(sid, "fill_median", {"cols": ["hole"]}, reason="测试决策")
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    CleaningSession().apply(observation_json, "drop_duplicate", {}, reason="测试决策")
+    CleaningSession().apply(observation_json, "fill_median", {"cols": ["hole"]}, reason="测试决策")
 
-    r = CleaningSession().finish(sid)
+    r = CleaningSession().finish(observation_json)
     assert isinstance(r, FinishVerdict)
 
     assert "- load__file:" in r.deliverables["plan_yaml"]
@@ -526,8 +529,8 @@ def _replay_plan(plan_yaml: str, tmp_path) -> pd.DataFrame:
     return result.runs[-1].value
 
 
-def _artifact_sha(sessions_root, sid, v: int) -> str:
-    return next(e["artifact_sha256"] for e in _log(sessions_root, sid) if e.get("v") == v)
+def _artifact_sha(sessions_root, observation_json, v: int) -> str:
+    return next(e["artifact_sha256"] for e in _log(sessions_root, observation_json) if e.get("v") == v)
 
 
 def test_finish_plan_replays(sessions_root, dirty_csv, tmp_path):
@@ -537,10 +540,10 @@ def test_finish_plan_replays(sessions_root, dirty_csv, tmp_path):
     的双向兑现；计划头部 load 节点由 finish 生成端补全（缺它则 valid 门拦截）。
     mlflow 由 sessions_root 夹具隔离到 tmp sqlite（Builder 尾链 run 生命周期真实落库）。
     """
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
-    CleaningSession().apply(sid, "drop_duplicate", {}, reason="测试决策")
-    CleaningSession().apply(sid, "fill_median", {"cols": ["hole"]}, reason="测试决策")
-    r = CleaningSession().finish(sid)
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    CleaningSession().apply(observation_json, "drop_duplicate", {}, reason="测试决策")
+    CleaningSession().apply(observation_json, "fill_median", {"cols": ["hole"]}, reason="测试决策")
+    r = CleaningSession().finish(observation_json)
     assert isinstance(r, FinishVerdict)
     assert r.accepted and "- load__file:" in r.deliverables["plan_yaml"]
 
@@ -548,44 +551,44 @@ def test_finish_plan_replays(sessions_root, dirty_csv, tmp_path):
 
     # 对账（#30）：重放终态 ≡ 会话终态快照——CAS 闭合，重放 df 的内存指纹直接对
     # 决策日志尾记录的版本工件 sha（同值不同路径：buffer 序列化 vs 盘上文件）
-    last_apply = [e for e in _log(sessions_root, sid) if "v" in e][-1]
+    last_apply = [e for e in _log(sessions_root, observation_json) if "v" in e][-1]
     assert cs._fingerprint(replayed) == last_apply["artifact_sha256"]
 
 
 def test_finish_plan_after_jump_back_to_abandoned_branch(sessions_root, dirty_csv, tmp_path):
     """#106：回拨后跳回弃分支再收局——计划 = 指针版本沿版本树的生成路径（栈回放会丢 v2）。"""
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
-    CleaningSession().apply(sid, "drop_duplicate", {}, reason="测试决策")  # v1
-    CleaningSession().apply(sid, "fill_median", {"cols": ["hole"]}, reason="测试决策")  # v2
-    CleaningSession().rollback(sid, to_version=1)
-    CleaningSession().rollback(sid, to_version=2)  # 跳回弃分支
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    CleaningSession().apply(observation_json, "drop_duplicate", {}, reason="测试决策")  # v1
+    CleaningSession().apply(observation_json, "fill_median", {"cols": ["hole"]}, reason="测试决策")  # v2
+    CleaningSession().rollback(observation_json, to_version=1)
+    CleaningSession().rollback(observation_json, to_version=2)  # 跳回弃分支
 
-    r = CleaningSession().finish(sid)
+    r = CleaningSession().finish(observation_json)
     assert isinstance(r, FinishVerdict)
 
     assert r.deliverables["final_path"].endswith("v2.parquet")
     assert "clean__fill_median" in r.deliverables["plan_yaml"]
     replayed = _replay_plan(r.deliverables["plan_yaml"], tmp_path)
-    assert cs._fingerprint(replayed) == _artifact_sha(sessions_root, sid, 2)  # 重放 ≡ 交付数据
+    assert cs._fingerprint(replayed) == _artifact_sha(sessions_root, observation_json, 2)  # 重放 ≡ 交付数据
 
 
 def test_finish_plan_after_jump_back_then_new_apply(sessions_root, dirty_csv, tmp_path):
     """#106 延伸：跳回弃分支后新 apply（v3 父 = v2）——计划含整条生成链，重放 ≡ v3 工件。"""
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
-    CleaningSession().apply(sid, "drop_duplicate", {}, reason="测试决策")  # v1
-    CleaningSession().apply(sid, "fill_median", {"cols": ["hole"]}, reason="测试决策")  # v2
-    CleaningSession().rollback(sid, to_version=1)
-    CleaningSession().rollback(sid, to_version=2)  # 跳回弃分支
-    CleaningSession().apply(sid, "cap_iqr", {"cols": ["x1"], "k": 0.5}, reason="测试决策")  # v3（父 v2）
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    CleaningSession().apply(observation_json, "drop_duplicate", {}, reason="测试决策")  # v1
+    CleaningSession().apply(observation_json, "fill_median", {"cols": ["hole"]}, reason="测试决策")  # v2
+    CleaningSession().rollback(observation_json, to_version=1)
+    CleaningSession().rollback(observation_json, to_version=2)  # 跳回弃分支
+    CleaningSession().apply(observation_json, "cap_iqr", {"cols": ["x1"], "k": 0.5}, reason="测试决策")  # v3（父 v2）
 
-    r = CleaningSession().finish(sid)
+    r = CleaningSession().finish(observation_json)
     assert isinstance(r, FinishVerdict)
 
     assert r.deliverables["final_path"].endswith("v3.parquet")
     assert "clean__fill_median" in r.deliverables["plan_yaml"]
     assert "clean__cap_iqr" in r.deliverables["plan_yaml"]
     replayed = _replay_plan(r.deliverables["plan_yaml"], tmp_path)
-    assert cs._fingerprint(replayed) == _artifact_sha(sessions_root, sid, 3)  # 重放 ≡ 交付数据
+    assert cs._fingerprint(replayed) == _artifact_sha(sessions_root, observation_json, 3)  # 重放 ≡ 交付数据
 
 
 # ── #65 先验观测：expected_ranges 全程可观测（观测→转移→奖励全链） ──────────
@@ -617,14 +620,14 @@ RANGED_CARD = {
 
 def test_expected_ranges_observable_repairable_rewarded(sessions_root, ranged_csv):
     """#65 先验观测：物理越界进缺陷清单/正奖励——问卷成本在循环内兑现。"""
-    sid, s = CleaningSession().load_or_start(file_path=ranged_csv, prior=RANGED_CARD)
+    observation_json, s = CleaningSession().load_or_start(file_path=ranged_csv, prior=RANGED_CARD)
 
     # ① 观测：物理越界进缺陷清单（defect × count + 证据）
     assert s.biz["defects"].get("range_violation") == 1
     assert [p["column"] for p in s.biz["problems"] if p["defect_type"] == "range_violation"] == ["temp"]
 
     # ② 转移：修越界得正奖励（求和口径——消除缺陷不减分）
-    r = CleaningSession().apply(sid, "range_clip", {"ranges": {"temp": [0.0, 100.0]}}, reason="测试决策")
+    r = CleaningSession().apply(observation_json, "range_clip", {"ranges": {"temp": [0.0, 100.0]}}, reason="测试决策")
     assert r.validation.reward is not None and r.validation.reward > 0
     assert r.biz["defects"].get("range_violation", 0) == 0
 
@@ -636,8 +639,8 @@ def test_clean_state_has_no_stop_suggestion_channel(sessions_root, tmp_path):
     path = tmp_path / "clean.csv"
     df.to_csv(path, index=False)
 
-    sid, s = CleaningSession().load_or_start(file_path=str(path), prior={})
-    o = CleaningSession().observe(sid)
+    observation_json, s = CleaningSession().load_or_start(file_path=str(path), prior={})
+    o = CleaningSession().observe(observation_json)
     assert not o.biz["defects"]  # 干净起点（无缺陷可修）——收局判据在观测
     assert "should_stop" not in o.biz and "finish" not in json.dumps(dict(o.biz))
 
@@ -645,7 +648,7 @@ def test_clean_state_has_no_stop_suggestion_channel(sessions_root, tmp_path):
 def test_problems_projection_passes_findings_through(sessions_root, dirty_csv):
     """#117 Q4：problems = Finding 六字段全量透传（投影只透传不组装）——每条携带
     finding_id/defect_type/定位键/severity/rationale(带 score 前缀)/evidence。"""
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
     problems = s.biz["problems"]
 
     assert problems
@@ -662,7 +665,7 @@ def test_routing_hints_resident_in_digest(sessions_root, dirty_csv):
     list_nodes）；prior_conflict 处置 = keep（空推荐集）。"""
     from mflowy.data.detect.errors import DefectType
 
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
     hints = s.biz["routing_hints"]
 
     assert set(hints) == {m.value for m in DefectType}  # 键 = 枚举全集（闭包测试钉值 ⊆ 词表）
@@ -675,7 +678,7 @@ def test_routing_hints_resident_in_digest(sessions_root, dirty_csv):
 
 def test_column_profile_carries_missing_rate(sessions_root, dirty_csv):
     """#125 F1：列画像 missing_rate 常驻——低空值列不产缺陷，π 无需缺陷标签即可动手。"""
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
     cols = s.biz["columns"]
 
     assert 0.2 < cols["hole"]["missing_rate"] <= 0.4  # 夹具 hole ~30%（high_null 也在场）
@@ -696,7 +699,7 @@ def test_card_id_priors_feed_detector(sessions_root, tmp_path):
     path = tmp_path / "prior.csv"
     df.to_csv(path, index=False)
 
-    sid, s = CleaningSession().load_or_start(
+    observation_json, s = CleaningSession().load_or_start(
         file_path=str(path), prior={"primary_key_columns": ["pk"], "id_columns": ["loose"]}
     )
     problems = {(p["defect_type"], p["column"]): p for p in s.biz["problems"]}
@@ -711,22 +714,26 @@ def test_card_id_priors_feed_detector(sessions_root, tmp_path):
 def test_apply_decision_surface_finding_ids_and_reason(sessions_root, dirty_csv):
     """提交面双必填：finding_ids ⊆ 当前 problems（幻觉即免费失败）、reason 非空、
     日志键 clean_op + 派生 intent（drop_cols⇒drop、其余⇒fix）。"""
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
     hole_id = next(p["finding_id"] for p in s.biz["problems"] if p.get("column") == "hole")
 
     with pytest.raises(ValueError, match="reason"):
-        CleaningSession().apply(sid, "fill_median", {"cols": ["hole"]}, reason=" ")  # 空理由拒绝
+        CleaningSession().apply(observation_json, "fill_median", {"cols": ["hole"]}, reason=" ")  # 空理由拒绝
     with pytest.raises(ValueError, match="finding_ids"):
-        CleaningSession().apply(sid, "fill_median", {"cols": ["hole"]}, finding_ids=["ghost::x"], reason="r")
+        CleaningSession().apply(
+            observation_json, "fill_median", {"cols": ["hole"]}, finding_ids=["ghost::x"], reason="r"
+        )
 
-    r = CleaningSession().apply(sid, "fill_median", {"cols": ["hole"]}, finding_ids=[hole_id], reason="中位数填空")
-    rec = _log(sessions_root, sid)[-1]
+    r = CleaningSession().apply(
+        observation_json, "fill_median", {"cols": ["hole"]}, finding_ids=[hole_id], reason="中位数填空"
+    )
+    rec = _log(sessions_root, observation_json)[-1]
     assert rec["finding_ids"] == [hole_id] and rec["reason"] == "中位数填空"
     assert rec["clean_op"] == "fill_median" and rec["intent"] == "fix"
     assert r.validation.steps == 1
 
-    CleaningSession().apply(sid, "drop_cols", {"cols": ["pct"]}, reason="剔除 ID 列")
-    assert _log(sessions_root, sid)[-1]["intent"] == "drop"  # drop_cols ⇒ drop（派生单源）
+    CleaningSession().apply(observation_json, "drop_cols", {"cols": ["pct"]}, reason="剔除 ID 列")
+    assert _log(sessions_root, observation_json)[-1]["intent"] == "drop"  # drop_cols ⇒ drop（派生单源）
 
 
 def test_apply_noop_rejected(sessions_root, tmp_path):
@@ -734,12 +741,12 @@ def test_apply_noop_rejected(sessions_root, tmp_path):
     df = pd.DataFrame({"a": [1.0, 2.0, 3.0]})
     path = tmp_path / "deduped.csv"
     df.to_csv(path, index=False)
-    sid, s = CleaningSession().load_or_start(file_path=str(path), prior={})
+    observation_json, s = CleaningSession().load_or_start(file_path=str(path), prior={})
 
     with pytest.raises(ValueError, match="no-op"):
-        CleaningSession().apply(sid, "drop_duplicate", {}, reason="试探")
-    assert len(_log(sessions_root, sid)) == 0  # 免费
-    assert CleaningSession().observe(sid).biz["v"] == 0  # 不落版本
+        CleaningSession().apply(observation_json, "drop_duplicate", {}, reason="试探")
+    assert len(_log(sessions_root, observation_json)) == 0  # 免费
+    assert CleaningSession().observe(observation_json).biz["v"] == 0  # 不落版本
 
 
 def test_finish_keep_declarations_residual_manifest(sessions_root, tmp_path):
@@ -755,14 +762,16 @@ def test_finish_keep_declarations_residual_manifest(sessions_root, tmp_path):
     )
     path = tmp_path / "residual.csv"
     df.to_csv(path, index=False)
-    sid, s = CleaningSession().load_or_start(file_path=str(path), prior={"target": "target", "id_columns": ["sid"]})
+    observation_json, s = CleaningSession().load_or_start(
+        file_path=str(path), prior={"target": "target", "id_columns": ["sid"]}
+    )
     sid_problem = next(p for p in s.biz["problems"] if p.get("column") == "sid")
 
     keeps = [{"finding_id": sid_problem["finding_id"], "reason": "业务键保留供 join"}]
     with pytest.raises(ValueError, match="keep"):
-        CleaningSession().finish(sid, keeps=[{"finding_id": "ghost::x", "reason": "r"}])  # 幻觉拒绝
+        CleaningSession().finish(observation_json, keeps=[{"finding_id": "ghost::x", "reason": "r"}])  # 幻觉拒绝
 
-    r = CleaningSession().finish(sid, keeps=keeps)
+    r = CleaningSession().finish(observation_json, keeps=keeps)
     assert isinstance(r, FinishVerdict) and r.accepted
     tu = r.terminal_utility
     residual_map = {x["finding_id"]: x for x in tu["residual"]}
@@ -771,7 +780,7 @@ def test_finish_keep_declarations_residual_manifest(sessions_root, tmp_path):
     assert tu["manifest"]["keep_declarations"] == keeps
     assert tu["manifest"]["id_priors"]["id_columns"] == ["sid"]
     assert tu["steps"] == 0  # keep 声明不吃步数
-    assert list(current_df(sid).columns) == ["sid", "x", "target"]  # 不动 df
+    assert list(current_df(observation_json).columns) == ["sid", "x", "target"]  # 不动 df
 
 
 def test_session_mixed_units_normalized(sessions_root, tmp_path):
@@ -789,12 +798,14 @@ def test_session_mixed_units_normalized(sessions_root, tmp_path):
     src = tmp_path / "mixed.csv"
     df.to_csv(src, index=False)
 
-    sid, s = CleaningSession().load_or_start(file_path=str(src), prior={"target": "target", "id_columns": ["sid"]})
+    observation_json, s = CleaningSession().load_or_start(
+        file_path=str(src), prior={"target": "target", "id_columns": ["sid"]}
+    )
     fid = next(p["finding_id"] for p in s.biz["problems"] if p["defect_type"] == "mixed_units")
     assert fid == "mixed_units::wt"  # 结构键路由 normalize_units（routing_hints 投影钉）
 
     r = CleaningSession().apply(
-        sid,
+        observation_json,
         "normalize_units",
         {"columns": {"wt": {"to": "g", "factors": {"kg": 1000, "g": 1}}}},
         finding_ids=[fid],
@@ -803,20 +814,20 @@ def test_session_mixed_units_normalized(sessions_root, tmp_path):
 
     assert all(p["defect_type"] != "mixed_units" for p in r.biz["problems"])
     assert "wt" in r.biz["columns"]  # 列名不变
-    verdict = CleaningSession().finish(sid)
+    verdict = CleaningSession().finish(observation_json)
     assert isinstance(verdict, FinishVerdict)
     assert "clean__normalize_units" in verdict.deliverables["plan_yaml"]
     replayed = _replay_plan(verdict.deliverables["plan_yaml"], tmp_path)
-    assert cs._fingerprint(replayed) == _artifact_sha(sessions_root, sid, 1)  # 重放 ≡ 交付数据
+    assert cs._fingerprint(replayed) == _artifact_sha(sessions_root, observation_json, 1)  # 重放 ≡ 交付数据
 
 
 def test_session_format_anomaly_single_unit_normalized(sessions_root, dirty_csv, tmp_path):
     """#152 验收：单一单位列（全 %）format_anomaly → normalize_units 恒等倍率归一。"""
-    sid, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
+    observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
     fid = next(p["finding_id"] for p in s.biz["problems"] if p["defect_type"] == "format_anomaly")
 
     r = CleaningSession().apply(
-        sid,
+        observation_json,
         "normalize_units",
         {"columns": {"pct": {"to": "%", "factors": {"%": 1}}}},
         finding_ids=[fid],
@@ -824,9 +835,9 @@ def test_session_format_anomaly_single_unit_normalized(sessions_root, dirty_csv,
     )
 
     assert all(p["defect_type"] != "format_anomaly" for p in r.biz["problems"])
-    assert pd.api.types.is_numeric_dtype(current_df(sid)["pct"])  # 会话级也钉转数值
-    verdict = CleaningSession().finish(sid)
+    assert pd.api.types.is_numeric_dtype(current_df(observation_json)["pct"])  # 会话级也钉转数值
+    verdict = CleaningSession().finish(observation_json)
     assert isinstance(verdict, FinishVerdict)
     assert "clean__normalize_units" in verdict.deliverables["plan_yaml"]
     replayed = _replay_plan(verdict.deliverables["plan_yaml"], tmp_path)
-    assert cs._fingerprint(replayed) == _artifact_sha(sessions_root, sid, 1)  # 重放 ≡ 交付数据
+    assert cs._fingerprint(replayed) == _artifact_sha(sessions_root, observation_json, 1)  # 重放 ≡ 交付数据

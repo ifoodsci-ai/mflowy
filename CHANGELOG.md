@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### BREAKING：会话寻址参数正名——sid/session_id → `observation_json`（#242）
+
+锚定语义升级：会话工具族寻址参数从「会话目录绝对路径」（`sid`/`session_id` 两拼法
+并存）正名为「状态文件本体绝对路径」（observation.json——bo 域 `study_db` 同构）：
+
+- **信封面**：`load_or_start_cleaning` / `load_or_start_modeling` 参数 `sid` 与
+  其余会话工具（observe/apply/rollback/finish/abandon/report_findings_modeling/
+  draw_taylor_diagram/modeling_statistics/modeling_report_skeleton）参数
+  `session_id` 统一更名 `observation_json`；二联信封返回键 `{sid, observation}`
+  → `{observation_json, observation}`；abandon ack 键 `session_id` →
+  `observation_json`（report_skeleton 顶层同）；model finish 交付物 loader 引用
+  由 `{session_id, file}` 两段式相对寻址改为本体绝对路径直传（session_id/目录名
+  寻址面退役——文件名自带冻结世代指针）
+- **基座推导**：`POMDPSession.open` 锚从会话目录改为 observation.json 本体
+  （目录 = 其父目录；目录锚定与 `sid` property 退役，新增 `observation_json`
+  property）；相对路径/名不符/目录形态 fail-loud；`POMDPSessionHandle` 协议签名
+  同步（`sid` 参数 → `observation_json`）
+- **实体面**：`CleaningSession` / `ModelingSession` 六操作签名同步；minted-but-
+  unstarted 判据随锚升级（父目录在 + observation.json 缺）
+- 与遥测 session_id 概念解耦（#243 裁定：遥测 session_id 仅由调用方注入，不做
+  sid 自动提取）——为应用层 MCP→CLI 迁移先行铺路（CLI 旗标名单源）
 ### Removed（剧本面治理）：kaggle-competition 迁出项目 skills（#233）
 
 - kaggle 竞赛外环剧本**非本项目技能**（外部 kaggle MCP + 自带 scripts，零 mflowy

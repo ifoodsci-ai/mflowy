@@ -112,15 +112,25 @@ def propose_questions(
     return questionnaire.propose_questions(file_path, card_partial, eda_findings)
 
 
+# 会话寻址锚参数单源（#242：状态文件本体锚——bo study_db 同构；
+# 描述即回传面：load_or_start_cleaning 二联信封的 observation_json）
+_Anchor = Annotated[
+    str, Field(description="状态文件 observation.json 绝对路径（load_or_start_cleaning 返回的 observation_json）")
+]
+
+
 # ── 清洗 POMDP 会话工具（#226 ⑤ 动词化，#235：{verb}_cleaning 族——session 词删除）────
 # π 在 agent，环境面在 session.CleaningSession 实体（⑨）；开局工具响应 = 二联信封
-# {sid, observation}。
+# {observation_json, observation}（#242：寻址锚 = 状态文件本体，bo study_db 同构）。
 
 
 def load_or_start_cleaning(
-    sid: Annotated[
+    observation_json: Annotated[
         str | None,
-        Field(description="会话目录绝对路径：给定 = 加载既有会话（开局入参不可同传）；缺省 = 新开"),
+        Field(
+            description="状态文件 observation.json 绝对路径（#242 状态文件本体锚，bo study_db 同构）："
+            "给定 = 加载既有会话（开局入参不可同传）；缺省 = 新开"
+        ),
     ] = None,
     file_path: Annotated[str | None, Field(description="数据文件绝对路径（csv/parquet），新开必填")] = None,
     prior: Annotated[
@@ -137,23 +147,24 @@ def load_or_start_cleaning(
     goal: Annotated[str, Field(description="研究目标叙事（纯元数据，不进先验）")] = "",
     max_steps: Annotated[int | None, Field(description="清洗预算（最大动作步数，缺省 15）")] = None,
 ) -> dict:
-    """开局/续载清洗会话（#226 ②⑤）：sid 给定 = 加载既有会话；缺省 = prior 必填
-    新开（v0 快照 + 初始错误清单 + 内生质量分）。返回二联信封 {sid, observation}。
+    """开局/续载清洗会话（#226 ②⑤）：observation_json 给定 = 加载既有会话；缺省 =
+    prior 必填新开（v0 快照 + 初始错误清单 + 内生质量分）。返回二联信封
+    {observation_json, observation}。
 
     何时使用 load_or_start_cleaning：
-    - survey 问卷完成后，开始自主清洗的回合循环（sid 缺省新开）
-    - 上下文丢失/跨进程续局：拿 sid 加载（开局入参与 sid 同传 = 参数来源冲突报错）
+    - survey 问卷完成后，开始自主清洗的回合循环（observation_json 缺省新开）
+    - 上下文丢失/跨进程续局：拿 observation_json 加载（开局入参与其同传 = 参数来源冲突报错）
     """
     from .session import CleaningSession
 
-    sid_out, o = CleaningSession().load_or_start(
-        sid, file_path=file_path, prior=prior, domain=domain, goal=goal, max_steps=max_steps
+    observation_json_out, o = CleaningSession().load_or_start(
+        observation_json, file_path=file_path, prior=prior, domain=domain, goal=goal, max_steps=max_steps
     )
-    return {"sid": sid_out, "observation": o.model_dump()}
+    return {"observation_json": observation_json_out, "observation": o.model_dump()}
 
 
 def observe_cleaning(
-    session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")],
+    observation_json: _Anchor,
     prior_updates: Annotated[
         dict | None,
         Field(
@@ -171,17 +182,17 @@ def observe_cleaning(
     list_nodes/get_node_info），按观测证据自构 apply_cleaning。
 
     何时使用 observe_cleaning：
-    - 续局 / 上下文丢失后重新定位（拿 sid 直接观测）
+    - 续局 / 上下文丢失后重新定位（拿 observation_json 直接观测）
     - 会话中收获新认知需更新先验（prior_updates——如确认某列合法值集）
     - 终态会话同样可观测（validation 终态旗即收局事实）
     """
     from .session import CleaningSession
 
-    return CleaningSession().observe(session_id, prior_updates=prior_updates).model_dump()
+    return CleaningSession().observe(observation_json, prior_updates=prior_updates).model_dump()
 
 
 def apply_cleaning(
-    session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")],
+    observation_json: _Anchor,
     action: Annotated[str, Field(description="clean 词表算子名（o.actions / list_nodes(namespace='clean') 可查）")],
     finding_ids: Annotated[
         list[str] | None,
@@ -212,12 +223,14 @@ def apply_cleaning(
     from .session import CleaningSession
 
     return (
-        CleaningSession().apply(session_id, action, params, finding_ids=finding_ids or [], reason=reason).model_dump()
+        CleaningSession()
+        .apply(observation_json, action, params, finding_ids=finding_ids or [], reason=reason)
+        .model_dump()
     )
 
 
 def rollback_cleaning(
-    session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")],
+    observation_json: _Anchor,
     to_version: Annotated[int, Field(description="回滚到的版本号（0 = 原始数据）")],
 ) -> dict:
     """回滚到历史版本（决策日志保留，审计不可篡改）。
@@ -233,11 +246,11 @@ def rollback_cleaning(
     """
     from .session import CleaningSession
 
-    return CleaningSession().rollback(session_id, to_version).model_dump()
+    return CleaningSession().rollback(observation_json, to_version).model_dump()
 
 
 def finish_cleaning(
-    session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")],
+    observation_json: _Anchor,
     keeps: Annotated[
         list[dict] | None,
         Field(
@@ -272,19 +285,21 @@ def finish_cleaning(
 
     from .session import CleaningSession
 
-    return CleaningSession().finish(session_id, keeps=keeps, min_quality=min_quality, preview=preview).model_dump()
+    return (
+        CleaningSession().finish(observation_json, keeps=keeps, min_quality=min_quality, preview=preview).model_dump()
+    )
 
 
 def abandon_cleaning(
-    session_id: Annotated[str, Field(description="会话目录绝对路径（sid）")],
+    observation_json: _Anchor,
     reason: Annotated[str | None, Field(description="弃局原因（落盘供审计，如「改卡重开」）")] = None,
 ) -> dict:
     """弃局终局：置 abandoned、决策日志与版本树保留、不导出交付物；已终态再弃即报错。
 
     何时使用 abandon_cleaning：
     - 用户中止清洗 / 改卡重开新 episode 前，显式终局旧会话（不留僵尸——要么 finish 要么 abandon）
-    - 返回 ack：{session_id, abandoned, reason, steps}（steps = 弃局时已走步数）
+    - 返回 ack：{observation_json, abandoned, reason, steps}（steps = 弃局时已走步数）
     """
     from .session import CleaningSession
 
-    return CleaningSession().abandon(session_id, reason=reason)
+    return CleaningSession().abandon(observation_json, reason=reason)

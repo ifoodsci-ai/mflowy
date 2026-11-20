@@ -76,10 +76,10 @@ def _clean_actions() -> list[str]:
     return sorted(namespace_nodes("clean"))
 
 
-def _open(session_id: str) -> POMDPSession:
-    """按 sid（会话目录绝对路径，#226 ②）重水化——相对路径由壳 fail-loud；memo
-    随磁盘 o 水化（③）、o_actions 投影钩子在座（④）。"""
-    return POMDPSession.open(session_id, actions_projector=_clean_actions)
+def _open(observation_json: str) -> POMDPSession:
+    """按 observation_json（状态文件绝对路径，#226 ②/#242 正名）重水化——相对
+    路径/名不符由壳 fail-loud；memo 随磁盘 o 水化（③）、o_actions 投影钩子在座（④）。"""
+    return POMDPSession.open(observation_json, actions_projector=_clean_actions)
 
 
 def never_drop(card: Mapping[str, Any] | None) -> list[str]:
@@ -372,7 +372,7 @@ def _versions(o: Observation, log) -> list[int]:
 
 def _session_experiment(session_id: str) -> str:
     """会话锚定实验（工件根 = 会话目录 .mlruns，M10）：get-or-create，返回
-    experiment_id——apply 的单步流 DAG 以 ``clean_session_{sid}`` 命中同一实验。"""
+    experiment_id——apply 的单步流 DAG 以 ``clean_session_{session_id}`` 命中同一实验。"""
     import mlflow
     from mflowy.utils.mlflow import setup
 
@@ -409,7 +409,7 @@ def _run_clean_step(ss: POMDPSession, o: Observation, node: str, params: dict, s
     yml = steps_dir / f"step_{step_no}.yaml"
     write_text_atomic(  # 执行合同工件（原子，红线 3）——头两行是域叙事，flow 体 = flow_to_yaml 单源
         str(yml),
-        f"name: clean_session_action\ndescription: 会话动作执行合同（apply 即计划切片——目录即归属，sid 不回显）\nflow:\n{flow}",
+        f"name: clean_session_action\ndescription: 会话动作执行合同（apply 即计划切片——目录即归属，会话寻址不回显）\nflow:\n{flow}",
     )
     from mflowy.utils.path import reset_task_dir, set_task_dir
 
@@ -439,15 +439,16 @@ def intent_of(clean_op: str) -> str:
 
 
 class CleaningSession:
-    """clean 域 POMDP 会话实体（#226 ⑨ 合规修复）：typed 六操作、无状态 sid
-    寻址——每方法从盘重水化（会话比 agent 上下文与包版本长寿）。先验生命周期
+    """clean 域 POMDP 会话实体（#226 ⑨ 合规修复）：typed 六操作、无状态
+    observation_json 寻址（#242 正名——状态文件本体锚，bo study_db 同构）——
+    每方法从盘重水化（会话比 agent 上下文与包版本长寿）。先验生命周期
     单缝（⑧）：load_or_start 的 prior 初始化、observe 的 prior_updates 更新
     （动作面冻结牙齿在壳）；apply 参数必须由 agent 基于上下文中的 o 翻译——
     机器面零 o→apply 参数注入（红线 10）。"""
 
     def load_or_start(
         self,
-        sid: str | None = None,
+        observation_json: str | None = None,
         *,
         file_path: str | None = None,
         prior: CleanPrior | dict | None = None,
@@ -455,11 +456,12 @@ class CleaningSession:
         goal: str = "",
         max_steps: int | None = None,
     ) -> tuple[str, Observation]:
-        """开局/续载（#226 ②⑤）：sid 给定 = 加载（任何开局入参同传 = 参数来源
-        冲突 fail-loud；续局带新认知 = 旧会话产物 data 路径 + 新先验**开新局**）；
-        sid 缺省 = prior 必填新开（问卷经剧本层 survey 产出后开局，预算缺省 15）。
-        返回 (sid, o)。domain/goal 纯叙事走本显式参数（不进先验，⑦）。"""
-        if sid is not None:
+        """开局/续载（#226 ②⑤）：observation_json 给定 = 加载（任何开局入参同传 =
+        参数来源冲突 fail-loud；续局带新认知 = 旧会话产物 data 路径 + 新先验
+        **开新局**）；缺省 = prior 必填新开（问卷经剧本层 survey 产出后开局，预算
+        缺省 15）。返回 (observation_json, o)。domain/goal 纯叙事走本显式参数
+        （不进先验，⑦）。"""
+        if observation_json is not None:
             conflicts = {
                 "file_path": file_path,
                 "prior": prior,
@@ -470,11 +472,11 @@ class CleaningSession:
             given = sorted(k for k, v in conflicts.items() if v is not None)
             if given:
                 raise ValueError(
-                    f"参数来源冲突：sid（加载既有会话）与开局入参 {given} 不可同传——"
+                    f"参数来源冲突：observation_json（加载既有会话）与开局入参 {given} 不可同传——"
                     "续局带新认知 = 以旧会话产物数据路径 + 新先验开新局"
                 )
-            ss = POMDPSession.load_or_start(sid=sid, actions_projector=_clean_actions)
-            return ss.sid, ss.observation
+            ss = POMDPSession.load_or_start(observation_json=observation_json, actions_projector=_clean_actions)
+            return ss.observation_json, ss.observation
         if prior is None:
             raise ValueError("prior 必填——问卷在剧本层完成（survey），引擎不提供无先验开局")
         if not file_path:
@@ -501,14 +503,14 @@ class CleaningSession:
                 },
             }
             _refresh_biz(o, report, quality, v=0, df=df, file=str(v0), memo=ss.memo)
-        return ss.sid, o
+        return ss.observation_json, o
 
-    def observe(self, sid: str, *, prior_updates: dict | None = None) -> Observation:
+    def observe(self, observation_json: str, *, prior_updates: dict | None = None) -> Observation:
         """观测（#226 ③ 计算语义 + ⑧ 先验更新缝）：对真态只读、观测派生面写盘、
         零转移。prior_updates = CleanPrior 字段补丁（agent 基于已读先验上下文主动
         传参）——结构封闭（未知键 fail-loud）+ 语义门复用 build（列引用/invariants
         编译，对当前版本数据），合并后落盘；memo 键随先验自动失效。"""
-        ss = _open(sid)
+        ss = _open(observation_json)
         with ss.observe_ctx() as o:
             if prior_updates:
                 unknown = sorted(set(prior_updates) - set(CleanPrior.model_fields))
@@ -525,7 +527,7 @@ class CleaningSession:
 
     def apply(
         self,
-        sid: str,
+        observation_json: str,
         action: str,
         params: dict | None = None,
         *,
@@ -556,7 +558,7 @@ class CleaningSession:
         except CatalogMiss as e:
             raise ValueError(f"动作 `{action}` 不在 clean 词表中（词表 = 运行期 clean 目录）") from e
 
-        ss = _open(sid)
+        ss = _open(observation_json)
         with ss.apply_ctx(action) as (o, log):
             if finding_ids:
                 known = {p["finding_id"] for p in o.biz.get("problems") or ()}
@@ -624,13 +626,13 @@ class CleaningSession:
             _refresh_biz(o, report, quality, v=version, df=out, file=str(ss.dir / fname), memo=ss.memo)
         return o
 
-    def rollback(self, sid: str, to_version: int) -> Observation:
+    def rollback(self, observation_json: str, to_version: int) -> Observation:
         """回滚到历史版本：指针回拨 + 追加 rollback 记录（决策日志与工件不可篡改）。
 
         响应 reward = 恢复 ΔΦ（回滚前质量分与恢复后同尺差分）。append-only 下弃分支
         工件盘上永存——目标版本可选任意已 commit 版本。终态不可回滚——审计面。
         """
-        ss = _open(sid)
+        ss = _open(observation_json)
         with ss.rollback_ctx() as (o, log):
             versions = _versions(o, log)
             if to_version not in versions:
@@ -653,7 +655,12 @@ class CleaningSession:
         return o
 
     def finish(
-        self, sid: str, *, keeps: list[dict] | None = None, min_quality: float | None = None, preview: bool = False
+        self,
+        observation_json: str,
+        *,
+        keeps: list[dict] | None = None,
+        min_quality: float | None = None,
+        preview: bool = False,
     ) -> FinishVerdict:
         """收局：终局 U（train-fold 快速学习器）+ θ 验收门 + 导出可执行清洗计划。
         preview 同为 FinishVerdict（#235 收编——手拼 dict 退役）：accepted=True +
@@ -670,7 +677,7 @@ class CleaningSession:
         commit 不可能）。terminal_utility 值域域定：{u, final_quality, final_report,
         residual, manifest, steps, preview?}——skill ≤ 0 =「干净但不可学」警戒线。
         """
-        ss = _open(sid)
+        ss = _open(observation_json)
         o = ss.observation
         if o.validation.abandoned:
             raise RuntimeError("会话已弃局：不可收局（弃局不可复活，改卡重开走新会话）")
@@ -735,15 +742,15 @@ class CleaningSession:
             decision_log=[dict(r) for r in ss.decision_log],
         )
 
-    def abandon(self, sid: str, reason: str | None = None) -> dict[str, Any]:
+    def abandon(self, observation_json: str, reason: str | None = None) -> dict[str, Any]:
         """弃局终局：委托壳 abandon（幂等）——置 abandoned、记录进决策日志、不导出
-        交付物；已收局不可弃（终态互斥）。ack = {session_id, abandoned, reason, steps}。"""
-        return _open(sid).abandon(reason=reason)
+        交付物；已收局不可弃（终态互斥）。ack = {observation_json, abandoned, reason, steps}。"""
+        return _open(observation_json).abandon(reason=reason)
 
 
-def current_df(session_id: str) -> pd.DataFrame:
+def current_df(observation_json: str) -> pd.DataFrame:
     """当前版本的数据（终态消费/守卫检查用——模块级只读工具面）。"""
-    ss = _open(session_id)
+    ss = _open(observation_json)
     return pd.read_parquet(ss.dir / _current_file(ss.observation))
 
 

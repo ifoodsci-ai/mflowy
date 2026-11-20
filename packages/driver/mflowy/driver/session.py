@@ -10,7 +10,7 @@ append-only 决策日志/统一盘上写序），域实现 ``pomdp.POMDPSessionH
   落盘——最后写
 - ``decision.log``：决策日志（JSONL append-only，一行一条 (s,a,r,s′)——⑥ 补 r
   由壳在 commit 点 stamp）——追加即 commit 点；``ra`` 接口无删除面
-- ``memo.json``：盘上 memo（③）——sid 路径锚定的观测派生缓存，open 随磁盘 o
+- ``memo.json``：盘上 memo（③）——会话路径锚定的观测派生缓存，open 随磁盘 o
   一起水化、写穿原子（模块级内存 dict 的无 gc/同进程跨会话共享两缺陷由此解）
 
 统一写序（构造保证）：工件先行（域、未 commit、孤儿无害）→ 日志追加（commit）→
@@ -160,11 +160,11 @@ class _RewardStampLog:
 
 
 class SessionMemo(MutableMapping[str, Any]):
-    """盘上 memo（#226 ③）：sid 路径锚定的观测派生缓存。
+    """盘上 memo（#226 ③）：会话路径锚定的观测派生缓存。
 
     模块级内存 dict（无 gc、同进程跨会话共享——清洗域 _REPORT_MEMO/_PROFILE_MEMO
     旧形态）由此退役的机制载体：open/load_or_start 随磁盘 o 一起水化、写穿原子
-    （tmp+rename，红线 3）；observe 以 sid 路径寻址即读即得。值域 JSON
+    （tmp+rename，红线 3）；observe 以会话路径寻址即读即得。值域 JSON
     （default=str 宽容序列化——与 decision.log 同尺）。
     """
 
@@ -198,9 +198,9 @@ class POMDPSession:
     转移语义。
 
     新开 = ``POMDPSession(root, prefix=...)``：mint id + 建目录 + 空决策日志；
-    开局观测由 ``start_ctx`` 提交。重水化 = ``POMDPSession.open(dir)``：入口
-    一致性牙齿（观测投影 ≡ 日志尾）+ memo 水化。生命周期缝 =
-    ``load_or_start``（#226 ②——给 sid 加载、不给新建）。
+    开局观测由 ``start_ctx`` 提交。重水化 = ``POMDPSession.open(observation_json)``：
+    入口一致性牙齿（观测投影 ≡ 日志尾）+ memo 水化。生命周期缝 =
+    ``load_or_start``（#226 ②/#242——给 observation_json 加载、不给新建）。
 
     步数口径（#226 ② 单源）：壳按 ``counts_step(action)`` 谓词在 apply 的 commit
     缝计步（域内手动自增退役）；预算门 = counts_step(action) ∧ steps ≥ max_steps。
@@ -216,69 +216,81 @@ class POMDPSession:
         counts_step: Callable[[str], bool] | None = None,
         actions_projector: Callable[[], list[str]] | None = None,
     ) -> None:
-        self._root = Path(root).absolute()  # sid = 会话目录绝对路径（②）——根先归一
+        self._root = Path(root).absolute()  # 会话目录绝对路径先归一（②）
         self._counts_step = counts_step
         self._actions_projector = actions_projector
-        sid = f"{prefix}{uuid.uuid4().hex[:12]}"
+        minted = f"{prefix}{uuid.uuid4().hex[:12]}"
         self._root.mkdir(parents=True, exist_ok=True)
-        self._dir = self._root / sid
-        self._dir.mkdir(exist_ok=False)  # sid 冲突 fail-loud
-        self._id = sid
+        self._dir = self._root / minted
+        self._dir.mkdir(exist_ok=False)  # mint 冲突 fail-loud
+        self._id = minted
         (self._dir / DECISION_LOG_FILE).write_text("", encoding="utf-8")
         self._memo = SessionMemo(self._dir / MEMO_FILE)
 
     @classmethod
     def open(
         cls,
-        dir: Path | str,
+        observation_json: Path | str,
         *,
         counts_step: Callable[[str], bool] | None = None,
         actions_projector: Callable[[], list[str]] | None = None,
     ) -> POMDPSession:
-        """重水化既有会话：sid 绝对路径 fail-loud（②——相对路径在 #207 锚定后有
-        歧义）；目录/开局观测缺失 fail-loud；投影与日志撕裂 fail-loud；memo 随
-        磁盘 o 一起水化（③）。"""
-        d = Path(dir)
-        if not d.is_absolute():
-            raise ValueError(f"sid 须为会话目录绝对路径（相对路径在 task_dir 锚定后有歧义）: {dir}")
+        """重水化既有会话：锚 = 状态文件本体 observation.json 绝对路径（#242——
+        bo study_db 同构；目录锚定已退役）；相对路径/名不符/目录/开局观测缺失
+        fail-loud；投影与日志撕裂 fail-loud；memo 随磁盘 o 一起水化（③）。"""
+        p = Path(observation_json)
+        if not p.is_absolute():
+            raise ValueError(
+                f"observation_json 须为状态文件绝对路径（相对路径在 task_dir 锚定后有歧义）: {observation_json}"
+            )
+        if p.name != OBSERVATION_FILE or p.is_dir():
+            hint = (
+                f"（旧目录锚请改传 {observation_json}/{OBSERVATION_FILE}）"
+                if p.is_dir()
+                else "（会话目录 = 其父目录；目录锚定已退役）"
+            )
+            raise ValueError(
+                f"observation_json 须为 {OBSERVATION_FILE} 文件绝对路径（#242 状态文件本体锚定，"
+                f"bo study_db 同构）{hint}: {observation_json}"
+            )
         ss = cls.__new__(cls)
-        ss._root = d.parent
-        ss._dir = d
+        ss._dir = p.parent
+        ss._root = ss._dir.parent
         if not ss._dir.is_dir():
-            raise FileNotFoundError(f"会话不存在: {dir}")
-        obs_path = ss._dir / OBSERVATION_FILE
-        if not obs_path.exists():
-            raise FileNotFoundError(f"会话未开局（缺 observation.json）: {dir}")
+            raise FileNotFoundError(f"会话不存在: {ss._dir}")
+        if not p.exists():
+            raise FileNotFoundError(f"会话未开局（缺 observation.json）: {observation_json}")
         ss._counts_step = counts_step
         ss._actions_projector = actions_projector
         ss._id = ss._dir.name
         ss._memo = SessionMemo(ss._dir / MEMO_FILE)  # 随磁盘 o 一起水化
         obs = ss._load_observation()
         if list(obs.validation.recent_decisions) != _DecisionLog(ss._dir / DECISION_LOG_FILE).tail(TOP_K_DECISIONS):
-            raise RuntimeError(f"观测投影与决策日志不一致（撕裂写嫌疑，日志领先）: {dir}")
+            raise RuntimeError(f"观测投影与决策日志不一致（撕裂写嫌疑，日志领先）: {observation_json}")
         return ss
 
     @classmethod
     def load_or_start(
         cls,
         *,
-        sid: Path | str | None = None,
+        observation_json: Path | str | None = None,
         root: Path | str | None = None,
         prefix: str = "",
         counts_step: Callable[[str], bool] | None = None,
         actions_projector: Callable[[], list[str]] | None = None,
     ) -> POMDPSession:
-        """生命周期缝（#226 ②，Handle load_or_start 的壳面）：sid 给定 = 加载
-        （绝对路径、缺失 fail-loud）；sid 缺省 = root+prefix 新建。
+        """生命周期缝（#226 ②，Handle load_or_start 的壳面；#242 正名）：
+        observation_json 给定 = 加载（状态文件绝对路径、缺失 fail-loud）；
+        缺省 = root+prefix 新建。
 
-        加载不吃开局入参——「sid + 域尾巴开局入参同传 = 参数来源冲突」在域缝
-        fail-loud（具名先验参数只有域知道）；续局带新认知 = 以旧会话产物 data
-        路径 + 新 prior 开新局（集链语义），不开旧局换卡。
+        加载不吃开局入参——「observation_json + 域尾巴开局入参同传 = 参数来源
+        冲突」在域缝 fail-loud（具名先验参数只有域知道）；续局带新认知 = 以旧
+        会话产物 data 路径 + 新 prior 开新局（集链语义），不开旧局换卡。
         """
-        if sid is not None:
-            return cls.open(sid, counts_step=counts_step, actions_projector=actions_projector)
+        if observation_json is not None:
+            return cls.open(observation_json, counts_step=counts_step, actions_projector=actions_projector)
         if root is None:
-            raise ValueError("sid 缺省 = 新建会话——须给 root（mint 目录的父）")
+            raise ValueError("observation_json 缺省 = 新建会话——须给 root（mint 目录的父）")
         return cls(root, prefix=prefix, counts_step=counts_step, actions_projector=actions_projector)
 
     @property
@@ -287,9 +299,10 @@ class POMDPSession:
         return self._id
 
     @property
-    def sid(self) -> str:
-        """Handle 寻址面（#226 ②）：会话目录绝对路径。"""
-        return str(self._dir)
+    def observation_json(self) -> str:
+        """Handle 寻址面（#226 ②/#242 正名）：状态文件绝对路径（会话目录/observation.json
+        ——bo study_db 同构的状态文件本体锚）。"""
+        return str(self._dir / OBSERVATION_FILE)
 
     @property
     def dir(self) -> Path:
@@ -394,17 +407,27 @@ class POMDPSession:
 
     def abandon(self, reason: str | None = None) -> dict[str, Any]:
         """弃局：日志记录 + 观测置 abandoned。幂等（已弃局重复弃 = no-op 回执）；
-        已收局不可弃（二终态互斥）。ack 的 session_id = sid（绝对路径，Handle
-        寻址面）。"""
+        已收局不可弃（二终态互斥）。ack 的 observation_json = 状态文件绝对路径
+        （Handle 寻址面，#242）。"""
         o = self._load_observation()
         if o.validation.finished:
             raise RuntimeError(f"会话已终态（收局）：不可弃局（{self._id}）")
         if o.validation.abandoned:
-            return {"session_id": self.sid, "abandoned": True, "reason": reason, "steps": o.validation.steps}
+            return {
+                "observation_json": self.observation_json,
+                "abandoned": True,
+                "reason": reason,
+                "steps": o.validation.steps,
+            }
         o.validation.abandoned = True
         _DecisionLog(self._dir / DECISION_LOG_FILE).append({"action": "abandon", "reason": reason})
         self._write_observation(o)
-        return {"session_id": self.sid, "abandoned": True, "reason": reason, "steps": o.validation.steps}
+        return {
+            "observation_json": self.observation_json,
+            "abandoned": True,
+            "reason": reason,
+            "steps": o.validation.steps,
+        }
 
     # ── 内部件（三个 RWA 原语与门）─────────────────────────────────────────
 

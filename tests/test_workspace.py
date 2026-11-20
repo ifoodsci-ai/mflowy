@@ -194,10 +194,16 @@ def test_domain_sessions_implement_handle_protocol():
     for entity in (CleaningSession, ModelingSession):
         for op in ("load_or_start", "observe", "apply", "rollback", "finish", "abandon"):
             assert hasattr(entity, op), (entity.__name__, op)
-        assert list(inspect.signature(entity.load_or_start).parameters)[:2] == ["self", "sid"]
-    assert list(inspect.signature(CleaningSession.observe).parameters)[:3] == ["self", "sid", "prior_updates"]
+        assert list(inspect.signature(entity.load_or_start).parameters)[:2] == ["self", "observation_json"]
+    assert list(inspect.signature(CleaningSession.observe).parameters)[:3] == [
+        "self",
+        "observation_json",
+        "prior_updates",
+    ]
     assert "report_findings" in ACTIONS  # #226 ④/#236：九动作面收编（工具面薄别名）
-    assert "Observation" in inspect.signature(ModelingSession.load_or_start).return_annotation  # (sid, o) 二联
+    assert (
+        "Observation" in inspect.signature(ModelingSession.load_or_start).return_annotation
+    )  # (observation_json, o) 二联
 
     # 响应注解 = 契约模型（六操作面向 π 的三类返回面）
     assert "Observation" in inspect.signature(ModelingSession.apply).return_annotation

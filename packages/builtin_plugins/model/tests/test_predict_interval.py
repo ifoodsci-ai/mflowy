@@ -40,11 +40,11 @@ def _reg_csv(tmp_path) -> str:
     return str(p)
 
 
-def _entry(sid: str) -> dict:
+def _entry(observation_json: str) -> dict:
     """账本全条目（oof/run_id 等不在观测投影面——观测板面是排序瘦身面，真源 board.json）。"""
     from mflowy.model.session import _board_load, _open
 
-    return _board_load(_open(sid))["models"][KEY]
+    return _board_load(_open(observation_json))["models"][KEY]
 
 
 def _predict_df(run_id: str, data: str) -> pd.DataFrame:
@@ -58,7 +58,7 @@ def _predict_df(run_id: str, data: str) -> pd.DataFrame:
 
 def _run_hpo_regression(csv: str) -> str:
     """回归最小搜索链 → session_id（两用例共用的前置段）。"""
-    sid, s = ModelingSession().load_or_start(
+    observation_json, s = ModelingSession().load_or_start(
         file_path=csv,
         cv_card="cv: 3",
         card={"domain": "t", "target": "target"},
@@ -67,9 +67,9 @@ def _run_hpo_regression(csv: str) -> str:
         candidates=[{"family": "RF", "baseline": True}],
         max_steps=6,
     )
-    ModelingSession().apply(sid, "select_model", {"family": "RF"})
-    ModelingSession().apply(sid, "run_hpo", {"n_trials": 2})
-    return sid
+    ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
+    ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 2})
+    return observation_json
 
 
 class TestRegressionIntervalChain:
@@ -77,8 +77,8 @@ class TestRegressionIntervalChain:
         """run_hpo 后 oof_y_pred.parquet 四面（回归无 proba）+ 半宽 tag + 账本面。"""
         import mlflow
 
-        sid = _run_hpo_regression(_reg_csv(tmp_path))
-        entry = _entry(sid)
+        observation_json = _run_hpo_regression(_reg_csv(tmp_path))
+        entry = _entry(observation_json)
         oof_run = entry["oof"]["run_id"]
         ev = pd.read_parquet(download_run_artifact(oof_run, entry["oof"]["y_pred"]))
         assert list(ev.columns) == [
@@ -95,10 +95,10 @@ class TestRegressionIntervalChain:
 
     def test_final_run_carries_evidence_and_predict_interval(self, sessions_root, tmp_path):
         """final run 复制证据 parquet + 半宽 tag；predict 单 run_id 出区间列在界。"""
-        sid = _run_hpo_regression(_reg_csv(tmp_path))
-        ModelingSession().apply(sid, "final_train_test")
+        observation_json = _run_hpo_regression(_reg_csv(tmp_path))
+        ModelingSession().apply(observation_json, "final_train_test")
 
-        entry = _entry(sid)
+        entry = _entry(observation_json)
         final_run = entry["run_id"]
         assert entry["oof"]["y_pred"] in run_artifacts(final_run)  # 残差源寻址：复制面
         import mlflow
@@ -120,11 +120,11 @@ class TestRegressionIntervalChain:
         df = pd.read_csv(csv)
         token = HOLDOUT_MIN_ROWS.set(10)  # n_train(48) ≥ 10 → holdout-val 模式
         try:
-            sid = _run_hpo_regression(csv)
+            observation_json = _run_hpo_regression(csv)
         finally:
             HOLDOUT_MIN_ROWS.reset(token)
 
-        entry = _entry(sid)
+        entry = _entry(observation_json)
         ev = pd.read_parquet(download_run_artifact(entry["oof"]["run_id"], entry["oof"]["y_pred"]))
         assert len(ev) < len(df)  # 证据行数 = val 段（非全量）
         np.testing.assert_allclose(ev["error_target"], ev["y_target"] - ev["y_pred_target"])
@@ -140,7 +140,7 @@ class TestClassificationZeroChange:
         p = tmp_path / "cls.csv"
         pd.DataFrame({"x": x, "target": (x > 0).astype(int)}).to_csv(p, index=False)
 
-        sid, s = ModelingSession().load_or_start(
+        observation_json, s = ModelingSession().load_or_start(
             file_path=str(p),
             cv_card="cv: 3",
             card={"domain": "t", "target": "target"},
@@ -149,10 +149,10 @@ class TestClassificationZeroChange:
             candidates=[{"family": "RF", "baseline": True}],
             max_steps=6,
         )
-        ModelingSession().apply(sid, "select_model", {"family": "RF"})
-        ModelingSession().apply(sid, "run_hpo", {"n_trials": 2})
+        ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
+        ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 2})
 
-        entry = _entry(sid)
+        entry = _entry(observation_json)
         oof_run = entry["oof"]["run_id"]
         ev = pd.read_parquet(download_run_artifact(oof_run, entry["oof"]["y_pred"]))
         # 分类证据面：y/y_pred/error + y_proba_{cls}（概率一并落盘——日后分类区间零返工）
@@ -160,7 +160,7 @@ class TestClassificationZeroChange:
         assert any(c.startswith("y_proba_") for c in ev.columns)
         assert entry["oof"]["half_width"] is None  # 分类无区间面（键恒在、值 None——板面 schema 稳定）
 
-        ModelingSession().apply(sid, "final_train_test")
-        final_run = _entry(sid)["run_id"]
+        ModelingSession().apply(observation_json, "final_train_test")
+        final_run = _entry(observation_json)["run_id"]
         df = _predict_df(final_run, str(p))
         assert list(df.columns) == ["target"]  # 零变化钉：无区间列

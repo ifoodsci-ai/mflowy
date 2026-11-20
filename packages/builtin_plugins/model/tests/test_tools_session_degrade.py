@@ -37,7 +37,7 @@ def test_session_tool_face_degrades(monkeypatch):
     """工具面（observe_modeling，#236 动词化）同降级：提示先于会话 ID 校验到达调用方。"""
     _no_local_stack(monkeypatch)
     with pytest.raises(RuntimeError, match=r"mflowy\[local\]"):
-        tools.observe_modeling(session_id="never-touched")
+        tools.observe_modeling(observation_json="never-touched/observation.json")
 
 
 def test_session_warm_path_passthrough():

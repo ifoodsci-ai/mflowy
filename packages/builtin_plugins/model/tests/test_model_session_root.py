@@ -59,8 +59,11 @@ class TestAnchorChain:
         """①锚定时会话落 <task_dir>/modeling_sessions（目录自动物化）。"""
         token = pin_task_dir(str(tmp_path))
         try:
-            sid, s = _start(tmp_path)
-            assert (tmp_path / "modeling_sessions" / sid / "observation.json").is_file()
+            observation_json, s = _start(tmp_path)
+            assert (
+                Path(observation_json).is_file()
+                and Path(observation_json).parent.parent == tmp_path / "modeling_sessions"
+            )
         finally:
             reset_task_dir(token)
 
@@ -68,25 +71,28 @@ class TestAnchorChain:
         """②无锚（直接 import）落 ~/.mflowy/modeling_sessions——旧缺省路径逐字相同。"""
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         assert ms._root() == tmp_path / ".mflowy" / "modeling_sessions"
-        sid, s = _start(tmp_path)  # 端到端钉
-        assert (tmp_path / ".mflowy" / "modeling_sessions" / sid / "observation.json").is_file()
+        observation_json, s = _start(tmp_path)  # 端到端钉
+        assert (
+            Path(observation_json).is_file()
+            and Path(observation_json).parent.parent == tmp_path / ".mflowy" / "modeling_sessions"
+        )
 
     def test_old_session_reachable_by_absolute_path(self, tmp_path, no_anchor):
-        """③旧会话绝对路径直开跨锚仍可达（#226 ②：绝对 sid 寻址有意锚无关——相对
-        歧义由绝对化消解）；不存在的绝对 sid fail-loud（零回退查找）。"""
+        """③旧会话绝对路径直开跨锚仍可达（#226 ②：绝对寻址有意锚无关——相对
+        歧义由绝对化消解）；不存在的绝对锚 fail-loud（零回退查找）。"""
         token = pin_task_dir(str(tmp_path))
         try:
-            sid, s = _start(tmp_path)
+            observation_json, s = _start(tmp_path)
         finally:
             reset_task_dir(token)
 
         from mflowy.driver.session import POMDPSession
 
-        ss = POMDPSession.open(tmp_path / "modeling_sessions" / sid, counts_step=ms._counts_step)
-        assert ss.id == Path(sid).name  # sid 绝对路径（②），壳 id = 目录名
-        ms._open(sid)  # 换锚后按绝对 sid 仍可达（新开局才受当前锚定语境约束）
+        ss = POMDPSession.open(observation_json, counts_step=ms._counts_step)
+        assert ss.id == Path(observation_json).parent.name  # 锚 = 状态文件绝对路径（②/#242），壳 id = 目录名
+        ms._open(observation_json)  # 换锚后按绝对锚仍可达（新开局才受当前锚定语境约束）
         with pytest.raises(FileNotFoundError):
-            ms._open(str(tmp_path / "modeling_sessions" / "ms_nope"))  # 不存在的绝对 sid——零回退
+            ms._open(str(tmp_path / "modeling_sessions" / "ms_nope" / "observation.json"))  # 不存在的绝对锚——零回退
 
     def test_env_override_retired(self, tmp_path, monkeypatch, no_anchor):
         """env MFLOWY_MODELING_SESSIONS 已退役（#207 BREAKING）——设值不再生效。"""
