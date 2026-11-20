@@ -24,7 +24,7 @@ def test_registry_matches_tools_module():
         f"注册表与 tools.py 失同步: 仅注册表={set(declared) - public} 仅模块={public - set(declared)}"
     )
     assert set(declared) == {
-        "bo_load_or_init",
+        "bo_load_or_start",
         "bo_ask",
         "bo_prune",
         "bo_diversity_check",

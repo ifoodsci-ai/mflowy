@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### BREAKING：会话工具命名族前缀化 `<biz>_<verb>`（#248）
+
+动词+域后缀 → 域前缀+动词（与技能命名 data-/modeling-/bo-、包名 mflowy-data/model/bo
+同构）——纯工具面改名、零语义变更（引擎内部 Handle 方法名 load_or_start/observe/… 不动）。
+#226 ⑤ 动词化中间名未及发布即被本裁定翻转，与 #226 动词化并段收口——0.2.0 升级
+净改名 = `clean_*` → `data_*`、`modeling_session_*` → `modeling_*`（下各段动词化
+箭头已收口至终名）：
+
+- **data 域**：`load_or_start_cleaning`/`observe_cleaning`/`apply_cleaning`/
+  `rollback_cleaning`/`finish_cleaning`/`abandon_cleaning` → `data_load_or_start`/
+  `data_observe`/`data_apply`/`data_rollback`/`data_finish`/`data_abandon`
+- **model 域**：`load_or_start_modeling`/`observe_modeling`/`apply_modeling`/
+  `rollback_modeling`/`finish_modeling`/`abandon_modeling`/`report_findings_modeling`
+  → `modeling_load_or_start`/`modeling_observe`/`modeling_apply`/`modeling_rollback`/
+  `modeling_finish`/`modeling_abandon`/`modeling_report_findings`
+- **bo 域**：`bo_load_or_init` → `bo_load_or_start`（余五件 bo_ 前缀已同构不动；
+  非会话工具不强制）
+- 同步面：域包 `[project.entry-points."mflowy.tools"]` 声明名 + tools.py 函数名（单源：
+  名=函数）、bo-bench harness 工具调用面（G1–G5 冻结门数值不动）、AGENTS.md 工具
+  七组叙述、测试镜像、skills 工具名引用
+
 ### BREAKING：study 存储零拷贝单源化（#244）——直驻 run 工件根 / tag 留痕 / 节点参数寻址
 
 hyperparameters_search 的 study 状态往返从「每轮 run 工件拷回」改为「artifact_root
@@ -37,8 +58,8 @@ hyperparameters_search 的 study 状态往返从「每轮 run 工件拷回」改
 锚定语义升级：会话工具族寻址参数从「会话目录绝对路径」（`sid`/`session_id` 两拼法
 并存）正名为「状态文件本体绝对路径」（observation.json——bo 域 `study_db` 同构）：
 
-- **信封面**：`load_or_start_cleaning` / `load_or_start_modeling` 参数 `sid` 与
-  其余会话工具（observe/apply/rollback/finish/abandon/report_findings_modeling/
+- **信封面**：`data_load_or_start` / `modeling_load_or_start` 参数 `sid` 与
+  其余会话工具（observe/apply/rollback/finish/abandon/modeling_report_findings/
   draw_taylor_diagram/modeling_statistics/modeling_report_skeleton）参数
   `session_id` 统一更名 `observation_json`；二联信封返回键 `{sid, observation}`
   → `{observation_json, observation}`；abandon ack 键 `session_id` →
@@ -77,7 +98,7 @@ model 域全量落位（`ModelingSession` 实体化，模块级薄门面退役�
   为 agent 词表（taxonomy fail-loud 不变）；θ* 体征探针（theta_probe 调用）随判读
   退役出 run_hpo
 - **report_findings 收编**（④）：`ACTIONS` 收编第九词（九动作面进 apply 分派；
-  `report_findings_modeling` 薄别名工具保留）；apply 错误清单单源 = ACTIONS
+  `modeling_report_findings` 薄别名工具保留）；apply 错误清单单源 = ACTIONS
 - **统计工具独立化**（补充裁定「统计步独立成工具，不在 hpo DAG 管线内」）：
   新 compute 工具 `modeling_statistics(sid, key)`（走 JobProvider，R1）——run
   寻址（oof run / 终训 run）重构证据面：证据表（overall/误差集中列分组/目标
@@ -91,10 +112,10 @@ model 域全量落位（`ModelingSession` 实体化，模块级薄门面退役�
   无 tag）fail-loud 指路重跑
 - **工具动词化**（⑤·BREAKING）：`modeling_session_start`/`modeling_observe`/
   `modeling_apply`/`modeling_rollback`/`modeling_finish`/`modeling_abandon` →
-  `load_or_start_modeling`/`observe_modeling`/`apply_modeling`/
-  `rollback_modeling`/`finish_modeling`/`abandon_modeling`（apply 参数 node →
-  action）；skills 同 PR 更新（model 手册判读回路改写 + model-brief/research-review
-  跟名）
+  `modeling_load_or_start`/`modeling_observe`/`modeling_apply`/
+  `modeling_rollback`/`modeling_finish`/`modeling_abandon`（apply 参数 node →
+  action；名随 #248 域前缀化收口）；skills 同 PR 更新（model 手册判读回路改写 +
+  model-brief/research-review 跟名）
 - **机械跟随 model 侧**：m["session_id"] 穿线单源（ss.id 经 _mview 独立传参——
   #234 承接收口，o.session_id 镜像已退役）、decision log 补 r（#234）、_mview 死投影
   清（finished/abandoned）、θ* 体征探针（theta_probe/abs_spearman_per_column）随
@@ -127,10 +148,10 @@ clean 域全量落位（`cleaning_session.py` → `session.py`，模块命名对
 - **preview 收编 FinishVerdict**：手拼 dict 退役——探针同为裁决面
   （accepted=True + terminal_utility.preview=True + deliverables={}）
 - **工具动词化**（⑤·BREAKING）：`clean_session_start`/`clean_observe`/`clean_apply`/
-  `clean_rollback`/`clean_finish`/`clean_abandon` → `load_or_start_cleaning`/
-  `observe_cleaning`/`apply_cleaning`/`rollback_cleaning`/`finish_cleaning`/
-  `abandon_cleaning`（session 词删除，动词族统一；apply 参数 node → action）；
-  skills 同 PR 更新（clean 手册 + survey/model-brief 引用跟名）
+  `clean_rollback`/`clean_finish`/`clean_abandon` → `data_load_or_start`/
+  `data_observe`/`data_apply`/`data_rollback`/`data_finish`/
+  `data_abandon`（session 词删除；名随 #248 域前缀化收口；apply 参数 node →
+  action）；skills 同 PR 更新（clean 手册 + survey/model-brief 引用跟名）
 - **问卷证据化候选**：expected_values（低基数列观测值全集机器举证）/ invariants
   （dive-in 关联证据追问）出题入 propose_questions（剧本改写并 #233 窗口）
 - **机械跟随**：kind 措辞退役（defect_type×count / scoring 措辞）、step yaml 头
@@ -182,7 +203,7 @@ bo，#175）。
 
 - **六工具**（#180/#184 定名；全无状态、恒本地、零模型触碰——预测走既有
   `predict`，耦合只发生在 agent 的 MCP 编排层）：
-  - `bo_load_or_init`——开局三形态一入口：init ← 湿实验历史 parquet（**20 行
+  - `bo_load_or_start`——开局三形态一入口：init ← 湿实验历史 parquet（**20 行
     机器门**，#183）/ continue ← 既有 db（换模型 = 学习信号归档重置一气呵成，
     #182）/ rebuild ← db 迁移式重建（空间组/direction/seed 指纹不符——COMPLETE
     保态迁移、新增维度从 conditions/湿历史补值 fail-loud、PRUNED/FAIL 新维度下

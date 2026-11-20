@@ -81,7 +81,7 @@ class TestAskPathSampler:
         df["y"] = [fam.true_f(r) for r in rows]
         hist = tmp_path / "w.parquet"
         df.to_parquet(hist)
-        init = bo_tools.bo_load_or_init(
+        init = bo_tools.bo_load_or_start(
             study_name="sampler-pin",
             model_run_id="x",
             data=str(hist),

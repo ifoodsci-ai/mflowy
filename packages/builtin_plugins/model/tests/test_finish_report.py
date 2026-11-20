@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from mflowy.model.session import ModelingSession
-from mflowy.model.tools import draw_taylor_diagram, finish_modeling, modeling_report_skeleton
+from mflowy.model.tools import draw_taylor_diagram, modeling_finish, modeling_report_skeleton
 from mflowy.utils.mlflow import run_artifacts
 
 _K = "RF|passthrough|passthrough"
@@ -336,7 +336,7 @@ def test_modeling_finish_tool_face(delivered_rf, tmp_path):
     """接缝（session→tools）：modeling_finish 的 pdf 透传可达（工具面=会话面）。"""
     observation_json = sid_delivered_rf
     pdf = _pdf(tmp_path)
-    v = finish_modeling(observation_json=observation_json, pdf=str(pdf))  # 工具面 = model_dump 后的 dict
+    v = modeling_finish(observation_json=observation_json, pdf=str(pdf))  # 工具面 = model_dump 后的 dict
     assert v["accepted"] is True and v["terminal_utility"]["report"]["file"].startswith("deliverables/")
 
 

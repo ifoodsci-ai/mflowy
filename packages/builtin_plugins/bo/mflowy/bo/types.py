@@ -174,7 +174,7 @@ class BOCard(BaseModel):
 
     pydantic 契约单源（``extra="forbid"``）；卡实例 = YAML 工件（MCP 通道友好）。
     同一性字段 = ``search_space`` + ``direction``（+ 工具侧 seed，#175 Q4）——
-    变更即重建 study（bo_load_or_init 迁移式开局承接）；策略组字段可后改。
+    变更即重建 study（bo_load_or_start 迁移式开局承接）；策略组字段可后改。
     """
 
     model_config = ConfigDict(extra="forbid")

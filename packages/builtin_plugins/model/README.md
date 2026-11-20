@@ -75,7 +75,7 @@ MY_MODEL.mdp_family = {
   fan-in——`taylor_byproducts` 边函数断言各模型 y_test 逐位同一）/ 报告素材
   （`modeling_report_skeleton`：表格从账本渲染 + 图片清单 + 叙事槽）；终局报告不在
   引擎——π 撰写后 `finish(pdf)` 收编进 deliverables（tmp/rename 原子落盘，不编译不验内容）
-- 观测面：`observe_modeling` 幂等只读，读时投影 π 的决策面（本 combo 键 findings / 账本摘要 /
+- 观测面：`modeling_observe` 幂等只读，读时投影 π 的决策面（本 combo 键 findings / 账本摘要 /
   has_cat / 候选族超参面）——出题规则与菜单随 #120 退役，finding kind 词表单源 `taxonomy.py`
 
 ## JobProvider：compute 工具的执行委派

@@ -549,7 +549,7 @@ class CleaningSession:
         """
         params = dict(params or {})
         if action == "finish":
-            raise ValueError("`finish` 是操作面不是 apply 动作——收局走 finish_cleaning")
+            raise ValueError("`finish` 是操作面不是 apply 动作——收局走 data_finish")
         if not reason or not reason.strip():
             raise ValueError("reason 必填非空——每步决策可审计（本步为什么执行这个算子）")
         load_ref = params.pop("load", None)  # 可选新鲜度引用（当前版本工件）——寻址元数据，非节点参数
@@ -566,11 +566,11 @@ class CleaningSession:
                 if ghosts:
                     raise ValueError(
                         f"finding_ids 引用不存在的 finding：{ghosts}（当前 problems 共 {len(known)} 条"
-                        "——幻觉 id 免费失败，observe_cleaning 取当前观测后重新决策）"
+                        "——幻觉 id 免费失败，data_observe 取当前观测后重新决策）"
                     )
             if load_ref is not None and Path(load_ref).name != _current_file(o):
                 raise ValueError(  # 过期决策新鲜度门（fail-loud 指路）——commit 前抛 = 免费
-                    f"load 引用已过期（{load_ref} ≠ 当前版本 {_current_file(o)}）——observe_cleaning 取当前观测后重新决策"
+                    f"load 引用已过期（{load_ref} ≠ 当前版本 {_current_file(o)}）——data_observe 取当前观测后重新决策"
                 )
             _session_experiment(ss.id)  # 预建会话锚定实验（工件根 = 会话 .mlruns）
             df, out, run_id = _run_clean_step(ss, o, action, params, step_no=len(log) + 1)

@@ -1,6 +1,6 @@
 ---
 name: bo-suggestion
-description: BO 推荐操作主剧本(mflowy)——owns 开局（bo_load_or_init 唯一调用面）与全循环（推荐→台账→湿实验→回填→学习信号）。签名 = <BOCard 可空> <湿历史 parquet|study db 至少一> <model_run_id>。用户要求"推荐下一轮实验/继续 BO/回填实验结果"时触发；无卡时代调 bo-prior。
+description: BO 推荐操作主剧本(mflowy)——owns 开局（bo_load_or_start 唯一调用面）与全循环（推荐→台账→湿实验→回填→学习信号）。签名 = <BOCard 可空> <湿历史 parquet|study db 至少一> <model_run_id>。用户要求"推荐下一轮实验/继续 BO/回填实验结果"时触发；无卡时代调 bo-prior。
 disable-model-invocation: true
 ---
 
@@ -18,7 +18,7 @@ bo = agent 调 BO 工具的**工作流**（非会话）：状态载体 = study s
 2. **必问**：上轮信号/漂移情况（新局先验讨论必看旧局失败信号——最小闭环继承形态）；
 3. **一次性核对（不逐轮）**：模型是回归（分类模型拒绝）、卡搜索维 ⊆ 模型 x_names、
    单位显式（列名后缀承袭上游清洗词表——不显式让用户补命名）；
-4. 调 `bo_load_or_init(`study_name, model_run_id, data=, db=, target_column=,
+4. 调 `bo_load_or_start(`study_name, model_run_id, data=, db=, target_column=,
    direction=, search_space=…读卡直传, band=（match 时）)`：init（历史建新 study，
    ≥20 行机器门）/ continue（既有 db；换模型自动归档重置信号）/ rebuild（空间组
    变更——迁移式，**迁移报告必须对话叙述**：迁/弃/终局化计数不静默）。

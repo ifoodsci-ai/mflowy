@@ -47,7 +47,7 @@ disable-model-invocation: true
 - **交棒提示**：转 bo-suggestion 剧本继续开局（签名 = 卡可空 + data|db 至少一 +
   model_run_id）；
 - **纪律（提醒单落本剧本）**：改**身份字段**（搜索维 kind/边界/choices、direction）
-  = study 重建——必提示走 bo-suggestion 的迁移式开局（`bo_load_or_init` 传 db +
+  = study 重建——必提示走 bo-suggestion 的迁移式开局（`bo_load_or_start` 传 db +
   新空间组，在途推荐终局化、历史保态迁移）；策略组字段（规则/带/容差/门限/批缺省）
   可后改不重建。卡变更留痕 = 卡 YAML 文件本身（无 decision.log）。
 

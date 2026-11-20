@@ -113,18 +113,18 @@ def propose_questions(
 
 
 # 会话寻址锚参数单源（#242：状态文件本体锚——bo study_db 同构；
-# 描述即回传面：load_or_start_cleaning 二联信封的 observation_json）
+# 描述即回传面：data_load_or_start 二联信封的 observation_json）
 _Anchor = Annotated[
-    str, Field(description="状态文件 observation.json 绝对路径（load_or_start_cleaning 返回的 observation_json）")
+    str, Field(description="状态文件 observation.json 绝对路径（data_load_or_start 返回的 observation_json）")
 ]
 
 
-# ── 清洗 POMDP 会话工具（#226 ⑤ 动词化，#235：{verb}_cleaning 族——session 词删除）────
+# ── 清洗 POMDP 会话工具（#248：<biz>_<verb> 域前缀族——data_ 六件，纯改名零语义）────
 # π 在 agent，环境面在 session.CleaningSession 实体（⑨）；开局工具响应 = 二联信封
 # {observation_json, observation}（#242：寻址锚 = 状态文件本体，bo study_db 同构）。
 
 
-def load_or_start_cleaning(
+def data_load_or_start(
     observation_json: Annotated[
         str | None,
         Field(
@@ -151,7 +151,7 @@ def load_or_start_cleaning(
     prior 必填新开（v0 快照 + 初始错误清单 + 内生质量分）。返回二联信封
     {observation_json, observation}。
 
-    何时使用 load_or_start_cleaning：
+    何时使用 data_load_or_start：
     - survey 问卷完成后，开始自主清洗的回合循环（observation_json 缺省新开）
     - 上下文丢失/跨进程续局：拿 observation_json 加载（开局入参与其同传 = 参数来源冲突报错）
     """
@@ -163,7 +163,7 @@ def load_or_start_cleaning(
     return {"observation_json": observation_json_out, "observation": o.model_dump()}
 
 
-def observe_cleaning(
+def data_observe(
     observation_json: _Anchor,
     prior_updates: Annotated[
         dict | None,
@@ -179,9 +179,9 @@ def observe_cleaning(
     动作词表 + 近期决策 + 终态旗。
 
     选项面不设菜单：可执行算子 = o.actions（运行期 clean 目录投影；参数面走
-    list_nodes/get_node_info），按观测证据自构 apply_cleaning。
+    list_nodes/get_node_info），按观测证据自构 data_apply。
 
-    何时使用 observe_cleaning：
+    何时使用 data_observe：
     - 续局 / 上下文丢失后重新定位（拿 observation_json 直接观测）
     - 会话中收获新认知需更新先验（prior_updates——如确认某列合法值集）
     - 终态会话同样可观测（validation 终态旗即收局事实）
@@ -191,7 +191,7 @@ def observe_cleaning(
     return CleaningSession().observe(observation_json, prior_updates=prior_updates).model_dump()
 
 
-def apply_cleaning(
+def data_apply(
     observation_json: _Anchor,
     action: Annotated[str, Field(description="clean 词表算子名（o.actions / list_nodes(namespace='clean') 可查）")],
     finding_ids: Annotated[
@@ -214,10 +214,10 @@ def apply_cleaning(
     与 biz（缺陷摘要指纹）——直接读数决策，无需从决策日志做减法。
 
     失败即免费异常（不耗预算、不落版本）——不确定动作的试探面 = 提交后读 s′，
-    负 reward 即 rollback_cleaning；no-op 步否决（不动 df 的提交拒绝——keep 走
-    finish_cleaning 声明）。
+    负 reward 即 data_rollback；no-op 步否决（不动 df 的提交拒绝——keep 走
+    data_finish 声明）。
 
-    何时使用 apply_cleaning：
+    何时使用 data_apply：
     - 读观测证据选定算子与参数后提交执行（响应自带 reward 与 biz——直接读数决策）
     """
     from .session import CleaningSession
@@ -229,7 +229,7 @@ def apply_cleaning(
     )
 
 
-def rollback_cleaning(
+def data_rollback(
     observation_json: _Anchor,
     to_version: Annotated[int, Field(description="回滚到的版本号（0 = 原始数据）")],
 ) -> dict:
@@ -238,7 +238,7 @@ def rollback_cleaning(
     响应自带 reward（validation.reward，恢复 ΔΦ——撤销改进动作通常为负值）与
     biz（回滚后的缺陷摘要指纹）。
 
-    何时使用 rollback_cleaning：
+    何时使用 data_rollback：
     - 动作后质量分下降/引入新缺陷时撤销到上一个好版本
     - finish(preview) 见 skill ≤ 0（「干净但不可学」警戒线）时回滚过度删改、换温和档位重来
     - 回到任意历史版本重新选择走法（预算不回补）
@@ -249,7 +249,7 @@ def rollback_cleaning(
     return CleaningSession().rollback(observation_json, to_version).model_dump()
 
 
-def finish_cleaning(
+def data_finish(
     observation_json: _Anchor,
     keeps: Annotated[
         list[dict] | None,
@@ -275,7 +275,7 @@ def finish_cleaning(
     不可学」警戒线——优先 rollback 撤过度删改换温和档位，而非收局；小数据下
     单次 CV 有方差，当线索不当判决（平台期先 preview 再决定）。
 
-    何时使用 finish_cleaning：
+    何时使用 data_finish：
     - 错误清单清空 / 预算耗尽 / 质量平台期时收局，进入建模阶段
     - 平台期先 preview=true 看 skill 分再决定收局或回滚（零副作用）
     - 设 min_quality 拒收质量不达标的终态（返回继续，会话保留）
@@ -290,13 +290,13 @@ def finish_cleaning(
     )
 
 
-def abandon_cleaning(
+def data_abandon(
     observation_json: _Anchor,
     reason: Annotated[str | None, Field(description="弃局原因（落盘供审计，如「改卡重开」）")] = None,
 ) -> dict:
     """弃局终局：置 abandoned、决策日志与版本树保留、不导出交付物；已终态再弃即报错。
 
-    何时使用 abandon_cleaning：
+    何时使用 data_abandon：
     - 用户中止清洗 / 改卡重开新 episode 前，显式终局旧会话（不留僵尸——要么 finish 要么 abandon）
     - 返回 ack：{observation_json, abandoned, reason, steps}（steps = 弃局时已走步数）
     """

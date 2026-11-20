@@ -11,7 +11,7 @@
 
 | 工具 | 职责 |
 | --- | --- |
-| `bo_load_or_init` | 开局三形态一入口：init ← 历史 parquet（20 行机器门，#183）/ continue ← 既有 db（换模型 = 学习信号归档重置，#182）/ rebuild ← db 迁移式重建（空间组/direction/seed 变更，#180 R4） |
+| `bo_load_or_start` | 开局三形态一入口：init ← 历史 parquet（20 行机器门，#183）/ continue ← 既有 db（换模型 = 学习信号归档重置，#182）/ rebuild ← db 迁移式重建（空间组/direction/seed 变更，#180 R4） |
 | `bo_ask` | 推荐一批候选 → 完整 schema 候选 csv（无预测列、非搜索维空列；在途避让，#179 R1） |
 | `bo_prune` | 剪枝终局化：tell(PRUNED) + 原因 attr（求值归 agent，#180 R1） |
 | `bo_diversity_check` | 多样性筛选：归一化 FPS 选批 + 落选 tell(FAIL)（度量 = 实现层常量，#178 R3） |
@@ -39,7 +39,7 @@ bo-bench 消费）。
 | :--- | :--- | :--- |
 | Clean 子系统（POMDP 检测↔清洗循环、先验建档） | clean 域 POMDP 会话 + survey 剧本 → DomainCard | **已实现** |
 | Model 子系统（CV 钉死、逐模型 HPO、汇总决策、终训评估解释） | modeling 域 POMDP 会话（单会话八动作面） | **已实现**（嵌套会话形态 = 概念示意，未来迭代方向） |
-| BO 子系统（推荐台账、轮次闭环、信号） | bo 域六工具工作流（`bo_load_or_init`/`bo_ask`/`bo_prune`/`bo_diversity_check`/`bo_tell`/`bo_export_dataset`）+ study sqlite db，非 POMDP 会话（#177） | **已实现** |
+| BO 子系统（推荐台账、轮次闭环、信号） | bo 域六工具工作流（`bo_load_or_start`/`bo_ask`/`bo_prune`/`bo_diversity_check`/`bo_tell`/`bo_export_dataset`）+ study sqlite db，非 POMDP 会话（#177） | **已实现** |
 | 湿实验台账与两路回填 | 台账 = agent 推导推送文件（`round_00N.csv`，零预测列族）+ `bo_tell` 批量回填（信号批末附带） | **已实现**（#181 契约） |
 | 学习门禁（两类信号、参数化、三方归因） | 学习信号 = 推荐级计数制（正向累计门；负向累计门 + 窗口门），随 `bo_tell` 批末抛出、不拦截、人点火；参数形态与正文 §5.3 示例不同（先验容差 + 计数门）；三方归因无契约载体（可选诊断叙述 + 剧本开局问句，#182）；回流交棒 = 零工件（study 跨模型存续 + 信号按 run_id 归档重置，重进自带路径，#182） | **已实现**（#177/#182 契约） |
 | 先验继承链（只读继承/显式覆盖/版本化） | 剧本承载（零机制起步；统一档案 schema = 未来迭代方向） | **裁定已定**（#171 附录 C C3） |
@@ -544,7 +544,7 @@ make bo-bench SEEDS=8         # 开发环
   时延 + 湿预算浪费）
 - **f_pre 替身**（`fpre.py`）：sklearn GBR + OOF 残差分位恒宽区间（与真实 predict
   契约同构；混合空间 one-hot 编码居替身）
-- **真实工具面**（#193 单源红线）：harness 消费 bo_load_or_init/bo_ask/bo_prune/
+- **真实工具面**（#193 单源红线）：harness 消费 bo_load_or_start/bo_ask/bo_prune/
   bo_diversity_check/bo_tell；对比臂经 `engine.sampler` 换装（study.SAMPLER_KINDS：
   A1 tpe(mv+cl) 生产臂 / A2 random 基线 / A3 tpe_univariate 交互裁判臂——零平行循环）
 - **协议**：H20 warm-up / B6 批 / k5 过采样 / R15 轮 / 25 种子配对 Wilcoxon；

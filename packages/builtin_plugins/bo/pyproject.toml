@@ -33,7 +33,7 @@ search_input = "mflowy.bo.search_input:search_input"
 # 六工具全无状态（#180 R1）：每次调用从 study sqlite db 加载状态，恒本地执行
 # （#183：ask 恒本地，预测走既有 model.predict，bo 零触碰模型）。
 [project.entry-points."mflowy.tools"]
-bo_load_or_init = "mflowy.bo.tools:bo_load_or_init"
+bo_load_or_start = "mflowy.bo.tools:bo_load_or_start"
 bo_ask = "mflowy.bo.tools:bo_ask"
 bo_prune = "mflowy.bo.tools:bo_prune"
 bo_diversity_check = "mflowy.bo.tools:bo_diversity_check"

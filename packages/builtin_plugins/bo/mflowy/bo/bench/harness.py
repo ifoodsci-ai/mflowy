@@ -2,7 +2,7 @@
 
 - 场景 S1 规则贴边 / S2 带窗（match + band，hi < 全局峰）/ S3 漂移（第 8 轮真值
   换形，f_pre 训于旧 regime）——overlay 不改函数族本体
-- harness 消费**真实工具面**（bo_load_or_init/bo_ask/bo_prune/bo_diversity_check/
+- harness 消费**真实工具面**（bo_load_or_start/bo_ask/bo_prune/bo_diversity_check/
   bo_tell——#193 单源红线：不得旁路自研平行循环）；agent 侧判断（剪枝/落诊标签）
   在 harness 内确定性复刻（读卡规则的函数化）
 - 度量 m1–m7（#193 题 3 协议表）：轨迹/带命中/可行产出/触发时延/漂移浪费/批重复
@@ -154,7 +154,7 @@ def run_bench_arm(
     if sc.drifts:
         sc.drift_shift = 12.0 * fpre.half_width  # 幅度 = 12×半宽（5×hw 判定界恒分辨——m5 触发必可达）
 
-    init = bo_tools.bo_load_or_init(
+    init = bo_tools.bo_load_or_start(
         study_name=f"bobench-{family_name}-{scenario}-s{seed}-{arm}",
         model_run_id=f"bo-bench-{arm}",
         data=str(hist_path),

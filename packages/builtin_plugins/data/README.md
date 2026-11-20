@@ -32,7 +32,7 @@ plot EDA 图族（族内扁平，直住 `plot/`）。数据栈为硬依赖，装
   收缩为 target/protected/time）
 - 路由：`routing.py`（ROUTING_HINTS——defect_type → 推荐 clean 算子集，state_digest
   常驻投影；提示非约束，π 可见面 = clean 词表全集）
-- 观测面：`observe_cleaning` 对真态只读/观测派生面写盘（#226 ③，续局锚点）——候选规则与菜单随 #113 退役，缺陷→算子的
+- 观测面：`data_observe` 对真态只读/观测派生面写盘（#226 ③，续局锚点）——候选规则与菜单随 #113 退役，缺陷→算子的
   策略知识外置 clean skill（决策指南）
 - 判据：镜像路径有对应测试（`tests/`），`uv sync` 后 `list-nodes` 可见（新模块须重跑 `uv sync`）
 

@@ -288,13 +288,13 @@ async def predict(
 
 
 # 会话寻址锚参数单源（#242：状态文件本体锚——bo study_db 同构；
-# 描述即回传面：load_or_start_modeling 二联信封的 observation_json）
+# 描述即回传面：modeling_load_or_start 二联信封的 observation_json）
 _Anchor = Annotated[
-    str, Field(description="状态文件 observation.json 绝对路径（load_or_start_modeling 返回的 observation_json）")
+    str, Field(description="状态文件 observation.json 绝对路径（modeling_load_or_start 返回的 observation_json）")
 ]
 
 
-def load_or_start_modeling(
+def modeling_load_or_start(
     observation_json: Annotated[
         str | None,
         Field(
@@ -345,7 +345,7 @@ def load_or_start_modeling(
     {observation_json, observation}——observation_json 即后续所有会话工具的寻址面
     （状态文件绝对路径，#242）。
 
-    何时使用 load_or_start_modeling：
+    何时使用 modeling_load_or_start：
     - model-brief 问卷（含 research-review 结构化候选）编译出 cv_card（split yaml
       明文）+ 显式协议参数后开局回合循环；多目标 = 每目标各开一个会话（三层循环）
     - 上下文丢失/跨进程续局：拿 observation_json 加载（开局入参与其同传 = 参数来源冲突报错）
@@ -370,17 +370,17 @@ def load_or_start_modeling(
     return {"observation_json": observation_json_out, "observation": o.model_dump()}
 
 
-def observe_modeling(
+def modeling_observe(
     observation_json: _Anchor,
 ) -> dict:
     """观测建模会话（幂等只读零转移）：当前观测 + 读时决策面——本 combo 键 findings
     （规则与 LLM 落诊同粒度）、光标/combo_key、账本摘要（θ*/u_inner/冻结旗）、has_cat、
     候选族超参面（face：动态维可收窄、静态常量可 pin）。
 
-    选项面不设菜单：九动作面 + 观测证据自构 apply_modeling（词表外动作/未知参数会被拒）；
+    选项面不设菜单：九动作面 + 观测证据自构 modeling_apply（词表外动作/未知参数会被拒）；
     收局时机由你从观测（预算/账本）自决。
 
-    何时使用 observe_modeling：
+    何时使用 modeling_observe：
     - 每步决策前读决策面；续局 / 上下文丢失后重新定位（无副作用）
     - 终态会话同样可观测（finished/abandoned 旗即收局事实）
     """
@@ -389,7 +389,7 @@ def observe_modeling(
     return session.observe(observation_json).model_dump()
 
 
-def apply_modeling(
+def modeling_apply(
     observation_json: _Anchor,
     node: Annotated[
         str,
@@ -413,7 +413,7 @@ def apply_modeling(
     run_hpo 全程不碰 holdout（no-peeking choke point 在 final_train_test）；账本键 =
     (family, FE 组合)；study sqlite 落会话目录增量续跑（空间变继续，seed/scoring 变重开）。
 
-    何时使用 apply_modeling：
+    何时使用 modeling_apply：
     - select_model 定光标候选 → run_hpo 出首条账本 → final_train_test 终训交付
     - 加深/收窄/pin/换 FE 都是合法走法（配置编辑不吃预算）
     """
@@ -422,12 +422,12 @@ def apply_modeling(
     return session.apply(observation_json, node, params).model_dump()
 
 
-def rollback_modeling(
+def modeling_rollback(
     observation_json: _Anchor,
 ) -> dict:
     """回退光标到上一快照（决策日志保留；预算不回补；账本与盘上 study 永不回退）。
 
-    何时使用 rollback_modeling：
+    何时使用 modeling_rollback：
     - 配置编辑走错（pin/收窄/FE 换档）时弹回上一光标版本
     """
     session = _session()
@@ -435,7 +435,7 @@ def rollback_modeling(
     return session.rollback(observation_json).model_dump()
 
 
-def finish_modeling(
+def modeling_finish(
     observation_json: _Anchor,
     pdf: Annotated[
         str,
@@ -451,7 +451,7 @@ def finish_modeling(
     accepted 恒真（holdout 读在 final_train_test 恰一次，finish 只结算）；重入 =
     幂等重导出（交付报告不可变更——重写须弃局重开）。
 
-    何时使用 finish_modeling：
+    何时使用 modeling_finish：
     - 收局剧本固定序走完后（画泰勒 → 看 skeleton 素材 → 写报告 → finish(pdf)）；
       pdf 必须在报告文件就绪后调用——文件缺失 fail-loud，不会带着空交付物进终态
     """
@@ -465,7 +465,7 @@ def draw_taylor_diagram(
     observation_json: Annotated[
         str,
         Field(
-            description="状态文件 observation.json 绝对路径（load_or_start_modeling 返回的 observation_json；"
+            description="状态文件 observation.json 绝对路径（modeling_load_or_start 返回的 observation_json；"
             "副产物按 run 寻址、图落会话目录 = 其父目录）"
         ),
     ],
@@ -510,7 +510,7 @@ def modeling_statistics(
 ) -> dict:
     """统计证据（#226 ⑥ 判读退役承接，#236）：run 寻址的声明式分析——证据表
     （overall/误差集中列分组/目标分档）+ 图集，工件落统计 run；判读归你（经
-    report_findings_modeling 落账）。
+    modeling_report_findings 落账）。
 
     指纹门：源数据换血（与工件旁记指纹不一致）fail-loud——按旧工件统计 = 撒谎的证据。
 
@@ -523,7 +523,7 @@ def modeling_statistics(
     return session.statistics(observation_json, key, top_k=top_k)
 
 
-def report_findings_modeling(
+def modeling_report_findings(
     observation_json: _Anchor,
     key: Annotated[str, Field(description="落诊账本键（combo 结构键）")],
     findings: Annotated[
@@ -538,7 +538,7 @@ def report_findings_modeling(
     """agent 判读落诊（#36/#226 ④⑥）：report_findings 动作（九动作面词表内）的
     薄别名工具——schema 校验 + 决策日志审计，写进 models[key].findings（o_biz）。
 
-    何时使用 report_findings_modeling：
+    何时使用 modeling_report_findings：
     - run_hpo/终训后读统计证据（modeling_statistics 工具）推理分析，结构化落账
       （observe 投影可见，支撑下一步决策）
     """
@@ -547,13 +547,13 @@ def report_findings_modeling(
     return session.apply(observation_json, "report_findings", {"key": key, "findings": findings}).model_dump()
 
 
-def abandon_modeling(
+def modeling_abandon(
     observation_json: _Anchor,
     reason: Annotated[str | None, Field(description="弃局原因（落盘供审计，如「改协议重开」）")] = None,
 ) -> dict:
     """弃局终局：置 abandoned、决策日志与模型账本保留、不导出交付物；已终态再弃即报错。
 
-    何时使用 abandon_modeling：
+    何时使用 modeling_abandon：
     - 用户中止建模 / 改协议开新 episode 前，显式终局旧会话（不留僵尸——要么 finish 要么 abandon）
     - 返回 ack：{observation_json, abandoned, reason, steps}（steps = 弃局时已走步数）
     """
