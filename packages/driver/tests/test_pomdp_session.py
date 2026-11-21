@@ -321,7 +321,7 @@ class TestCommitLock:
         o = POMDPSession.open(ss.observation_json)._load_observation()
         assert o.validation.steps == 2
         recs = [json.loads(x) for x in (ss.dir / DECISION_LOG_FILE).read_text(encoding="utf-8").splitlines()]
-        assert [r.get("failed") for r in recs] == [False, True]  # B 成功 + A 失败条目
+        assert [r.get("failed") for r in recs] == [None, True]  # B 成功（无旗）+ A 失败条目
 
 
 # ── o_actions 投影钩子（④）与盘上 memo（③） ────────────────────────────────
