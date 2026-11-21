@@ -67,7 +67,7 @@ uv workspace 七 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 3. **原子提交**：manifest/版本工件落盘走 tmp+rename；保持"先写工件、后写 manifest"的 commit 顺序；回滚把内存态与盘上工件一起回退——只回退一半 = 不一致交付。
 4. **通道纪律**：`print`（stdout）= 业务数据，只出现在捕获窗口内（`capture_prints`/redirect——CLI 查询类回显 JSON 供调用方解析，裸 print 混入即污染结构化输出）；`logger`（stderr）= 过程诊断。同一信息只走一条通道。
 5. **缺依赖=优雅降级**：extra 缺失时词表/会话对相关节点降级标注（`bindings=None`/跳过+warning），其余能力照常；词表 miss 与 import 失败按类型二分（`CatalogMiss` vs 裸 `ModuleNotFoundError`）。
-6. **依赖声明完整**：import 了什么就声明什么——靠传递依赖侥幸工作的 import 是缺陷（当前存量：scipy）。
+6. **依赖声明完整**：import 了什么就声明什么——靠传递依赖侥幸工作的 import 是缺陷（清账先例 bo #231 / model #218 收尾：sklearn/optuna 升 model 硬依赖）。
 7. **测试钉契约**：行为变更带契约测试；架构不变量（依赖方向/版本锁步/注册表镜像）住 `tests/`；测试替身只打 adapter 缝位（`_DEFAULT_CATALOG`/`Tracking` seam）；测试随包镜像 `packages/<pkg>/tests/** ↔ mflowy/<pkg>/**`，跨域接缝用例住消费侧包；接缝测试真跑产物，以 mock 为主的地方补真跑。
 8. **文档同频**：工具行为改 docstring（CLI 发现面 `mflowy <tool> -h` 编译下发即 API 文档）；本文件与 skills 随行为变更同 PR 更新（见同步规则）。
 9. **mixin 组合方契约**：mixin 引用组合方才满足的属性/方法，一律直取 + 带码 ignore 注明「组合方满足——定义期不可见」（#122 裁定：是否满足取决于组合方）；TYPE_CHECKING 借基/伪继承伪造类型面即债。属性在缺是值级可选性（`getattr(..., None)` 语义，如 `evals_result_` 随 eval_set 在缺）；第三方无 py.typed 的属性发现走回退链，全缺 fail-loud。

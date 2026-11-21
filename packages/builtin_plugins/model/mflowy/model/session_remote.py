@@ -28,8 +28,13 @@ from typing import Any, NamedTuple
 
 logger = logging.getLogger(__name__)
 
-# 轮询节奏：阻塞等待期的拉日志间隔（CLI 进程阻塞——agent 会话不阻塞，#243 红利）
+# 轮询节奏（#218 债收尾：指数退避 + 安全网超时）：起始间隔 → ×2 递增、封顶
+# POLL_INTERVAL_MAX_SECONDS（长任务不再每 5s 拉一次万行日志）；MAX_WAIT_SECONDS =
+# 卡死安全网（平台 preset 自带 active_deadline 有界真任务——此门只拦「非终态
+# 永挂」的平台异常，fail-loud 带诊断出口）。
 POLL_INTERVAL_SECONDS = 5.0
+POLL_INTERVAL_MAX_SECONDS = 60.0
+MAX_WAIT_SECONDS = 24 * 3600.0
 
 _platform_client_factory: Callable[[], Any] | None = None
 
@@ -49,13 +54,23 @@ def platform_client() -> Any:
     return RemoteExperimentClient()
 
 
-def await_job(client: Any, job_id: str, *, interval: float = POLL_INTERVAL_SECONDS):
+def await_job(
+    client: Any,
+    job_id: str,
+    *,
+    interval: float = POLL_INTERVAL_SECONDS,
+    max_wait: float = MAX_WAIT_SECONDS,
+):
     """阻塞等待任务终态：期间增量拉日志流式上屏（logger = stderr 诊断面——业务
-    数据零污染，红线 4）。pod 未调度期 logs 404 = 瞬态（空串继续）。失败终态由
-    调用方 raise（动作失败的两种之一——失败吃步）。"""
+    数据零污染，红线 4）。间隔指数退避（×2 封顶 ``POLL_INTERVAL_MAX_SECONDS``——
+    长任务不放大 API 流量）；``max_wait`` = 卡死安全网（非终态永挂的平台异常
+    fail-loud，带 get_platform_job_logs 诊断出口——真任务时界由 preset
+    active_deadline 承担，此门只兜底）。pod 未调度期 logs 404 = 瞬态（空串继续）。
+    失败终态由调用方 raise（动作失败的两种之一——失败吃步）。"""
     from .job_provider.platform_client import JOB_TERMINAL_STATUSES, PlatformNotFoundError
 
     seen = 0
+    slept = 0.0
     while True:
         job = client.get_job(job_id)
         try:
@@ -75,7 +90,15 @@ def await_job(client: Any, job_id: str, *, interval: float = POLL_INTERVAL_SECON
                     "——动作失败（吃步），get_platform_job_logs 可取完整日志"
                 )
             return job
+        if slept >= max_wait:
+            raise RuntimeError(
+                f"远程任务疑似卡死（job={job_id}，status={job.status}，等待 {slept:.0f}s ≥ 安全网 {max_wait:.0f}s）"
+                "——非终态永挂属平台异常：get_platform_job_logs 取日志尾、平台侧确认任务状态后重试"
+                "（动作已失败吃步；真任务时界由 preset active_deadline 承担，此门只兜底）"
+            )
         time.sleep(interval)
+        slept += interval
+        interval = min(interval * 2, POLL_INTERVAL_MAX_SECONDS)  # 指数退避（封顶）
 
 
 def fetch_workspace(client: Any, job_id: str, platform_experiment_id: str, dest_root: Path) -> Path:

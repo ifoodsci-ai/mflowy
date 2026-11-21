@@ -472,6 +472,59 @@ def test_await_job_failed_terminal_raises(tmp_path, isolate):
         session_remote.await_job(FailingClient(), "job-x", interval=0.01)
 
 
+def test_await_job_backoff_intervals(tmp_path, isolate, monkeypatch):
+    """指数退避（#218 债收尾）：间隔 ×2 封顶——轮询节奏从起始间隔递增至封顶后恒定。"""
+    from mflowy.model import session_remote
+    from mflowy.model.job_provider.platform_client import Job
+
+    sleeps: list[float] = []
+    monkeypatch.setattr(session_remote.time, "sleep", lambda s: sleeps.append(s))
+    polls = {"n": 0}
+
+    class SlowClient:
+        def get_job(self, job_id):
+            polls["n"] += 1
+            if polls["n"] >= 5:
+                return Job(id=job_id, cmd="mflowy-job", args=[], preset_id="p", status="succeeded")
+            return Job(id=job_id, cmd="mflowy-job", args=[], preset_id="p", status="running")
+
+        def get_job_logs(self, job_id, tail_lines):
+            return ""
+
+    session_remote.await_job(SlowClient(), "job-x", interval=5.0, max_wait=1e9)
+    assert sleeps == [5.0, 10.0, 20.0, 40.0][: len(sleeps)]  # ×2 递增
+    assert all(s <= session_remote.POLL_INTERVAL_MAX_SECONDS for s in sleeps)
+
+
+def test_await_job_max_wait_timeout_fail_loud(tmp_path, isolate, monkeypatch):
+    """卡死安全网（#218 债收尾）：非终态永挂 ≥ max_wait → fail-loud 带诊断出口
+    （get_platform_job_logs / 平台侧确认），不无限阻塞。"""
+    from mflowy.model import session_remote
+    from mflowy.model.job_provider.platform_client import Job
+
+    monkeypatch.setattr(session_remote.time, "sleep", lambda s: None)  # 零睡快进
+
+    class StuckClient:
+        def get_job(self, job_id):
+            return Job(id=job_id, cmd="mflowy-job", args=[], preset_id="p", status="running")
+
+        def get_job_logs(self, job_id, tail_lines):
+            return ""
+
+    with pytest.raises(RuntimeError, match=r"疑似卡死.*get_platform_job_logs.*平台侧确认"):
+        session_remote.await_job(StuckClient(), "job-x", interval=1.0, max_wait=3.0)
+
+
+def test_metric_name_values_dot_free_guard(tmp_path, isolate):
+    """metrics_from_flat 解析不变式护栏（#218 债收尾）：MetricName 全值域不含 "."——
+    展平面 `{target}.{metric}` 的后缀切分以此为词表事实；值域演进引入带点值即此测
+    红灯（届时须换切分策略而非静默切错）。"""
+    from mflowy.model.model.types import MetricName
+
+    dotted = sorted(m.value for m in MetricName if "." in m.value)
+    assert not dotted, f"MetricName 值域引入带点值 {dotted}——metrics_from_flat 后缀切分将歧义，先换解析策略"
+
+
 def test_adopt_study_trials_chain_break_fails_loud(tmp_path, isolate):
     """链断裂（远程 trial 计数 < 已采用）→ 拒绝静默缩水（红线 1）。"""
     import optuna

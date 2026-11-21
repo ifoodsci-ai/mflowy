@@ -52,6 +52,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider 声明后 plan 自动 uploads 寻址——替代 isinstance 启发）
 - study 链锚语义修正：续跳（#244 外部锚）不换锚——`entry.chain.run_id` 恒锚
   study 树主 run（本 run 无自有 study.db 不可寻址的缺陷修复）
+
+### 技术债收尾（#218 第二轮，2026-11-22——票面评论六项的清偿）
+
+- **红线 6 清账**：`scikit-learn`/`optuna` 升 mflowy-model 硬依赖（瘦面 x_y/cv.split/
+  session study 链直用；此前靠 mlflow（utils 传递）/bo（app 聚合链）随行属侥幸——
+  先例 bo #231；`[local]` 同步去重收敛为六件重栈）。AGENTS 红线 6 存量注记更新
+  （scipy 项已不成立——唯一 import 点 model 域早已声明，注记系陈旧债）。
+- **远程静态门盲区收口**：`RemoteJobProvider` 提交侧 parse `modeling_steps`——
+  节点级 `inherit_study_run_id` 缺 `inherit_platform_job_id` 即拒（工具级
+  `_RESUMES_PRIOR_STATE` 门看不见 YAML 内部参数；过门会在全新容器内找前史
+  study 而败——浪费远程任务、错误只现于 job 日志）。
+- **await_job 工程旋钮**：轮询间隔指数退避（起始 5s ×2 封顶 60s——长任务不再
+  每 5s 拉一次万行日志）+ `MAX_WAIT_SECONDS`（24h）卡死安全网——非终态永挂
+  fail-loud 带 `get_platform_job_logs` 诊断出口（真任务时界由 preset
+  active_deadline 承担，此门只兜平台异常）。
+- **metrics_from_flat 词表护栏**：契约测试钉 MetricName 全值域不含 "."（展平面
+  `{target}.{metric}` 后缀切分的词表不变式——值域演进引入带点值即红灯）。
 - **瘦装会话面**：`model/types.py` 拆出 `artifacts.py`（sklearn 基类解耦，纯枚举
   零重栈）；session 顶层重栈 import 惰性化；shap 契约件执行期导入（五族中
   XGB/LGBM/CAT/RF 瘦装可解析）；安装提示单源 `extras.LOCAL_INSTALL_HINT`——

@@ -40,6 +40,32 @@ _RESUMES_PRIOR_STATE: dict[str, tuple[str, ...]] = {
 _WRAP_CMD = "mflowy-job"
 
 
+def _gate_node_level_inherit(steps_text: str, tool: str) -> None:
+    """节点级 ``inherit_study_run_id`` 静态门（#218 债收尾，补 _RESUMES_PRIOR_STATE
+    盲区）：该参数藏在 modeling_steps YAML 内部——工具级门看不见；缺
+    inherit_platform_job_id 时过门会在全新容器内按 run_id 找前史 study 而失败
+    （浪费远程任务、错误只现于 job 日志）。提交侧 parse 拒绝（与 _submit 工具级
+    门同则：宁可拒绝一次合法输入）。"""
+    import yaml as _yaml
+
+    try:
+        parsed = _yaml.safe_load(steps_text)
+    except _yaml.YAMLError:
+        return  # 非法 YAML 由下游片段门/编译期报——此处不重复裁决
+    if not isinstance(parsed, list):
+        return
+    for step in parsed:
+        if not (isinstance(step, dict) and str(next(iter(step), "")).startswith("model__")):
+            continue
+        params = (step[next(iter(step))] or {}).get("params") or {}
+        if params.get("inherit_study_run_id") is not None:
+            raise ValueError(
+                f"{tool} 的 modeling_steps 含节点级 inherit_study_run_id（引用前序状态——跨 Job 寻址）"
+                "——remote 模式必须同时传 inherit_platform_job_id（前序 run 只在该实验继承链的 "
+                "mlflow.db 里可寻址；job 级续跑通道 resume_study_from 同受此门）"
+            )
+
+
 def _resolve_preset_id(client, env: dict[str, str] | None = None) -> str:
     """preset 名 → id（fresh 解析，无缓存）。env 注入面供测试替换，缺省读进程环境。"""
     name = (env or os.environ).get("MFLOWY_PLATFORM_JOB_PRESET", "")
@@ -96,6 +122,8 @@ class RemoteJobProvider:
                     f"参数 {ref!r} 引用前序状态（跨 Job 寻址）——remote 模式必须同时传 inherit_platform_job_id"
                     "（前序 run 只在该实验继承链的 mlflow.db 里可寻址）"
                 )
+        if not inherit_platform_job_id and "modeling_steps" in kwargs:
+            _gate_node_level_inherit(kwargs["modeling_steps"], tool)  # 节点级盲区收口（#218 债收尾）
 
         client = self._ensure_client()
         args = ["wrap", "--tool", tool, "--kwargs-json", json.dumps(kwargs, ensure_ascii=False)]

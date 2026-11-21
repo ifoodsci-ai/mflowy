@@ -13,10 +13,16 @@ dependencies = [
     "mflowy-data",
     # 图表主题门面（plot 子树共享 mflowy.utils.plot）
     "mflowy-utils[plot]",
-    # 直用科学栈（session/diagnose/report；import 即声明——不靠 sklearn 传递侥幸）
+    # 直用科学栈（session/diagnose/report；import 即声明——不靠传递侥幸）
     "numpy>=2.0.0",
     "pandas>=2.2,<3",
     "scipy>=1.17.0",
+    # 瘦面直用（#218 债收尾，红线 6 清账——先例 bo #231）：x_y/cv.split/_split 与
+    # session study 面在瘦装（纯远程形态）也 import sklearn/optuna——此前靠
+    # mlflow（utils 传递）/bo（app 聚合链）随行属侥幸；显式声明零安装面变化
+    # （聚合形态两包本就随行，[local] 同时收敛去重）
+    "scikit-learn>=1.9.0",
+    "optuna>=4.8.0",
     # 远程 JobProvider 基座（#153/#157 决议：[remote] extra 取消——wire 模型与
     # JobOutcome 直用 pydantic（不再靠 driver 传递侥幸），HTTP 栈 = httpx2（2.x
     # 延续线，锁内既有）；后续四新平台工具无条件注册、零降级面）
@@ -26,11 +32,9 @@ dependencies = [
 
 [project.optional-dependencies]
 local = [
-    "scikit-learn>=1.9.0",
     "lightgbm>=4.6.0",
     "xgboost-cpu>=3.0.0",
     "catboost>=1.2",
-    "optuna>=4.8.0",
     "shap>=0.52.0",
     "torch>=2.12.0",
     "pytorch-lightning>=2.6.5",
