@@ -22,6 +22,7 @@ append-only 决策日志/统一盘上写序），域实现 ``pomdp.POMDPSessionH
 
 from __future__ import annotations
 
+import fcntl
 import json
 import shutil
 import time
@@ -39,6 +40,46 @@ from .pomdp import TOP_K_DECISIONS, Observation, ObservationValidation
 OBSERVATION_FILE = "observation.json"
 DECISION_LOG_FILE = "decision.log"
 MEMO_FILE = "memo.json"
+COMMIT_LOCK_FILE = ".commit.lock"
+
+
+class _SessionLock:
+    """会话目录提交锁（#225 裁定 3 并行分支，#218 落地）：跨进程 ``fcntl.flock``
+    互斥、进程内可重入（域 board 写与壳投影写同锁嵌套——注册表按目录去重）。
+
+    提交 + 长等待不持锁（并行度保持），收尾 commit 进锁做键控合并（steps /
+    决策日志追加天然可交换）。CLI 单进程单会话为主，注册表访问不加线程锁
+    （dict 读写 GIL 下原子；同进程多线程同会话非支持形态）。
+    """
+
+    _registry: dict[Path, _SessionLock] = {}
+
+    def __init__(self, dir_: Path) -> None:
+        self._dir = dir_
+        self._depth = 0
+        self._fh = None
+
+    @classmethod
+    def for_dir(cls, dir_: Path) -> _SessionLock:
+        key = dir_.absolute()
+        lock = cls._registry.get(key)
+        if lock is None:
+            lock = cls(key)
+            cls._registry[key] = lock
+        return lock
+
+    def acquire(self) -> None:
+        self._depth += 1
+        if self._depth == 1:
+            self._fh = open(self._dir / COMMIT_LOCK_FILE, "a")
+            fcntl.flock(self._fh, fcntl.LOCK_EX)
+
+    def release(self) -> None:
+        self._depth -= 1
+        if self._depth == 0:
+            fcntl.flock(self._fh, fcntl.LOCK_UN)
+            self._fh.close()
+            self._fh = None
 
 
 def _canonical(prior: Mapping[str, Any] | None) -> str | None:
@@ -388,27 +429,34 @@ class POMDPSession:
             yield o, log
         except Exception as exc:
             if counted:
-                if len(log) == committed:  # body 未 commit：失败条目即该尝试的审计面
-                    disk = self._load_observation()  # 盘上事实推进（body 半改内存态不落盘）
-                    disk.validation.steps += 1
-                    disk.validation.reward = None
-                    o.validation.reward = None  # 补 r 面同置 None（log 从 o stamp——见 _RewardStampLog）
-                    log.append(
-                        {
-                            "action": action,
-                            "failed": True,
-                            "steps": disk.validation.steps,
-                            "budget_left": disk.validation.max_steps - disk.validation.steps,
-                            "note": f"{type(exc).__name__}: {exc}",
-                        }
-                    )
-                    self._write_observation(disk)
-                else:  # commit 后残余窗口：补齐投影完成该 commit（不追加第二条）
-                    self._assert_prior_frozen(o, prior_before)
-                    self._write_observation(o)
+                with self.commit_lock():
+                    if len(log) == committed:  # body 未 commit：失败条目即该尝试的审计面
+                        disk = self._load_observation()  # 盘上事实推进（body 半改内存态不落盘）
+                        disk.validation.steps += 1
+                        disk.validation.reward = None
+                        o.validation.reward = None  # 补 r 面同置 None（log 从 o stamp——见 _RewardStampLog）
+                        log.append(
+                            {
+                                "action": action,
+                                "failed": True,
+                                "steps": disk.validation.steps,
+                                "budget_left": disk.validation.max_steps - disk.validation.steps,
+                                "note": f"{type(exc).__name__}: {exc}",
+                            }
+                        )
+                        self._write_observation(disk)
+                    else:  # commit 后残余窗口：补齐投影完成该 commit（不追加第二条）
+                        self._assert_prior_frozen(o, prior_before)
+                        self._write_observation(o)
             raise
-        self._assert_prior_frozen(o, prior_before)
-        self._write_observation(o)
+        with self.commit_lock():
+            # 键控合并（#225 裁定 3）：steps 从盘上事实推进——并行分支间可交换
+            # （各 +1），内存计步值只对本尝试负责；biz 持域侧投影（域 board 锁内
+            # 重读合并在同锁先行）
+            disk_steps = self._load_observation().validation.steps
+            o.validation.steps = disk_steps + (1 if counted else 0)
+            self._assert_prior_frozen(o, prior_before)
+            self._write_observation(o)
 
     @contextmanager
     def rollback_ctx(self) -> Iterator[tuple[Observation, _RewardStampLog]]:
@@ -417,8 +465,9 @@ class POMDPSession:
         o = self._gate_mutable()
         prior_before = _canonical(o.prior)
         yield o, _RewardStampLog(_DecisionLog(self._dir / DECISION_LOG_FILE), o)
-        self._assert_prior_frozen(o, prior_before)
-        self._write_observation(o)
+        with self.commit_lock():
+            self._assert_prior_frozen(o, prior_before)
+            self._write_observation(o)
 
     @contextmanager
     def finish_ctx(self) -> Iterator[tuple[Observation, _DecisionLog]]:
@@ -435,7 +484,8 @@ class POMDPSession:
             return  # 幂等重入：零落盘
         log = _DecisionLog(self._dir / DECISION_LOG_FILE)
         yield o, log
-        self._write_observation(o)
+        with self.commit_lock():
+            self._write_observation(o)
 
     def abandon(self, reason: str | None = None) -> dict[str, Any]:
         """弃局：日志记录 + 观测置 abandoned。幂等（已弃局重复弃 = no-op 回执）；
@@ -451,9 +501,10 @@ class POMDPSession:
                 "reason": reason,
                 "steps": o.validation.steps,
             }
-        o.validation.abandoned = True
-        _DecisionLog(self._dir / DECISION_LOG_FILE).append({"action": "abandon", "reason": reason})
-        self._write_observation(o)
+        with self.commit_lock():
+            o.validation.abandoned = True
+            _DecisionLog(self._dir / DECISION_LOG_FILE).append({"action": "abandon", "reason": reason})
+            self._write_observation(o)
         return {
             "observation_json": self.observation_json,
             "abandoned": True,
@@ -462,6 +513,19 @@ class POMDPSession:
         }
 
     # ── 内部件（三个 RWA 原语与门）─────────────────────────────────────────
+
+    @contextmanager
+    def commit_lock(self) -> Iterator[None]:
+        """收尾提交锁（#225 裁定 3，#218 落地）：会话目录 ``.commit.lock`` 文件锁
+        ——跨进程互斥（flock）、进程内可重入（域 board 重读合并与壳投影写同锁嵌套）。
+        提交 + 长等待不持锁（并行分支度保持）；锁内各 commit 面**重读盘上事实再
+        合并**（steps / board 条目 / 决策日志追加——分支间可交换）。"""
+        lock = _SessionLock.for_dir(self._dir)
+        lock.acquire()
+        try:
+            yield
+        finally:
+            lock.release()
 
     def _gate_mutable(self) -> Observation:
         """可变打开的终态门：已终态会话动作面为空（apply/rollback 共用）。"""
