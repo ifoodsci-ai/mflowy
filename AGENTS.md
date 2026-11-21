@@ -39,9 +39,9 @@ uv workspace 七 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 | ------ | ------------ | ---- | ---- |
 | 应用 | app | `packages/app/mflowy/app/` | 工具注册面、CLI（旗标编译）、JSON 分发内核（runner）、jobwrap、遥测 |
 | 领域 | data | `packages/builtin_plugins/data/mflowy/data/` | 清洗 POMDP 动作域（load/statistic/detect/clean/plot + CleanPrior 先验分级 + 缺陷封闭枚举/Finding 契约 + 路由提示表） |
-| 领域 | model | `packages/builtin_plugins/model/mflowy/model/` | 建模 POMDP 动作域（x_y/cv/x_transformer/model + plot——cv 族 = split 参数构建/load 引用加载）+ JobProvider + diagnose/report 观察面 |
+| 领域 | model | `packages/builtin_plugins/model/mflowy/model/` | 建模 POMDP 动作域（x_y/cv/x_transformer/model + plot——cv 族 = split 参数构建/load 引用加载；run_hpo/final_train_test 计算动作 provider 委派——remote 分支机械住 `session_remote`：拉日志/zip 解包/查询/study 采用/本地镜像）+ JobProvider + diagnose/report 观察面 |
 | 领域 | bo | `packages/builtin_plugins/bo/mflowy/bo/` | 贝叶斯优化推荐工作流域（**非 POMDP 会话**，#177——agent 工具工作流 + study sqlite db）：六工具 + BOCard 契约 + 学习信号 + search_input 节点（自 model 真迁移，#175） |
-| 驱动 | driver | `packages/driver/mflowy/driver/` | YAML→DAG 编译调度、@node/@edge 插件 SDK、POMDP 会话基座（`pomdp` 契约——Observation 四件 o.prior/o.biz/o.actions/o.validation + Handle 六操作 load_or_start/observe/apply/rollback/finish/abandon；`session` 壳——单源计步/盘上 memo/o_actions 投影钩子/补 r 机制） |
+| 驱动 | driver | `packages/driver/mflowy/driver/` | YAML→DAG 编译调度、@node/@edge 插件 SDK、POMDP 会话基座（`pomdp` 契约——Observation 四件 o.prior/o.biz/o.actions/o.validation + Handle 六操作 load_or_start/observe/apply/rollback/finish/abandon；`session` 壳——单源计步/失败吃步（#225 取代失败恒免费）/盘上 memo/o_actions 投影钩子/补 r 机制/会话目录提交锁（并行分支键控合并，#218）） |
 | 驱动 | utils | `packages/utils/mflowy/utils/` | mlflow seam、OAuth 2.1 客户端（login/token 库）、脚本安全扫描、capture/path/logging/jinja |
 
 依赖方向保持单向：utils ← driver ← data ← model ← bo ← app（内核零域感知、两 POMDP 域隔离、bo 工作流域居 model 之后、app 硬依赖三域包——`tests/test_workspace.py` 断言，改动 import 保持全绿）。模块内相对导入、跨模块绝对导入。

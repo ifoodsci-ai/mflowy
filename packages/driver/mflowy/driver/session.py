@@ -31,7 +31,7 @@ from collections.abc import Callable, Iterator, Mapping, MutableMapping
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from mflowy.utils.file import write_text_atomic
 
@@ -52,7 +52,7 @@ class _SessionLock:
     （dict 读写 GIL 下原子；同进程多线程同会话非支持形态）。
     """
 
-    _registry: dict[Path, _SessionLock] = {}
+    _registry: ClassVar[dict[Path, _SessionLock]] = {}
 
     def __init__(self, dir_: Path) -> None:
         self._dir = dir_

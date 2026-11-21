@@ -18,7 +18,7 @@ findings 是真态的多对一投影——同聚合不同病灶不可分；u_inn
 | 元素          | 本域定义                                                                                   | 居所                                        |
 | ------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------- |
 | S 状态        | 真态 = s 元组（光标 m/H/seed/F, 账本 board, oof, budget, done, history）+ 未探 combo 的真值景观（不可直读，仅经带噪 u_inner 间接观测）；真源 = 盘上 sqlite study（append-only），账本条目为派生缓存 | 模块 docstring / `_board` / `_digest`       |
-| A 动作        | 九动作面（#236）：配置编辑 ×5（零步费零奖励）∪ 计算动作 ×2（吃步）∪ report_findings（判读落诊，零步费）∪ done（= finish 独立入口）；词表外 fail-loud 带清单 | `ACTIONS` / `COMPUTE_ACTIONS` / `ModelingSession.apply` |
+| A 动作        | 九动作面（#236）：配置编辑 ×5（零步费零奖励）∪ 计算动作 ×2（吃步——失败同样吃步，#225）∪ report_findings（判读落诊，零步费）∪ done（= finish 独立入口）；词表外 fail-loud 带清单。计算动作 provider 委派（#218）：local 直调进程内（行为不变）；remote 分支 = 提交→拉日志→zip 解包→查询→study 采用（`add_trial` 入正典库）+ OOF/副产物镜像本地 run（`session_remote`），账本两分支同形——remote 须带 `platform_experiment_id`，稳态 job-id 两层链（`inherit_platform_job_id` + `inherit_study_run_id`，`entry.remote` 链簿） | `ACTIONS` / `COMPUTE_ACTIONS` / `ModelingSession.apply` / `session.py::_run_hpo*` / `session_remote.py` |
 | P·T 转移      | 光标编辑推快照；run_hpo 增量追加 study（目标同一性判据）；final_train_test 冻结 combo（holdout 读恰一次）；rollback 只回退光标——账本 / 预算 / 盘上 study 永不回退 | `_select_*` / `_run_hpo` / `_final_train_test` / `rollback` |
 | R 奖励        | run_hpo = Δu_inner（新键 = u_inner 绝对值）；配置编辑与终训 r = 0；终局 = verdict（holdout u + rank 一致性，accepted 恒真） | `_run_hpo` / `finish_session`               |
 

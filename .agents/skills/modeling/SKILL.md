@@ -36,13 +36,18 @@ modeling_load_or_start(observation_json=None, file_path, cv_card=<cv.split 配�
 `set_seed{seed}`（换 seed = 换目标 = study 重开）→ `select_FE{node}` 换 FE 档
 （对当前候选结构非冗余的槽才合法）。
 
-计算动作（吃步；预算 = 实验数）：
-1. `run_hpo{n_trials}`——**search-only**：sqlite study 增量续跑（空间收窄/pin/加深
+计算动作（吃步；**失败同样吃步**——#225 起失败尝试占预算，拿不准先读观测）；
+预算 = 实验数。计算动作委派 JobProvider（#218，受理随 `switch_job_provider`）：
+remote 模式须带 `platform_experiment_id`（先 `ensure_platform_experiment` 同步源
+数据文件拿到 id）；remote 分支阻塞至终态（提交→拉日志→拉产物→收账一体），
+账本与 local 同形：
+1. `run_hpo{n_trials, platform_experiment_id?}`——**search-only**：sqlite study 增量续跑（空间收窄/pin/加深
    继续，seed/scoring 变重开）；每 trial inner CV → u_inner/std；结束在 θ* 上出 OOF
    预测工件（带 indices 列 + 源数据指纹）；响应 `validation.reward` = **Δu_inner**
    （相对该键上次最优；#226 ① 四件观测）。机器判读已退役（#226 ⑥）——统计证据
-   走独立工具 `modeling_statistics`（见下）。
-2. `final_train_test`——**先搜后店**：终训走 modeling 工具（JobProvider DAG）——
+   走独立工具 `modeling_statistics`（见下）。remote 限制（fail-loud）：全 pin 退化形
+   只支持 local；同键 local/remote 混合续跑不支持（换 FE/seed 出新键走 remote）。
+2. `final_train_test{platform_experiment_id?}`——**先搜后店**：终训走 modeling 工具（JobProvider DAG）——
    交付的恒是**搜索时刻证据配置**（快照 ∪ θ*，搜后改 pin 不生效）→ 终训/终评/
    X_test·y_test·y_pred 副产物/plan 一体（交付的 plan_yaml 就是那次终训本身）→ holdout
    终评恰一次 → **combo 冻结**（同键不可再搜索）；reward = 0（终局效用 u 只进 verdict 面）。
