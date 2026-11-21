@@ -3,8 +3,8 @@
 编排逻辑原 lib/cmd/args/*.py 全部迁入此处（lib/cmd/ 已消除）。
 模板随建模域包居住（mflowy/model/templates/）。每个方法对应 Protocol 中的一个 compute 工具。
 
-入参纪律（#66 收口）：``modeling_steps`` = yaml **明文文本**（MCP 边界不假设共享
-文件系统）；task_dir 锚定（M10）从 load 步的数据文件目录解析（yaml 文件锚定的
+入参纪律（#66 收口）：``modeling_steps`` = yaml **明文文本**（工具入参边界不假设共享
+文件系统——remote 提交尤然）；task_dir 锚定（M10）从 load 步的数据文件目录解析（yaml 文件锚定的
 语义后继）；血缘指纹哈希文本内容（``sha256_text``）。
 """
 

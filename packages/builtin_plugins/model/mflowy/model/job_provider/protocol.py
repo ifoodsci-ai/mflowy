@@ -27,7 +27,7 @@ class JobOutcome(BaseModel):
     - ``submitted`` ⇔ ``job_id`` 与 ``platform_experiment_id`` 非空且 ``dag_result`` 为空
 
     最小字段面（#156）：不加上传计数 / preset / zip 名提示——zip 命名约定
-    （``{job_id}.zip``）与跟踪指引写进工具 docstring（``tools/list`` 即文档）。
+    （``{job_id}.zip``）与跟踪指引写进工具 docstring（``mflowy <tool> -h`` 即文档）。
     """
 
     model_config = ConfigDict(extra="forbid")

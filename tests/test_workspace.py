@@ -119,7 +119,7 @@ def _call_forms(text: str, suffix: str = "") -> set[str]:
 
 def test_skill_tool_names_in_tools_list():
     """M11：剧本层（.agents/skills/**/SKILL.md，全 git 追踪）的反引号调用形引用
-    不超纲——工具名 ⊆ tools/list（mflowy.tools entry points：平台 + 域静态声明）、
+    不超纲——工具名 ⊆ CLI 发现面（mflowy.tools entry points：平台 + 域静态声明）、
     节点 ⊆ 运行期目录、动作面 ⊆ 八动作面词表。改名漂移（SKILL 引用已退役工具/节点）
     即测试红。"""
     from importlib.metadata import entry_points

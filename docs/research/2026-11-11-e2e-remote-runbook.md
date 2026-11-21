@@ -142,4 +142,4 @@
   `scripts/_e2e_remote_payload.json`（驱动上传源，单源不复述）；diabetes.py 取仓内
   `examples/diabetes/diabetes.py`。
 - S1 的 task.sh 已入仓（`scripts/_e2e_remote_task.sh`，#161 基座版：ENV 回显 / 词表 / seam pin / `mflowy modeling` / 手工 zip / 只读探针）；实现后 wrapper 取代其 [5][6] 段，S1 保留基座版作平台回归。
-- hyperparameters_search / explanation 载荷按各工具 schema 构造（`tools/list` 即文档），对应实现切片（④+）落地后回填此处（链接其仓内资产，不内嵌第二份）。
+- hyperparameters_search / explanation 载荷按各工具 schema 构造（`mflowy <tool> -h` 即文档），对应实现切片（④+）落地后回填此处（链接其仓内资产，不内嵌第二份）。

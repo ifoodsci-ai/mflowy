@@ -53,7 +53,7 @@ def sha256_text(text: str) -> str:
 
 
 def fingerprint_tags(kind: str, ref: str) -> dict[str, str]:
-    """文件指纹 tags：``kind`` = data / modeling_yaml（MCP 边界到达的两种文件）。
+    """文件指纹 tags：``kind`` = data / modeling_yaml（工具入参边界到达的两种文件）。
 
     - ``py:target`` 引用哈希 ``:`` 前的文件（代码版本即数据版本）
     - 本地文件不存在（http 等远程引用）静默跳过——指纹只对可核验的本地工件负责

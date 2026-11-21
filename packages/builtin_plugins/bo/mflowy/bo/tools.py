@@ -496,7 +496,7 @@ def bo_tell(
     return out
 
 
-# 行形态细则并入 docstring（tools/list 下发即 API 文档——docstring 须单字面量，
+# 行形态细则并入 docstring（CLI -h 编译下发即 API 文档——docstring 须单字面量，
 # 拼接式首语句不被 Python 识别为 __doc__，pyright 亦报 unused expression）
 bo_tell.__doc__ = f"{bo_tell.__doc__}\n{_TELL_DOC_ROWS}"
 

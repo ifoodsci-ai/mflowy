@@ -10,7 +10,7 @@
   finding_id = 结构键 ``{defect_type}::{锚点}``，同 pair 多条以序号后缀去重
   （ErrorReport 合并期分配——episode 内反引唯一；跨轮 residual 对账按结构键）。
 - 算子自身零 print（M7）：输出通道由调用方决定——DAG 路径由引擎捕获窗口归集，
-  会话引擎直调时不得污染 MCP stdio 的 JSON-RPC 通道；token 友好摘要走 ``summary()``。
+  会话引擎直调时不得污染 stdout 业务数据通道（通道纪律）；token 友好摘要走 ``summary()``。
 """
 
 from __future__ import annotations

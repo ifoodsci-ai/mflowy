@@ -2,8 +2,8 @@
 
 warm-up（吃 info/univariate 事实）与 dive-in（另吃 eda findings）两段共用：
 按 card_partial 缺项出下一问候选（必填优先），证据来自列统计规则命中与内部
-detect.stringly（基质非动作）——所有内部 print 全部吞掉（stdout 是 MCP 的
-JSON-RPC 通道）。问题知识随卡字段居住；出题门（本函数不设上限，agent 侧
+detect.stringly（基质非动作）——所有内部 print 全部吞掉（stdout 是业务
+数据通道——通道纪律，裸 print 污染捕获窗口）。问题知识随卡字段居住；出题门（本函数不设上限，agent 侧
 按 3-5 问节奏控场）为 open leaf。
 """
 
