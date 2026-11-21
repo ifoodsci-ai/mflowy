@@ -1,6 +1,6 @@
 ---
 name: clean
-description: 数据清洗 POMDP 回合操作手册(mflowy)。用户要求"开始清洗/自主清洗/修数据"，或清洗会话进行中(收到 observation_json)时使用。配合 mflowy MCP 工具 data_load_or_start / data_observe / data_apply / data_rollback / data_finish / data_abandon 驱动回合循环——环境面在引擎，π(策略)是你。前置:survey skill 已产出清洗先验卡 CleanPrior。
+description: 数据清洗 POMDP 回合操作手册(mflowy)。用户要求"开始清洗/自主清洗/修数据"，或清洗会话进行中(收到 observation_json)时使用。配合 mflowy CLI 工具 data_load_or_start / data_observe / data_apply / data_rollback / data_finish / data_abandon 驱动回合循环——环境面在引擎，π(策略)是你。前置:survey skill 已产出清洗先验卡 CleanPrior。
 disable-model-invocation: true
 ---
 
@@ -126,4 +126,5 @@ data_abandon(observation_json, reason=<可选，落盘供审计>)
 
 ## 参考
 
+- 工具发现：记不清工具名或参数面时，先 `mflowy --help` 看分组清单、`mflowy <tool> --help` 看全参与用法（--prior 嵌套字段面同此揭示）；
 - 设计快照（会话版五元组映射）：docs/research/2026-10-09-cleaning-mdp-design.md §7

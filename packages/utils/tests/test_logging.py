@@ -1,6 +1,6 @@
 """测试 utils/logging.py — setup() / is_verbose() / is_quiet()
 
-stdlib 契约：业务代码用 logging.getLogger(__name__)，setup() 只由入口（mcp/server、mcp/runner）调用。
+stdlib 契约：业务代码用 logging.getLogger(__name__)，setup() 只由入口（app/cli、app/jobwrap）调用。
 测试一律经 `_logging_mod.setup` 属性访问——autouse fixture 会重绑模块全局 setup，
 顶部 from-import 抓到的旧装饰器实例闭包 done 可能已置位。
 """

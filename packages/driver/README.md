@@ -125,7 +125,7 @@ def common_filter(...) -> pd.DataFrame: ...
 1. **身份声明**：`[project.entry-points."mflowy.builtin_plugins"]` 静态手写声明（0.2.0 起构建期 AST 扫描钩子退役，与第三方包同构）——name 即身份（节点 `namespace.node_name`，归组段与装饰器 `namespace=` 逐字一致在加载期按键比对 fail-loud，#140；边函数注册于 `edges` ns；忘声明是 CR 面——目录无名即不可达）
 2. **能力注册**：`node.py: @node` 内嵌 `validate_call`（签名即约束：`Annotated[T, "描述"]` 兼容旧约定、`Field(...)` 带约束、裸类型注入参数 is-instance 直通），构造 `Node`（fn/middlewares/param_schema/ns + 装饰期冻结反射核 upstreams_schema/param_fields/return_hint——`reflect.py` 工具包单源派生，编译/投影零活反射，#138 + `run` 调度链）注册进 `<node_key, Node>` 注册表（`node.NODE_REGISTRY`——#132 归居契约模块，装饰期零 import discover（含传递边）——fn 原样返回，直调不受影响）；`mlflow_log` 强制尾链（`builtin_middleware.py`——stop_on_error 已随 #59 血缘剪枝退役），每个 node 必在 mlflow run 内执行
 3. **目录与解析**：`discover.py` 按序读两组 entry points（`mflowy.builtin_plugins` 内置 + `mflowy.plugins` 第三方），`discover()/list_all()/entry()` 纯元数据零 import；`get_node`/`get_edge` 三步解析——注册表暖命中 → 目录查表 → 首载 `ep.load()` 后按同一键查注册表（发现表键 = 注册表键，#140 身份桥退役），load 后 miss = 「声明与注册不一致」fail-loud（未装饰/错 namespace/别名键统一一类，带 ep 与键上下文）
-4. **用户文档**：`module.py: get_node_info` 读装饰期冻结面——`param_schema`（`Annotated[T, "描述"]` → JSON Schema，纯用户可配参数）；参数边依赖经 `NodeInfo.upstream`（自 upstreams_schema 查询期派生：展平边函数的节点名，逐参数保留）独立下发——MCP schema 即 API 文档
+4. **用户文档**：`module.py: get_node_info` 读装饰期冻结面——`param_schema`（`Annotated[T, "描述"]` → JSON Schema，纯用户可配参数）；参数边依赖经 `NodeInfo.upstream`（自 upstreams_schema 查询期派生：展平边函数的节点名，逐参数保留）独立下发——CLI help 即 API 文档
 
 **editable 陷阱**：entry points 元数据在 `uv sync` 时生效，新增插件模块或注册条目后必须重跑 `uv sync` 才会出现在 `list-nodes`。
 
@@ -268,7 +268,7 @@ dependencies = ["mflowy>=1.0"]
 
 ```bash
 # ③ 安装即注册
-uvx --from "mflowy[mcp,local]" --with mflowy-extra mflowy-mcp
+uvx --from "mflowy[local]" --with mflowy-extra mflowy list-nodes
 ```
 
 - 参数边三层寻址：**边名（`@edge` 变换，注册于 `edges` ns）> 组名索引 > node_key 索引**——边名命中目录探针（`find_edge` 单次查 `edges` 桶，miss 返 None、导入失败透传）即绑变换；**组名索引优先于 node_key 索引**（表1 未命中才查表2）；零命中编译期 fail-raise（必选边）。类型不匹配的适配写 `@edge` 边函数（恒单值注入，编译期组装、声明序晚绑定），编译期做输入/输出注解一致性校验
@@ -285,12 +285,12 @@ uvx --from "mflowy[mcp,local]" --with mflowy-extra mflowy-mcp
 - **投影类型（pydantic 封闭模型，#89）**：`Observation`（七键 + 终态双旗，`extra="forbid"`——域尾巴归位 `prior`/`state_digest`，拼错键 fail-loud）/ `FinishVerdict`（拒收必附 reason 的模型级硬规则）——契约即校验（红线 2 同一台 pydantic 机器），`verify_*` 手写校验器、`Candidate` 与 `Activation`（菜单候选，#120）已退役
 - **决策权地图**：引擎=事实（合法走法/转移/守卫/预算），π=选择（选动作/回滚时机/收局时机/弃局）；守卫拦"事实不成立"不拦"程序下一步"；引擎不出菜单、不发停止信号（#113/#120——π 可见面 = 动作词表全集，收局时机 π 从观测自决）；结算可拒收且拒收后可续局
 - **`POMDPSessionHandle`**：业务接口的类型锚点（无状态 observation_json 寻址（#242 状态文件本体锚），"具名核心 + `*args` 域尾巴"——各域实现自己的 Handle，用同一套机制）；**`POMDPSession`**（`session.py`，#89 会话壳）：统一机制——六个操作（`start_ctx`/`observe_ctx`（水化 + 投影，只读零写、终态照常可观测）/`apply_ctx(action)`/`rollback_ctx`/`finish_ctx` + `abandon` 方法）承载全部业务流程骨架：终态/预算门（步数口径 `counts_step` 域声明）、prior 冻结牙齿、append-only 决策日志（追加即 commit 点）、统一盘上写序（工件→日志→观测投影）、open 撕裂检测。盘上两件：`observation.json`（观测摘要，整读改写）/ `decision.log`（JSONL，接口无删除面）——`rules.pkl` 随规则引擎退役（存量遗留文件不读不迁，GC 自然回收）；域状态文件域自定（model 的 `board.json`）。`SessionStore` 降为存量 manifest 面向的内部件（`gc` 锚 observation.json 回退 manifest.json）
-- **活参考**：mflowy-data / mflowy-model 两域的会话模块（Handle 的两个真 adapter——结构等价由「真实响应即契约模型」钉测；对称于两包之于插件 SDK 的地位）；回收面 = mcp 平台工具 `sessions_gc`（缺省扫当前任务锚 `anchor/*_sessions`——#207，无锚落 `~/.mflowy`；mtime TTL + dry-run 安全缺省——扫描面约定住 mcp，driver 对锚/home 零知识）
+- **活参考**：mflowy-data / mflowy-model 两域的会话模块（Handle 的两个真 adapter——结构等价由「真实响应即契约模型」钉测；对称于两包之于插件 SDK 的地位）；回收面 = app 平台工具 `sessions_gc`（缺省扫当前任务锚 `anchor/*_sessions`——#207，无锚落 `~/.mflowy`；mtime TTL + dry-run 安全缺省——扫描面约定住 app，driver 对锚/home 零知识）
 - SDK 面受 CHANGELOG 语义化版本约束（对齐 node 装饰器措辞）
 
 ## 相关文档
 
 - 能力目录与边函数契约：[mflowy-builtin_plugins README](../builtin_plugins/README.md)
-- 引擎消费方（MCP 工具 / 遥测）：[mflowy-mcp README](../mcp/README.md)
+- 引擎消费方（CLI 工具 / 遥测）：[mflowy-app README](../app/README.md)
 - 远程执行（JobProvider 协议与接入）：[mflowy-model README](../builtin_plugins/model/README.md)
 - 仓库级导航与规约：[AGENTS.md](../../AGENTS.md)

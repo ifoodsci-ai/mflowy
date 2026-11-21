@@ -1,19 +1,29 @@
 """validate_modeling_steps 失败契约 — 校验失败返回结构化 ``valid=False``，不抛异常。
 
-官方 MCP SDK 对非 ToolError 异常脱敏：客户端只收到裸 ``Error executing tool <name>``，
-失败原因留在服务端日志（crash 通道）。校验器的领域结果就是「不合法 + 原因」，
-全部失败路径（片段格式 / YAML 语法 / DAG 构建）走结构化返回，
-MCP 客户端（agent）才能拿到详情自我纠正。
+校验失败若走异常通道，CLI 分发只会回裸 ``Error: ...`` 退出码。校验器的领域
+结果就是「不合法 + 原因」，全部失败路径（片段格式 / YAML 语法 / DAG 构建）
+走结构化返回，调用方（agent）才能拿到详情自我纠正。
 
-入参为 yaml **明文**（非文件路径——MCP 边界不假设共享文件系统）。
+入参为 yaml **明文**（非文件路径——CLI 边界不假设与引擎共享文件系统语义）。
 """
 
-import asyncio
 import csv
+from typing import get_args, get_type_hints
 
 import pytest
-from mcp.server.mcpserver import MCPServer
 from mflowy.model import tools
+from pydantic.fields import FieldInfo
+
+
+def _param_description(fn, param: str) -> str:
+    """Annotated Field description 直读（签名即 schema 的单源探针——CLI 旗标
+    help 编译消费同一面，域包零 SDK/零 app import）。"""
+    hints = get_type_hints(fn, include_extras=True)
+    for meta in get_args(hints[param]):
+        if isinstance(meta, FieldInfo) and meta.description:
+            return meta.description
+    return ""
+
 
 _FULL_DOCUMENT = """\
 name: 完整文档
@@ -80,14 +90,10 @@ def test_valid_fragment_passes(tmp_path):
 
 
 def test_fragment_contract_documented_in_param_descriptions():
-    """MCP schema 即 API 文档：片段格式契约写进所有吃 modeling_steps 的参数描述"""
-    server = MCPServer(name="validate-desc-probe")
-    for fn in (tools.validate_modeling_steps, tools.modeling, tools.explanation):
-        server.tool()(fn)
-    tool_list = asyncio.run(server.list_tools())
-    by_name = {t.name: t for t in tool_list}
+    """签名即 API 文档（CLI help 编译同一真源）：片段格式契约写进所有吃 modeling_steps 的参数描述"""
     for name in ("validate_modeling_steps", "modeling", "explanation"):
-        desc = by_name[name].input_schema["properties"]["modeling_steps"]["description"]
+        desc = _param_description(getattr(tools, name), "modeling_steps")
+        assert desc, f"{name}.modeling_steps 参数缺 Field description"
         assert "步骤列表" in desc, f"{name} 参数描述未写明片段格式契约"
 
 

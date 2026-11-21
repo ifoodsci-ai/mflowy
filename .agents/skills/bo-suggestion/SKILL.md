@@ -75,7 +75,7 @@ bo = agent 调 BO 工具的**工作流**（非会话）：状态载体 = study s
 
 ## 参考
 
-- 六工具参数面与行形态细则：`tools/list`（docstring 即 API 文档）；
+- 六工具参数面与行形态细则：`mflowy --help`（签名编译的 help 即 API 文档；记不清参数面时先 `mflowy <tool> --help`）；
 - 系统闭环设计与落位对照：[bo 域 README](../../../packages/builtin_plugins/bo/README.md)；
 - 词面（BOCard/study/trial/推荐台账/湿实验/学习信号）：CONTEXT.md BO 节；
 - 先验子剧本：bo-prior（产卡/改卡唯一发生地）。

@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### BREAKING：应用层 MCP→CLI 迁移（#243）——mcp→app 包改名 / argparse 旗标编译 / 手写遥测 / 单一安装形态
+
+SKILLS+CLI 替代 SKILLS+MCP：工具单源面从「本项目 stdio MCP server」改为「本项目
+CLI」——功能等价成立（磁盘状态单源红利：会话/_study/OAuth/同意门全量盘上，状态层
+零迁移）、净收益 = 进程隔离（阻塞/OOM/泄漏不连坐；宿主并行调用 = 并行进程无 GIL
+争用）+ 删 MCP 适配层（SDK 依赖 / ToolError 透传 / elicitation 同意门）。
+
+- **包改名**：`packages/mcp` → `packages/app`（`mflowy.mcp` → `mflowy.app`），
+  发行版 mflowy-mcp → mflowy-app；`server.py` 与 `mflowy-mcp` console script 退役
+- **单一安装形态**：mflowy-app 硬依赖三域包 + py-machineid（装 mflowy 即全词表）；
+  聚合 extras 只剩 `[local]`（`[mcp]` 删除、不设 `[app]`）；MCP SDK 与 agentcat
+  依赖彻底退役
+- **CLI 重设计**（`mflowy` = `mflowy.app.cli:main`）：旗标从 pyfunc pydantic 签名编译
+  （Field description→help、kebab-case、默认值标注；标量类型化 / bool `--flag/--no-flag` /
+  list·dict·嵌套模型收 JSON 串，`-h` 揭示 `--prior` CleanPrior 与 `--cv-card` CVCard
+  嵌套字段面）；`--kwargs-json` 全量逃生舱（与具名旗标同键 = 参数来源冲突拒绝）；
+  旗标层零校验、pydantic 运行时校验 + coerce（`extra=forbid` 未知键 fail-loud）；
+  `mflowy --help` = 按所属域分组清单 + 一行「何时使用」介；JSON argv 旧调用形退役
+- **遥测重写**：agentcat → 手写 OTLP JSON 发送器（fire-and-forget、短超时、失败静默；
+  设备身份保留 py-machineid + `~/.mflowy/api.key` + `/device/register`，401/403 重签）；
+  同意门 TTY 分流（TTY 首问落盘 / 非 TTY 默认开 + stderr 关闭指引 / `login` 成功
+  无条件写 `telemetry=true`）；session_id/intent 仅经 `--telemetry-session-id` /
+  `--telemetry-intent` 元旗标注入（CLI 层剥离），`observation_json` 不进遥测
+- **ctx 注入形参退役**：compute 四工具的 `ctx: Context | None`（SDK 注入）删除，
+  provider.headers 恒协议缺省 None（协议形参保留为契约面）
+- **JobProvider 受理单源**：`switch_job_provider` 写 `~/.mflowy/settings.json` 的
+  `job_provider` 键（跨进程持久）；解析序 env `MFLOWY_JOB_PROVIDER` 钉住 >
+  settings.json > 缺省 local；env 钉住期间切换 = 参数来源冲突 fail-loud
+- **路径通道收敛**：`route_task_dir` channel 参数与 MCP 相对路径拒收面退役——相对
+  入参路径统一按执行 cwd 解析；全局配置根读写单源 `mflowy.utils.settings`
+- **发现面**：7 个引用 mflowy 工具的 skill 各加「工具发现」行（`mflowy --help`）；
+  AGENTS/CONTEXT/README/PRIVACY/CONTRIBUTING/包 README/CI/Makefile 全量同步；
+  `.mcp.json.example` 删除
+- 入口收敛：CLI（`mflowy`）/ mflowy-job（容器）/ 直接 import；JSON 分发内核
+  `run_tool` 保留为 CLI 与 jobwrap 共用单源（新增 observe 遥测观察缝）
+
 ### BREAKING：会话工具命名族前缀化 `<biz>_<verb>`（#248）
 
 动词+域后缀 → 域前缀+动词（与技能命名 data-/modeling-/bo-、包名 mflowy-data/model/bo

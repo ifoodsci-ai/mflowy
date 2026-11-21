@@ -1,7 +1,7 @@
 """日志配置模块（应用入口专用）
 
 stdlib 守则：库不配置 logging，入口配置。业务代码一律 ``logging.getLogger(__name__)``，
-本模块只提供 ``setup()`` 供 ``mcp/server.py`` / ``mcp/runner.py`` 入口显式调用。
+本模块只提供 ``setup()`` 供 ``app/cli.py`` / ``app/jobwrap.py`` 入口显式调用。
 direct import 场景遵循 stdlib 契约：默认 WARNING+，调用方自行 ``logging.basicConfig()``。
 
 console node 绑定 stderr：MCP stdio server 的 stdout 是 JSON-RPC 协议通道。

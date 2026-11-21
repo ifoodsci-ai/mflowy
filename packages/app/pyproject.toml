@@ -1,0 +1,59 @@
+[project]
+name = "mflowy-app"
+version = "0.2.0"
+description = "MFlowy 应用层 — CLI（旗标编译）、JSON 分发内核、远程任务入口、遥测"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "mflowy-driver",
+    # 平台工具直接消费（file_hash→file、login→auth）；依赖声明完整（红线 6）
+    "mflowy-utils",
+    # 三域包（#243 单一安装形态：CLI 即全词表——装 mflowy-app = 平台 + 三域工具面）
+    "mflowy-data",
+    "mflowy-model",
+    "mflowy-bo",
+    # 遥测设备指纹（machine-id，跨平台）
+    "py-machineid>=1.0.0",
+    # 遥测 OTLP 发送 + OAuth login（utils auth）/平台 client 共用 HTTP 面
+    "requests>=2.31",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# namespace 包（PEP 420）：mflowy/ 即 portion，wheel 产出 mflowy/<pkg>；
+# editable 经 dev-mode-dirs 指向包根，多成员 portion 合成，零拷贝真 editable
+packages = ["mflowy"]
+dev-mode-dirs = ["."]
+
+[tool.hatch.build.targets.sdist]
+include = ["mflowy", "pyproject.toml"]
+
+[tool.uv.sources]
+mflowy-driver = { workspace = true }
+mflowy-utils = { workspace = true }
+mflowy-data = { workspace = true }
+mflowy-model = { workspace = true }
+mflowy-bo = { workspace = true }
+
+[project.entry-points."mflowy.tools"]
+# 平台工具静态声明（与域包 pyproject 同构；镜像契约钉在 tests/app/test_platform_tools_registry.py）
+file_hash = "mflowy.app.tools:file_hash"
+list_nodes = "mflowy.app.tools:list_nodes"
+get_node_info = "mflowy.app.tools:get_node_info"
+get_experiment = "mflowy.app.tools:get_experiment"
+get_run = "mflowy.app.tools:get_run"
+sessions_gc = "mflowy.app.tools:sessions_gc"
+login = "mflowy.app.tools:login"
+ensure_platform_experiment = "mflowy.app.tools:ensure_platform_experiment"
+get_platform_job_logs = "mflowy.app.tools:get_platform_job_logs"
+download_platform_job_artifacts = "mflowy.app.tools:download_platform_job_artifacts"
+
+[project.scripts]
+# 入口收敛（#243）：mflowy = CLI（旗标编译面）；mflowy-job = 远程任务容器入口
+# （#158：wrap 提交面 + zip 往返）；mflowy-mcp 已随 MCP server 退役删除
+mflowy = "mflowy.app.cli:main"
+mflowy-job = "mflowy.app.jobwrap:main"

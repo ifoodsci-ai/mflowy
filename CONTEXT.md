@@ -1,6 +1,6 @@
 # MFlowy
 
-YAML 配置驱动的模块化 ML 工作流引擎：能力以插件节点存在、图以 YAML 组装、全部能力经 MCP 工具暴露。本文件是**元词汇**的词表，按「引擎内核（共享）+ 三子系统」分组（子系统划分与系统设计见 [bo 包 README](packages/builtin_plugins/bo/README.md)）——只定义这些词本身与禁用别名；节点与边函数的名字以运行期插件目录为唯一真源（`list-nodes` 可查），方法论术语见 [docs/research-flow.md](docs/research-flow.md) 自带术语表，均不在此复述。
+YAML 配置驱动的模块化 ML 工作流引擎：能力以插件节点存在、图以 YAML 组装、全部能力经 CLI 工具暴露（#243 SKILLS+CLI 替代 SKILLS+MCP）。本文件是**元词汇**的词表，按「引擎内核（共享）+ 三子系统」分组（子系统划分与系统设计见 [bo 包 README](packages/builtin_plugins/bo/README.md)）——只定义这些词本身与禁用别名；节点与边函数的名字以运行期插件目录为唯一真源（`list-nodes` 可查），方法论术语见 [docs/research-flow.md](docs/research-flow.md) 自带术语表，均不在此复述。
 
 ## Language
 
@@ -27,9 +27,9 @@ _Avoid_: 注入器、injector、getter（第一代退役词）
 分发单元：声明 mflowy entry points 的包，安装即注册、卸载即退出。内置能力包与第三方插件同构。
 
 **工具（tool）**:
-pyfunc 编排入口，统一经 entry points 组 ``mflowy.tools`` 静态声明（域包与 host 同构），
-server/runner 同一真源发现并包装。工具组合节点，工具不是节点；平台工具（词表/mlflow 观测/
-工件读取/登录）由 mflowy-mcp pyproject 自带声明（声明面 ↔ 函数面镜像测试钉住）。
+pyfunc 编排入口，统一经 entry points 组 ``mflowy.tools`` 静态声明（域包与 app 同构），
+CLI 分发面同一真源发现并包装。工具组合节点，工具不是节点；平台工具（词表/mlflow 观测/
+工件读取/登录/平台 API）由 mflowy-app pyproject 自带声明（声明面 ↔ 函数面镜像测试钉住）。
 
 **目录（词表）**:
 运行期全部节点与边函数的枚举，机器可查、构建期校验。两词同义："目录"强调查询面，"词表"强调语言约束面。
@@ -70,12 +70,12 @@ _Avoid_: 环境容器、执行上下文、DI 容器
 **遥测面 / 数据面**:
 中间件的两平面：遥测面是 `log_*` 领域观测（活跃 mlflow run 窗口内执行）；数据面是参数边绑定（链启动前、run 窗口外）。数据面已边函数化，不经中间件。
 
-**MCP 遥测**:
-MCP 入口（`mflowy-mcp`）的工具调用诊断上报：工具名、输入输出、调用意图，经 agentcat 纯 OTLP 直出配置端点；遥测副本带脱敏（UUID 全局掩码 + 按工具字段剔除），工具真实返回零影响。仅覆盖 MCP 入口——JSON runner 与直接 import 不经此面。与内核「遥测面」（mlflow 观测平面）不同物，凡指对外上报一律写「MCP 遥测」。
+**CLI 遥测**:
+CLI 入口（`mflowy`）的工具调用诊断上报：工具名、输入输出、调用意图，手写 OTLP JSON 发送器直出配置端点（agentcat/MCP SDK 已随 #243 退役）；遥测副本带脱敏（UUID 全局掩码 + 按工具字段剔除），工具真实返回零影响。仅覆盖 CLI 入口——mflowy-job 容器与直接 import 不经此面。与内核「遥测面」（mlflow 观测平面）不同物，凡指对外上报一律写「CLI 遥测」。
 _Avoid_: 裸用「遥测」指上报（与遥测面双义）
 
 **同意门**:
-MCP 遥测的同意机制：`ask`（默认，首次工具调用 elicitation 询问并持久化，此后不再问）/ `on` / `off`（显式覆盖，无交互场景常设配置）三态仲裁；未决不采集、不落盘。隐私契约单源见 PRIVACY.md。
+CLI 遥测的同意机制（#243 TTY 分流）：settings.json `telemetry` 键缺省时 TTY 首问落盘（此后不再问）/ 非 TTY 默认开 + stderr 关闭指引；`on` / `off` env 显式覆盖（无交互场景常设配置）；`mflowy login` 成功无条件写 `telemetry=true`（登录即同意）。隐私契约单源见 PRIVACY.md。
 
 #### 会话与域（0.2.0）
 
@@ -83,7 +83,7 @@ MCP 遥测的同意机制：`ask`（默认，首次工具调用 elicitation 询�
 按 POMDP 域切分的能力包：`mflowy-data`（load/statistic/detect/clean + 清洗会话）、
 `mflowy-model`（x_y/cv/x_transformer/model + 建模会话——cv 族 = cv.split 参数构建 /
 cv.load 引用加载，下游经 `cv` namespace 参数消费）。依赖单向
-data ← model；域包直装（`mflowy-data` / `mflowy-model`），聚合 extras 选形态（`mflowy[mcp]` server / `mflowy[local]` 本地建模栈）。两包住分组目录
+data ← model；域包直装（`mflowy-data` / `mflowy-model` / `mflowy-bo`），mflowy-app 硬带三域（单一安装形态，#243），聚合唯一 extra `mflowy[local]`（本地建模栈）。三包住分组目录
 `packages/builtin_plugins/`（与 entry points 组 `mflowy.builtin_plugins` 对齐），
 distribution 名与 extras 不含分组路径。
 _Avoid_: builtin_plugins 指代**单个能力包**（1.x 单发行版结构退役——域包仍称域包，

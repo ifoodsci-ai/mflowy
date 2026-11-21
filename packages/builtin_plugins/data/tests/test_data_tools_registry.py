@@ -38,16 +38,14 @@ def test_menu_tool_retired_observe_in():
 
 
 def test_data_apply_schema_has_no_dry_run():
-    """#65 dry_run 退役的 schema 面钉住：工具入参 schema 不再出现 dry_run
-    （docstring 编译的 schema 随签名自动更新——本测防参数回潮）。"""
-    import asyncio
+    """#65 dry_run 退役的签名面钉住：工具入参不再出现 dry_run
+    （签名即 schema——CLI 旗标编译随签名自动更新，本测防参数回潮；
+    域包零 SDK/零 app import，直接反射签名）。"""
+    import inspect
 
-    from mcp.server.mcpserver import MCPServer
     from mflowy.data import tools
 
-    server = MCPServer(name="schema-test")
-    server.tool()(tools.data_apply)
-    schema = asyncio.run(server.list_tools())[0].input_schema
+    params = set(inspect.signature(tools.data_apply).parameters)
 
-    assert "dry_run" not in schema.get("properties", {})
-    assert {"observation_json", "action", "params"} <= set(schema.get("properties", {}))
+    assert "dry_run" not in params
+    assert {"observation_json", "action", "params"} <= params

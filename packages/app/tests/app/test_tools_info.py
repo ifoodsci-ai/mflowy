@@ -3,7 +3,7 @@
 import hashlib
 
 import pytest
-from mflowy.mcp.tools import file_hash, get_node_info, list_nodes
+from mflowy.app.tools import file_hash, get_node_info, list_nodes
 
 
 def test_file_hash_sha256_default(tmp_path):

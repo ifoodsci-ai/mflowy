@@ -9,7 +9,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
-from mflowy.mcp import jobwrap
+from mflowy.app import jobwrap
 from mflowy.utils.path import pin_task_dir, reset_task_dir
 
 
@@ -38,7 +38,7 @@ def _make_zip(path: Path, files: dict[str, bytes]) -> None:
 
 
 def test_version_first_line(stage, capsys, monkeypatch):
-    monkeypatch.setattr("mflowy.mcp.runner.run_tool", lambda tool, kwargs: 0)
+    monkeypatch.setattr("mflowy.app.runner.run_tool", lambda tool, kwargs: 0)
     rc = jobwrap._wrap(["--tool", "list_nodes", "--kwargs-json", "{}"])
     out = capsys.readouterr().out.splitlines()
     assert rc == 0
@@ -112,7 +112,7 @@ def test_wrap_flow_runs_tool_then_packs(stage, capsys, monkeypatch):
         (task / "artifact.parquet").write_bytes(b"a")  # 工具产物落 task_dir
         return 0
 
-    monkeypatch.setattr("mflowy.mcp.runner.run_tool", fake_run_tool)
+    monkeypatch.setattr("mflowy.app.runner.run_tool", fake_run_tool)
     rc = jobwrap._wrap(["--tool", "modeling", "--kwargs-json", '{"name": "n"}'])
     assert rc == 0 and calls == [("modeling", {"name": "n"})]
     with zipfile.ZipFile(outputs / "job-t1.zip") as zf:
@@ -121,7 +121,7 @@ def test_wrap_flow_runs_tool_then_packs(stage, capsys, monkeypatch):
 
 def test_wrap_flow_tool_failure_rc_wins(stage, monkeypatch):
     outputs, task = stage
-    monkeypatch.setattr("mflowy.mcp.runner.run_tool", lambda tool, kwargs: 1)
+    monkeypatch.setattr("mflowy.app.runner.run_tool", lambda tool, kwargs: 1)
     rc = jobwrap._wrap(["--tool", "modeling", "--kwargs-json", "{}"])
     assert rc == 1
     assert (outputs / "job-t1.zip").exists()  # 失败也无条件 pack（部分产物可继承）
@@ -136,7 +136,7 @@ def test_wrap_with_inherit_end_to_end(stage, monkeypatch, capsys):
         seen["db"] = (task / "mlflow.db").read_bytes()  # 工具执行前继承态已就位
         return 0
 
-    monkeypatch.setattr("mflowy.mcp.runner.run_tool", fake_run_tool)
+    monkeypatch.setattr("mflowy.app.runner.run_tool", fake_run_tool)
     rc = jobwrap._wrap(["--tool", "modeling", "--kwargs-json", "{}", "--inherit-from", "job-prev"])
     assert rc == 0 and seen["db"] == b"prev-db"
 

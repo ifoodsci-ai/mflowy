@@ -53,6 +53,7 @@ disable-model-invocation: true
 
 ## 参考
 
+- 工具发现：记不清工具名或参数面时，先 `mflowy --help` 看分组清单、`mflowy <tool> --help` 看全参与用法；
 - BOCard 字段面与校验规则（match 必填带/规则树未知列拒绝/容差序/窗口门冗余）：
   [bo 域 README](../../../packages/builtin_plugins/bo/README.md)；
 - 词面（BOCard/study/trial/推荐台账/湿实验/学习信号）：CONTEXT.md BO 节；

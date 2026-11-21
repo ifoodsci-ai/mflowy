@@ -1,12 +1,12 @@
-"""JSON runner — K8s Job 容器 + subprocess 的通用入口。
+"""JSON 分发内核 — CLI（``mflowy <tool>``）与 mflowy-job（K8s Job 容器）的共用单源。
 
-用法::
+按名分发一次工具调用，返回进程退出码（0/1/2）。CLI（``cli.main``，旗标面）与
+jobwrap（``mflowy-job wrap --kwargs-json``，容器提交面）都经 ``run_tool``——
+分发表 = mflowy.tools 组（平台 + 域包静态声明）、route_task_dir 路由锚、
+输出契约（查询类→stdout JSON / DAG 类→流式上屏不回显）、退出码映射，四处单源。
 
-    mflowy modeling '{"modeling_steps": "...", "name": "...", "desc": "..."}'
-    python -m mflowy.mcp.runner list_nodes '{"ns": "model"}'
-
-[project.scripts] ``mflowy`` 指向此模块的 main()（CLI 通道）。
-Job 容器内默认 LocalJobProvider（[local] extra 本地建模栈），直调 compute。
+``observe``（CLI 注入，jobwrap 不传）：调用后回调 ``(tool_name, kwargs, result,
+error)``——遥测上报缝；回调自身须吞异常（telemetry.report_call 全量兜底）。
 
 环境变量::
 
@@ -21,39 +21,20 @@ import inspect
 import json
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
-
-def main() -> None:
-    from mflowy.utils.logging import setup
-
-    setup()  # 日志绑定 stderr + 第三方库降噪
-
-    prog = Path(sys.argv[0]).name
-    if len(sys.argv) < 2:
-        print(f'Usage: {prog} <tool_name> [\'{{"arg": "value", ...}}\']', file=sys.stderr)
-        sys.exit(1)
-
-    tool_name = sys.argv[1].replace("-", "_")
-    hint = f'参数须为 JSON 对象字符串，如: {prog} list_nodes \'{{"ns": "load"}}\''
-    try:
-        kwargs = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
-    except json.JSONDecodeError as e:
-        print(f"Invalid JSON arguments for {tool_name}: {e}\n  {hint}", file=sys.stderr)
-        sys.exit(2)
-    if not isinstance(kwargs, dict):
-        print(f"Invalid arguments for {tool_name}: 非 JSON 对象（{type(kwargs).__name__}）\n  {hint}", file=sys.stderr)
-        sys.exit(2)
-    sys.exit(run_tool(tool_name, kwargs))
+# 遥测观察缝：调用后回调（tool_name, kwargs, result, error）——CLI 注入
+Observe = Callable[[str, dict, object, BaseException | None], None]
 
 
-def run_tool(tool_name: str, kwargs: dict) -> int:
+def run_tool(tool_name: str, kwargs: dict, *, observe: Observe | None = None) -> int:
     """按名分发一次工具调用，返回进程退出码（0/1/2——jobwrap 共用单源，#158）。
 
     CLI 路由锚定（#95 裁定 B）：MFLOWY_TASK_DIR env 钉住（优先级最高，推导不覆写）；
     未钉时工具经 route_task_dir 中间件按声明锚参数推锚，推不出缺省 cwd。
     """
-    # 分发表 = mflowy.tools 组（平台 + 域包静态声明，与 server.register 同一真源）
+    # 分发表 = mflowy.tools 组（平台 + 域包静态声明，与 CLI 发现同一真源）
     from .tools import _tool_entry_points
 
     try:
@@ -65,10 +46,10 @@ def run_tool(tool_name: str, kwargs: dict) -> int:
 
     if env_dir := os.environ.get("MFLOWY_TASK_DIR"):
         pin_task_dir(env_dir)
-    table = {ep.name: route_task_dir(Path.cwd(), channel="cli")(ep.load()) for ep in eps}
+    table = {ep.name: route_task_dir(Path.cwd())(ep.load()) for ep in eps}
     func = table.get(tool_name)
     if func is None:
-        print(f"Unknown tool: {tool_name}", file=sys.stderr)
+        print(f"Unknown tool: {tool_name}\n可选工具: {sorted(table)}", file=sys.stderr)  # 候选清单随报（红线 1）
         return 1
 
     try:
@@ -79,14 +60,19 @@ def run_tool(tool_name: str, kwargs: dict) -> int:
 
     # 建模类工具（返回 DAGResult）的输出由 DAG 实时 print 上屏，不重复回显；
     # info/查询类工具的返回值即输出，回显 JSON
+    result = None
     try:
         if inspect.iscoroutinefunction(func):
             result = asyncio.run(func(**kwargs))
         else:
             result = func(**kwargs)
     except Exception as e:
+        if observe is not None:
+            observe(tool_name, kwargs, None, e)
         print(f"Error: {e}", file=sys.stderr)
         return 1
+    if observe is not None:
+        observe(tool_name, kwargs, result, None)
 
     if result is not None:
         from mflowy.driver.dag import DAGResult
@@ -114,7 +100,3 @@ def run_tool(tool_name: str, kwargs: dict) -> int:
             else:
                 print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
     return 0
-
-
-if __name__ == "__main__":
-    main()

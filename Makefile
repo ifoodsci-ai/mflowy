@@ -1,4 +1,4 @@
-.PHONY: install build build-whl test test-cov typecheck lint fmt precommit clean help e2e-info e2e-statistic e2e-mcp e2e-bench bo-bench e2e-remote e2e-remote-tools e2e ui
+.PHONY: install build build-whl test test-cov typecheck lint fmt precommit clean help e2e-info e2e-statistic e2e-cli e2e-bench bo-bench e2e-remote e2e-remote-tools e2e ui
 
 # 默认目标
 help:
@@ -94,16 +94,16 @@ endif
 
 e2e-info:
 	uv run mflowy list_nodes
-	uv run mflowy list_nodes '{"namespace": "model"}'
-	uv run mflowy file_hash '{"path": "$(DIABETES_STEPS)"}'
-	uv run mflowy get_node_info '{"namespace": "load", "node_name": "python"}'
-	uv run mflowy get_node_info '{"namespace": "clean", "node_name": "drop_missing_rows"}'
-	uv run mflowy get_node_info '{"namespace": "", "node_name": "x_y"}'
-	uv run mflowy get_node_info '{"namespace": "cv", "node_name": "split"}'
-	uv run mflowy get_node_info '{"namespace": "x_transformer", "node_name": "standard_scaler"}'
-	uv run mflowy get_node_info '{"namespace": "model", "node_name": "XGB"}'
-	uv run mflowy get_node_info '{"namespace": "plot", "node_name": "taylor_diagram"}'
-	uv run mflowy validate_modeling_steps "$$($(PAYLOAD) "$(DIABETES_STEPS)")"
+	uv run mflowy list_nodes --namespace model
+	uv run mflowy file_hash --path "$(DIABETES_STEPS)"
+	uv run mflowy get_node_info --namespace load --node-name python
+	uv run mflowy get_node_info --namespace clean --node-name drop_missing_rows
+	uv run mflowy get_node_info --namespace '' --node-name x_y
+	uv run mflowy get_node_info --namespace cv --node-name split
+	uv run mflowy get_node_info --namespace x_transformer --node-name standard_scaler
+	uv run mflowy get_node_info --namespace model --node-name XGB
+	uv run mflowy get_node_info --namespace plot --node-name taylor_diagram
+	uv run mflowy validate_modeling_steps --kwargs-json "$$($(PAYLOAD) "$(DIABETES_STEPS)")"
 # 分析类工具冒烟（本地执行，不经 JobProvider）：数据画像 / EDA。
 # 数据集：运行时生成的小型分类数据（mktemp 临时 csv，退场即删）——e2e 不依赖外部数据文件。
 e2e-statistic:
@@ -111,12 +111,12 @@ e2e-statistic:
 	csv=$$(mktemp /tmp/mflowy_e2e_XXXXXX.csv); \
 	trap 'rm -f "$$csv"' EXIT; \
 	uv run python -c "import numpy as np, pandas as pd; rng = np.random.default_rng(7); n = 120; df = pd.DataFrame({f'f{i}': rng.normal(size=n) for i in range(4)}); df['target'] = rng.integers(0, 2, n); df.to_csv('$$csv', index=False)"; \
-	MLFLOW_TRACKING_URI="$${MLFLOW_TRACKING_URI:-$(E2E_TRACKING)}" uv run mflowy data_profile '{"file_path": "'$$csv'"}'; \
-	MLFLOW_TRACKING_URI="$${MLFLOW_TRACKING_URI:-$(E2E_TRACKING)}" uv run mflowy eda '{"file_path": "'$$csv'", "target": "target"}'
+	MLFLOW_TRACKING_URI="$${MLFLOW_TRACKING_URI:-$(E2E_TRACKING)}" uv run mflowy data_profile --file-path "$$csv"; \
+	MLFLOW_TRACKING_URI="$${MLFLOW_TRACKING_URI:-$(E2E_TRACKING)}" uv run mflowy eda --file-path "$$csv" --target target
 
-# MCP stdio 入口冒烟（三入口之一）：握手 → tools/list → tools/call
-e2e-mcp:
-	uv run python scripts/_e2e_mcp.py
+# CLI 入口冒烟（三入口之一，#243 旗标面）：--help 分组清单 → 旗标调用 → JSON 回读
+e2e-cli:
+	uv run python scripts/_e2e_cli.py
 
 # 六基准冒烟门（#75 三基准 + 工业三链）：iris 五族 / digits MLP+XGB / titanic 清洗链
 # 三树族 + bearing_rul RUL 回归 / steel_defect 不平衡分类 / soft_sensor 传感器缺失清洗
@@ -126,7 +126,7 @@ e2e-mcp:
 # 判据含指标下限（防绿但退化），越限 FAIL 行 + 非零退出。
 # 越限自证：BENCH_FLOOR_BUMP='iris|RF|99' make e2e-bench
 e2e-bench:
-	uv run --extra mcp --extra local python scripts/_e2e_bench.py
+	uv run --extra local python scripts/_e2e_bench.py
 
 # S0/S1 平台契约回归（remote 实现系列 PR 合并门禁——docs/research/2026-11-11-e2e-remote-runbook.md）：
 # 平台面 curl 驱动（OTP 登录 → 建实验 → 上传 → CreateJob cmd=sh → 轮询 → 断言），
@@ -136,32 +136,32 @@ e2e-bench:
 e2e-remote:
 	bash scripts/_e2e_remote_platform.sh
 
-# S2+ 工具面 E2E（remote 系列门禁的工具段）：MCP stdio 真实通道，cwd 置临时目录。
+# S2+ 工具面 E2E（remote 系列门禁的工具段）：CLI 真实通道（#243），cwd 置临时目录。
 # 需本地 k3s dev 集群 + ~/.mflowy/credentials.json 已登录（access 过期自动 refresh）；
 # 断言面随切片生长（S2=ensure / S3+=提交·观察·拉取），人肉门
 e2e-remote-tools:
 	uv run python scripts/_e2e_remote_tools.py
 
-e2e: e2e-info e2e-statistic e2e-mcp
+e2e: e2e-info e2e-statistic e2e-cli
 	@set -e; \
 	stage=$$(mktemp -d /tmp/mflowy_e2e_stage_XXXXXX); \
 	trap 'rm -rf "$$stage"' EXIT; \
 	export MLFLOW_TRACKING_URI="$${MLFLOW_TRACKING_URI:-$(E2E_TRACKING)}"; \
-	uv run --extra mcp --extra local mflowy modeling "$$($(PAYLOAD) "$(DIABETES_STEPS)" --stage "$$stage" 'name=糖尿病多模型对比' 'desc=standard_scaler → cv(8:1:1) → XGBoost/LightGBM/CatBoost/RF/MLP')"; \
+	uv run --extra local mflowy modeling --kwargs-json "$$($(PAYLOAD) "$(DIABETES_STEPS)" --stage "$$stage" 'name=糖尿病多模型对比' 'desc=standard_scaler → cv(8:1:1) → XGBoost/LightGBM/CatBoost/RF/MLP')"; \
 	out=$$(uv run python scripts/_e2e_gen.py); \
 	exp_id=$$(printf '%s\n' "$$out" | sed -n 1p); \
 	run_id=$$(printf '%s\n' "$$out" | sed -n 2p | cut -d= -f2); \
 	echo "== mlflow 查询（experiment=$$exp_id, MLP=$$run_id；观察面 = get_experiment/get_run，ec0ad1f7 双工具收敛后形态）=="; \
-	uv run mflowy get_experiment '{"experiment_id": "'$$exp_id'", "filter_steps": ["model__MLP"], "max_results": 3}'; \
-	uv run mflowy get_run '{"run_id": "'$$run_id'"}'; \
+	uv run mflowy get_experiment --experiment-id "$$exp_id" --filter-steps '["model__MLP"]' --max-results 3; \
+	uv run mflowy get_run --run-id "$$run_id"; \
 	echo "== SHAP 解释（MLP=$$run_id）=="; \
-	uv run --extra mcp --extra local mflowy explanation "$$($(PAYLOAD) "$(DIABETES_STEPS)" --stage "$$stage" "model=$$run_id" 'name=糖尿病 SHAP 解释' 'desc=MLP SHAP 全量样本')"; \
+	uv run --extra local mflowy explanation --kwargs-json "$$($(PAYLOAD) "$(DIABETES_STEPS)" --stage "$$stage" "model=$$run_id" 'name=糖尿病 SHAP 解释' 'desc=MLP SHAP 全量样本')"; \
 	echo "== 预测（全量 X 442 行，行数断言）=="; \
-	pred=$$(uv run --extra mcp --extra local mflowy predict '{"data": "'$$stage/diabetes.py:load_X'", "model": "'$$run_id'"}' 2>&1); \
+	pred=$$(uv run --extra local mflowy predict --kwargs-json '{"data": "'$$stage/diabetes.py:load_X'", "model": "'$$run_id'"}' 2>&1); \
 	printf '%s\n' "$$pred" | tail -3; \
 	printf '%s\n' "$$pred" | grep -q 'Predicted: 442 rows' || { echo 'FAIL: predict 输出缺 "Predicted: 442 rows"'; exit 1; }; \
 	echo "== 逆向设计（target minimize, 200 trials，trials/best 断言）=="; \
-	inv=$$(uv run --extra mcp --extra local mflowy inverse_optimization '{"data": "'$$stage/diabetes.py:load_X'", "model": "'$$run_id'", "direction": {"target": "minimize"}, "n_trials": 200}' 2>&1); \
+	inv=$$(uv run --extra local mflowy inverse_optimization --kwargs-json '{"data": "'$$stage/diabetes.py:load_X'", "model": "'$$run_id'", "direction": {"target": "minimize"}, "n_trials": 200}' 2>&1); \
 	printf '%s\n' "$$inv" | grep -E 'complete trials|^best ' ; \
 	printf '%s\n' "$$inv" | grep -q 'complete trials' || { echo 'FAIL: inverse 输出缺 trials 计数'; exit 1; }; \
 	printf '%s\n' "$$inv" | grep -q '^best ' || { echo 'FAIL: inverse 输出缺 best 行'; exit 1; }

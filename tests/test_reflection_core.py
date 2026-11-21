@@ -30,8 +30,10 @@ _PRIMITIVES = frozenset({"signature", "get_type_hints", "get_annotations", "getf
 
 # 工具包外存量台账（逐文件调用计数）——红线 2「第二份拷贝即收敛」的已登记例外
 _LEDGER = {
-    # MCP 工具面分发（族外：工具函数非 @node/@edge 目标，#138 票面豁免）
-    "packages/mcp/mflowy/mcp/runner.py": 1,
+    # 工具面分发（族外：工具函数非 @node/@edge 目标，#138 票面豁免）
+    "packages/app/mflowy/app/runner.py": 1,
+    # CLI 旗标编译器（族外：pyfunc 签名→旗标/help/校验的单源编译面，#243）
+    "packages/app/mflowy/app/cli.py": 6,
     # model 域第四面外存量（#141 后余量；触碰时收敛，棘轮只紧不松）
     "packages/builtin_plugins/model/mflowy/model/session.py": 1,
 }

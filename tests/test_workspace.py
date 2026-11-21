@@ -6,11 +6,11 @@ import tomllib
 import pytest
 
 ROOT = pathlib.Path(__file__).parent.parent
-# 名 → 包目录（相对 ROOT）：两域包住 builtin_plugins/ 分组（与 entry points 组 mflowy.builtin_plugins 对齐）
+# 名 → 包目录（相对 ROOT）：三域包住 builtin_plugins/ 分组（与 entry points 组 mflowy.builtin_plugins 对齐）
 PACKAGES = {
     "utils": "packages/utils",
     "driver": "packages/driver",
-    "mcp": "packages/mcp",
+    "app": "packages/app",
     "data": "packages/builtin_plugins/data",
     "model": "packages/builtin_plugins/model",
     "bo": "packages/builtin_plugins/bo",
@@ -37,35 +37,26 @@ def test_namespace_no_init(pkg):
 
 
 def test_member_import_boundaries():
-    """包依赖方向铁律（utils ← driver ← data ← model ← bo ← mcp 单向，#175 Q2）：
+    """包依赖方向铁律（utils ← driver ← data ← model ← bo ← app 单向，#175 Q2/#243）：
     driver/utils 不得 import 任何域包（内核对插件零感知）；data 不得 import model
-    （两 POMDP 域隔离，共享件住上游 data）；bo 不得 import mcp（mcp 零域硬依赖，
-    #210）。mcp 是编排层、pyproject 硬依赖域包，合法消费其公开清单如 extras.py；
+    （两 POMDP 域隔离，共享件住上游 data）；bo 不得 import app（app 是编排层，
+    pyproject 硬依赖三域包——#243 单一安装形态，模块级 import 域包合法）；
     entry point group 名字符串不算 import。"""
     import re
 
     bans = {
-        "driver": r"mflowy\.(data|model|bo)",
-        "utils": r"mflowy\.(data|model|bo)",
-        "data": r"mflowy\.(model|bo)",
-        "bo": r"mflowy\.mcp",
+        "driver": r"mflowy\.(data|model|bo|app)",
+        "utils": r"mflowy\.(data|model|bo|app)",
+        "data": r"mflowy\.(model|bo|app)",
+        "bo": r"mflowy\.app",
     }
-    # mcp：零域硬依赖——模块级（列首）import 域包禁止；函数内惰性导入（缩进）合法
     violators = []
     for pkg, pat_s in bans.items():
         pat = re.compile(r"^\s*(?:from|import)\s+" + pat_s, re.M)
         for py in (ROOT / PACKAGES[pkg] / "mflowy").rglob("*.py"):
             if pat.search(py.read_text(encoding="utf-8")):
                 violators.append(str(py.relative_to(ROOT)))
-    mcp_pat = re.compile(r"^(?:from mflowy\.(data|model|bo)|import mflowy\.(data|model|bo))", re.M)
-    for py in (ROOT / "packages" / "mcp" / "mflowy").rglob("*.py"):
-        if mcp_pat.search(py.read_text(encoding="utf-8")):
-            violators.append(str(py.relative_to(ROOT)))
     assert not violators, f"反向依赖: {violators}"
-    mcp_hard = " ".join(_pkg_meta("packages/mcp/pyproject.toml")["dependencies"])
-    assert "mflowy-data" not in mcp_hard and "mflowy-model" not in mcp_hard and "mflowy-bo" not in mcp_hard, (
-        "mcp 零域硬依赖（0b 解耦不变量）"
-    )
 
 
 def _pkg_meta(rel: str) -> dict:
@@ -73,42 +64,38 @@ def _pkg_meta(rel: str) -> dict:
         return tomllib.load(f)["project"]
 
 
-def test_mcp_extra_is_optional_not_hard():
-    """入口形态分离：SDK/遥测三依赖住 [mcp] extra（server 形态），非硬依赖——
-    裸装 mflowy 即可用 runner/cmd，不拖 SDK"""
-    meta = _pkg_meta("packages/mcp/pyproject.toml")
+def test_app_single_install_form():
+    """单一安装形态（#243）：mflowy-app = driver + utils + 三域包 + py-machineid——
+    零 extras、零 MCP SDK、零 agentcat（CLI 即全词表）"""
+    meta = _pkg_meta("packages/app/pyproject.toml")
     hard = " ".join(meta["dependencies"])
-    assert "mcp>=" not in hard and "agentcat" not in hard and "machineid" not in hard
-    mcp_extra = meta["optional-dependencies"]["mcp"]
-    joined = " ".join(mcp_extra)
-    assert "mcp>=2.0.0" in joined and "agentcat" in joined and "py-machineid" in joined
+    assert "mcp>=" not in hard and "agentcat" not in hard
+    for dep in ("mflowy-driver", "mflowy-utils", "mflowy-data", "mflowy-model", "mflowy-bo", "py-machineid"):
+        assert dep in hard, f"mflowy-app 缺基础依赖 {dep}"
+    assert not meta.get("optional-dependencies"), "mflowy-app 不设 extras（单一安装形态）"
 
 
-def test_aggregate_extras_are_form_selectors():
-    """聚合包 extras = 形态选择器（#216 裁定/#217 落地 + #210 bo 纳入）：{mcp,
-    local}——域包直装（mflowy-data / mflowy-model / mflowy-bo），聚合 extras 只选
-    形态：[mcp] = server 形态（SDK+遥测+三域词表；remote 平台工具引擎住 model 包
-    platform_client 必须随行；bo 六工具随行——server 完全面先例 #159），
-    [local] = 本地建模重栈（model 包 [local]，[deep] 真合并）。聚合 [data]/[model]/
-    [deep] 已退役（BREAKING）"""
-    extras = _pkg_meta("pyproject.toml")["optional-dependencies"]
-    assert set(extras) == {"mcp", "local"}
-    assert extras["mcp"] == ["mflowy-mcp[mcp]", "mflowy-data", "mflowy-model", "mflowy-bo"]
-    assert extras["local"] == ["mflowy-model[local]"]
-    # 唯一可选 extra 在 model 包（= local，[deep] 真合并）；data/bo 零 extras（#184）
+def test_aggregate_single_extra_local():
+    """聚合包 extras（#243 单一安装形态）：唯一 extra = [local]（本地建模重栈，
+    model 包 [local]，[deep] 真合并）——[mcp] 已随 MCP server 退役删除、不设
+    [app] extra（CLI 即全词表，mflowy-app 硬带三域包）"""
+    meta = _pkg_meta("pyproject.toml")
+    assert set(meta["optional-dependencies"]) == {"local"}
+    assert meta["optional-dependencies"]["local"] == ["mflowy-model[local]"]
+    assert "mflowy-app" in meta["dependencies"] and "mflowy-mcp" not in " ".join(meta["dependencies"])
+    # 唯一可选 extra 在 model 包（= local）；data/bo 零 extras（#184）
     assert set(_pkg_meta("packages/builtin_plugins/data/pyproject.toml").get("optional-dependencies", {})) == set()
     assert set(_pkg_meta("packages/builtin_plugins/bo/pyproject.toml").get("optional-dependencies", {})) == set()
     assert set(_pkg_meta("packages/builtin_plugins/model/pyproject.toml")["optional-dependencies"]) == {"local"}
 
 
 def test_console_scripts():
-    """入口面：mflowy=CLI（runner）、mflowy-mcp=MCP server（双入口重命名，旧名消亡）；
-    mflowy-job=远程任务容器入口（#158 wrap 提交面，切片④）"""
-    scripts = _pkg_meta("packages/mcp/pyproject.toml")["scripts"]
+    """入口面（#243）：mflowy=CLI（旗标编译面）、mflowy-job=远程任务容器入口
+    （#158 wrap 提交面）；mflowy-mcp 已随 MCP server 退役删除"""
+    scripts = _pkg_meta("packages/app/pyproject.toml")["scripts"]
     assert scripts == {
-        "mflowy": "mflowy.mcp.runner:main",
-        "mflowy-mcp": "mflowy.mcp.server:main",
-        "mflowy-job": "mflowy.mcp.jobwrap:main",
+        "mflowy": "mflowy.app.cli:main",
+        "mflowy-job": "mflowy.app.jobwrap:main",
     }
 
 

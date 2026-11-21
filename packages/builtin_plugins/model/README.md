@@ -3,7 +3,7 @@
 MFlowy 建模域包：建模训练 POMDP 的动作域——x_y / cv / x_transformer / model /
 plot(model_evaluation + model_interpretability)。本地建模重栈（sklearn/lightgbm/xgboost/
 catboost/shap/optuna + torch，[deep] 真合并）住 `[local]` extra（uvx 安装需
-`--index https://download.pytorch.org/whl/cpu`）；瘦装（裸装 / 聚合 `[mcp]`）= 纯远程形态——
+`--index https://download.pytorch.org/whl/cpu`）；瘦装（裸装聚合包，#243 单一安装形态）= 纯远程形态——
 `list-nodes` 对 model/cv/x_transformer/plot 四目录降级标注 `requires→local`，compute 走
 remote provider，modeling_* 会话工具 fail-loud 带安装提示。
 
@@ -85,10 +85,12 @@ compute 四工具（hyperparameters_search / modeling / explanation / predict）
 DAGResult / submitted 提交凭据，互斥不变量构造期 fail-loud）：内置 `local`（本包直调
 driver 编排，忽略模式专属参数）与 `remote`（RemoteJobProvider——`MFLOWY_JOB_PROVIDER=remote`
 启用；提交面 `mflowy-job wrap`，受理即返回，`platform_experiment_id` 必填、`inherit_platform_job_id`
-作跨 Job 继承）两种等价形态；`switch_job_provider` 工具做进程级切换。MFlowy 不内置绑定任何远程执行平台——
-实现 `JobProvider` 协议（`job_provider/protocol.py`）的 **5 个类型化方法**（与五工具同名，
-每个方法带 `headers: Mapping[str, str] | None` 透传请求元数据，MCP 客户端经
-`call_tool(meta={...})` 携带），即可把建模工具委派到任意执行环境——K8s Job、远程集群、
+作跨 Job 继承）两种等价形态；`switch_job_provider` 工具切换执行模式（#243：写全局配置根
+`~/.mflowy/settings.json` 的 `job_provider` 键，跨进程持久；解析序 env `MFLOWY_JOB_PROVIDER`
+钉住 > settings.json > 缺省 local）。MFlowy 不内置绑定任何远程执行平台——
+实现 `JobProvider` 协议（`job_provider/protocol.py`）的 **4 个类型化方法**（与 compute 四工具同名，
+每个方法带 `headers: Mapping[str, object] | None` 契约形参——#243 起 `_meta` 直传面随 MCP
+通道退役，恒 None），即可把建模工具委派到任意执行环境——K8s Job、远程集群、
 Serverless 均可。方法签名以 protocol.py 为准（本文不复述，防漂移）；契约行为由
 `tests/test_job_provider.py` / `tests/test_tools_headers.py` 锁定。
 
@@ -97,8 +99,8 @@ Serverless 均可。方法签名以 protocol.py 为准（本文不复述，防�
 ```bash
 PYTHONPATH=/srv/my-provider \
 MFLOWY_JOB_PROVIDER=my_pkg.job_provider:MyRemoteProvider \
-uvx --from "mflowy[mcp,local]" mflowy-mcp
+uvx --from "mflowy[local]" mflowy --help
 ```
 
 - `MFLOWY_JOB_PROVIDER`：`local`（默认）或 `module:Class`；模块经宿主 `sys.path` 解析，provider 以标准 Python 包交付
-- 远程工具的平台身份（OAuth 登录与 Bearer 接线）见 [mflowy-mcp README](../../mcp/README.md)「平台登录」节
+- 远程工具的平台身份（OAuth 登录与 Bearer 接线）见 [mflowy-app README](../../app/README.md)「平台登录」节

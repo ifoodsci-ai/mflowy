@@ -1,16 +1,15 @@
 """ensure_platform_experiment 契约测试（#156/#157/#159 决议，切片③）。
 
 经 ``_platform_client`` 工厂缝注入假 client（client 详测住 model 包
-``test_platform_client.py``）；通道纪律经 ``_EntryChannel`` 直接绑定（布线面
+``test_platform_client.py``）；通道纪律经 相对路径按 cwd 解析（#243 通道收敛，布线面
 由 server/runner 各自声明，本文件只测工具侧消费语义）。
 """
 
 from types import SimpleNamespace
 
 import pytest
-from mflowy.mcp import tools
+from mflowy.app import tools
 from mflowy.model.job_provider.platform_client import FileEntry, PlatformNotFoundError
-from mflowy.utils.path import _EntryChannel
 
 
 class FakeClient:
@@ -209,15 +208,17 @@ def test_manifest_basename_collision(tmp_path, monkeypatch):
         tools.ensure_platform_experiment("exp-1", files=[str(d1 / "x.csv"), str(d2 / "x.csv")])
 
 
-def test_mcp_channel_rejects_relative_paths(monkeypatch):
-    """通道纪律（#159 §6）：MCP 通道相对路径拒收 fail-loud；CLI/未知通道按 cwd 接受。"""
+def test_relative_paths_resolve_against_cwd(tmp_path, monkeypatch, uploaded):
+    """路径解析（#159 §6，#243 通道收敛）：相对路径按执行 cwd 解析（原 MCP 通道
+    拒收面随通道退役——CLI cwd 有业务参考意义）。"""
     monkeypatch.setattr(tools, "_platform_client", lambda: FakeClient())
-    token = _EntryChannel.set("mcp")
-    try:
-        with pytest.raises(ValueError, match="相对路径"):
-            tools.ensure_platform_experiment("exp-1", files=["rel/a.csv"])
-    finally:
-        _EntryChannel.reset(token)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "rel").mkdir()
+    (tmp_path / "rel" / "a.csv").write_bytes(b"1")
+    result = tools.ensure_platform_experiment("exp-1", files=["rel/a.csv"])
+    assert result["files"]["uploaded"] == [
+        {"local": str(tmp_path / "rel" / "a.csv"), "remote": "/user-data/uploads/a.csv"}
+    ]
 
 
 # ── inheritable 发现面 ──────────────────────────────────────────────────
@@ -255,7 +256,7 @@ class TestGetPlatformJobLogs:
         return fake
 
     def test_merged_return_non_terminal(self, monkeypatch):
-        from mflowy.mcp import tools as t
+        from mflowy.app import tools as t
 
         self._patch(monkeypatch, status="running", logs="partial")
         result = t.get_platform_job_logs("job-1", 100)
@@ -269,7 +270,7 @@ class TestGetPlatformJobLogs:
 
     @pytest.mark.parametrize("status", ["succeeded", "failed", "lost", "canceled"])
     def test_terminal_states(self, monkeypatch, status):
-        from mflowy.mcp import tools as t
+        from mflowy.app import tools as t
 
         self._patch(monkeypatch, status=status)
         assert t.get_platform_job_logs("job-1")["terminal"] is True
@@ -277,7 +278,7 @@ class TestGetPlatformJobLogs:
     @pytest.mark.parametrize("bad", [0, -1, 10001])
     def test_tail_lines_bounds_local_fail_loud(self, monkeypatch, bad):
         """1–10000 越界本地拒绝——不发出请求（上游 <=0→500 是其容错非我方语义）。"""
-        from mflowy.mcp import tools as t
+        from mflowy.app import tools as t
 
         fake = self._patch(monkeypatch)
         with pytest.raises(ValueError, match="1–10000"):
@@ -287,7 +288,7 @@ class TestGetPlatformJobLogs:
 
 def test_logs_unscheduled_pod_returns_empty_logs(monkeypatch):
     """S4 实测边界：pod 未调度期上游 logs 端点 404——job 在场即瞬态，logs 空串（job 缺仍 fail-loud）。"""
-    from mflowy.mcp import tools as t
+    from mflowy.app import tools as t
     from mflowy.model.job_provider.platform_client import PlatformNotFoundError
 
     fake = FakeClient(jobs=[{"id": "job-1", "status": "queued", "created_at": 1}])

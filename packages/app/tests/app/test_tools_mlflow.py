@@ -7,7 +7,7 @@ import mlflow
 
 def test_get_experiment_returns_metadata(monkeypatch, tmp_path):
     """实验本体查询面：name/description tag（mlflow.note.content）/artifact_location/时间戳。"""
-    from mflowy.mcp import tools
+    from mflowy.app import tools
 
     uri = f"sqlite:///{tmp_path / 'mlflow.db'}"
     monkeypatch.setenv("MLFLOW_TRACKING_URI", uri)
@@ -27,7 +27,7 @@ def test_get_experiment_returns_metadata(monkeypatch, tmp_path):
 
 def test_get_experiment_returns_run_directory(monkeypatch, tmp_path):
     """实验仪表盘:实验本体 + run 状态目录(node/name/run_id/status/start_time 投影)。"""
-    from mflowy.mcp import tools
+    from mflowy.app import tools
 
     uri = f"sqlite:///{tmp_path / 'mlflow.db'}"
     monkeypatch.setenv("MLFLOW_TRACKING_URI", uri)
@@ -56,7 +56,7 @@ def test_get_experiment_returns_run_directory(monkeypatch, tmp_path):
 
 def test_get_experiment_filter_steps_and_quote_stripping(monkeypatch, tmp_path):
     """filter_steps 按节点 tag 等值查询合并；含引号 step 名清洗后不得击穿 filter 字符串"""
-    from mflowy.mcp import tools
+    from mflowy.app import tools
 
     uri = f"sqlite:///{tmp_path / 'mlflow.db'}"
     monkeypatch.setattr(tools, "_client", None)
@@ -79,7 +79,7 @@ def test_get_experiment_filter_steps_and_quote_stripping(monkeypatch, tmp_path):
 
 def test_get_run_returns_artifact_directory(monkeypatch, tmp_path):
     """get_run 下钻:params/metrics/tags + artifacts 产物目录(list_run_artifacts 吸收)。"""
-    from mflowy.mcp import tools
+    from mflowy.app import tools
 
     uri = f"sqlite:///{tmp_path / 'mlflow.db'}"
     monkeypatch.setenv("MLFLOW_TRACKING_URI", uri)
