@@ -1396,9 +1396,18 @@ def _final_train_test(ss, o, m, board, log, params: dict) -> None:
     副产物/artifacts 一体 → u/metrics 从 DAGResult 回读（ModelLoader.holdout）
     → 副产物指针经 run artifacts 清单解析落账（s 自描述）→ combo 冻结。
     交付的 plan_yaml 就是那次终训本身。
+
+    受理单源 provider（#218 门拆除，#156「终训恒 local」翻转——#225 裁定 5）：
+    finished → 进程内 DAGResult 直消费；submitted → remote 分支同机械（拉日志→
+    zip→解包→查询→holdout 指标/模型/副产物镜像本地 run），账本条目两分支同形。
     """
-    if params:
-        raise ValueError("final_train_test 无参数——θ* 恒从账本读（先搜后店：无搜索直训不合法）")
+    platform_experiment_id = params.get("platform_experiment_id")
+    unknown = set(params) - {"platform_experiment_id"}
+    if unknown:
+        raise ValueError(
+            f"final_train_test 只收 platform_experiment_id（remote 提交面；θ* 恒从账本读——先搜后店），"
+            f"多余参数 {sorted(unknown)}"
+        )
     family = _require_cursor_model(m)
     fe = m["cursor"]["F"]
     key = _structure_key(family, fe)
@@ -1419,59 +1428,80 @@ def _final_train_test(ss, o, m, board, log, params: dict) -> None:
         final_params["random_state"] = seed
 
     loader_v = 1  # 冻结世代：freeze-once ⇒ 恒 1（若未来解冻重训，世代递增——指针永不悬空的结构位）
-    plan_text = _plan_yaml(m, key, final_params)
+    from .job_provider import get_job_provider
+    from .job_provider.remote import RemoteJobProvider
+
+    uploads = isinstance(get_job_provider(), RemoteJobProvider)
+    if uploads:
+        # remote 形态 plan：uploads 寻址 + cv.split 确定性复现（无本地 run 引用可依）
+        split_params = {**m["protocol"]["split_params"]}
+        split_params.setdefault("cv", m["protocol"]["cv"])
+        plan_flow = _flow_prefix(
+            m,
+            fe,
+            file_path=f"/user-data/uploads/{Path(m['source_file']).name}",
+            split_params=split_params,
+        )
+        plan_text = _final_flow_yaml(plan_flow, family, key, final_params)
+    else:
+        plan_text = _plan_yaml(m, key, final_params)
     plan_path = ss.dir / "plans" / f"final_{_key_file(key)}_v{loader_v}.yaml"
     plan_path.parent.mkdir(parents=True, exist_ok=True)
     write_text_atomic(plan_path, plan_text)  # 审计工件（执行合同面是明文文本，M4 计划落盘留痕）
-
-    from .job_provider import get_job_provider
 
     result = _run_bridge(
         get_job_provider().modeling(
             modeling_steps=plan_text,
             name=f"final_train_test:{m['session_id'][:6]}",
             desc=f"会话 {m['session_id']} combo {key} 终训（终训即 plan 执行）",
+            platform_experiment_id=platform_experiment_id,
+            inherit_platform_job_id=(entry.get("remote") or {}).get("job_id"),  # 分支 lineage 链
         )
     )
-    # JobOutcome 受理面（#156）：会话终训恒 local 形态（submitted 无 DAG 可消费——
-    # remote 终训属 remote 工作流，会话 replay 不受理）
-    if result.status != "finished" or result.dag_result is None:
-        raise RuntimeError(f"终训受理面非本地完成形态（status={result.status}）——会话 replay 仅消费 finished")
-    dag = result.dag_result
-    if dag.status != "finished":
-        raise RuntimeError(f"终训 DAG 未完成（status={dag.status}）：{dag.error}")
-    nodes = [r for r in dag.runs if r.node == f"model__{family}"]
-    node = next((r for r in nodes if r.status == "FINISHED" and r.run_id), None)
-    if node is None:
-        raise RuntimeError(f"终训 DAG 无完成的 model__{family} 节点（runs：{[(r.node, r.status) for r in nodes]}）")
-    loader = node.value
-    holdout = getattr(loader, "holdout", None)
-    if not holdout:
-        raise RuntimeError("终训产物缺 holdout 快照（ModelLoader.holdout）——provider 实现与契约不符，请反馈")
+    if result.status == "finished" and result.dag_result is not None:
+        dag = result.dag_result
+        if dag.status != "finished":
+            raise RuntimeError(f"终训 DAG 未完成（status={dag.status}）：{dag.error}")
+        nodes = [r for r in dag.runs if r.node == f"model__{family}"]
+        node = next((r for r in nodes if r.status == "FINISHED" and r.run_id), None)
+        if node is None:
+            raise RuntimeError(f"终训 DAG 无完成的 model__{family} 节点（runs：{[(r.node, r.status) for r in nodes]}）")
+        loader = node.value
+        holdout = getattr(loader, "holdout", None)
+        if not holdout:
+            raise RuntimeError("终训产物缺 holdout 快照（ModelLoader.holdout）——provider 实现与契约不符，请反馈")
+        target_run = node.run_id
+    elif result.status == "submitted":
+        target_run, loader, holdout = _final_train_test_remote(
+            ss, m, family, key, outcome=result, scoring=_metric_of(m)
+        )
+    else:
+        raise RuntimeError(f"终训受理面意外形态（status={result.status}）——JobOutcome 契约违规")
 
     # 副产物指针经 run artifacts 清单解析落账（s 自描述——board 可见 run 下有什么）
     from mflowy.model.model._pipeline import HOLDOUT_BYPRODUCTS, OOF_HALF_WIDTH_TAG
     from mflowy.utils.mlflow import download_run_artifact, run_artifacts
 
-    arts = run_artifacts(node.run_id)
+    arts = run_artifacts(target_run)
     missing = set(HOLDOUT_BYPRODUCTS.values()) - set(arts)
     if missing:
         raise RuntimeError(f"终训 run 缺副产物 {sorted(missing)}（run artifacts：{arts}）——training 行为契约不符")
     byproducts = dict(HOLDOUT_BYPRODUCTS)
     pd.read_parquet(
-        download_run_artifact(node.run_id, HOLDOUT_BYPRODUCTS["y_pred"])
+        download_run_artifact(target_run, HOLDOUT_BYPRODUCTS["y_pred"])
     )  # 副产物可读性过门（#236：判读退役后不再消费值）
 
     # 血缘认证 post-hoc 补打（DAG run 窗口外）+ #164 残差源寻址（复制面）：
     # OOF 证据 parquet + 半宽 tag 随终训 run 复制——predict 单 run_id 入参可用
-    # （loader 读终训 run 即得区间原料，final 不再回指 run_hpo run）
+    # （loader 读终训 run 即得区间原料，final 不再回指 run_hpo run）；remote 分支
+    # 的镜像 run 同面收口（本地库 run——同机械零分叉）
     import mlflow
 
     client = mlflow.MlflowClient()
     for k, v in _lineage_tags(m, action="final_train_test", key=key, family=family).items():
-        client.set_tag(node.run_id, k, v)
+        client.set_tag(target_run, k, v)
     # #236 工件契约：终训 run 旁记原始帧指纹（锚单源 = m.source_fingerprint，与 oof run 同尺）
-    client.set_tag(node.run_id, "mflowy.source_fingerprint", m["source_fingerprint"])
+    client.set_tag(target_run, "mflowy.source_fingerprint", m["source_fingerprint"])
     oof = entry.get("oof") or {}
     if (oof_name := oof.get("y_pred")) and (oof_src := oof.get("run_id")):
         src_arts = run_artifacts(oof_src)
@@ -1479,9 +1509,9 @@ def _final_train_test(ss, o, m, board, log, params: dict) -> None:
             raise RuntimeError(
                 f"OOF 证据工件 {oof_name} 不在 run_hpo run {oof_src} 工件树（{src_arts}）——账本与 run 面不一致，请反馈"
             )
-        client.log_artifact(node.run_id, download_run_artifact(oof_src, oof_name))
+        client.log_artifact(target_run, download_run_artifact(oof_src, oof_name))
     if (w := oof.get("half_width")) is not None:
-        client.set_tag(node.run_id, OOF_HALF_WIDTH_TAG, json.dumps(w))
+        client.set_tag(target_run, OOF_HALF_WIDTH_TAG, json.dumps(w))
 
     # #226 ⑥/#236 判读退役：holdout 规则 findings 出场——证据面同构（统计工具 + agent 判读）
     save_loader(m["session_id"], loader, key, v=loader_v)
@@ -1491,7 +1521,7 @@ def _final_train_test(ss, o, m, board, log, params: dict) -> None:
             "u": holdout["u"],
             "metrics": {t: {k.value: v for k, v in tm.items()} for t, tm in holdout["metrics"].items()},
             "findings": [f for f in entry.get("findings", []) if f.get("source") == "llm"],  # 单源 llm（#226 ⑥）
-            "run_id": node.run_id,
+            "run_id": target_run,
             "final_params": final_params,  # 证据配置（= plan 全 pin 面——重放承诺与执行事实同一）
             "byproducts": byproducts,
             "loader_v": loader_v,  # 冻结世代（loader/plan 文件名版本源）
@@ -1505,7 +1535,7 @@ def _final_train_test(ss, o, m, board, log, params: dict) -> None:
         log,
         "final_train_test",
         {"key": key},
-        note=f"u={holdout['u']} combo 冻结 run={node.run_id[:8]}（终训即 plan：{plan_path.name}）",
+        note=f"u={holdout['u']} combo 冻结 run={target_run[:8]}（终训即 plan：{plan_path.name}）",
         reward=0,
     )
 
@@ -1666,6 +1696,59 @@ def _verdict_response(m: dict, decision_log: list) -> FinishVerdict:
         deliverables=deliverables,
         decision_log=decision_log,
     )
+
+
+def _final_flow_yaml(flow: list[dict], family: str, key: str, final_params: dict) -> str:
+    """remote 终训 plan 序列化（前缀已由 _flow_prefix 产——uploads/cv.split 形态）。"""
+    from mflowy.driver.config import NodeConf
+    from mflowy.driver.serializer import flow_to_yaml
+
+    model_key = f"model__{family}"
+    flow.append({model_key: NodeConf(node_key=model_key, name=f"终局训练-{key}", params=dict(final_params))})
+    return flow_to_yaml(tuple(flow))
+
+
+def _final_train_test_remote(ss, m, family, key, *, outcome, scoring):
+    """终训 remote 分支（#218 门拆除，#225 裁定 5）：await/fetch/find 模型步 run →
+    holdout 指标解析（run metrics 展平面 ``{target}.{metric}`` 逆向，terminal_u 单源）
+    + 副产物/模型镜像本地 run → (镜像 run_id, loader, holdout)。账本两分支同形
+    （镜像 run = 本地库 run——下游 predict/统计/泰勒零分叉）。"""
+    from mlflow.tracking import MlflowClient
+
+    from . import session_remote
+    from .job_provider import get_job_provider
+    from .job_provider.remote import RemoteJobProvider
+    from .model._pipeline import HOLDOUT_BYPRODUCTS, terminal_u
+    from .model.artifacts import ModelLoader
+
+    provider = get_job_provider()
+    client = provider.client if isinstance(provider, RemoteJobProvider) else session_remote.platform_client()
+    session_remote.await_job(client, outcome.job_id)
+    unpacked = session_remote.fetch_workspace(client, outcome.job_id, outcome.platform_experiment_id, ss.dir / "jobs")
+    face = session_remote.find_model_run(unpacked, family)
+    metrics = session_remote.metrics_from_flat(
+        MlflowClient(tracking_uri=f"sqlite:///{unpacked / 'mlflow.db'}").get_run(face.run_id).data.metrics
+    )
+    if not metrics:
+        raise RuntimeError(f"终训 remote run 无 holdout 指标（run={face.run_id[:8]}）——training 行为契约不符")
+    holdout = {"u": round(terminal_u(metrics, scoring), 4), "metrics": metrics}
+    for name in HOLDOUT_BYPRODUCTS.values():
+        face.artifact(name)  # 副产物在场过门
+    pd.read_parquet(face.artifact(HOLDOUT_BYPRODUCTS["y_pred"]))  # 可读性过门（#236）
+    tclient = MlflowClient(tracking_uri=f"sqlite:///{unpacked / 'mlflow.db'}")
+    model_dir = session_remote.logged_model_dir(tclient, unpacked, face.run_id)
+
+    from mflowy.utils.mlflow import log_file
+
+    with _session_run(m, f"final_train_test:{key}") as mirror:
+        for name in HOLDOUT_BYPRODUCTS.values():
+            log_file(face.artifact(name), artifact_file=name)
+        import mlflow
+
+        mlflow.log_artifacts(str(model_dir), artifact_path="final")
+    loader = ModelLoader(name=family, _model_uri=f"runs:/{mirror.info.run_id}/final")
+    loader.holdout = holdout
+    return mirror.info.run_id, loader, holdout
 
 
 def _flow_prefix(m: dict, fe: dict, *, file_path: str | None = None, split_params: dict | None = None) -> list[dict]:

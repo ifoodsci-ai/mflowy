@@ -457,3 +457,81 @@ def test_adopt_study_trials_incremental_and_objective_gate(tmp_path, isolate):
     assert n3 == 4
     reopened = optuna.load_study(study_name="k", storage=f"sqlite:///{session_db}")
     assert len(reopened.trials) == 4 and reopened.user_attrs["objective"] == {"seed": 1, "scoring": "rmse"}
+
+
+# ── 终训 remote 分支（#218 门拆除——#156「终训恒 local」翻转，#225 裁定 5）──────
+
+
+def _build_training_workspace(ws: Path) -> None:
+    """终训形态工作区：全 pin RF（training 行为）——holdout 指标/副产物/final 模型
+    同名工件（mlflow metrics 展平面 = holdout 解析面）。"""
+    import mlflow
+    from mflowy.data.types import TASKTYPE
+    from mflowy.model.cv.split import split as split_fn
+    from mflowy.model.model._split import materialize_split
+    from mflowy.model.model.random_forest import RF
+    from mflowy.model.x_y import XySpec
+
+    ws.mkdir(parents=True, exist_ok=True)
+    prev = mlflow.get_tracking_uri()
+    mlflow.set_tracking_uri(f"sqlite:///{ws / 'mlflow.db'}")
+    try:
+        mlflow.create_experiment("remote-final", artifact_location=str(ws / ".mlruns"))
+        rng = np.random.default_rng(4)
+        x = rng.normal(size=60)
+        df = pd.DataFrame({"x": x, "target": 2.0 * x + 0.1 * rng.normal(size=60)})
+        xy = XySpec(df[["x"]], df[["target"]], TASKTYPE.REGRESSION)
+        ts = materialize_split(split_fn(x_y=xy, cv=3), xy)
+        with mlflow.start_run(
+            experiment_id=mlflow.get_experiment_by_name("remote-final").experiment_id, run_name="终局训练-RF"
+        ):
+            RF(ts, n_estimators=10, max_depth=3, min_samples_split=2, min_samples_leaf=2, max_features="sqrt", ccp_alpha=0.0)
+            mlflow.set_tag("mflowy.node", "model__RF")
+    finally:
+        mlflow.set_tracking_uri(prev)
+
+
+def test_final_train_test_submitted_branch(tmp_path, monkeypatch, isolate, reg_csv):
+    """终训 remote：submitted → 拉取解包 → holdout 指标解析 + 副产物/模型镜像本地
+    run → combo 冻结（账本两分支同形；loader 指镜像 run 的 runs:/ URI）。"""
+    observation_json, _ = _start(reg_csv)
+    ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
+    ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1})  # local 先搜（先搜后店）
+
+    fake = FakePlatform(zips={})
+    _install_remote_provider(monkeypatch, fake)
+    ws = tmp_path / "remote-final"
+    _build_training_workspace(ws)
+    fake.zips["job-1"] = ws
+
+    from mflowy.model import session_remote
+
+    monkeypatch.setattr(session_remote, "REMOTE_TASK_DIR", str(ws))
+
+    r = ModelingSession().apply(observation_json, "final_train_test", {"platform_experiment_id": "exp-1"})
+    st = _state(observation_json)
+    entry = st["models"][_K_RF]
+    assert entry["frozen"] and entry["u"] < 0  # MAE 误差类取负（terminal_u 单源）
+    assert entry["metrics"]["target"]["mae"] > 0 and entry["run_id"]
+    assert entry["byproducts"] == {"X_test": "X_test.parquet", "y_test": "y_test.parquet", "y_pred": "y_pred.parquet"}
+    assert r.biz["board"][_K_RF]["frozen"] is True
+
+    # 镜像 run：本地库可寻址（副产物 + final 模型 + lineage tags）
+    import mlflow
+    from mflowy.utils.mlflow import run_artifacts
+
+    arts = run_artifacts(entry["run_id"])
+    assert {"X_test.parquet", "y_test.parquet", "y_pred.parquet", "final"} <= set(arts)
+    tags = mlflow.get_run(entry["run_id"]).data.tags
+    assert tags["mflowy.action"] == "final_train_test" and tags["mflowy.family"] == "RF"
+
+    # loader：镜像 run 的 runs:/ URI（惰性 pipe 可载）+ 盘上世代文件
+    from mflowy.model.session import load_loader
+
+    loader = load_loader(Path(observation_json).parent.name, _K_RF)
+    assert loader.holdout["u"] == entry["u"]
+    assert loader.x_names == ["x"]
+
+    # plan 审计件：uploads 寻址 + cv.split 复现形态
+    plan = (Path(observation_json).parent / "plans" / "final_RF__passthrough__passthrough_v1.yaml").read_text()
+    assert f"/user-data/uploads/{Path(reg_csv).name}" in plan and "cv__split" in plan

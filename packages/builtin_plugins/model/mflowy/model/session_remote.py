@@ -212,6 +212,29 @@ def oof_half_width_of(face: RemoteRunFace, client: Any) -> dict | None:
     return json.loads(raw) if raw else None
 
 
+def metrics_from_flat(flat: dict[str, float]) -> dict:
+    """run metrics 展平面逆向（终训 remote 分支的 holdout 解析面）：``{target}.{metric}``
+    → ``{target: {MetricName: float}}``——写方 = training 行为的 ``_log_metrics``
+    （展平单源，读方同序解析）。metric 值域后缀匹配（指标值名不含点——target 侧
+    含点无歧义：后缀最长指标名命中）；不可解析键 fail-loud 带清单（红线 1）。"""
+    from .model.types import MetricName
+
+    values = sorted({m.value for m in MetricName}, key=len, reverse=True)
+    out: dict[str, dict] = {}
+    offenders: list[str] = []
+    for key, value in flat.items():
+        for mv in values:
+            if key.endswith(f".{mv}"):
+                target = key[: -len(mv) - 1]
+                out.setdefault(target, {})[MetricName(mv)] = float(value)
+                break
+        else:
+            offenders.append(key)
+    if offenders:
+        raise RuntimeError(f"终训 run metrics 含展平面外键 {sorted(offenders)}——training 行为契约不符，请反馈")
+    return out
+
+
 class LocalRunFace(NamedTuple):
     """finished outcome（进程内 provider / mock）的回读面：本地 tracking 寻址——
     与 ``RemoteRunFace`` 同构（artifact/tag 两原语），消费方零分叉。"""
@@ -227,3 +250,25 @@ class LocalRunFace(NamedTuple):
         import mlflow
 
         return mlflow.get_run(self.run_id).data.tags.get(key)
+
+
+def logged_model_dir(mlflow_client: Any, unpacked: Path, run_id: str, *, name: str = "final") -> Path:
+    """终训 logged model 定位（mlflow 3 双形态，#155）：``models:/`` 实体住
+    ``.mlruns/models/<id>/``——run 工件树只持引用。``source_run_id`` 反查 +
+    ``artifact_location`` 前缀改写（REMOTE_TASK_DIR → 解压根）。"""
+    models = mlflow_client.search_logged_models(
+        experiment_ids=[e.experiment_id for e in mlflow_client.search_experiments()],
+        filter_string=f"source_run_id = '{run_id}'",
+    )
+    match = [m for m in models if m.name == name]
+    if not match:
+        raise RuntimeError(f"run {run_id[:8]} 无名为 {name!r} 的 logged model——training 行为 save 契约不符")
+    loc = str(match[-1].artifact_location or "")
+    if loc.startswith(f"file://{REMOTE_TASK_DIR}"):
+        loc = loc[len(f"file://{REMOTE_TASK_DIR}") :]
+    elif loc.startswith(REMOTE_TASK_DIR):
+        loc = loc[len(REMOTE_TASK_DIR) :]
+    p = unpacked / loc.lstrip("/") if loc else unpacked
+    if not (p / "MLmodel").is_file():
+        raise RuntimeError(f"logged model 目录不在解包树内或残缺（artifact_location={loc}，解包根={unpacked}）")
+    return p

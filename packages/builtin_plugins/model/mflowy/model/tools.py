@@ -341,7 +341,6 @@ def modeling_load_or_start(
     """
     session = _session()
 
-    # TODO(#226 ⑤ 后续)：submitted 状态信封自带 watch 命令（#225 remote 半边随用随加）
     observation_json_out, o = session.load_or_start(
         observation_json,
         file_path=file_path,
@@ -391,7 +390,8 @@ def modeling_apply(
         dict | None,
         Field(
             description="动作参数：select_model={family}；set_hp={param: 值}；set_hp_space={param: [lo,hi]|[v1,v2,…]}；"
-            "set_seed={seed}；select_FE={node}；run_hpo={n_trials}；final_train_test={}。未知参数即报错"
+            "set_seed={seed}；select_FE={node}；run_hpo={n_trials, platform_experiment_id?}；"
+            "final_train_test={platform_experiment_id?}。未知参数即报错"
         ),
     ] = None,
 ) -> dict:
@@ -401,6 +401,12 @@ def modeling_apply(
 
     run_hpo 全程不碰 holdout（no-peeking choke point 在 final_train_test）；账本键 =
     (family, FE 组合)；study sqlite 落会话目录增量续跑（空间变继续，seed/scoring 变重开）。
+
+    计算动作委派 JobProvider（#218/#225）：受理单源 settings.json job_provider
+    （switch_job_provider 切换）——local 直调进程内；remote 分支整个流 = 一个 apply
+    （失败吃步）：提交任务 → 阻塞拉日志 → zip 拉取解包 → 查询 → 账本对齐 local。
+    remote 模式下计算动作须带 platform_experiment_id（先 ensure_platform_experiment
+    同步源数据文件拿到 id）。
 
     何时使用 modeling_apply：
     - select_model 定光标候选 → run_hpo 出首条账本 → final_train_test 终训交付
