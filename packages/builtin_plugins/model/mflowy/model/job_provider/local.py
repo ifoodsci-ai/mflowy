@@ -128,6 +128,8 @@ def _build_modeling_steps(
 class LocalJobProvider:
     """完全体直调：编排逻辑 + compute 全部原地执行（[local] extra 本地建模栈环境）。
 
+    remote_transport = False  # 声明面（#218 会话 plan 渲染：本径寻址 + cv.load 引用）
+
     headers / platform_experiment_id / inherit_platform_job_id 形参满足 Protocol
     契约但本地模式不消费（模式专属参数原则，#156——先例 headers）；结果恒
     ``JobOutcome.finished``（内嵌完整 DAGResult）。

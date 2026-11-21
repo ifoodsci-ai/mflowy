@@ -45,8 +45,9 @@ remote 模式须带 `platform_experiment_id`（先 `ensure_platform_experiment` 
    继续，seed/scoring 变重开）；每 trial inner CV → u_inner/std；结束在 θ* 上出 OOF
    预测工件（带 indices 列 + 源数据指纹）；响应 `validation.reward` = **Δu_inner**
    （相对该键上次最优；#226 ① 四件观测）。机器判读已退役（#226 ⑥）——统计证据
-   走独立工具 `modeling_statistics`（见下）。remote 限制（fail-loud）：全 pin 退化形
-   只支持 local；同键 local/remote 混合续跑不支持（换 FE/seed 出新键走 remote）。
+   走独立工具 `modeling_statistics`（见下）。链外历史 fail-loud：provider 化之前
+   的存量会话不可续跑（换 FE/seed 出新键，或弃局重开）；全 pin 退化形全域可用
+   （引擎以单点空间渲染保持 search 行为，不碰 holdout）。
 2. `final_train_test{platform_experiment_id?}`——**先搜后店**：终训走 modeling 工具（JobProvider DAG）——
    交付的恒是**搜索时刻证据配置**（快照 ∪ θ*，搜后改 pin 不生效）→ 终训/终评/
    X_test·y_test·y_pred 副产物/plan 一体（交付的 plan_yaml 就是那次终训本身）→ holdout

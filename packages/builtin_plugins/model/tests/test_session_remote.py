@@ -102,12 +102,47 @@ def _build_search_workspace(ws: Path, *, tag_model_node: bool, n_rows: int = 60)
 
         token = set_study_live(True)  # LocalJobProvider 同款窗口：study.db 直驻 run 工件根
         try:
-            with mlflow.start_run(experiment_id=exp_id.experiment_id, run_name="会话搜索-RF"):
+            with mlflow.start_run(experiment_id=exp_id.experiment_id, run_name="会话搜索-RF") as run:
                 RF(ts, n_trials=2, scoring=MetricName.MAE)
                 if tag_model_node:
                     mlflow.set_tag("mflowy.node", "model__RF")
         finally:
             reset_study_live(token)
+    finally:
+        mlflow.set_tracking_uri(prev)
+    return run.info.run_id
+
+
+def _continue_search_workspace(ws_src: Path, ws_dst: Path, anchor_run_id: str, *, n_trials: int = 2) -> None:
+    """续跳工作区（继承链滚雪球模拟）：copy 前史树 → 新模型步 run 以
+    ``inherit_study_run_id`` 锚定前史 study（#244 外部锚：trial 追加进锚树，本 run
+    无自有 study.db——链锚定位的消费面实证）。"""
+    import shutil
+
+    import mlflow
+    from mflowy.data.types import TASKTYPE
+    from mflowy.model.cv.split import split as split_fn
+    from mflowy.model.model._split import materialize_split
+    from mflowy.model.model.random_forest import RF
+    from mflowy.model.model.types import MetricName
+    from mflowy.model.x_y import XySpec
+
+    shutil.copytree(ws_src, ws_dst)
+    prev = mlflow.get_tracking_uri()
+    mlflow.set_tracking_uri(f"sqlite:///{ws_dst / 'mlflow.db'}")
+    try:
+        rng = np.random.default_rng(4)
+        x = rng.normal(size=60)
+        df = pd.DataFrame({"x": x, "target": 2.0 * x + 0.1 * rng.normal(size=60)})
+        X, y = df[["x"]], df[["target"]]
+        assert isinstance(X, pd.DataFrame) and isinstance(y, pd.DataFrame)
+        xy = XySpec(X, y, TASKTYPE.REGRESSION)
+        ts = materialize_split(split_fn(x_y=xy, cv=3), xy)
+        exp_id = mlflow.get_experiment_by_name("remote-ws")
+        assert exp_id is not None  # copytree 带入
+        with mlflow.start_run(experiment_id=exp_id.experiment_id, run_name="会话搜索-RF#2"):
+            RF(ts, n_trials=n_trials, scoring=MetricName.MAE, inherit_study_run_id=anchor_run_id)
+            mlflow.set_tag("mflowy.node", "model__RF")
     finally:
         mlflow.set_tracking_uri(prev)
 
@@ -225,13 +260,14 @@ def test_run_hpo_submitted_full_chain(tmp_path, monkeypatch, isolate, reg_csv):
     _install_remote_provider(monkeypatch, fake)
 
     ws = tmp_path / "remote-ws-1"
-    _build_search_workspace(ws, tag_model_node=True)
+    anchor = _build_search_workspace(ws, tag_model_node=True)
+    assert isinstance(anchor, str) and anchor  # 树主 run_id（断跳链锚断言面）
     fake.zips["job-1"] = ws  # get_download_url 现场打包（zip 本体即弃）
 
-    # 远程工件 URI 前缀改写实测：monkeypatch REMOTE_TASK_DIR → ws 根（zip 契约模拟）
-    from mflowy.model import session_remote
+    # 远程工件 URI 前缀改写实测：monkeypatch 常量单源 → ws 根（zip 契约模拟）
+    import mflowy.utils.constants as consts
 
-    monkeypatch.setattr(session_remote, "REMOTE_TASK_DIR", str(ws))
+    monkeypatch.setattr(consts, "REMOTE_TASK_DIR", str(ws))
 
     r = ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 2, "platform_experiment_id": "exp-1"})
 
@@ -255,12 +291,12 @@ def test_run_hpo_submitted_full_chain(tmp_path, monkeypatch, isolate, reg_csv):
     from mflowy.utils.constants import RANDOM_STATE
 
     assert entry["objective"] == {"seed": RANDOM_STATE, "scoring": "mae"}  # 候选缺省 seed 随 select_model 注入
-    assert entry["oof"]["y_pred"] == "oof_y_pred.parquet" and entry["remote"]["job_id"] == "job-1"
+    assert entry["oof"]["y_pred"] == "oof_y_pred.parquet" and entry["chain"]["job_id"] == "job-1"
     assert entry["u_inner"] < 0 and entry["best_params"]  # MAE 误差类取负 + θ* 在场
     session_db = Path(observation_json).parent / entry["study"]
     study = optuna.load_study(study_name=_K_RF, storage=f"sqlite:///{session_db}")
     assert len(study.trials) == 2 and study.user_attrs["objective"] == {"seed": RANDOM_STATE, "scoring": "mae"}
-    assert entry["n_trials_at_last_eval"] == 2 and entry["remote"]["n_adopted"] == 2
+    assert entry["n_trials_at_last_eval"] == 2 and entry["chain"]["n_adopted"] == 2
 
     # OOF 镜像 run：本地库可寻址（指纹 tag + 证据 parquet + study db 投影）
     import mlflow
@@ -275,11 +311,14 @@ def test_run_hpo_submitted_full_chain(tmp_path, monkeypatch, isolate, reg_csv):
     assert run.data.tags["mflowy.source_fingerprint"] == o["biz"]["source_fingerprint"]  # 指纹 tag = 开局帧指纹
     assert r.validation.steps == 1 and r.biz["board"][_K_RF]["u_inner"] == entry["u_inner"]  # 板面投影随账本
 
-    # 第二跳（稳态链）：inherit_platform_job_id=job-1 + plan 内 inherit_study_run_id
+    # 第二跳（稳态链）：inherit_platform_job_id=job-1 + plan 内 inherit_study_run_id；
+    # ws2 = 前史树滚雪球 + 锚定续跑（锚树 study 4 trials、新 run 无自有 db）
     ws2 = tmp_path / "remote-ws-2"
-    _build_search_workspace(ws2, tag_model_node=True)  # 同规模工作区（链簿 n_adopted 不变断言面）
+    _continue_search_workspace(ws, ws2, anchor)
     fake.zips["job-2"] = ws2
-    monkeypatch.setattr(session_remote, "REMOTE_TASK_DIR", str(ws2))
+    import mflowy.utils.constants as consts
+
+    monkeypatch.setattr(consts, "REMOTE_TASK_DIR", str(ws2))
     ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 2, "platform_experiment_id": "exp-1"})
     args2 = fake.created[1]["args"]
     assert "--inherit-from" in args2 and args2[args2.index("--inherit-from") + 1] == "job-1"
@@ -289,7 +328,7 @@ def test_run_hpo_submitted_full_chain(tmp_path, monkeypatch, isolate, reg_csv):
     )
     assert model_params2["inherit_study_run_id"]  # 节点级 study 寻址（首跳模型步 run）
     entry2 = _state(observation_json)["models"][_K_RF]
-    assert entry2["remote"]["job_id"] == "job-2" and entry2["remote"]["n_adopted"] == 2  # 同规模 → 增量 0
+    assert entry2["chain"]["job_id"] == "job-2" and entry2["chain"]["n_adopted"] == 4  # 同规模 → 增量 0
 
 
 # ── finished outcome（进程内 provider / mock）：LocalRunFace 本地寻址 ──────────
@@ -355,8 +394,8 @@ def test_run_hpo_finished_outcome_consumes_dag_result(tmp_path, isolate, reg_csv
 
     ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 2, "platform_experiment_id": "exp-x"})
     entry = _state(observation_json)["models"][_K_RF]
-    assert entry["remote"]["job_id"] is None and entry["remote"]["run_id"] == donor
-    assert entry["remote"]["n_adopted"] == 2 and entry["u_inner"] < 0
+    assert entry["chain"]["job_id"] is None and entry["chain"]["run_id"] == donor
+    assert entry["chain"]["n_adopted"] == 2 and entry["u_inner"] < 0
     from mflowy.utils.mlflow import run_artifacts
 
     assert "oof_y_pred.parquet" in run_artifacts(entry["oof"]["run_id"])  # 镜像 run 在场
@@ -374,24 +413,46 @@ def test_run_hpo_remote_requires_platform_experiment_id(tmp_path, monkeypatch, i
     assert _state(observation_json)["models"] == {}  # 拒绝在提交前（失败吃步但零账本条目）
 
 
-def test_run_hpo_remote_rejects_degenerate_all_pin(tmp_path, monkeypatch, isolate, reg_csv):
-    """全 pin 退化形（有效空间空）remote 拒绝——DAG 侧两行为判据会转 training 行为
-    （碰 holdout），退化形只支持 local provider。"""
+def test_run_hpo_degenerate_all_pin_via_single_value_space(tmp_path, isolate, reg_csv):
+    """全 pin 退化形（有效空间空 × n_trials=1）经 provider 保真：单值 DiscreteSpace
+    渲染保持 search 行为（inner CV 评估，不碰 holdout——DAG 两行为判据下裸全 pin
+    会转 training 越权读 test）。"""
     observation_json, _ = _start(reg_csv)
     ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
     _pin_all_dynamic_dims(observation_json)
-    _install_remote_provider(monkeypatch, FakePlatform(zips={}))
-    with pytest.raises(ValueError, match="有效搜索空间非空"):
-        ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1, "platform_experiment_id": "exp-1"})
+    ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1})
+    entry = _state(observation_json)["models"][_K_RF]
+    assert entry["u_inner"] is not None and entry["chain"]["n_adopted"] == 1
+    from mflowy.utils.mlflow import run_artifacts
+
+    arts = run_artifacts(entry["oof"]["run_id"])
+    assert "oof_y_pred.parquet" in arts and "X_test.parquet" not in arts  # search 面：无 holdout 副产物
 
 
-def test_run_hpo_remote_rejects_mixed_local_history(tmp_path, monkeypatch, isolate, reg_csv):
-    """混合历史门：该键先 local 搜过（盘上 study 有链外 trial）→ remote 拒绝。"""
+def test_run_hpo_rejects_degenerate_with_extra_trials(tmp_path, isolate, reg_csv):
+    """退化形 × n_trials>1 仍拒绝（多余 trial 是同一参数的重复评估）。"""
+    observation_json, _ = _start(reg_csv)
+    ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
+    _pin_all_dynamic_dims(observation_json)
+    with pytest.raises(ValueError, match="n_trials=1 退化形"):
+        ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 2})
+
+
+def test_run_hpo_rejects_legacy_history_outside_chain(tmp_path, monkeypatch, isolate, reg_csv):
+    """链外历史门：provider 化之前的存量会话库（有 trial、无链簿/采用留痕）→
+    拒绝续跑（红线 1 宁可拒绝——存量 study 语义不可经链重建）。"""
     observation_json, _ = _start(reg_csv, max_steps=8)
     ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
-    ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1})  # local 真搜（RF sklearn 面）
+    # 直接在正典位造存量 study（模拟 provider 化之前的会话：有 trial、零链面）
+    import optuna
+    from mflowy.model.session import _study_db_name
+
+    db = Path(observation_json).parent / _study_db_name(_K_RF)
+    legacy = optuna.create_study(study_name=_K_RF, storage=f"sqlite:///{db}", direction="minimize")
+    legacy.optimize(lambda t: t.suggest_float("x", 0, 1), n_trials=2)
+    legacy.set_user_attr("objective", {"seed": 42, "scoring": "mae"})
     _install_remote_provider(monkeypatch, FakePlatform(zips={}))
-    with pytest.raises(RuntimeError, match="混合续跑"):
+    with pytest.raises(RuntimeError, match="链外历史"):
         ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1, "platform_experiment_id": "exp-1"})
 
 
@@ -549,9 +610,9 @@ def test_final_train_test_submitted_branch(tmp_path, monkeypatch, isolate, reg_c
     _build_training_workspace(ws)
     fake.zips["job-1"] = ws
 
-    from mflowy.model import session_remote
+    import mflowy.utils.constants as consts
 
-    monkeypatch.setattr(session_remote, "REMOTE_TASK_DIR", str(ws))
+    monkeypatch.setattr(consts, "REMOTE_TASK_DIR", str(ws))
 
     r = ModelingSession().apply(observation_json, "final_train_test", {"platform_experiment_id": "exp-1"})
     st = _state(observation_json)

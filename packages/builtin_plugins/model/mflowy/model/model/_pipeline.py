@@ -391,7 +391,7 @@ def hyperparameters_search(
     download 落家本 run；多 model 节点各自寻址互不污染。
 
     ``seed`` **仅在 ``study=None``（自建 study）路径消费**——传入 study 时其 sampler
-    由开 study 方随 seed 挂（#84：会话侧 `_open_study`；此处不再二次播种）。
+    由开 study 方随 seed 挂（#84：会话侧采用面 adopt_study_trials；此处不再二次播种）。
 
     搜索终产 OOF 观察面（#218 产面移进管线）：θ* 折外证据表/半宽 tag/任务分组
     可视化落当前 run——会话直调与 DAG search 两分支同名工件对齐（remote zip ≡

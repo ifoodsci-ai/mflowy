@@ -402,11 +402,11 @@ def modeling_apply(
     run_hpo 全程不碰 holdout（no-peeking choke point 在 final_train_test）；账本键 =
     (family, FE 组合)；study sqlite 落会话目录增量续跑（空间变继续，seed/scoring 变重开）。
 
-    计算动作委派 JobProvider（#218/#225）：受理单源 settings.json job_provider
-    （switch_job_provider 切换）——local 直调进程内；remote 分支整个流 = 一个 apply
-    （失败吃步）：提交任务 → 阻塞拉日志 → zip 拉取解包 → 查询 → 账本对齐 local。
-    remote 模式下计算动作须带 platform_experiment_id（先 ensure_platform_experiment
-    同步源数据文件拿到 id）。
+    计算动作全形态经 JobProvider（#218/#225 + 债清偿裁定）：受理单源
+    settings.json job_provider（switch_job_provider 切换）——一律渲染 plan 提交
+    provider；submitted 全流 = 一个 apply（失败吃步）：提交任务 → 阻塞拉日志 →
+    zip 拉取解包 → 查询 → 账本对齐 finished 形态。remote 模式下计算动作须带
+    platform_experiment_id（先 ensure_platform_experiment 同步源数据文件拿到 id）。
 
     何时使用 modeling_apply：
     - select_model 定光标候选 → run_hpo 出首条账本 → final_train_test 终训交付

@@ -21,6 +21,32 @@ _TaskDir: ContextVar[Path | None] = ContextVar("task_dir", default=None)
 _TaskDirPinned: ContextVar[bool] = ContextVar("task_dir_pinned", default=False)
 
 
+def file_uri_to_local_path(uri: str) -> str:
+    """file:// URI 转本地绝对路径，远端 store 保持完整 URI（mlflow 查询工具共用约定）。"""
+    from urllib.parse import unquote, urlparse
+
+    parsed = urlparse(uri)
+    return str(Path(unquote(parsed.path))) if parsed.scheme == "file" else uri
+
+
+def rewrite_remote_artifact(value: str, local_root: Path | None) -> str:
+    """远程工件路径改写（观察面单参推导 #160 终稿 + 会话 remote 解包 #218 共用）。
+
+    命中 ``REMOTE_TASK_DIR`` 前缀（file:// URI 或裸路径、精确或子路径）→ 替换为
+    ``local_root``（zip 契约：mlflow.db 与 ``.mlruns/`` 同根，db 目录即工件根，
+    #155）；不匹配或 ``local_root`` 缺席原样透传。"""
+    from mflowy.utils.constants import REMOTE_TASK_DIR
+
+    if local_root is None:
+        return value
+    stripped = file_uri_to_local_path(value)
+    if stripped == REMOTE_TASK_DIR:
+        return str(local_root)
+    if stripped.startswith(REMOTE_TASK_DIR + "/"):
+        return str(local_root) + stripped[len(REMOTE_TASK_DIR) :]
+    return value
+
+
 def set_task_dir(task_file: str | Path):
     """设置任务目录；返回 ContextVar token 供调用方恢复（全局态用毕即还）。"""
     return _TaskDir.set(Path(task_file).parent.absolute())

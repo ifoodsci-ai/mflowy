@@ -1023,13 +1023,6 @@ def _machinery_of(family: str):
     return meta["machinery"], meta.get("fit_params")
 
 
-def _effective_overrides(m: dict) -> dict:
-    """光标有效参数覆盖（单表 H 解析）：dict = Space 收窄、标量 = pin。"""
-    from mflowy.model.model.utils import space_from_json
-
-    return {k: (space_from_json(v) if isinstance(v, dict) else v) for k, v in m["cursor"]["H"].items()}
-
-
 def _ensure_structure(m: dict, family: str) -> dict:
     """结构相容守卫 + 最小装配（encode 族 × 类别列 × cat 空槽 → run 自带 ordinal）。"""
     from mflowy.model import registry
@@ -1047,31 +1040,6 @@ def _ensure_structure(m: dict, family: str) -> dict:
     )
 
 
-def _open_study(m: dict, key: str, objective_id: dict, scoring: MetricName, seed: int | None):
-    """盘上 study 真源：目标同一性判据——空间变（收窄/pin/加深）增量继续，目标变（seed/scoring）重开。
-
-    sampler 随 seed 建（#84：objective_id 已含 seed，sampler 种子与目标同一性同步——
-    曾走 optuna 缺省未钉 TPESampler，θ* 每进程漂移致 findings 出题面抖动）。"""
-    import optuna
-    from mflowy.model.model.types import MetricName  # 局部导入遮蔽注解面（运行期消费 higher_is_better）
-    from optuna import samplers
-
-    db = _root() / m["session_id"] / _study_db_name(key)
-    storage = f"sqlite:///{db}"
-    direction = "maximize" if MetricName.higher_is_better(scoring) else "minimize"
-    sampler = samplers.TPESampler(seed=seed)
-    if db.exists():
-        study = optuna.load_study(study_name=key, storage=storage, sampler=sampler)
-        if study.user_attrs.get("objective") == objective_id:
-            return study
-        db.unlink()  # 目标变 → 重开（trial 清零；旧文件弃置——append-only 真源换新目标）
-    study = optuna.create_study(
-        study_name=key, storage=storage, direction=direction, load_if_exists=True, sampler=sampler
-    )
-    study.set_user_attr("objective", objective_id)
-    return study
-
-
 def _tag_run(run, m: dict, *, action: str, key: str, family: str) -> None:
     """mlflow 血缘认证（fluent 窗口内）：委托 _lineage_tags 单源。"""
     import mlflow
@@ -1080,10 +1048,11 @@ def _tag_run(run, m: dict, *, action: str, key: str, family: str) -> None:
 
 
 def _run_hpo(ss, o, m, board, log, params: dict) -> None:
-    """run_hpo：provider 委派（#218/#225 裁定 1）——local provider 直调（行为不变：
-    同进程、同 study db 路径）；remote/自定义 provider 渲染 plan 提交 + 阻塞消费
-    （提交 → 拉日志 → zip 拉取解包 → 查询 → study 采用 + OOF 镜像本地 run），
-    输出对齐 local 分支（账本条目同形，remote 链随附）。"""
+    """run_hpo：**全形态经 JobProvider**（#218 债清偿，用户裁定 2026-11-21——local
+    不再进程内直调）：渲染搜索 plan → ``provider.hyperparameters_search`` → 消费
+    JobOutcome——finished（进程内 DAG / mock：LocalRunFace 本地库直读）或
+    submitted（平台链：阻塞拉日志 → zip 解包 → 查询）。study 采用（``add_trial``
+    增量并入会话正典库）+ OOF 工件回读，账本条目两形态同形。"""
     n_trials = params.get("n_trials", DEFAULT_N_TRIALS)
     platform_experiment_id = params.get("platform_experiment_id")
     unknown = set(params) - {"n_trials", "platform_experiment_id"}
@@ -1109,141 +1078,49 @@ def _run_hpo(ss, o, m, board, log, params: dict) -> None:
 
     provider = get_job_provider()
     if isinstance(provider, LocalJobProvider):
-        # local 模式忽略 platform_experiment_id（模式专属参数原则——镜像 provider 协议）
-        _run_hpo_local(ss, o, m, board, log, entry=entry, family=family, fe=fe, key=key, n_trials=n_trials)
-    else:
-        _run_hpo_remote(
-            ss,
-            o,
-            m,
-            board,
-            log,
-            entry=entry,
-            family=family,
-            fe=fe,
-            key=key,
-            n_trials=n_trials,
-            platform_experiment_id=platform_experiment_id,
-        )
+        # 瘦装 + local 永久降级路径（#217 ④/#218 ④）：重栈 import 预检——DAG 内失败
+        # 只余聚合 repr，提交前给安装提示（model_cls 工厂急切导入，无 fit）
+        machinery, _ = _machinery_of(family)
+        try:
+            machinery(_task(m), None)
+        except ModuleNotFoundError as e:
+            from .extras import LOCAL_INSTALL_HINT
 
+            raise RuntimeError(f"{LOCAL_INSTALL_HINT}（缺 {e.name}）") from e
 
-def _run_hpo_local(ss, o, m, board, log, *, entry, family, fe, key, n_trials) -> None:
-    """local 分支：会话进程内直调（#218 前行为原样——同 study db 路径、同工件名）。"""
-    import mlflow
-    from mflowy.model import registry
-
-    scoring = _metric_of(m)
-    seed = m["cursor"]["seed"]
-    ts = _load_split(m)
-    ct = registry.build_ct(fe["cat"], fe["num"], (ts.X_train, ts.y_train, _task(m)))
-    machinery, _ = _machinery_of(family)
-    try:
-        make_pipe, base, space = machinery(_task(m), ct, seed=seed, **_effective_overrides(m))
-    except ModuleNotFoundError as e:  # 瘦装 + local provider 永久降级路径（#217 ④/#218 ④）
-        from .extras import LOCAL_INSTALL_HINT
-
-        raise RuntimeError(f"{LOCAL_INSTALL_HINT}（缺 {e.name}）") from e
-    if not space and n_trials > 1:
-        raise ValueError("全 pin 候选（有效空间为空）走 n_trials=1 退化形——多余 trial 是同一参数的重复评估")
-
-    objective_id = {"seed": seed if seed is not None else "default", "scoring": scoring.value}
-    study = _open_study(m, key, objective_id, scoring, seed)
-    with mlflow.start_run(run_name=f"run_hpo:{key}") as run:
-        _tag_run(run, m, action="run_hpo", key=key, family=family)
-        from mflowy.model.model._pipeline import OOF_HALF_WIDTH_TAG, hyperparameters_search
-        from mflowy.utils.capture import capture_prints
-        from mflowy.utils.mlflow import log_file
-
-        # 通道纪律（M7）：直调 _pipeline 绕过 driver 节点的唯一捕获窗口——自建窗口，
-        # 业务数据（分数摘要）已进 mlflow/账本，捕获输出转 logger（stderr 诊断面）
-        with capture_prints() as buf:
-            # OOF 观察面（#218 产面移进管线）随 hyperparameters_search 产——证据表/
-            # 半宽 tag/任务分组图族与 DAG search 分支同名工件对齐
-            hyperparameters_search(
-                space,
-                scoring=scoring,
-                n_trials=n_trials,
-                split=ts,
-                make_pipe=make_pipe,
-                base_params=base,
-                study=study,
-                seed=seed,
-            )
-            # #95 项5：study storage 随父 run 落工件（只读投影——盘上真源不变，账本 append-only）
-            log_file(_root() / m["session_id"] / _study_db_name(key))
-            mlflow.set_tag(
-                "mflowy.source_fingerprint", m["source_fingerprint"]
-            )  # #236 工件契约：统计工具重构校验锚（开局原始帧指纹——稳定锚；θ* 体征探针随判读退役）
-        captured = buf.getvalue().strip()
-        if captured:
-            logger.info("run_hpo[%s] 捕获输出：\n%s", key, captured)
-    # 半宽账本回读面：管线写 study user_attr（跨 db 拷回仍可寻址，#218）
-    half_width = study.user_attrs.get(OOF_HALF_WIDTH_TAG)
-
-    from mflowy.model.model._pipeline import u_inner_of
-
-    prev_u = entry.get("u_inner")
-    new_u = u_inner_of(study, scoring)
-    best = study.best_trial
-    assert best.value is not None  # best_trial 必为完成态（optuna 保证 value 非空）——收窄 float | None 注解
-    scores = best.user_attrs.get("scores", [])
-    import numpy as np
-
-    # #226 ⑥/#236 判读退役：规则 findings 出场——统计证据走独立工具 modeling_statistics
-    # （run 寻址重构），判读归 agent 经 report_findings 动作落账（单源 source=llm）。
-    entry.update(
-        {
-            "study": _study_db_name(key),
-            "objective": objective_id,
-            "n_trials_at_last_eval": len(study.trials),
-            "u_inner": new_u,
-            "best_params": dict(best.params),  # θ*（动态维；pin 常量在证据快照）
-            # #66 证据配置快照：搜索时刻完整静态配置（默认 ∪ pin——θ* 之外维度的
-            # 搜索时取值）；final_train_test 交付 = evidence ∪ θ*，搜后改 pin 不生效
-            "evidence": {k: v for k, v in base.items() if k in _family_params(family)},
-            "std": round(float(np.std(scores)), 4) if len(scores) else None,
-            "oof": {
-                "run_id": run.info.run_id,
-                "y_pred": "oof_y_pred.parquet",  # run 工件名（#236 起带 indices 列 + 源指纹 tag）
-                "half_width": half_width,  # 回归区间半宽（#164；分类 None 无面）
-                "plots": [],  # #236：图集随统计工具（modeling_statistics）产——搜索时留空槽
-            },
-            "findings": [f for f in entry.get("findings", []) if f.get("source") == "llm"],  # 单源 llm（#226 ⑥）
-        }
-    )
-    reward = new_u if prev_u is None else round(new_u - prev_u, 4)
-    _commit(
-        ss,
-        o,
-        m,
-        board,
-        log,
-        "run_hpo",
-        {"n_trials": n_trials, "key": key},
-        note=f"u_inner={new_u}（Δ={reward}）trials={len(study.trials)} oof_run={run.info.run_id[:8]}",
-        reward=reward,
+    _run_hpo_provider(
+        ss, o, m, board, log,
+        entry=entry, family=family, fe=fe, key=key, n_trials=n_trials,
+        platform_experiment_id=platform_experiment_id,
     )
 
 
-def _run_hpo_remote(ss, o, m, board, log, *, entry, family, fe, key, n_trials, platform_experiment_id) -> None:
-    """remote 分支（#218/#225 裁定 1/4）：渲染 plan → provider 提交 → 阻塞等终态
-    （日志流式上屏）→ zip 拉取解包 → 查询模型步 run → study 采用（add_trial 入
-    正典库）+ OOF 镜像本地 run → 账本对齐 local 分支。稳态 job-id 链 =
-    ``inherit_platform_job_id``（工作区恢复）+ ``inherit_study_run_id``（study 寻址）
-    两层（entry.remote 随附链簿）。"""
+def _run_hpo_provider(
+    ss, o, m, board, log, *, entry, family, fe, key, n_trials, platform_experiment_id
+) -> None:
+    """run_hpo 的 provider 执行面（#218/#225 裁定 1）：plan 渲染（remote_transport
+    provider → uploads 寻址 + cv.split 确定性复现；其余 → 本径 + cv.load 按引用
+    复用会话划分）→ 提交 → 消费 → study 采用 + OOF 回读 → 账本更新。
+
+    全 pin 退化形（有效空间空 × n_trials=1）：单值 DiscreteSpace 渲染保持 search
+    行为（DAG 两行为判据下裸全 pin 会转 training——碰 holdout，越权）；无动态维
+    的族不可退化评估（fail-loud）。稳态链 = ``inherit_platform_job_id``（工作区
+    恢复）+ plan 内 ``inherit_study_run_id``（study 寻址，#244 外部锚）两层。"""
     from mflowy.model.model.study import STUDY_NAME, ContinuousSpace, DiscreteSpace
     from mflowy.model.model.types import MetricName
 
     from . import session_remote
+    from .job_provider import get_job_provider
+    from .job_provider.remote import RemoteJobProvider
 
     scoring = _metric_of(m)
     seed = m["cursor"]["seed"]
     objective_id = {"seed": seed if seed is not None else "default", "scoring": scoring.value}
-    chain = entry.get("remote") or {}
+    chain = entry.get("chain") or {}
     n_adopted = chain.get("n_adopted", 0)
 
-    # 混合历史门（#225 实施细节——study 拷回连续性的边界，红线 1 宁可拒绝）：
-    # 该键盘上已有 remote 链之外的 trial（纯 local 历史或 local 续跑后混入）→ 拒绝
+    # 链外历史门（红线 1 宁可拒绝）：盘上正典 study 有链簿外 trial（provider 化之前
+    # 的存量会话 / 手工改动）——拒绝（续跑要求该键历史全在 provider 链上）
     session_db = _root() / m["session_id"] / _study_db_name(key)
     if session_db.exists():
         import optuna
@@ -1258,31 +1135,41 @@ def _run_hpo_remote(ss, o, m, board, log, *, entry, family, fe, key, n_trials, p
             n_local = adopted_baseline = 0
         if n_local != adopted_baseline:
             raise RuntimeError(
-                f"combo `{key}` 盘上 study 已有 remote 链外历史（trials={n_local}，链内已采用={adopted_baseline}）——"
-                "local/remote 混合续跑不支持：该键继续 local，或换 FE/seed 出新键走 remote"
+                f"combo `{key}` 盘上 study 有链外历史（trials={n_local}，链内已采用={adopted_baseline}）——"
+                "provider 化之前的存量会话不可续跑：换 FE/seed 出新键，或弃局重开"
             )
 
-    # 有效空间非空门（DAG 两行为判据 = 空否）：全 pin 退化形在 DAG 侧是 training
-    # 行为（碰 holdout）——remote 分支拒绝，退化形只支持 local provider
+    # 有效空间 / 退化形判定（单源：face 动态维 ∪ 光标空间槽位）
     face = _family_params(family)
     pinned = {k for k, v in m["cursor"]["H"].items() if not isinstance(v, dict)}
-    effective_space = {
-        k for k, v in face.items() if isinstance(v, (ContinuousSpace, DiscreteSpace)) and k not in pinned
+    dynamic_face = {k for k, v in face.items() if isinstance(v, (ContinuousSpace, DiscreteSpace))}
+    effective_space = {k for k in dynamic_face if k not in pinned} | {
+        k for k, v in m["cursor"]["H"].items() if isinstance(v, dict)
     }
-    effective_space |= {k for k, v in m["cursor"]["H"].items() if isinstance(v, dict)}
+    degenerate_dim = None
     if not effective_space:
-        raise ValueError("remote 分支要求有效搜索空间非空——全 pin 退化形（n_trials=1）只支持 local provider")
+        if n_trials != 1:
+            raise ValueError("全 pin 候选（有效空间为空）走 n_trials=1 退化形——多余 trial 是同一参数的重复评估")
+        from mflowy.model import registry
 
-    if not platform_experiment_id:
+        # 单点渲染面：优先 pinned 动态维；静态缺省族（如 MLP）退到签名类型面收
+        # Space 的维（registry.family_space_dims——值取 pin 或声明缺省）
+        degenerate_dim = next(iter(sorted(pinned & dynamic_face)), None) or next(
+            iter(sorted(registry.family_space_dims(family))), None
+        )
+        if degenerate_dim is None:
+            raise ValueError(
+                f"族 `{family}` 签名无 Space 类型维——全 pin 评估无空间可渲染（search 行为不可达），不可 run_hpo"
+            )
+
+    provider = get_job_provider()
+    remote_transport = getattr(provider, "remote_transport", False)  # provider 声明面（自定义远程 provider 可标）
+    if remote_transport and not platform_experiment_id:
         raise ValueError(
             "remote provider 下 run_hpo 须带 platform_experiment_id——先 ensure_platform_experiment"
             f"（files 含源数据 {Path(m['source_file']).name}）拿到 id 后随 run_hpo 传入"
         )
 
-    from .job_provider import get_job_provider
-    from .job_provider.remote import RemoteJobProvider
-
-    uploads = isinstance(get_job_provider(), RemoteJobProvider)
     plan_text = _hpo_plan_yaml(
         m,
         fe,
@@ -1291,13 +1178,14 @@ def _run_hpo_remote(ss, o, m, board, log, *, entry, family, fe, key, n_trials, p
         seed=seed,
         scoring=scoring,
         inherit_study_run_id=chain.get("run_id"),
-        uploads=uploads,
+        remote_transport=remote_transport,
+        degenerate_dim=degenerate_dim,
     )
     outcome = _run_bridge(
-        get_job_provider().hyperparameters_search(
+        provider.hyperparameters_search(
             modeling_steps=plan_text,
             name=f"run_hpo:{m['session_id'][:6]}",
-            desc=f"会话 {m['session_id']} combo {key} 搜索（remote 分支，#218）",
+            desc=f"会话 {m['session_id']} combo {key} 搜索（provider 形态，#218）",
             platform_experiment_id=platform_experiment_id,
             inherit_platform_job_id=chain.get("job_id"),
         )
@@ -1306,35 +1194,28 @@ def _run_hpo_remote(ss, o, m, board, log, *, entry, family, fe, key, n_trials, p
     if outcome.status == "finished":
         dag = outcome.dag_result
         if dag is None or dag.status != "finished":
-            raise RuntimeError(f"受理 DAG 未完成（status={getattr(dag, 'status', None)}）：{getattr(dag, 'error', '')}")
-        node = next((r for r in dag.runs if r.node == f"model__{family}" and r.status == "FINISHED" and r.run_id), None)
+            raise RuntimeError(f"搜索受理 DAG 未完成（status={getattr(dag, 'status', None)}）：{getattr(dag, 'error', '')}")
+        node = next(
+            (r for r in dag.runs if r.node == f"model__{family}" and r.status == "FINISHED" and r.run_id), None
+        )
         if node is None:
-            raise RuntimeError(
-                f"受理 DAG 无完成的 model__{family} 节点（runs：{[(r.node, r.status) for r in dag.runs]}）"
-            )
+            raise RuntimeError(f"受理 DAG 无完成的 model__{family} 节点（runs：{[(r.node, r.status) for r in dag.runs]}）")
         face_run = session_remote.LocalRunFace(run_id=node.run_id)
         job_id = None
-        tag_client = None
     else:
         assert outcome.job_id and platform_experiment_id  # submitted 形态构造保证（JobOutcome 互斥不变量）
-        provider_now = get_job_provider()
-        client = (
-            provider_now.client if isinstance(provider_now, RemoteJobProvider) else session_remote.platform_client()
-        )
+        client = provider.client if isinstance(provider, RemoteJobProvider) else session_remote.platform_client()
         session_remote.await_job(client, outcome.job_id)
         unpacked = session_remote.fetch_workspace(client, outcome.job_id, platform_experiment_id, ss.dir / "jobs")
         face_run = session_remote.find_model_run(unpacked, family)
-        from mlflow.tracking import MlflowClient
-
-        tag_client = MlflowClient(tracking_uri=f"sqlite:///{unpacked / 'mlflow.db'}")
         job_id = outcome.job_id
 
-    # 产品回读：study db（run 工件根直驻）+ OOF 证据 parquet + 半宽 tag
-    study_db_remote = face_run.artifact("study.db")
-    face_run.artifact("oof_y_pred.parquet")  # 在场过门（镜像拷贝源）
-    half_width = session_remote.oof_half_width_of(face_run, tag_client)
+    # 产品回读：study db（链锚定位——#244 外部锚续跑不落本 run 根；树主 = 链簿锚定面）
+    study_db_src, study_owner = session_remote.study_db_of(face_run, chain.get("run_id"))
+    face_run.artifact("oof_y_pred.parquet")  # 在场过门
+    half_width = session_remote.oof_half_width_of(face_run)
 
-    # study 采用（remote→local 翻回连续性）+ 正典库增量并入
+    # study 采用（provider→会话正典库翻回连续性）+ 增量并入
     direction = "maximize" if MetricName.higher_is_better(scoring) else "minimize"
     study, n_new = session_remote.adopt_study_trials(
         session_db,
@@ -1342,11 +1223,25 @@ def _run_hpo_remote(ss, o, m, board, log, *, entry, family, fe, key, n_trials, p
         objective_id=objective_id,
         direction=direction,
         seed=seed,
-        remote_db=study_db_remote,
+        remote_db=study_db_src,
         n_adopted=n_adopted,
         remote_study_name=STUDY_NAME,
     )
-    mirror_run = _mirror_oof_run(m, family, key, oof_src=face_run.artifact("oof_y_pred.parquet"), half_width=half_width)
+
+    if outcome.status == "finished":
+        # 本地库 run——oof.run_id 直指（零镜像）；后补血缘/指纹/正典投影（#95 项5 同语义）
+        import mlflow
+
+        client = mlflow.MlflowClient()
+        for k, v in _lineage_tags(m, action="run_hpo", key=key, family=family).items():
+            client.set_tag(face_run.run_id, k, v)
+        client.set_tag(face_run.run_id, "mflowy.source_fingerprint", m["source_fingerprint"])
+        client.log_artifact(face_run.run_id, str(session_db))
+        oof_run_id = face_run.run_id
+    else:
+        oof_run_id = _mirror_oof_run(
+            m, family, key, oof_src=face_run.artifact("oof_y_pred.parquet"), half_width=half_width
+        )
 
     from mflowy.model.model._pipeline import u_inner_of
 
@@ -1357,7 +1252,7 @@ def _run_hpo_remote(ss, o, m, board, log, *, entry, family, fe, key, n_trials, p
     scores = best.user_attrs.get("scores", [])
     import numpy as np
 
-    # 证据快照（remote 派生 = local 等价）：签名静态缺省 ∪ 光标标量 pin（face 键内）
+    # 证据快照：签名静态缺省 ∪ 光标标量 pin（face 键内——与 machinery 时代等价）
     evidence = {k: v for k, v in face.items() if not isinstance(v, (ContinuousSpace, DiscreteSpace))}
     evidence.update({k: v for k, v in m["cursor"]["H"].items() if not isinstance(v, dict)})
     entry.update(
@@ -1370,16 +1265,17 @@ def _run_hpo_remote(ss, o, m, board, log, *, entry, family, fe, key, n_trials, p
             "evidence": evidence,
             "std": round(float(np.std(scores)), 4) if len(scores) else None,
             "oof": {
-                "run_id": mirror_run,
+                "run_id": oof_run_id,
                 "y_pred": "oof_y_pred.parquet",
                 "half_width": half_width,
                 "plots": [],
             },
             "findings": [f for f in entry.get("findings", []) if f.get("source") == "llm"],
-            # remote 链簿（稳态 job-id 两层寻址的面——下次提交的 inherit 源）
-            "remote": {
+            # provider 链簿（下次提交的 inherit 源——run_id 恒锚 study 树主：续跳
+            # 外部锚不换树，本 run 无自有 db 不可寻址）
+            "chain": {
                 "job_id": job_id,
-                "run_id": face_run.run_id,
+                "run_id": study_owner,
                 "platform_experiment_id": platform_experiment_id,
                 "n_adopted": n_new,
             },
@@ -1394,7 +1290,7 @@ def _run_hpo_remote(ss, o, m, board, log, *, entry, family, fe, key, n_trials, p
         log,
         "run_hpo",
         {"n_trials": n_trials, "key": key, "platform_experiment_id": platform_experiment_id},
-        note=f"u_inner={new_u}（Δ={reward}）trials={len(study.trials)} remote_run={face_run.run_id[:8]}",
+        note=f"u_inner={new_u}（Δ={reward}）trials={len(study.trials)} run={face_run.run_id[:8]}",
         reward=reward,
     )
 
@@ -1471,14 +1367,13 @@ def _final_train_test(ss, o, m, board, log, params: dict) -> None:
         final_params["random_state"] = seed
 
     loader_v = 1  # 冻结世代：freeze-once ⇒ 恒 1（若未来解冻重训，世代递增——指针永不悬空的结构位）
-    from mflowy.utils.constants import REMOTE_UPLOADS_DIR
-
     from .job_provider import get_job_provider
-    from .job_provider.remote import RemoteJobProvider
 
-    uploads = isinstance(get_job_provider(), RemoteJobProvider)
-    if uploads:
+    provider = get_job_provider()
+    if getattr(provider, "remote_transport", False):
         # remote 形态 plan：uploads 寻址 + cv.split 确定性复现（无本地 run 引用可依）
+        from mflowy.utils.constants import REMOTE_UPLOADS_DIR
+
         split_params = {**m["protocol"]["split_params"]}
         split_params.setdefault("cv", m["protocol"]["cv"])
         plan_flow = _flow_prefix(
@@ -1495,12 +1390,12 @@ def _final_train_test(ss, o, m, board, log, params: dict) -> None:
     write_text_atomic(plan_path, plan_text)  # 审计工件（执行合同面是明文文本，M4 计划落盘留痕）
 
     result = _run_bridge(
-        get_job_provider().modeling(
+        provider.modeling(
             modeling_steps=plan_text,
             name=f"final_train_test:{m['session_id'][:6]}",
             desc=f"会话 {m['session_id']} combo {key} 终训（终训即 plan 执行）",
             platform_experiment_id=platform_experiment_id,
-            inherit_platform_job_id=(entry.get("remote") or {}).get("job_id"),  # 分支 lineage 链
+            inherit_platform_job_id=(entry.get("chain") or {}).get("job_id"),  # 分支 lineage 链
         )
     )
     if result.status == "finished" and result.dag_result is not None:
@@ -1606,6 +1501,7 @@ def _new_entry(key: str, family: str, fe: dict) -> dict:
         "final_params": None,
         "byproducts": None,
         "oof": None,
+        "chain": None,  # provider 链簿（job_id/run_id/n_adopted——下次提交 inherit 源）
     }
 
 
@@ -1758,8 +1654,6 @@ def _final_train_test_remote(ss, m, family, key, *, outcome, scoring):
     holdout 指标解析（run metrics 展平面 ``{target}.{metric}`` 逆向，terminal_u 单源）
     + 副产物/模型镜像本地 run → (镜像 run_id, loader, holdout)。账本两分支同形
     （镜像 run = 本地库 run——下游 predict/统计/泰勒零分叉）。"""
-    from mlflow.tracking import MlflowClient
-
     from . import session_remote
     from .job_provider import get_job_provider
     from .job_provider.remote import RemoteJobProvider
@@ -1772,17 +1666,14 @@ def _final_train_test_remote(ss, m, family, key, *, outcome, scoring):
     session_remote.await_job(client, outcome.job_id)
     unpacked = session_remote.fetch_workspace(client, outcome.job_id, outcome.platform_experiment_id, ss.dir / "jobs")
     face = session_remote.find_model_run(unpacked, family)
-    metrics = session_remote.metrics_from_flat(
-        MlflowClient(tracking_uri=f"sqlite:///{unpacked / 'mlflow.db'}").get_run(face.run_id).data.metrics
-    )
+    metrics = session_remote.metrics_from_flat(face.client.get_run(face.run_id).data.metrics)
     if not metrics:
         raise RuntimeError(f"终训 remote run 无 holdout 指标（run={face.run_id[:8]}）——training 行为契约不符")
     holdout = {"u": round(terminal_u(metrics, scoring), 4), "metrics": metrics}
     for name in HOLDOUT_BYPRODUCTS.values():
         face.artifact(name)  # 副产物在场过门
     pd.read_parquet(face.artifact(HOLDOUT_BYPRODUCTS["y_pred"]))  # 可读性过门（#236）
-    tclient = MlflowClient(tracking_uri=f"sqlite:///{unpacked / 'mlflow.db'}")
-    model_dir = session_remote.logged_model_dir(tclient, unpacked, face.run_id)
+    model_dir = session_remote.logged_model_dir(face.client, unpacked, face.run_id)
 
     from mflowy.utils.mlflow import log_file
 
@@ -1873,28 +1764,39 @@ def _hpo_plan_yaml(
     seed,
     scoring,
     inherit_study_run_id: str | None,
-    uploads: bool,
+    remote_transport: bool,
+    degenerate_dim: str | None = None,
 ) -> str:
-    """run_hpo remote 分支的搜索 plan：load → x_y → cv.split（确定性复现）→ [FE]
-    → 族节点（search 行为：光标 H 空间/标量 + n_trials + scoring + seed +
-    inherit_study_run_id）——容器内经 mflowy-job wrap 走 LocalJobProvider 的 DAG
-    search（OOF 产面同名工件，#218）。"""
+    """run_hpo 搜索 plan（provider 全形态共用）：load → x_y → cv → [FE] → 族节点
+    （search 行为：光标 H 空间/标量 + n_trials + scoring + seed +
+    inherit_study_run_id）。remote_transport → uploads 寻址 + cv.split 确定性复现
+    （无本地 run 引用可依）；否则本径 + cv.load 按引用复用会话划分。退化形
+    （全 pin）：``degenerate_dim`` 以单值 DiscreteSpace 渲染——search 行为保真
+    （inner CV 评估，不碰 holdout）。"""
     from mflowy.driver.config import NodeConf
     from mflowy.driver.serializer import flow_to_yaml
+    from mflowy.model.model.study import ContinuousSpace, DiscreteSpace
     from mflowy.model.model.utils import space_from_json
-    from mflowy.utils.constants import REMOTE_UPLOADS_DIR
 
-    split_params = {**m["protocol"]["split_params"]}
-    split_params.setdefault("cv", m["protocol"]["cv"])  # 缺省单源（#83）：冻结协议值——与开局物化同面
-    flow = _flow_prefix(
-        m,
-        fe,
-        file_path=f"{REMOTE_UPLOADS_DIR}/{Path(m['source_file']).name}" if uploads else None,
-        split_params=split_params,
-    )
+    if remote_transport:
+        from mflowy.utils.constants import REMOTE_UPLOADS_DIR
+
+        split_params = {**m["protocol"]["split_params"]}
+        split_params.setdefault("cv", m["protocol"]["cv"])  # 缺省单源（#83）：与开局物化同面
+        flow = _flow_prefix(
+            m, fe, file_path=f"{REMOTE_UPLOADS_DIR}/{Path(m['source_file']).name}", split_params=split_params
+        )
+    else:
+        flow = _flow_prefix(m, fe)
     params: dict = {
         k: (space_from_json(v) if isinstance(v, dict) else v) for k, v in m["cursor"]["H"].items()
     }  # 空间槽位（JSON 形态）→ Space 本体（序列化回 YAML 构造形）
+    if degenerate_dim is not None:  # 全 pin 退化形：单点空间——DAG 侧保持 search 行为
+        v = params.get(degenerate_dim, _family_params(family)[degenerate_dim])  # pin 值或声明缺省
+        declared = _family_params(family)[degenerate_dim]  # 空间类型随签名（float|Continuous vs int|Discrete）
+        params[degenerate_dim] = ContinuousSpace(float(v), float(v)) if isinstance(declared, float) else (
+            ContinuousSpace(v, v) if isinstance(declared, ContinuousSpace) else DiscreteSpace([v])
+        )
     params["n_trials"] = n_trials
     params["scoring"] = scoring
     if seed is not None:

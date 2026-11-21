@@ -7,10 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### 建模会话计算面委派 JobProvider——run_hpo provider 化与瘦装会话（#218）
+### 建模会话计算面委派 JobProvider——run_hpo 全形态 provider 化与瘦装会话（#218）
 
-#225 裁定集（2026-11-21 生效版）的会话半边落地：受理单源 settings.json
-`job_provider`——remote/local = 同一动作的两个分支，输出对齐（账本条目同形）。
+#225 裁定集（2026-11-21 生效版）的会话半边落地 + 用户裁定（2026-11-21 债清偿）：
+**run_hpo 全形态经 JobProvider**（local 不再进程内直调——受理单源
+`provider.hyperparameters_search`）；remote/local = 同一动作的两个受理分支，
+输出对齐（账本条目同形）。
 
 - **失败吃步（BREAKING 行为变更，取代 #234「失败恒免费」）**：apply 尝试无论
   成败占一步预算——壳失败路径提交 steps + 失败决策日志条目（r=None、错误入
@@ -19,22 +21,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **会话目录提交锁（并行分支）**：`.commit.lock` flock 跨进程互斥、进程内可
   重入（域 board 写与壳投影写同锁嵌套）；apply exit 进锁做 steps 键控合并
   （盘上事实 +1，分支间可交换）。提交/长等待不持锁。
-- **run_hpo provider 委派**：LocalJobProvider → 进程内直调（行为不变：同进程
-  同 study db 路径）；其他 provider → 渲染 plan（uploads 寻址 + cv.split
-  确定性复现）提交 → 阻塞拉日志（增量流式上屏）→ zip 拉取解包 → 查询模型步
-  run → study 采用（`add_trial` 增量并入会话正典库）+ OOF 镜像本地 run。
-  稳态 job-id 链：`inherit_platform_job_id`（工作区恢复）+ plan 内
-  `inherit_study_run_id`（study 寻址）两层（`entry.remote` 链簿）。remote 模式
-  须带 `platform_experiment_id`（先 ensure_platform_experiment 同步源数据）；
-  全 pin 退化形与 local/remote 混合续跑 fail-loud。
+- **run_hpo 全形态 provider 化（BREAKING）**：一律渲染搜索 plan →
+  `provider.hyperparameters_search` → 消费 JobOutcome——finished（进程内 DAG /
+  mock：模型步 run 本地库直读，oof.run_id 直指 + 后补血缘/指纹/正典投影）或
+  submitted（阻塞拉日志增量上屏 → zip 拉取原子解包 → 查询）。study 采用
+  （`add_trial` 增量并入会话正典库 `study_{key}.db`）两形态同构。稳态链 =
+  `inherit_platform_job_id`（工作区恢复）+ plan 内 `inherit_study_run_id`
+  （study 寻址，#244 外部锚——`entry.chain` 链簿恒锚 study 树主）两层。remote
+  模式须带 `platform_experiment_id`（先 ensure_platform_experiment 同步源数据）。
+  **存量会话不可续跑**（provider 化之前的链外 study 历史 fail-loud——换键或
+  重开）。全 pin 退化形经单点空间（`ContinuousSpace(v,v)`/单值 `DiscreteSpace`）
+  保持 search 行为不碰 holdout；MLP 补两行为面（`learning_rate` 收 Space——
+  缺省恒标量零影响，`n_trials`/`scoring`/`inherit_study_run_id` 入签名）。
 - **final_train_test「终训恒 local」门拆除**（#156 翻转）：submitted 分支同机械
   ——holdout 指标从 run metrics 展平面解析（terminal_u 单源）、logged model
   （mlflow 3 `models:/` 实体）定位、副产物+模型镜像本地 run——loader 指镜像
   run 的 `runs:/` URI，下游 predict/统计/泰勒零分叉。
 - **OOF 产面移进管线**：`hyperparameters_search` 搜索终产 OOF 观察面——证据表
   `oof_y_pred.parquet`（带 indices）+ 半宽 tag（随 study user_attr 留痕）+
-  任务分组可视化（回归 4+1 / 分类 4，同名对齐 holdout 终评图族）——会话直调
-  与 DAG search 两分支同名工件（remote zip ≡ local 输出）。
+  任务分组可视化（回归 4+1 / 分类 4，同名对齐 holdout 终评图族）——会话与
+  DAG search 同名工件（remote zip ≡ local 输出）。
+
+### 技术债清偿（#218 后续，用户裁定 2026-11-21：全走 JobProvider）
+
+- run_hpo local 旁路（进程内直调 machinery）删除——`_run_hpo_provider` 单执行面
+- 工件 URI 远程前缀改写单源 `utils.path.rewrite_remote_artifact`（app 观察面/
+  会话解包面共用；常量 `REMOTE_TASK_DIR`/`REMOTE_UPLOADS_DIR` 住
+  `utils.constants`）
+- provider 声明面 `remote_transport: bool`（Local=False/Remote=True；自定义远程
+  provider 声明后 plan 自动 uploads 寻址——替代 isinstance 启发）
+- study 链锚语义修正：续跳（#244 外部锚）不换锚——`entry.chain.run_id` 恒锚
+  study 树主 run（本 run 无自有 study.db 不可寻址的缺陷修复）
 - **瘦装会话面**：`model/types.py` 拆出 `artifacts.py`（sklearn 基类解耦，纯枚举
   零重栈）；session 顶层重栈 import 惰性化；shap 契约件执行期导入（五族中
   XGB/LGBM/CAT/RF 瘦装可解析）；安装提示单源 `extras.LOCAL_INSTALL_HINT`——

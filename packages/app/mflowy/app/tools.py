@@ -18,8 +18,9 @@ from pathlib import Path
 from typing import Annotated
 
 from mflowy.utils import auth
-from mflowy.utils.constants import REMOTE_TASK_DIR
 from mflowy.utils.file import sha256_of
+from mflowy.utils.path import file_uri_to_local_path as _local_path
+from mflowy.utils.path import rewrite_remote_artifact as _rewrite_remote_artifact
 from pydantic import Field
 
 
@@ -211,38 +212,6 @@ def _mlflow_client():
 
     _client = MlflowClient()
     return _client
-
-
-def _local_path(uri: str) -> str:
-    """file:// URI 转本地绝对路径，远端 store 保持完整 URI（mlflow 查询工具共用约定）。"""
-    from urllib.parse import unquote, urlparse
-
-    parsed = urlparse(uri)
-    return str(Path(unquote(parsed.path))) if parsed.scheme == "file" else uri
-
-
-# 观察面单参推导（#160 终稿）：工件 URI 命中 REMOTE_TASK_DIR 前缀 → 改写为
-# tracking db 同根本地路径。常量单源住 mflowy.utils.constants（#218 收敛——
-# model 会话 remote 分支同契约消费）。
-
-
-def _rewrite_remote_artifact(value: str, local_root: Path | None) -> str:
-    """远程工件路径改写（get_experiment/get_run 共用纯函数）。
-
-    命中 ``REMOTE_TASK_DIR`` 前缀（file:// URI 或裸路径、精确或子路径）→ 替换为
-    ``local_root``（= tracking db 所在目录——zip 契约保证 mlflow.db 与 ``.mlruns/``
-    同根，db 目录即工件根，#155）；不匹配或 ``local_root`` 缺席（非 sqlite 库/本地
-    缺省查询）原样透传（Default 实验路径实证从未写入远端前缀）。
-    """
-    if local_root is None:
-        return value
-    stripped = _local_path(value)
-    marker = REMOTE_TASK_DIR
-    if stripped == marker:
-        return str(local_root)
-    if stripped.startswith(marker + "/"):
-        return str(local_root) + stripped[len(marker) :]
-    return value
 
 
 def _tracking_client(tracking_uri: str | None):

@@ -56,6 +56,8 @@ def _resolve_preset_id(client, env: dict[str, str] | None = None) -> str:
 class RemoteJobProvider:
     """远程受理：校验 → create_job 提交 → ``JobOutcome.submitted``（凭据二联）。"""
 
+    remote_transport = True  # 声明面（#218 会话 plan 渲染：uploads 寻址 + cv.split 复现）
+
     def __init__(self, client=None):
         # client 工厂缝（测试注入假 client；缺省懒建——与 mcp 工具的 _platform_client 同源策略）
         self._client = client
