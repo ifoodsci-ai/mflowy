@@ -1054,13 +1054,18 @@ def _tag_run(run, m: dict, *, action: str, key: str, family: str) -> None:
 
 
 def _run_hpo(ss, o, m, board, log, params: dict) -> None:
-    """run_hpo：增量搜索（inner CV）→ θ* 上 OOF 观察面 → 账本更新（reward = Δu_inner）。"""
-    import mlflow
-
+    """run_hpo：provider 委派（#218/#225 裁定 1）——local provider 直调（行为不变：
+    同进程、同 study db 路径）；remote/自定义 provider 渲染 plan 提交 + 阻塞消费
+    （提交 → 拉日志 → zip 拉取解包 → 查询 → study 采用 + OOF 镜像本地 run），
+    输出对齐 local 分支（账本条目同形，remote 链随附）。"""
     n_trials = params.get("n_trials", DEFAULT_N_TRIALS)
-    unknown = set(params) - {"n_trials"}
+    platform_experiment_id = params.get("platform_experiment_id")
+    unknown = set(params) - {"n_trials", "platform_experiment_id"}
     if unknown:
-        raise ValueError(f"run_hpo 只收 n_trials（pin/收窄走 set_hp/set_hp_space），多余参数 {sorted(unknown)}")
+        raise ValueError(
+            f"run_hpo 只收 n_trials / platform_experiment_id（remote 提交面；pin/收窄走 set_hp/set_hp_space），"
+            f"多余参数 {sorted(unknown)}"
+        )
     if isinstance(n_trials, bool) or not isinstance(n_trials, int) or n_trials < 1:
         raise ValueError(f"n_trials 须为 ≥1 的 int，got {n_trials!r}")
 
@@ -1073,6 +1078,24 @@ def _run_hpo(ss, o, m, board, log, params: dict) -> None:
     if entry["frozen"]:
         raise RuntimeError(f"combo `{key}` 已冻结（final_train_test 后同键不可再搜索——掐断用 test 反复挑参）")
 
+    from .job_provider import get_job_provider
+    from .job_provider.local import LocalJobProvider
+
+    provider = get_job_provider()
+    if isinstance(provider, LocalJobProvider):
+        # local 模式忽略 platform_experiment_id（模式专属参数原则——镜像 provider 协议）
+        _run_hpo_local(ss, o, m, board, log, entry=entry, family=family, fe=fe, key=key, n_trials=n_trials)
+    else:
+        _run_hpo_remote(
+            ss, o, m, board, log,
+            entry=entry, family=family, fe=fe, key=key, n_trials=n_trials,
+            platform_experiment_id=platform_experiment_id,
+        )
+
+
+def _run_hpo_local(ss, o, m, board, log, *, entry, family, fe, key, n_trials) -> None:
+    """local 分支：会话进程内直调（#218 前行为原样——同 study db 路径、同工件名）。"""
+    import mlflow
     from mflowy.model import registry
 
     scoring = _metric_of(m)
@@ -1080,7 +1103,12 @@ def _run_hpo(ss, o, m, board, log, params: dict) -> None:
     ts = _load_split(m)
     ct = registry.build_ct(fe["cat"], fe["num"], (ts.X_train, ts.y_train, _task(m)))
     machinery, _ = _machinery_of(family)
-    make_pipe, base, space = machinery(_task(m), ct, seed=seed, **_effective_overrides(m))
+    try:
+        make_pipe, base, space = machinery(_task(m), ct, seed=seed, **_effective_overrides(m))
+    except ModuleNotFoundError as e:  # 瘦装 + local provider 永久降级路径（#217 ④/#218 ④）
+        from .extras import LOCAL_INSTALL_HINT
+
+        raise RuntimeError(f"{LOCAL_INSTALL_HINT}（缺 {e.name}）") from e
     if not space and n_trials > 1:
         raise ValueError("全 pin 候选（有效空间为空）走 n_trials=1 退化形——多余 trial 是同一参数的重复评估")
 
@@ -1161,6 +1189,189 @@ def _run_hpo(ss, o, m, board, log, params: dict) -> None:
         note=f"u_inner={new_u}（Δ={reward}）trials={len(study.trials)} oof_run={run.info.run_id[:8]}",
         reward=reward,
     )
+
+
+def _run_hpo_remote(
+    ss, o, m, board, log, *, entry, family, fe, key, n_trials, platform_experiment_id
+) -> None:
+    """remote 分支（#218/#225 裁定 1/4）：渲染 plan → provider 提交 → 阻塞等终态
+    （日志流式上屏）→ zip 拉取解包 → 查询模型步 run → study 采用（add_trial 入
+    正典库）+ OOF 镜像本地 run → 账本对齐 local 分支。稳态 job-id 链 =
+    ``inherit_platform_job_id``（工作区恢复）+ ``inherit_study_run_id``（study 寻址）
+    两层（entry.remote 随附链簿）。"""
+    from mflowy.model.model.study import STUDY_NAME, ContinuousSpace, DiscreteSpace
+    from mflowy.model.model.types import MetricName
+
+    from . import session_remote
+
+    scoring = _metric_of(m)
+    seed = m["cursor"]["seed"]
+    objective_id = {"seed": seed if seed is not None else "default", "scoring": scoring.value}
+    chain = entry.get("remote") or {}
+    n_adopted = chain.get("n_adopted", 0)
+
+    # 混合历史门（#225 实施细节——study 拷回连续性的边界，红线 1 宁可拒绝）：
+    # 该键盘上已有 remote 链之外的 trial（纯 local 历史或 local 续跑后混入）→ 拒绝
+    session_db = _root() / m["session_id"] / _study_db_name(key)
+    if session_db.exists():
+        import optuna
+
+        names = optuna.get_all_study_names(storage=f"sqlite:///{session_db}")
+        n_local = len(optuna.load_study(study_name=key, storage=f"sqlite:///{session_db}").trials) if key in names else 0
+        if n_local != n_adopted:
+            raise RuntimeError(
+                f"combo `{key}` 盘上 study 已有 remote 链外历史（trials={n_local}，链内已采用={n_adopted}）——"
+                "local/remote 混合续跑不支持：该键继续 local，或换 FE/seed 出新键走 remote"
+            )
+
+    # 有效空间非空门（DAG 两行为判据 = 空否）：全 pin 退化形在 DAG 侧是 training
+    # 行为（碰 holdout）——remote 分支拒绝，退化形只支持 local provider
+    face = _family_params(family)
+    pinned = {k for k, v in m["cursor"]["H"].items() if not isinstance(v, dict)}
+    effective_space = {k for k, v in face.items() if isinstance(v, (ContinuousSpace, DiscreteSpace)) and k not in pinned}
+    effective_space |= {k for k, v in m["cursor"]["H"].items() if isinstance(v, dict)}
+    if not effective_space:
+        raise ValueError("remote 分支要求有效搜索空间非空——全 pin 退化形（n_trials=1）只支持 local provider")
+
+    if not platform_experiment_id:
+        raise ValueError(
+            "remote provider 下 run_hpo 须带 platform_experiment_id——先 ensure_platform_experiment"
+            f"（files 含源数据 {Path(m['source_file']).name}）拿到 id 后随 run_hpo 传入"
+        )
+
+    from .job_provider import get_job_provider
+    from .job_provider.remote import RemoteJobProvider
+
+    uploads = isinstance(get_job_provider(), RemoteJobProvider)
+    plan_text = _hpo_plan_yaml(
+        m,
+        fe,
+        family=family,
+        n_trials=n_trials,
+        seed=seed,
+        scoring=scoring,
+        inherit_study_run_id=chain.get("run_id"),
+        uploads=uploads,
+    )
+    outcome = _run_bridge(
+        get_job_provider().hyperparameters_search(
+            modeling_steps=plan_text,
+            name=f"run_hpo:{m['session_id'][:6]}",
+            desc=f"会话 {m['session_id']} combo {key} 搜索（remote 分支，#218）",
+            platform_experiment_id=platform_experiment_id,
+            inherit_platform_job_id=chain.get("job_id"),
+        )
+    )
+
+    if outcome.status == "finished":
+        dag = outcome.dag_result
+        if dag is None or dag.status != "finished":
+            raise RuntimeError(f"受理 DAG 未完成（status={getattr(dag, 'status', None)}）：{getattr(dag, 'error', '')}")
+        node = next(
+            (r for r in dag.runs if r.node == f"model__{family}" and r.status == "FINISHED" and r.run_id), None
+        )
+        if node is None:
+            raise RuntimeError(f"受理 DAG 无完成的 model__{family} 节点（runs：{[(r.node, r.status) for r in dag.runs]}）")
+        face_run = session_remote.LocalRunFace(run_id=node.run_id)
+        job_id = None
+        tag_client = None
+    else:
+        provider_now = get_job_provider()
+        client = provider_now.client if isinstance(provider_now, RemoteJobProvider) else session_remote.platform_client()
+        session_remote.await_job(client, outcome.job_id)
+        unpacked = session_remote.fetch_workspace(client, outcome.job_id, platform_experiment_id, ss.dir / "jobs")
+        face_run = session_remote.find_model_run(unpacked, family)
+        from mlflow.tracking import MlflowClient
+
+        tag_client = MlflowClient(tracking_uri=f"sqlite:///{unpacked / 'mlflow.db'}")
+        job_id = outcome.job_id
+
+    # 产品回读：study db（run 工件根直驻）+ OOF 证据 parquet + 半宽 tag
+    study_db_remote = face_run.artifact("study.db")
+    face_run.artifact("oof_y_pred.parquet")  # 在场过门（镜像拷贝源）
+    half_width = session_remote.oof_half_width_of(face_run, tag_client)
+
+    # study 采用（remote→local 翻回连续性）+ 正典库增量并入
+    direction = "maximize" if MetricName.higher_is_better(scoring) else "minimize"
+    study, n_new = session_remote.adopt_study_trials(
+        session_db,
+        study_name=key,
+        objective_id=objective_id,
+        direction=direction,
+        seed=seed,
+        remote_db=study_db_remote,
+        n_adopted=n_adopted,
+        remote_study_name=STUDY_NAME,
+    )
+    mirror_run = _mirror_oof_run(m, family, key, oof_src=face_run.artifact("oof_y_pred.parquet"), half_width=half_width)
+
+    from mflowy.model.model._pipeline import u_inner_of
+
+    prev_u = entry.get("u_inner")
+    new_u = u_inner_of(study, scoring)
+    best = study.best_trial
+    assert best.value is not None  # add_trial 拷贝保持完成态（value 非空）
+    scores = best.user_attrs.get("scores", [])
+    import numpy as np
+
+    # 证据快照（remote 派生 = local 等价）：签名静态缺省 ∪ 光标标量 pin（face 键内）
+    evidence = {k: v for k, v in face.items() if not isinstance(v, (ContinuousSpace, DiscreteSpace))}
+    evidence.update({k: v for k, v in m["cursor"]["H"].items() if not isinstance(v, dict)})
+    entry.update(
+        {
+            "study": _study_db_name(key),
+            "objective": objective_id,
+            "n_trials_at_last_eval": len(study.trials),
+            "u_inner": new_u,
+            "best_params": dict(best.params),
+            "evidence": evidence,
+            "std": round(float(np.std(scores)), 4) if len(scores) else None,
+            "oof": {
+                "run_id": mirror_run,
+                "y_pred": "oof_y_pred.parquet",
+                "half_width": half_width,
+                "plots": [],
+            },
+            "findings": [f for f in entry.get("findings", []) if f.get("source") == "llm"],
+            # remote 链簿（稳态 job-id 两层寻址的面——下次提交的 inherit 源）
+            "remote": {
+                "job_id": job_id,
+                "run_id": face_run.run_id,
+                "platform_experiment_id": platform_experiment_id,
+                "n_adopted": n_new,
+            },
+        }
+    )
+    reward = new_u if prev_u is None else round(new_u - prev_u, 4)
+    _commit(
+        ss,
+        o,
+        m,
+        board,
+        log,
+        "run_hpo",
+        {"n_trials": n_trials, "key": key, "platform_experiment_id": platform_experiment_id},
+        note=f"u_inner={new_u}（Δ={reward}）trials={len(study.trials)} remote_run={face_run.run_id[:8]}",
+        reward=reward,
+    )
+
+
+def _mirror_oof_run(m: dict, family: str, key: str, *, oof_src: Path, half_width) -> str:
+    """remote 分支的本地镜像 run（输出对齐 local，#225 裁定 1）：lineage tags +
+    源指纹 + OOF 证据 parquet + 半宽 tag + 会话 study db 只读投影——账本 oof.run_id
+    指向本地库，下游（统计工具/报告/终训复制面）零分叉。返回镜像 run_id。"""
+    import mlflow
+    from mflowy.model.model._pipeline import OOF_HALF_WIDTH_TAG
+    from mflowy.utils.mlflow import log_file
+
+    with _session_run(m, f"run_hpo:{key}") as run:
+        _tag_run(run, m, action="run_hpo", key=key, family=family)
+        log_file(oof_src, artifact_file="oof_y_pred.parquet")
+        if half_width is not None:
+            mlflow.set_tag(OOF_HALF_WIDTH_TAG, json.dumps(half_width))
+        log_file(_root() / m["session_id"] / _study_db_name(key))
+        mlflow.set_tag("mflowy.source_fingerprint", m["source_fingerprint"])
+    return run.info.run_id
 
 
 def _run_bridge(coro):
@@ -1457,6 +1668,53 @@ def _verdict_response(m: dict, decision_log: list) -> FinishVerdict:
     )
 
 
+def _flow_prefix(m: dict, fe: dict, *, file_path: str | None = None, split_params: dict | None = None) -> list[dict]:
+    """plan 公共前缀（#218 抽取）：load__file → x_y → cv → [FE 节点]。
+
+    - ``file_path=None`` → 会话源数据本径（local 寻址）；给定 → uploads 寻址
+      （remote 容器 = ``/user-data/uploads/<basename>``，#225 实施细节）
+    - ``split_params=None`` → ``cv__load``（from_run_id 按引用复用会话划分——终训
+      形态）；给定 → ``cv__split`` 确定性复现（remote 形态：同节点同参数同缺省
+      种子 = 同一划分——无引用可依时的等价数据面）"""
+    from mflowy.driver.config import NodeConf
+    from mflowy.model import registry
+
+    if split_params is None and not m["split"].get("run_id"):
+        raise RuntimeError("会话缺划分身份（split.run_id）——终训 plan 的 cv.load 引用源，开局物化异常")
+    xy_params: dict = {"target": m["target"], "task": m["task"]}
+    if m.get("id_columns"):
+        xy_params["id_columns"] = list(m["id_columns"])
+    flow: list[dict] = [
+        {
+            "load__file": NodeConf(
+                node_key="load__file", name="导入冻结数据", params={"file_path": file_path or m["source_file"]}
+            )
+        },
+        {"x_y": NodeConf(node_key="x_y", name="划分目标", params=xy_params)},
+    ]
+    if split_params is None:
+        flow.append(
+            {
+                "cv__load": NodeConf(
+                    node_key="cv__load",
+                    name="引用会话划分（身份按 run 引用）",
+                    params={"from_run_id": m["split"]["run_id"]},
+                )
+            }
+        )
+    else:
+        flow.append(
+            {"cv__split": NodeConf(node_key="cv__split", name="确定性复现会话划分（同参数同种子）", params=dict(split_params))}
+        )
+    if fe["cat"] in registry.FE_CAT_NODES:
+        nk = f"x_transformer__{registry.FE_CAT_NODES[fe['cat']]}"
+        flow.append({nk: NodeConf(node_key=nk, name="类别编码")})
+    if fe["num"] in registry.FE_NUM_NODES:
+        nk = f"x_transformer__{registry.FE_NUM_NODES[fe['num']]}"
+        flow.append({nk: NodeConf(node_key=nk, name="数值缩放")})
+    return flow
+
+
 def _plan_yaml(m: dict, key: str, final_params: dict | None = None) -> str:
     """per-combo 终训计划（Conf → flow_to_yaml 单源序列化，可独立重放 = 那次终训
     本身）：load__file → x_y（target + id_columns 剔除——与开局同数据面）→ cv.load
@@ -1464,35 +1722,53 @@ def _plan_yaml(m: dict, key: str, final_params: dict | None = None) -> str:
     空间空 → training 行为，确定性重放）。"""
     from mflowy.driver.config import NodeConf
     from mflowy.driver.serializer import flow_to_yaml
-    from mflowy.model import registry
 
     entry = m["models"][key]
-    fe = entry["fe"]
-    if not m["split"].get("run_id"):
-        raise RuntimeError("会话缺划分身份（split.run_id）——终训 plan 的 cv.load 引用源，开局物化异常")
-    xy_params: dict = {"target": m["target"], "task": m["task"]}
-    if m.get("id_columns"):
-        xy_params["id_columns"] = list(m["id_columns"])
-    flow: list[dict] = [
-        {"load__file": NodeConf(node_key="load__file", name="导入冻结数据", params={"file_path": m["source_file"]})},
-        {"x_y": NodeConf(node_key="x_y", name="划分目标", params=xy_params)},
-        {
-            "cv__load": NodeConf(
-                node_key="cv__load",
-                name="引用会话划分（身份按 run 引用）",
-                params={"from_run_id": m["split"]["run_id"]},
-            )
-        },
-    ]
-    if fe["cat"] in registry.FE_CAT_NODES:
-        nk = f"x_transformer__{registry.FE_CAT_NODES[fe['cat']]}"
-        flow.append({nk: NodeConf(node_key=nk, name="类别编码")})
-    if fe["num"] in registry.FE_NUM_NODES:
-        nk = f"x_transformer__{registry.FE_NUM_NODES[fe['num']]}"
-        flow.append({nk: NodeConf(node_key=nk, name="数值缩放")})
+    flow = _flow_prefix(m, entry["fe"])
     params = dict(final_params if final_params is not None else (entry["final_params"] or {}))
     model_key = f"model__{entry['family']}"
     flow.append({model_key: NodeConf(node_key=model_key, name=f"终局训练-{key}", params=params)})
+    return flow_to_yaml(tuple(flow))
+
+
+def _hpo_plan_yaml(
+    m: dict,
+    fe: dict,
+    *,
+    family: str,
+    n_trials: int,
+    seed,
+    scoring,
+    inherit_study_run_id: str | None,
+    uploads: bool,
+) -> str:
+    """run_hpo remote 分支的搜索 plan：load → x_y → cv.split（确定性复现）→ [FE]
+    → 族节点（search 行为：光标 H 空间/标量 + n_trials + scoring + seed +
+    inherit_study_run_id）——容器内经 mflowy-job wrap 走 LocalJobProvider 的 DAG
+    search（OOF 产面同名工件，#218）。"""
+    from mflowy.driver.config import NodeConf
+    from mflowy.driver.serializer import flow_to_yaml
+    from mflowy.model.model.utils import space_from_json
+
+    split_params = {**m["protocol"]["split_params"]}
+    split_params.setdefault("cv", m["protocol"]["cv"])  # 缺省单源（#83）：冻结协议值——与开局物化同面
+    flow = _flow_prefix(
+        m,
+        fe,
+        file_path=f"/user-data/uploads/{Path(m['source_file']).name}" if uploads else None,
+        split_params=split_params,
+    )
+    params: dict = {
+        k: (space_from_json(v) if isinstance(v, dict) else v) for k, v in m["cursor"]["H"].items()
+    }  # 空间槽位（JSON 形态）→ Space 本体（序列化回 YAML 构造形）
+    params["n_trials"] = n_trials
+    params["scoring"] = scoring
+    if seed is not None:
+        params["random_state"] = seed
+    if inherit_study_run_id:
+        params["inherit_study_run_id"] = inherit_study_run_id
+    model_key = f"model__{family}"
+    flow.append({model_key: NodeConf(node_key=model_key, name=f"会话搜索-{family}", params=params)})
     return flow_to_yaml(tuple(flow))
 
 

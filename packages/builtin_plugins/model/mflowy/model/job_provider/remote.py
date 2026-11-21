@@ -67,6 +67,12 @@ class RemoteJobProvider:
             self._client = RemoteExperimentClient()
         return self._client
 
+    @property
+    def client(self):
+        """平台 client 面（#218 会话 remote 分支的轮询/拉取消费方共用——与提交面同源，
+        测试经构造注入假 client 即全链接管）。"""
+        return self._ensure_client()
+
     # ── 提交面单源 ────────────────────────────────────────────────────────
 
     async def _submit(
