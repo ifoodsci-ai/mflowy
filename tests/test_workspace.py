@@ -148,9 +148,15 @@ def test_skill_topology_opening_ownership():
 
     names = {p.parent.name for p in _skill_files()}
     assert names == {
-        "data-prior-survey", "model-prior-survey", "bo-prior-survey",
-        "model-research-review", "data-clean", "modeling", "bo-suggest",
-        "model-predict", "model-explain",
+        "data-prior-survey",
+        "model-prior-survey",
+        "bo-prior-survey",
+        "model-research-review",
+        "data-clean",
+        "modeling",
+        "bo-suggest",
+        "model-predict",
+        "model-explain",
     }, f"#233 技能终名表漂移: {sorted(names)}"
 
     owners = {

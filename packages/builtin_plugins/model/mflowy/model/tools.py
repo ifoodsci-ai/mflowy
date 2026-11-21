@@ -324,7 +324,8 @@ def modeling_load_or_start(
         ),
     ] = None,
     card: Annotated[
-        dict | None, Field(description="清洗先验卡 CleanPrior（data-prior-survey 产物）背景：target/task/id_columns 的兜底层")
+        dict | None,
+        Field(description="清洗先验卡 CleanPrior（data-prior-survey 产物）背景：target/task/id_columns 的兜底层"),
     ] = None,
 ) -> dict:
     """开局/续载建模会话（#226 ②）：observation_json 给定 = 加载既有会话；缺省 =
