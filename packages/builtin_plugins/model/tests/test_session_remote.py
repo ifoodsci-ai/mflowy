@@ -134,8 +134,15 @@ class FakePlatform:
 
         return [
             JobPreset(
-                id="p1", name="cpu-test", version=1, cpu_millis=1000, memory_mi=1024,
-                active_deadline_seconds=600, image="img", ttl_seconds_after_finished=60, workdir="/",
+                id="p1",
+                name="cpu-test",
+                version=1,
+                cpu_millis=1000,
+                memory_mi=1024,
+                active_deadline_seconds=600,
+                image="img",
+                ttl_seconds_after_finished=60,
+                workdir="/",
             )
         ]
 
@@ -333,7 +340,12 @@ def test_run_hpo_finished_outcome_consumes_dag_result(tmp_path, isolate, reg_csv
                     graph="",
                     runs=[
                         NodeResult(
-                            node="model__RF", name="会话搜索-RF", run_id=donor, status="FINISHED", artifacts=[], output=""
+                            node="model__RF",
+                            name="会话搜索-RF",
+                            run_id=donor,
+                            status="FINISHED",
+                            artifacts=[],
+                            output="",
                         )
                     ],
                 )
@@ -439,8 +451,14 @@ def test_adopt_study_trials_incremental_and_objective_gate(tmp_path, isolate):
     r1, st1 = _mk(2, 1.0)
     session_db = tmp_path / "s.db"
     adopted, n = session_remote.adopt_study_trials(
-        session_db, study_name="k", objective_id={"seed": 1, "scoring": "mae"}, direction="minimize",
-        seed=1, remote_db=r1, n_adopted=0, remote_study_name="study",
+        session_db,
+        study_name="k",
+        objective_id={"seed": 1, "scoring": "mae"},
+        direction="minimize",
+        seed=1,
+        remote_db=r1,
+        n_adopted=0,
+        remote_study_name="study",
     )
     assert n == 2 and len(adopted.trials) == 2
     assert adopted.user_attrs["objective"] == {"seed": 1, "scoring": "mae"}
@@ -449,15 +467,27 @@ def test_adopt_study_trials_incremental_and_objective_gate(tmp_path, isolate):
     # 增量：扩到 4 trial 的远程库，n_adopted=2 → 只并 2 条新
     r2, _ = _mk(4, 0.5)
     adopted2, n2 = session_remote.adopt_study_trials(
-        session_db, study_name="k", objective_id={"seed": 1, "scoring": "mae"}, direction="minimize",
-        seed=1, remote_db=r2, n_adopted=2, remote_study_name="study",
+        session_db,
+        study_name="k",
+        objective_id={"seed": 1, "scoring": "mae"},
+        direction="minimize",
+        seed=1,
+        remote_db=r2,
+        n_adopted=2,
+        remote_study_name="study",
     )
     assert n2 == 4 and len(adopted2.trials) == 4
 
     # 目标变（scoring 换）→ 重开（trial 清零）
     _, n3 = session_remote.adopt_study_trials(
-        session_db, study_name="k", objective_id={"seed": 1, "scoring": "rmse"}, direction="minimize",
-        seed=1, remote_db=r2, n_adopted=0, remote_study_name="study",
+        session_db,
+        study_name="k",
+        objective_id={"seed": 1, "scoring": "rmse"},
+        direction="minimize",
+        seed=1,
+        remote_db=r2,
+        n_adopted=0,
+        remote_study_name="study",
     )
     assert n3 == 4
     reopened = optuna.load_study(study_name="k", storage=f"sqlite:///{session_db}")
@@ -492,7 +522,15 @@ def _build_training_workspace(ws: Path) -> None:
         xy = XySpec(X, y, TASKTYPE.REGRESSION)
         ts = materialize_split(split_fn(x_y=xy, cv=3), xy)
         with mlflow.start_run(experiment_id=exp.experiment_id, run_name="终局训练-RF"):
-            RF(ts, n_estimators=10, max_depth=3, min_samples_split=2, min_samples_leaf=2, max_features="sqrt", ccp_alpha=0.0)
+            RF(
+                ts,
+                n_estimators=10,
+                max_depth=3,
+                min_samples_split=2,
+                min_samples_leaf=2,
+                max_features="sqrt",
+                ccp_alpha=0.0,
+            )
             mlflow.set_tag("mflowy.node", "model__RF")
     finally:
         mlflow.set_tracking_uri(prev)

@@ -24,9 +24,7 @@ from pathlib import Path
 
 def _cli(*args: str) -> dict:
     """mflowy CLI 子进程调用：stdout 单 JSON 文档（查询类回显——业务数据通道）。"""
-    proc = subprocess.run(
-        ["mflowy", *args], capture_output=True, text=True, env={**os.environ}, check=False
-    )
+    proc = subprocess.run(["mflowy", *args], capture_output=True, text=True, env={**os.environ}, check=False)
     if proc.returncode != 0:
         raise SystemExit(f"CLI 失败（{args[0]}）：rc={proc.returncode}\nstderr:\n{proc.stderr[-2000:]}")
     try:
@@ -139,11 +137,25 @@ def main() -> None:
         anchor = json.dumps({"observation_json": observation_json}, ensure_ascii=False)
 
         # select_model（配置动作零步费）→ run_hpo（mock finished 受理）→ observe
-        _cli("modeling_apply", "--kwargs-json", json.dumps({"observation_json": observation_json, "node": "select_model", "params": {"family": "RF"}}, ensure_ascii=False))
+        _cli(
+            "modeling_apply",
+            "--kwargs-json",
+            json.dumps(
+                {"observation_json": observation_json, "node": "select_model", "params": {"family": "RF"}},
+                ensure_ascii=False,
+            ),
+        )
         r = _cli(
             "modeling_apply",
             "--kwargs-json",
-            json.dumps({"observation_json": observation_json, "node": "run_hpo", "params": {"n_trials": 2, "platform_experiment_id": "exp-thin"}}, ensure_ascii=False),
+            json.dumps(
+                {
+                    "observation_json": observation_json,
+                    "node": "run_hpo",
+                    "params": {"n_trials": 2, "platform_experiment_id": "exp-thin"},
+                },
+                ensure_ascii=False,
+            ),
         )
         models = r["biz"]["board"]
         assert any(e.get("u_inner") is not None for e in models.values()), f"run_hpo 后账本无 u_inner：{models}"

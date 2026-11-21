@@ -1087,8 +1087,16 @@ def _run_hpo(ss, o, m, board, log, params: dict) -> None:
         _run_hpo_local(ss, o, m, board, log, entry=entry, family=family, fe=fe, key=key, n_trials=n_trials)
     else:
         _run_hpo_remote(
-            ss, o, m, board, log,
-            entry=entry, family=family, fe=fe, key=key, n_trials=n_trials,
+            ss,
+            o,
+            m,
+            board,
+            log,
+            entry=entry,
+            family=family,
+            fe=fe,
+            key=key,
+            n_trials=n_trials,
             platform_experiment_id=platform_experiment_id,
         )
 
@@ -1191,9 +1199,7 @@ def _run_hpo_local(ss, o, m, board, log, *, entry, family, fe, key, n_trials) ->
     )
 
 
-def _run_hpo_remote(
-    ss, o, m, board, log, *, entry, family, fe, key, n_trials, platform_experiment_id
-) -> None:
+def _run_hpo_remote(ss, o, m, board, log, *, entry, family, fe, key, n_trials, platform_experiment_id) -> None:
     """remote 分支（#218/#225 裁定 1/4）：渲染 plan → provider 提交 → 阻塞等终态
     （日志流式上屏）→ zip 拉取解包 → 查询模型步 run → study 采用（add_trial 入
     正典库）+ OOF 镜像本地 run → 账本对齐 local 分支。稳态 job-id 链 =
@@ -1217,7 +1223,9 @@ def _run_hpo_remote(
         import optuna
 
         names = optuna.get_all_study_names(storage=f"sqlite:///{session_db}")
-        n_local = len(optuna.load_study(study_name=key, storage=f"sqlite:///{session_db}").trials) if key in names else 0
+        n_local = (
+            len(optuna.load_study(study_name=key, storage=f"sqlite:///{session_db}").trials) if key in names else 0
+        )
         if n_local != n_adopted:
             raise RuntimeError(
                 f"combo `{key}` 盘上 study 已有 remote 链外历史（trials={n_local}，链内已采用={n_adopted}）——"
@@ -1228,7 +1236,9 @@ def _run_hpo_remote(
     # 行为（碰 holdout）——remote 分支拒绝，退化形只支持 local provider
     face = _family_params(family)
     pinned = {k for k, v in m["cursor"]["H"].items() if not isinstance(v, dict)}
-    effective_space = {k for k, v in face.items() if isinstance(v, (ContinuousSpace, DiscreteSpace)) and k not in pinned}
+    effective_space = {
+        k for k, v in face.items() if isinstance(v, (ContinuousSpace, DiscreteSpace)) and k not in pinned
+    }
     effective_space |= {k for k, v in m["cursor"]["H"].items() if isinstance(v, dict)}
     if not effective_space:
         raise ValueError("remote 分支要求有效搜索空间非空——全 pin 退化形（n_trials=1）只支持 local provider")
@@ -1267,18 +1277,20 @@ def _run_hpo_remote(
         dag = outcome.dag_result
         if dag is None or dag.status != "finished":
             raise RuntimeError(f"受理 DAG 未完成（status={getattr(dag, 'status', None)}）：{getattr(dag, 'error', '')}")
-        node = next(
-            (r for r in dag.runs if r.node == f"model__{family}" and r.status == "FINISHED" and r.run_id), None
-        )
+        node = next((r for r in dag.runs if r.node == f"model__{family}" and r.status == "FINISHED" and r.run_id), None)
         if node is None:
-            raise RuntimeError(f"受理 DAG 无完成的 model__{family} 节点（runs：{[(r.node, r.status) for r in dag.runs]}）")
+            raise RuntimeError(
+                f"受理 DAG 无完成的 model__{family} 节点（runs：{[(r.node, r.status) for r in dag.runs]}）"
+            )
         face_run = session_remote.LocalRunFace(run_id=node.run_id)
         job_id = None
         tag_client = None
     else:
         assert outcome.job_id and platform_experiment_id  # submitted 形态构造保证（JobOutcome 互斥不变量）
         provider_now = get_job_provider()
-        client = provider_now.client if isinstance(provider_now, RemoteJobProvider) else session_remote.platform_client()
+        client = (
+            provider_now.client if isinstance(provider_now, RemoteJobProvider) else session_remote.platform_client()
+        )
         session_remote.await_job(client, outcome.job_id)
         unpacked = session_remote.fetch_workspace(client, outcome.job_id, platform_experiment_id, ss.dir / "jobs")
         face_run = session_remote.find_model_run(unpacked, family)
@@ -1789,7 +1801,11 @@ def _flow_prefix(m: dict, fe: dict, *, file_path: str | None = None, split_param
         )
     else:
         flow.append(
-            {"cv__split": NodeConf(node_key="cv__split", name="确定性复现会话划分（同参数同种子）", params=dict(split_params))}
+            {
+                "cv__split": NodeConf(
+                    node_key="cv__split", name="确定性复现会话划分（同参数同种子）", params=dict(split_params)
+                )
+            }
         )
     if fe["cat"] in registry.FE_CAT_NODES:
         nk = f"x_transformer__{registry.FE_CAT_NODES[fe['cat']]}"
