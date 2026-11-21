@@ -729,7 +729,7 @@ def test_apply_decision_surface_finding_ids_and_reason(sessions_root, dirty_csv)
         CleaningSession().apply(
             observation_json, "fill_median", {"cols": ["hole"]}, finding_ids=["ghost::x"], reason="r"
         )
-    assert all(rec["failed"] for rec in _log(sessions_root, observation_json))  # 两次拒绝均失败条目
+    assert all(rec["failed"] for rec in _log(sessions_root, observation_json))  # ctx 内拒绝 = 失败条目
 
     r = CleaningSession().apply(
         observation_json, "fill_median", {"cols": ["hole"]}, finding_ids=[hole_id], reason="中位数填空"
@@ -737,7 +737,7 @@ def test_apply_decision_surface_finding_ids_and_reason(sessions_root, dirty_csv)
     rec = _log(sessions_root, observation_json)[-1]
     assert rec["finding_ids"] == [hole_id] and rec["reason"] == "中位数填空"
     assert rec["clean_op"] == "fill_median" and rec["intent"] == "fix"
-    assert r.validation.steps == 3  # 两次失败尝试 + 一次成功（失败吃步，#225）
+    assert r.validation.steps == 2  # 幽灵 id 拒绝（吃步）+ 成功；reason 拒绝在 apply_ctx 前恒免费
 
     CleaningSession().apply(observation_json, "drop_cols", {"cols": ["pct"]}, reason="剔除 ID 列")
     assert _log(sessions_root, observation_json)[-1]["intent"] == "drop"  # drop_cols ⇒ drop（派生单源）
