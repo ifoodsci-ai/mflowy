@@ -72,11 +72,13 @@ class _SessionLock:
         self._depth += 1
         if self._depth == 1:
             self._fh = open(self._dir / COMMIT_LOCK_FILE, "a")
+            assert self._fh is not None  # 上一行刚赋值（收窄 Optional——flock 形参面）
             fcntl.flock(self._fh, fcntl.LOCK_EX)
 
     def release(self) -> None:
         self._depth -= 1
         if self._depth == 0:
+            assert self._fh is not None  # acquire 配对保证（depth>0 ⇒ fh 在手）
             fcntl.flock(self._fh, fcntl.LOCK_UN)
             self._fh.close()
             self._fh = None

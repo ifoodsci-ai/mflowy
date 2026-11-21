@@ -1276,6 +1276,7 @@ def _run_hpo_remote(
         job_id = None
         tag_client = None
     else:
+        assert outcome.job_id and platform_experiment_id  # submitted 形态构造保证（JobOutcome 互斥不变量）
         provider_now = get_job_provider()
         client = provider_now.client if isinstance(provider_now, RemoteJobProvider) else session_remote.platform_client()
         session_remote.await_job(client, outcome.job_id)
@@ -1721,6 +1722,7 @@ def _final_train_test_remote(ss, m, family, key, *, outcome, scoring):
     from .model._pipeline import HOLDOUT_BYPRODUCTS, terminal_u
     from .model.artifacts import ModelLoader
 
+    assert outcome.job_id and outcome.platform_experiment_id  # submitted 形态构造保证
     provider = get_job_provider()
     client = provider.client if isinstance(provider, RemoteJobProvider) else session_remote.platform_client()
     session_remote.await_job(client, outcome.job_id)

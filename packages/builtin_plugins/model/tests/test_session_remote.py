@@ -89,17 +89,20 @@ def _build_search_workspace(ws: Path, *, tag_model_node: bool, n_rows: int = 60)
     mlflow.set_tracking_uri(f"sqlite:///{ws / 'mlflow.db'}")
     try:
         mlflow.create_experiment("remote-ws", artifact_location=str(ws / ".mlruns"))
+        exp_id = mlflow.get_experiment_by_name("remote-ws")
+        assert exp_id is not None  # 刚创建（Optional 收窄）
         rng = np.random.default_rng(4)
         x = rng.normal(size=n_rows)
         df = pd.DataFrame({"x": x, "target": 2.0 * x + 0.1 * rng.normal(size=n_rows)})
-        xy = XySpec(df[["x"]], df[["target"]], TASKTYPE.REGRESSION)
+        X, y = df[["x"]], df[["target"]]
+        assert isinstance(X, pd.DataFrame) and isinstance(y, pd.DataFrame)  # 列清单索引恒 DataFrame（联合噪声）
+        xy = XySpec(X, y, TASKTYPE.REGRESSION)
         ts = materialize_split(split_fn(x_y=xy, cv=3), xy)
         from mflowy.model.model.study import reset_study_live, set_study_live
 
         token = set_study_live(True)  # LocalJobProvider 同款窗口：study.db 直驻 run 工件根
         try:
-            with mlflow.start_run(experiment_id=mlflow.get_experiment_by_name("remote-ws").experiment_id,
-                                  run_name="会话搜索-RF"):
+            with mlflow.start_run(experiment_id=exp_id.experiment_id, run_name="会话搜索-RF"):
                 RF(ts, n_trials=2, scoring=MetricName.MAE)
                 if tag_model_node:
                     mlflow.set_tag("mflowy.node", "model__RF")
@@ -122,7 +125,7 @@ def _zip_dir(ws: Path, dest: Path) -> None:
 class FakePlatform:
     """平台假体：preset 解析 + create_job + 终态轮询 + outputs zip 供给。"""
 
-    def __init__(self, zips: dict[str, Path]):
+    def __init__(self, zips: dict[str, Path | None]):
         self.zips = zips
         self.created: list[dict] = []
 
@@ -149,7 +152,7 @@ class FakePlatform:
 
         self.created.append({"cmd": cmd, "args": list(args), "experiment_id": experiment_id})
         job_id = f"job-{len(self.created)}"
-        self.zips.setdefault(job_id, None)  # 占位——测试侧随后供 zip 源
+        self.zips.setdefault(job_id, None)  # 占位（dict[str, Path | None]——测试侧随后供 zip 源）
         return Job(id=job_id, cmd=cmd, args=list(args), preset_id=preset_id, status="succeeded")
 
     def get_job(self, job_id):
@@ -306,7 +309,9 @@ def test_run_hpo_finished_outcome_consumes_dag_result(tmp_path, isolate, reg_csv
     rng = np.random.default_rng(4)
     x = rng.normal(size=60)
     df = pd.DataFrame({"x": x, "target": 2.0 * x + 0.1 * rng.normal(size=60)})
-    xy = XySpec(df[["x"]], df[["target"]], TASKTYPE.REGRESSION)
+    X, y = df[["x"]], df[["target"]]
+    assert isinstance(X, pd.DataFrame) and isinstance(y, pd.DataFrame)  # 列清单索引恒 DataFrame（联合噪声）
+    xy = XySpec(X, y, TASKTYPE.REGRESSION)
     ts = materialize_split(split_fn(x_y=xy, cv=3), xy)
     from mflowy.model.model.study import reset_study_live, set_study_live
 
@@ -334,7 +339,7 @@ def test_run_hpo_finished_outcome_consumes_dag_result(tmp_path, isolate, reg_csv
                 )
             )
 
-    set_job_provider(InProcessProvider())
+    set_job_provider(InProcessProvider())  # type: ignore[arg-type]  # 测试替身只实现受理面（协议其余方法不进本场）
 
     ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 2, "platform_experiment_id": "exp-x"})
     entry = _state(observation_json)["models"][_K_RF]
@@ -477,14 +482,16 @@ def _build_training_workspace(ws: Path) -> None:
     mlflow.set_tracking_uri(f"sqlite:///{ws / 'mlflow.db'}")
     try:
         mlflow.create_experiment("remote-final", artifact_location=str(ws / ".mlruns"))
+        exp = mlflow.get_experiment_by_name("remote-final")
+        assert exp is not None  # 刚创建（Optional 收窄）
         rng = np.random.default_rng(4)
         x = rng.normal(size=60)
         df = pd.DataFrame({"x": x, "target": 2.0 * x + 0.1 * rng.normal(size=60)})
-        xy = XySpec(df[["x"]], df[["target"]], TASKTYPE.REGRESSION)
+        X, y = df[["x"]], df[["target"]]
+        assert isinstance(X, pd.DataFrame) and isinstance(y, pd.DataFrame)  # 列清单索引恒 DataFrame（联合噪声）
+        xy = XySpec(X, y, TASKTYPE.REGRESSION)
         ts = materialize_split(split_fn(x_y=xy, cv=3), xy)
-        with mlflow.start_run(
-            experiment_id=mlflow.get_experiment_by_name("remote-final").experiment_id, run_name="终局训练-RF"
-        ):
+        with mlflow.start_run(experiment_id=exp.experiment_id, run_name="终局训练-RF"):
             RF(ts, n_estimators=10, max_depth=3, min_samples_split=2, min_samples_leaf=2, max_features="sqrt", ccp_alpha=0.0)
             mlflow.set_tag("mflowy.node", "model__RF")
     finally:

@@ -108,6 +108,9 @@ def fetch_workspace(client: Any, job_id: str, platform_experiment_id: str, dest_
     return dest
 
 
+type RunFace = "RemoteRunFace | LocalRunFace"  # 回读面两形态（submitted/finished）——artifact/tag 同构
+
+
 class RemoteRunFace(NamedTuple):
     """模型步 run 的回读面：run 标签 + 工件文件（本地路径——zip 前缀改写后）。"""
 
@@ -204,8 +207,9 @@ def adopt_study_trials(
     return study, len(trials)
 
 
-def oof_half_width_of(face: RemoteRunFace, client: Any) -> dict | None:
-    """半宽回读：run tag（JSON）——remote 分支与 local 分支同键同源。"""
+def oof_half_width_of(face: RemoteRunFace | LocalRunFace, client: Any) -> dict | None:
+    """半宽回读：run tag（JSON）——remote 分支与 local 分支同键同源（face 两形态
+    同构：artifact/tag 两原语）。"""
     from .model._pipeline import OOF_HALF_WIDTH_TAG
 
     raw = face.tag(client, OOF_HALF_WIDTH_TAG)

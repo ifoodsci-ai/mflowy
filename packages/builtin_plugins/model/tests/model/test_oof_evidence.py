@@ -117,7 +117,9 @@ class TestOofSurfaceInPipeline:
         n = 60
         x = rng.normal(size=n)
         df = pd.DataFrame({"x": x, "target": 2.0 * x + 0.1 * rng.normal(size=n)})
-        xy = XySpec(df[["x"]], df[["target"]], TASKTYPE.REGRESSION)
+        X, y = df[["x"]], df[["target"]]
+        assert isinstance(X, pd.DataFrame) and isinstance(y, pd.DataFrame)  # 列清单索引恒 DataFrame（联合噪声）
+        xy = XySpec(X, y, TASKTYPE.REGRESSION)
         ts = materialize_split(split_fn(x_y=xy, cv=3), xy)
 
         with mlflow.start_run(run_name="search:oof") as run:
@@ -148,7 +150,9 @@ class TestOofSurfaceInPipeline:
         x = rng.normal(size=n)
         label = (x > 0).astype(int)
         df = pd.DataFrame({"x": x, "label": label})
-        xy = XySpec(df[["x"]], df[["label"]], TASKTYPE.CLASSIFICATION)
+        X, y = df[["x"]], df[["label"]]
+        assert isinstance(X, pd.DataFrame) and isinstance(y, pd.DataFrame)  # 列清单索引恒 DataFrame（联合噪声）
+        xy = XySpec(X, y, TASKTYPE.CLASSIFICATION)
         ts = materialize_split(split_fn(x_y=xy, cv=3), xy)
 
         with mlflow.start_run(run_name="search:oof-cls") as run:
@@ -162,6 +166,6 @@ class TestOofSurfaceInPipeline:
 
 
 def _download(run_id: str, name: str) -> str:
-    import mlflow
+    from mlflow.tracking import MlflowClient
 
-    return mlflow.artifacts.download_artifacts(run_id=run_id, artifact_path=name)
+    return str(MlflowClient().download_artifacts(run_id, name))
