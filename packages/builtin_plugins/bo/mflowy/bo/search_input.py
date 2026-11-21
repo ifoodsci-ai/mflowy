@@ -21,13 +21,13 @@ from typing import Annotated, Any, Literal
 import numpy as np
 import pandas as pd
 from mflowy.driver.node import node
+from mflowy.model.model.artifacts import ModelLoader
 from mflowy.model.model.study import (
     ContinuousSpace,
     DiscreteSpace,
     ParameterSearchSpace,
     search_inverse,
 )
-from mflowy.model.model.types import ModelLoader
 from mflowy.utils.constants import RANDOM_STATE
 from mflowy.utils.file import read_text
 from mflowy.utils.path import split_path_to_py_with_target

@@ -24,20 +24,20 @@ from .templates import MODELING_TEMPLATE, count_model_steps, parse_steps_fragmen
 
 
 def _session():
-    """建模会话引擎惰性导入（瘦装降级面，#216 裁定/#217）：session 顶层重栈 import
-    （sklearn/optuna 等 [local] extra 依赖）在瘦装环境失败——fail-loud 带安装提示，
-    不裸抛 ModuleNotFoundError（会话 provider 化落地后保留为瘦装+local provider 的
-    永久降级路径）。importlib 相对导入 = 测试缝位（全栈环境注入缺依赖替身）。"""
+    """建模会话引擎惰性导入（瘦装降级面，#216 裁定/#217 + #218）：session 顶层
+    重栈 import 已惰性化——瘦装可 import、配置动作可用；本 catch 保留为瘦装 +
+    local provider 的**永久降级路径**（session 模块自身的意外缺依赖——提示单源
+    extras.LOCAL_INSTALL_HINT，与会话计算动作同文）。importlib 相对导入 = 测试缝位
+    （全栈环境注入缺依赖替身）。"""
     import importlib
 
     try:
         module = importlib.import_module(".session", __package__)
         return module.ModelingSession()  # #236 ⑨ 实体面（模块级薄门面退役）
     except ModuleNotFoundError as e:
-        raise RuntimeError(
-            f"建模会话引擎依赖本地建模栈（{e}）——安装：pip install 'mflowy-model[local]'"
-            "（聚合形态 mflowy[local]；瘦装 server 的计算动作请走 remote provider）"
-        ) from e
+        from .extras import LOCAL_INSTALL_HINT
+
+        raise RuntimeError(f"建模会话引擎导入失败（{e}）——{LOCAL_INSTALL_HINT}") from e
 
 
 def validate_modeling_steps(

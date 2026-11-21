@@ -12,7 +12,7 @@ from typing import Annotated
 from mflowy.driver.node import node
 
 from ._pipeline import OOF_HALF_WIDTH_TAG
-from .types import ModelLoader
+from .artifacts import ModelLoader
 
 
 @node(namespace="model")

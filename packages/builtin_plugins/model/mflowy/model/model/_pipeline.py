@@ -53,14 +53,13 @@ from . import study as study_module
 from ._evaluation_plots import _Part, plot_evaluation
 from ._loss_curve import plot_loss_curve
 from ._model import fit_with_eval
+from .artifacts import ModelLoader, ModelPipeline
 from .study import ParameterSearchSpace, search_ml, suggest_params
 from .types import (
     TASKTYPE,
     Metric,
     MetricName,
     Metrics,
-    ModelLoader,
-    ModelPipeline,
 )
 from .utils import infer_metric
 

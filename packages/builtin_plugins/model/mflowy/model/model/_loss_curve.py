@@ -3,7 +3,7 @@ import logging
 import pandas as pd
 from mflowy.utils import mlflow as mlflow_util
 
-from .types import ModelPipeline
+from .artifacts import ModelPipeline
 
 logger = logging.getLogger(__name__)
 

@@ -50,26 +50,23 @@ import logging
 import os
 import pickle
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 from mflowy.data.types import TASKTYPE
 from mflowy.driver.pomdp import FinishVerdict, Observation
 from mflowy.driver.session import POMDPSession
-from mflowy.model import registry
-from mflowy.model.model._pipeline import (
-    OOF_HALF_WIDTH_TAG,
-    oof_evidence_table,
-    oof_half_widths,
-    oof_predictions,
-    u_inner_of,
-)
-from mflowy.model.model.study import ContinuousSpace, DiscreteSpace
-from mflowy.model.model.types import MetricName
-from mflowy.model.model.utils import MACHINERY_SKIP, infer_metric, normalize_space, space_from_json, space_to_json
 from mflowy.utils.file import write_bytes_atomic, write_text_atomic
 
+# 重栈链（registry / model._pipeline / model.study / model.types / model.utils）顶层
+# import 惰性化（#218）：瘦装环境可 import 本模块、start/observe/select_* 配置动作
+# 可用——重栈（sklearn/optuna 随 mlflow/bo 传递、五族随 [local] extra）只在计算
+# 动作的真实消费点导入；瘦装+local provider 的计算失败走 extras.LOCAL_INSTALL_HINT。
+
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:  # 仅注解面（__future__ annotations 下零运行期 import）
+    from mflowy.model.model.types import MetricName
 
 # 九动作面（#226 ④/#236：report_findings 收编——配置面零步费；done = finish 控制面独立入口）；compute = 吃步（counts_step 口径）
 ACTIONS = (
@@ -168,11 +165,16 @@ def _task(m: dict):
 
 
 def _metric_of(m: dict) -> MetricName:
+    from mflowy.model.model.types import MetricName
+    from mflowy.model.model.utils import infer_metric
+
     return MetricName(m["protocol"]["metric"]) if m["protocol"].get("metric") else infer_metric(_task(m))
 
 
 def _candidates(m: dict) -> list[str]:
     """候选面（族级）：卡 candidates（prior 结构化清单）∩ 已声明族目录。"""
+    from mflowy.model import registry
+
     fams = registry.families()
     declared = [c["family"] for c in m.get("candidates") or []]
     return sorted(f for f in declared if f in fams)
@@ -207,6 +209,8 @@ def _study_db_name(key: str) -> str:
 
 def _family_params(family: str) -> dict:
     """族签名用户超参面——单源委托 registry.family_face（出题规则侧同源现查）。"""
+    from mflowy.model import registry
+
     return registry.family_face(family)
 
 
@@ -870,6 +874,8 @@ def _set_hp(ss, o, m, board, log, params: dict) -> None:
     if not params:
         raise ValueError("set_hp 须带至少一个 {param: 值} pin")
     family = _require_cursor_model(m)
+    from mflowy.model.model.utils import MACHINERY_SKIP
+
     face = _family_params(family)
     for param in params:
         if param == "random_state":
@@ -900,6 +906,8 @@ def _set_hp_space(ss, o, m, board, log, params: dict) -> None:
     for param, value in params.items():
         if param not in face:
             raise ValueError(f"not_a_param：`{param}` 不在族 `{family}` 签名超参面（可用：{sorted(face)}）")
+        from mflowy.model.model.utils import normalize_space, space_to_json
+
         normalized[param] = space_to_json(normalize_space(param, face[param], value))
     overrides = [
         f"{k}: pin {m['cursor']['H'][k]} → 空间 {_slot_repr(normalized[k])}"
@@ -941,6 +949,8 @@ def _select_fe(ss, o, m, board, log, params: dict) -> None:
     if unknown:
         raise ValueError(f"select_FE 只收 node（FE 节点名），多余参数 {sorted(unknown)}")
     node = params.get("node")
+    from mflowy.model import registry
+
     vocab = registry.fe_vocab()
     if node not in vocab:
         raise ValueError(f"动作 `{node}` 不在 FE 词表（{sorted(vocab)}）")
@@ -982,17 +992,23 @@ def _select_fe(ss, o, m, board, log, params: dict) -> None:
 
 def _machinery_of(family: str):
     """两行为共享的 estimator 机器——machinery 存在性由族目录准入校验保证（#58 聚合期门）。"""
+    from mflowy.model import registry
+
     meta = registry.families()[family]["mdp_family"]
     return meta["machinery"], meta.get("fit_params")
 
 
 def _effective_overrides(m: dict) -> dict:
     """光标有效参数覆盖（单表 H 解析）：dict = Space 收窄、标量 = pin。"""
+    from mflowy.model.model.utils import space_from_json
+
     return {k: (space_from_json(v) if isinstance(v, dict) else v) for k, v in m["cursor"]["H"].items()}
 
 
 def _ensure_structure(m: dict, family: str) -> dict:
     """结构相容守卫 + 最小装配（encode 族 × 类别列 × cat 空槽 → run 自带 ordinal）。"""
+    from mflowy.model import registry
+
     fams = registry.families()
     fe = m["cursor"]["F"]
     if registry.valid_structure((fe["cat"], fe["num"], family), _has_cat(m), fams):
@@ -1012,6 +1028,7 @@ def _open_study(m: dict, key: str, objective_id: dict, scoring: MetricName, seed
     sampler 随 seed 建（#84：objective_id 已含 seed，sampler 种子与目标同一性同步——
     曾走 optuna 缺省未钉 TPESampler，θ* 每进程漂移致 findings 出题面抖动）。"""
     import optuna
+    from mflowy.model.model.types import MetricName  # 局部导入遮蔽注解面（运行期消费 higher_is_better）
     from optuna import samplers
 
     db = _root() / m["session_id"] / _study_db_name(key)
@@ -1040,7 +1057,6 @@ def _tag_run(run, m: dict, *, action: str, key: str, family: str) -> None:
 def _run_hpo(ss, o, m, board, log, params: dict) -> None:
     """run_hpo：增量搜索（inner CV）→ θ* 上 OOF 观察面 → 账本更新（reward = Δu_inner）。"""
     import mlflow
-    from mflowy.model.model._pipeline import hyperparameters_search
 
     n_trials = params.get("n_trials", DEFAULT_N_TRIALS)
     unknown = set(params) - {"n_trials"}
@@ -1058,6 +1074,8 @@ def _run_hpo(ss, o, m, board, log, params: dict) -> None:
     if entry["frozen"]:
         raise RuntimeError(f"combo `{key}` 已冻结（final_train_test 后同键不可再搜索——掐断用 test 反复挑参）")
 
+    from mflowy.model import registry
+
     scoring = _metric_of(m)
     seed = m["cursor"]["seed"]
     ts = _load_split(m)
@@ -1071,6 +1089,13 @@ def _run_hpo(ss, o, m, board, log, params: dict) -> None:
     study = _open_study(m, key, objective_id, scoring, seed)
     with mlflow.start_run(run_name=f"run_hpo:{key}") as run:
         _tag_run(run, m, action="run_hpo", key=key, family=family)
+        from mflowy.model.model._pipeline import (
+            OOF_HALF_WIDTH_TAG,
+            hyperparameters_search,
+            oof_evidence_table,
+            oof_half_widths,
+            oof_predictions,
+        )
         from mflowy.utils.capture import capture_prints
 
         # 通道纪律（M7）：直调 _pipeline 绕过 driver 节点的唯一捕获窗口——自建窗口，
@@ -1111,6 +1136,8 @@ def _run_hpo(ss, o, m, board, log, params: dict) -> None:
         captured = buf.getvalue().strip()
         if captured:
             logger.info("run_hpo[%s] 捕获输出：\n%s", key, captured)
+
+    from mflowy.model.model._pipeline import u_inner_of
 
     prev_u = entry.get("u_inner")
     new_u = u_inner_of(study, scoring)
@@ -1231,7 +1258,7 @@ def _final_train_test(ss, o, m, board, log, params: dict) -> None:
         raise RuntimeError("终训产物缺 holdout 快照（ModelLoader.holdout）——provider 实现与契约不符，请反馈")
 
     # 副产物指针经 run artifacts 清单解析落账（s 自描述——board 可见 run 下有什么）
-    from mflowy.model.model._pipeline import HOLDOUT_BYPRODUCTS
+    from mflowy.model.model._pipeline import HOLDOUT_BYPRODUCTS, OOF_HALF_WIDTH_TAG
     from mflowy.utils.mlflow import download_run_artifact, run_artifacts
 
     arts = run_artifacts(node.run_id)
@@ -1456,6 +1483,7 @@ def _plan_yaml(m: dict, key: str, final_params: dict | None = None) -> str:
     空间空 → training 行为，确定性重放）。"""
     from mflowy.driver.config import NodeConf
     from mflowy.driver.serializer import flow_to_yaml
+    from mflowy.model import registry
 
     entry = m["models"][key]
     fe = entry["fe"]
@@ -1492,6 +1520,9 @@ def _plan_yaml(m: dict, key: str, final_params: dict | None = None) -> str:
 
 def _space_summary(family: str) -> dict:
     """签名超参面摘要：动态维（Space 声明，含边界）vs 静态常量——π 的参数化依据。"""
+    from mflowy.model.model.study import ContinuousSpace, DiscreteSpace
+    from mflowy.model.model.utils import space_to_json
+
     dynamic, static = {}, {}
     for name, default in _family_params(family).items():
         if isinstance(default, (ContinuousSpace, DiscreteSpace)):

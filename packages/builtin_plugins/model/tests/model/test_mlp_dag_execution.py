@@ -17,7 +17,8 @@ try:
 except (ImportError, OSError) as e:
     pytest.skip(f"PyTorch not available: {e}", allow_module_level=True)
 
-from mflowy.model.model.types import TASKTYPE, ModelLoader
+from mflowy.model.model.artifacts import ModelLoader
+from mflowy.model.model.types import TASKTYPE
 
 
 @pytest.fixture(autouse=True)

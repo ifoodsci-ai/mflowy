@@ -11,7 +11,8 @@ from mflowy.data.middlewares import log_figure
 from mflowy.utils import mlflow as mlflow_util
 from mflowy.utils.plot import DPI
 
-from .types import TASKTYPE, ModelPipeline
+from .artifacts import ModelPipeline
+from .types import TASKTYPE
 
 logger = logging.getLogger(__name__)
 
