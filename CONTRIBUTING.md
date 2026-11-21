@@ -1,6 +1,6 @@
 # Contributing to MFlowy
 
-Thanks for your interest! MFlowy is an MIT-licensed, MCP-native ML workflow
+Thanks for your interest! MFlowy is an MIT-licensed, CLI-native ML workflow
 engine. Contributions of all kinds are welcome — features, bug fixes,
 documentation, examples, and issue triage.
 

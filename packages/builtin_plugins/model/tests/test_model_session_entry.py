@@ -43,7 +43,7 @@ def _start(root, csv, cv_card=CV_CARD, **kw):
 
 
 def test_start_requires_cv_card(sessions_root, reg_csv):
-    """cv_card（split yaml 明文）必填——协议谈判在剧本层（model-brief）。"""
+    """cv_card（split yaml 明文）必填——协议谈判在剧本层（model-prior-survey）。"""
     with pytest.raises(ValueError, match="cv_card 必填"):
         ModelingSession().load_or_start(
             None, card=CARD

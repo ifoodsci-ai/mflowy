@@ -8,8 +8,8 @@ MFlowy 是 **CLI-first** 的 AI4S 能力层（#243：SKILLS+CLI 替代 SKILLS+MC
 
 ```mermaid
 flowchart LR
-    D["历史实验数据"] --> S["Clean 子系统<br/>survey 剧本 → 清洗 POMDP"]
-    S -->|final_path| M["Model 子系统<br/>model-brief → 建模 POMDP"]
+    D["历史实验数据"] --> S["Clean 子系统<br/>data-prior-survey 剧本产 CleanPrior JSON 交棒 → data-clean 开局清洗 POMDP"]
+    S -->|final_path| M["Model 子系统<br/>model-prior-survey 产开局入参 JSON 交棒 → modeling 开局建模 POMDP"]
     M -->|模型 loader| B["BO 子系统<br/>Virtual 筛选 + 推荐台账"]
     B -->|推荐 CSV| W["Wet-lab（外部）<br/>人工/自动化实验室"]
     W -->|结果回流 + 学习门禁| S
@@ -17,9 +17,9 @@ flowchart LR
 
 | 子系统 | 先验建档 | 核心执行 | 产出 | 状态 |
 | ------ | -------- | -------- | ---- | ---- |
-| **Clean** | survey 剧本 → DomainCard | 清洗 POMDP 会话（`data_*` 六操作） | 终态数据 + 清洗计划 + 决策日志 | ✅ 已实现 |
-| **Model** | model-brief 剧本（+research-review 文献候选）→ CVCard | 建模 POMDP 会话（`modeling_*`）+ compute 工具 | 模型 loader + findings + 报告 | ✅ 已实现 |
-| **BO** | bo-brief 剧本 → BO 先验卡 | 推荐会话 + Virtual 筛选 | 推荐台账 CSV + 学习门禁信号 | 🚧 设计中（[决策图 #171](https://github.com/ifoodsci-ai/mflowy/issues/171)） |
+| **Clean** | data-prior-survey 剧本产 CleanPrior JSON 交棒（data-clean 主剧本 owns 开局，#233） | 清洗 POMDP 会话（`data_*` 六操作） | 终态数据 + 清洗计划 + 决策日志 | ✅ 已实现 |
+| **Model** | model-prior-survey 剧本（+model-research-review 文献候选）→ 开局入参 JSON 交棒（modeling 主剧本 owns 开局） | 建模 POMDP 会话（`modeling_*`）+ compute 工具 | 模型 loader + findings + 报告 | ✅ 已实现 |
+| **BO** | bo-prior-survey 剧本产 BOCard.yaml 交棒（bo-suggest 主剧本 owns 开局，#233） | bo 六工具工作流（非会话，#177）+ Virtual 筛选 | 推荐台账 CSV + 学习门禁信号 | ✅ 已实现 |
 | **Wet-lab** | 外部环境（无设备 API，人肉执行） | — | 结果台账回流 | ⬜ 外部 |
 
 方法论叙事见 [docs/research-flow.md](docs/research-flow.md)（前两程的一局：五律总纲 + 五幕案例）；子系统决策点的研究依据见 [docs/method/](docs/method/)（清洗侧 / 建模侧，零词表绑定）。

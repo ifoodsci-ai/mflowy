@@ -149,7 +149,8 @@ _Avoid_: Activation / 菜单 / 候选（#113/#120 退役——菜单是不完整
 清洗 POMDP 的冻结输入：数据域先验（先验家族的数据域成员，#169/#170 扩义——
 target/ID 分级字段（pk/fk/known_id/composite/known_non_id/hinted）/单位/范围/
 protected + source 权威度——#112 PriorKnowledge 并入卡；never_drop 收缩为
-target/protected/time，ID 列处置归 π，survey 剧本编译）。
+target/protected/time，ID 列处置归 π，data-prior-survey 剧本编译、JSON 交棒 data-clean
+开局——#233 拓扑：开局权归主剧本，先验持久化面 = 会话 manifest，无盘上卡工件）。
 
 #### 缺陷与判定（0.2.x）
 
@@ -172,14 +173,14 @@ _Avoid_: 给 clean 侧建封闭枚举 / 注册装饰器（#124 零机器消费�
 **路由提示（ROUTING_HINTS）**:
 DefectType → 推荐 clean 算子集的静态表（data 包）：枚举键控、值 ⊆ clean 词表
 （闭包测试钉）、state_digest.routing_hints 常驻投影——**提示非约束、非过滤器**
-（π 可见面 = clean 词表全集）；策略知识（决策树/参数默认档）外置 clean skill。
+（π 可见面 = clean 词表全集）；策略知识（决策树/参数默认档）外置 data-clean skill。
 _Avoid_: 菜单/候选生成（#113 退役——菜单是不完整过滤器，隐藏合法选项）
 
 ### 预测模型训练子系统（Model）
 
 **协议卡（CVCard）**:
 建模 POMDP 的冻结输入：建模域对局规则（task/metric/CV/预算/约束，
-model-brief 问卷编译）+ 建模域先验面（#169/#170——external_baseline 结构化对标
+model-prior-survey 问卷编译、JSON 交棒 modeling 开局）+ 建模域先验面（#169/#170——external_baseline 结构化对标
 {value, metric, source_text, source}，先验家族的建模域成员，自由文本已退役）。
 协议卡的引擎入参形态（#66）：cv_card = cv.split 配置 yaml
 明文（划分构建参数）+ start 显式参数（target/task/metric/candidates/max_steps/
@@ -231,7 +232,8 @@ bo 域先验卡（正式名，#178/#184）：空间组（搜索维三 kind + 边
 `expected_ranges` 直取（宽于物理域拒绝）+ direction——同一性字段，变更 = 重建
 study）+ 策略组（hard 规则表达式树 / 查表谓词 / 按类常量表 / band / 容差门限 /
 批缺省 / 典型测量变异——变更不重建不升版）。pydantic 单源（`mflowy/bo/types.py`），
-卡实例 = YAML 工件（bo-prior 剧本产 `<task_dir>/BOCard.yaml`）；bo 工具零卡耦合
+卡实例 = YAML 工件（bo-prior-survey 剧本产 `<task_dir>/BOCard.yaml`——bo 域例外
+保留卡工件，#233）；bo 工具零卡耦合
 ——门限/规则/容差由 agent 读卡后以参数进入。
 _Avoid_: 先验卡（Clean 的 CleanPrior 专属）单指 bo 卡；「BO 先验卡」降为非正式叙述语
 

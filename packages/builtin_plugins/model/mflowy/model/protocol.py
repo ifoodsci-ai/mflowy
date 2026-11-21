@@ -1,13 +1,13 @@
 """建模域 CVCard（原 ProtocolCard，#63 全链改名）：评估协议卡的冻结载体。
 
-与 DomainCard（数据先验，mflowy.data.types）对称——两卡都是 episode 内冻结的
+与清洗先验卡 CleanPrior（数据先验，mflowy.data.types）对称——两卡都是 episode 内冻结的
 POMDP 输入：先验卡管"数据是什么"，协议卡管"对局怎么打"（task/metric/CV/预算/
 结构化候选）。「先验」为两卡通用家族（#169/#170）：先验卡 = 数据域先验；
 协议卡的 external_baseline = 建模域先验（前沿研究的领域先验知识——结构化对标）。
 换协议 = board 作废 + test 重触，只能弃局开新 episode。
 
 candidates = ``[{family, baseline: bool, space_hints: {param: 值 | [lo, hi]}, seed}]``
-（research-review 剧本产物）：baseline 恰一（propose 时第一）；space_hints ⊆ 族
+（model-research-review 剧本产物）：baseline 恰一（propose 时第一）；space_hints ⊆ 族
 签名声明空间（标量 = pin、区间 = 收窄——文献知识注入搜索起点）；每候选默认随机
 种子（搜索期内冻结——换 seed = 换目标 = study 重开，判据在回路）。
 """
@@ -120,7 +120,7 @@ def _validate_hints(family: str, hints) -> dict:
 class CVCard:
     """建模会话的评估协议。字段与 modeling_load_or_start 的冻结 protocol 分量一一对应。
 
-    candidates 空 = 全部已声明族开放（缺省，字典序、首个为 baseline）；research-review
+    candidates 空 = 全部已声明族开放（缺省，字典序、首个为 baseline）；model-research-review
     剧本产出收窄清单（文献先验第一轮淘汰 + baseline 锚点 + 空间 hints + 候选 seed）。
     预算 = 单一 max_steps（π 自行分配：跑哪些候选、搜多深——n_trials 是深度旋钮）。
     """
@@ -130,7 +130,7 @@ class CVCard:
     max_steps: int  # 单一预算：只有计算动作（run_hpo/final_train_test）吃步——缺省仅由 build 签名持有
     metric: MetricName | None = None  # None = 任务自动选（infer_metric）
     candidates: tuple[dict, ...] = ()  # 空 = 全部已声明族开放（首个 baseline）
-    goal: str = ""  # 建模成功判据（业务口径，区别于 survey 的研究目标）
+    goal: str = ""  # 建模成功判据（业务口径，区别于 data-prior-survey 建档问卷的研究目标）
     # 外部基线对标（建模域先验面，#169/#170）：结构化 dict {value, metric, source_text,
     # source}——校验单源 _validate_external_baseline；渲染面等「波动主导差距」挂层
     external_baseline: dict | None = None
@@ -239,7 +239,7 @@ class CVCard:
         n_baseline = sum(1 for c in normalized if c["baseline"])
         if n_baseline != 1:
             raise ValueError(
-                f"baseline 恰一（research-review 标记锚点候选——propose 时第一），实得 {n_baseline} 个"
+                f"baseline 恰一（model-research-review 标记锚点候选——propose 时第一），实得 {n_baseline} 个"
                 f"（候选：{[c['family'] for c in normalized]}）"
             )
 

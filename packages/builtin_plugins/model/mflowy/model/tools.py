@@ -269,7 +269,7 @@ async def predict(
 
 
 # ── 建模会话工具（环境面在 model/session，π 在调用方 LLM） ───────────────────
-# 协议谈判在剧本层（model-brief + research-review skill）；start(cv_card)
+# 协议谈判在剧本层（model-prior-survey + model-research-review skill，#233 JSON 交棒）；start(cv_card)
 # 唯一主通道直进九动作面（#62/#236：配置编辑 + 计算动作 + 判读落诊；done = finish）。
 # 会话恒单目标任务——多目标在会话外三层循环（多目标 → 多模型 → 单目标任务会话）。
 
@@ -307,7 +307,7 @@ def modeling_load_or_start(
     candidates: Annotated[
         list[dict] | None,
         Field(
-            description="结构化候选（research-review 剧本产物）：[{family, baseline, space_hints, seed}]"
+            description="结构化候选（model-research-review 剧本产物，经 model-prior-survey 交棒）：[{family, baseline, space_hints, seed}]"
             "——None = 全部已声明族开放（baseline 恰一、hints ⊆ 签名空间）"
         ),
     ] = None,
@@ -324,7 +324,7 @@ def modeling_load_or_start(
         ),
     ] = None,
     card: Annotated[
-        dict | None, Field(description="DomainCard（survey 产物）背景：target/task/id_columns 的兜底层")
+        dict | None, Field(description="清洗先验卡 CleanPrior（data-prior-survey 产物）背景：target/task/id_columns 的兜底层")
     ] = None,
 ) -> dict:
     """开局/续载建模会话（#226 ②）：observation_json 给定 = 加载既有会话；缺省 =
@@ -333,8 +333,9 @@ def modeling_load_or_start(
     （状态文件绝对路径，#242）。
 
     何时使用 modeling_load_or_start：
-    - model-brief 问卷（含 research-review 结构化候选）编译出 cv_card（split yaml
-      明文）+ 显式协议参数后开局回合循环；多目标 = 每目标各开一个会话（三层循环）
+    - model-prior-survey 问卷（含 model-research-review 结构化候选）产开局入参 JSON
+      交棒后开局回合循环（#233 开局权归 modeling 主剧本）；多目标 = 每目标各开一个
+      会话（三层循环）
     - 上下文丢失/跨进程续局：拿 observation_json 加载（开局入参与其同传 = 参数来源冲突报错）
     """
     session = _session()
