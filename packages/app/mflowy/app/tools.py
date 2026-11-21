@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Annotated
 
 from mflowy.utils import auth
+from mflowy.utils.constants import REMOTE_TASK_DIR
 from mflowy.utils.file import sha256_of
 from pydantic import Field
 
@@ -220,10 +221,9 @@ def _local_path(uri: str) -> str:
     return str(Path(unquote(parsed.path))) if parsed.scheme == "file" else uri
 
 
-# 远程镜像契约字面常量（#159 §4：**非 env 读取**——与远端镜像烧 ENV 契约无关；
-# 镜像面见 docker/Dockerfile 烧 ENV、容器面见 jobwrap）。
-# 观察面单参推导（#160 终稿）：工件 URI 命中此前缀 → 改写为 tracking db 同根本地路径。
-REMOTE_TASK_DIR = "/user-data/workspace"
+# 观察面单参推导（#160 终稿）：工件 URI 命中 REMOTE_TASK_DIR 前缀 → 改写为
+# tracking db 同根本地路径。常量单源住 mflowy.utils.constants（#218 收敛——
+# model 会话 remote 分支同契约消费）。
 
 
 def _rewrite_remote_artifact(value: str, local_root: Path | None) -> str:
@@ -458,7 +458,9 @@ def _validate_file_manifest(files: list[str]) -> list[Path]:
 def _diff_entry(p: Path) -> dict:
     """同步 diff 条目单源（#156 §3 返回 shape：``{local, remote}``——size 不进
     返回面：不参与判定，agent 对本地文件自知 size，远端侧无需第二份复述）。"""
-    return {"local": str(p), "remote": f"/user-data/uploads/{p.name}"}
+    from mflowy.utils.constants import REMOTE_UPLOADS_DIR
+
+    return {"local": str(p), "remote": f"{REMOTE_UPLOADS_DIR}/{p.name}"}
 
 
 def _sync_uploads(client, experiment_id: str, paths: list[Path]) -> dict:

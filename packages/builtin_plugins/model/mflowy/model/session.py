@@ -438,19 +438,24 @@ class ModelingSession:
                 "seed": snap["seed"],
                 "F": dict(snap["F"]),
             }
-            board["cursor"] = m["cursor"]
-            _board_write(ss, board)
-            o.validation.reward = None  # ⑥ 补 r：先置再 append（回滚无过程奖励）
-            log.append(
-                _record(
-                    log,
-                    m,
-                    "rollback",
-                    {},
-                    f"光标弹栈（预算不回补：steps={m['steps']}/{m['max_steps']}；账本与盘上 study 一致）",
+            with ss.commit_lock():  # 键控合并：models/verdict 从盘保留（#225 裁定 3——光标恒内存面）
+                disk = _board_load(ss)
+                disk["cursor"] = m["cursor"]
+                disk["snapshots"] = m["snapshots"]
+                m["models"] = disk["models"]
+                board["models"] = disk["models"]
+                _board_write(ss, disk)
+                o.validation.reward = None  # ⑥ 补 r：先置再 append（回滚无过程奖励）
+                log.append(
+                    _record(
+                        log,
+                        m,
+                        "rollback",
+                        {},
+                        f"光标弹栈（预算不回补：steps={m['steps']}/{m['max_steps']}；账本与盘上 study 一致）",
+                    )
                 )
-            )
-            o.biz = _state_projection(m)
+                o.biz = _state_projection(m)
         return o
 
     def abandon(self, observation_json: str, reason: str | None = None) -> dict[str, Any]:
@@ -474,43 +479,46 @@ class ModelingSession:
         """
         ss = _open(observation_json)
         with ss.finish_ctx() as (o, log):  # 幂等重入 = 壳只读路径（已收局零落盘）
-            board = _board_load(ss)
-            m = _mview(ss, o, board)
-            if board.get("verdict"):  # 已结算：幂等重导出（交付报告不可变更——审计面）
-                adopted = board["verdict"]["report"]["source_pdf"]
-                if pdf != adopted:
-                    raise ValueError(f"已收局交付报告不可变更（审计面）——重写报告须弃局重开；已收编报告源：{adopted!r}")
+            with ss.commit_lock():  # 收局 = 汇合点：锁内重读并行分支的冻结条目（#225 裁定 3）
+                board = _board_load(ss)
+                m = _mview(ss, o, board)
+                if board.get("verdict"):  # 已结算：幂等重导出（交付报告不可变更——审计面）
+                    adopted = board["verdict"]["report"]["source_pdf"]
+                    if pdf != adopted:
+                        raise ValueError(
+                            f"已收局交付报告不可变更（审计面）——重写报告须弃局重开；已收编报告源：{adopted!r}"
+                        )
+                    return _verdict_response(m, list(ss.decision_log))
+
+                keys = sorted(k for k, v in m["models"].items() if v["frozen"])
+                if not keys:
+                    return FinishVerdict(  # 拒收：无交付面（先搜后店），拒收后可续局
+                        accepted=False,
+                        reason="无冻结 combo 可交付——先 run_hpo + final_train_test 再收局",
+                        terminal_utility={"steps": m["steps"]},
+                        deliverables={},
+                        decision_log=list(ss.decision_log),
+                    )
+
+                src = Path(pdf)
+                if not src.is_file():
+                    raise ValueError(
+                        f"报告文件不存在：{pdf!r}（先 draw_taylor_diagram + modeling_report_skeleton 拿素材，π 产报告后带路径收局）"
+                    )
+                report = _adopt_report(ss.dir, src)
+
+                verdict_models = {k: {"u": m["models"][k]["u"], "findings": m["models"][k]["findings"]} for k in keys}
+                board["verdict"] = {
+                    "deliver_keys": keys,
+                    "models": verdict_models,
+                    "rank": _rank_consistency(m, keys),
+                    "report": report,
+                }
+                o.validation.finished = True
+                _board_write(ss, board)  # 域状态先行（verdict 缓存）
+                log.append(_record(log, m, "finish", {"pdf": str(src)}, f"交付 {keys}；报告 {report['file']}"))
+                m = _mview(ss, o, board)
                 return _verdict_response(m, list(ss.decision_log))
-
-            keys = sorted(k for k, v in m["models"].items() if v["frozen"])
-            if not keys:
-                return FinishVerdict(  # 拒收：无交付面（先搜后店），拒收后可续局
-                    accepted=False,
-                    reason="无冻结 combo 可交付——先 run_hpo + final_train_test 再收局",
-                    terminal_utility={"steps": m["steps"]},
-                    deliverables={},
-                    decision_log=list(ss.decision_log),
-                )
-
-            src = Path(pdf)
-            if not src.is_file():
-                raise ValueError(
-                    f"报告文件不存在：{pdf!r}（先 draw_taylor_diagram + modeling_report_skeleton 拿素材，π 产报告后带路径收局）"
-                )
-            report = _adopt_report(ss.dir, src)
-
-            verdict_models = {k: {"u": m["models"][k]["u"], "findings": m["models"][k]["findings"]} for k in keys}
-            board["verdict"] = {
-                "deliver_keys": keys,
-                "models": verdict_models,
-                "rank": _rank_consistency(m, keys),
-                "report": report,
-            }
-            o.validation.finished = True
-            _board_write(ss, board)  # 域状态先行（verdict 缓存）
-            log.append(_record(log, m, "finish", {"pdf": str(src)}, f"交付 {keys}；报告 {report['file']}"))
-            m = _mview(ss, o, board)
-            return _verdict_response(m, list(ss.decision_log))
 
     def observe(self, observation_json: str) -> Observation:
         """观测（幂等只读零转移，#117 取代 propose）：盘上观测 + 读时决策面投影。
@@ -812,18 +820,36 @@ def _session_run(m: dict, run_name: str):
 
 
 def _commit(ss, o, m, board, log, action: str, params: dict, note: str = "", reward=None, findings=None) -> None:
-    """统一提交点：board 先行（域状态）→ 日志追加（commit）→ 观测投影更新（ctx exit 落盘）。
+    """统一提交点：锁内键控合并 → board 先行（域状态）→ 日志追加（commit）→
+    观测投影更新（ctx exit 落盘）。
 
     步数由壳按 counts_step 单源记账（#226 ②——COMPUTE_ACTIONS 只进 _counts_step
     谓词，域内自增与 m["steps"] 镜像双份退役）；reward 先置再 append——壳补 r
-    机制（#226 ⑥）在 commit 点 stamp 进记录。"""
+    机制（#226 ⑥）在 commit 点 stamp 进记录。
+
+    键控合并（#225 裁定 3，#218 落地——并行分支）：commit 进壳提交锁重读盘上
+    board——账本条目按 ``models[params["key"]]`` 键控合并（本动作产物入键，他键
+    从盘保留——分支间可交换；裁定 3 的交换面 = entry[key]/steps/决策日志）。光标
+    恒内存面（last-write-wins——最小装配等运行期游走合法；光标不在交换面内）。
+    同键并行不在并行模型内（一局 N 模型设计 = N 键 N 分支；freeze 门按键隔离即
+    此约定）。"""
     o.validation.reward = reward
-    _board_write(ss, board)
-    log.append(_record(log, m, action, params, note))
-    state = _state_projection(m)
-    if findings is not None:
-        state["findings"] = findings  # 计算动作的过程决策面浮出（π 读数）
-    o.biz = state
+    with ss.commit_lock():
+        disk = _board_load(ss)
+        disk["cursor"] = m["cursor"]
+        disk["snapshots"] = m["snapshots"]
+        merged_models = dict(disk["models"])
+        if (key := params.get("key")) is not None:
+            merged_models[key] = m["models"][key]  # 本动作产物（params.key 约定）
+        disk["models"] = merged_models
+        board["models"] = merged_models
+        m["models"] = merged_models  # 投影随合并面（biz 不漏并行分支条目）
+        _board_write(ss, disk)
+        log.append(_record(log, m, action, params, note))
+        state = _state_projection(m)
+        if findings is not None:
+            state["findings"] = findings  # 计算动作的过程决策面浮出（π 读数）
+        o.biz = state
 
 
 def _require_cursor_model(m: dict) -> str:
@@ -1223,12 +1249,16 @@ def _run_hpo_remote(ss, o, m, board, log, *, entry, family, fe, key, n_trials, p
         import optuna
 
         names = optuna.get_all_study_names(storage=f"sqlite:///{session_db}")
-        n_local = (
-            len(optuna.load_study(study_name=key, storage=f"sqlite:///{session_db}").trials) if key in names else 0
-        )
-        if n_local != n_adopted:
+        if key in names:
+            opened = optuna.load_study(study_name=key, storage=f"sqlite:///{session_db}")
+            n_local = len(opened.trials)
+            # 已采用基线 = 链簿 ∪ study 侧留痕（自愈面：采用后、commit 前崩溃按 study 真值放行重试）
+            adopted_baseline = max(n_adopted, int(opened.user_attrs.get("mflowy.remote_adopted", 0) or 0))
+        else:
+            n_local = adopted_baseline = 0
+        if n_local != adopted_baseline:
             raise RuntimeError(
-                f"combo `{key}` 盘上 study 已有 remote 链外历史（trials={n_local}，链内已采用={n_adopted}）——"
+                f"combo `{key}` 盘上 study 已有 remote 链外历史（trials={n_local}，链内已采用={adopted_baseline}）——"
                 "local/remote 混合续跑不支持：该键继续 local，或换 FE/seed 出新键走 remote"
             )
 
@@ -1441,6 +1471,8 @@ def _final_train_test(ss, o, m, board, log, params: dict) -> None:
         final_params["random_state"] = seed
 
     loader_v = 1  # 冻结世代：freeze-once ⇒ 恒 1（若未来解冻重训，世代递增——指针永不悬空的结构位）
+    from mflowy.utils.constants import REMOTE_UPLOADS_DIR
+
     from .job_provider import get_job_provider
     from .job_provider.remote import RemoteJobProvider
 
@@ -1452,7 +1484,7 @@ def _final_train_test(ss, o, m, board, log, params: dict) -> None:
         plan_flow = _flow_prefix(
             m,
             fe,
-            file_path=f"/user-data/uploads/{Path(m['source_file']).name}",
+            file_path=f"{REMOTE_UPLOADS_DIR}/{Path(m['source_file']).name}",
             split_params=split_params,
         )
         plan_text = _final_flow_yaml(plan_flow, family, key, final_params)
@@ -1850,13 +1882,14 @@ def _hpo_plan_yaml(
     from mflowy.driver.config import NodeConf
     from mflowy.driver.serializer import flow_to_yaml
     from mflowy.model.model.utils import space_from_json
+    from mflowy.utils.constants import REMOTE_UPLOADS_DIR
 
     split_params = {**m["protocol"]["split_params"]}
     split_params.setdefault("cv", m["protocol"]["cv"])  # 缺省单源（#83）：冻结协议值——与开局物化同面
     flow = _flow_prefix(
         m,
         fe,
-        file_path=f"/user-data/uploads/{Path(m['source_file']).name}" if uploads else None,
+        file_path=f"{REMOTE_UPLOADS_DIR}/{Path(m['source_file']).name}" if uploads else None,
         split_params=split_params,
     )
     params: dict = {

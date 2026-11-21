@@ -61,7 +61,7 @@ class _SessionLock:
 
     @classmethod
     def for_dir(cls, dir_: Path) -> _SessionLock:
-        key = dir_.absolute()
+        key = dir_.resolve()  # 非 absolute：symlink 两拼写不裂成两锁（同进程双 fd 自锁死）
         lock = cls._registry.get(key)
         if lock is None:
             lock = cls(key)
@@ -69,11 +69,11 @@ class _SessionLock:
         return lock
 
     def acquire(self) -> None:
-        self._depth += 1
-        if self._depth == 1:
+        if self._depth == 0:  # 先开门后计数：open 失败不残留 depth（残留即互斥面静默失效）
             self._fh = open(self._dir / COMMIT_LOCK_FILE, "a")
             assert self._fh is not None  # 上一行刚赋值（收窄 Optional——flock 形参面）
             fcntl.flock(self._fh, fcntl.LOCK_EX)
+        self._depth += 1
 
     def release(self) -> None:
         self._depth -= 1
@@ -448,6 +448,8 @@ class POMDPSession:
                         )
                         self._write_observation(disk)
                     else:  # commit 后残余窗口：补齐投影完成该 commit（不追加第二条）
+                        disk = self._load_observation()
+                        o.validation.steps = disk.validation.steps + 1  # 键控合并同则（不覆盖并行分支）
                         self._assert_prior_frozen(o, prior_before)
                         self._write_observation(o)
             raise

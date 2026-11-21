@@ -580,3 +580,35 @@ def test_final_train_test_submitted_branch(tmp_path, monkeypatch, isolate, reg_c
     # plan 审计件：uploads 寻址 + cv.split 复现形态
     plan = (Path(observation_json).parent / "plans" / "final_RF__passthrough__passthrough_v1.yaml").read_text()
     assert f"/user-data/uploads/{Path(reg_csv).name}" in plan and "cv__split" in plan
+
+
+# ── 键控合并（#225 裁定 3——并行分支：entry[key]/steps/决策日志交换面）────────
+
+
+def test_commit_keyed_merge_preserves_parallel_branch_entries(tmp_path, isolate, reg_csv):
+    """board 键控合并：分支 A（配置编辑，body 持开）commit 时锁内重读——分支 B
+    完整落账的 models 条目不被 A 的整写覆盖（旧整写形态即此缺陷）。"""
+    from mflowy.model import session as ms
+
+    observation_json, _ = _start(reg_csv)  # 候选 RF baseline
+    ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
+    ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1})
+
+    ss_a = ms._open(observation_json)
+    with ss_a.apply_ctx("select_model") as (o_a, log_a):
+        board_a = ms._board_load(ss_a)
+        m_a = ms._mview(ss_a, o_a, board_a)
+        # 分支 B：完整提交（report_findings on RF——账本条目落盘）
+        ModelingSession().apply(
+            observation_json,
+            "report_findings",
+            {"key": _K_RF, "findings": [{"kind": "error_concentrated", "severity": 0.5, "message": "并行分支落诊"}]},
+        )
+        # 分支 A 后提交（锁内重读合并面）
+        ms._select_model(ss_a, o_a, m_a, board_a, log_a, {"family": "RF"})
+
+    st = _state(observation_json)
+    entry = st["models"][_K_RF]
+    assert entry["findings"], f"分支 B 的落诊条目被 A 的 commit 覆盖：{entry.get('findings')}"
+    assert entry["findings"][0]["source"] == "llm" and entry["findings"][0]["message"] == "并行分支落诊"
+    assert st["cursor"]["m"] == "RF"  # A 的光标提交在（last-write-wins）

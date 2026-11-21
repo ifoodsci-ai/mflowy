@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import tempfile
 import time
@@ -24,14 +25,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, NamedTuple
 
+from mflowy.utils.constants import REMOTE_TASK_DIR
+
 logger = logging.getLogger(__name__)
 
 # 轮询节奏：阻塞等待期的拉日志间隔（CLI 进程阻塞——agent 会话不阻塞，#243 红利）
 POLL_INTERVAL_SECONDS = 5.0
-
-# 远程镜像契约字面常量（与 app 观察面 REMOTE_TASK_DIR 同值同义——zip 内工件 URI
-# 前缀改写的对端）：此处不 import app（依赖方向 app → model）
-REMOTE_TASK_DIR = "/user-data/workspace"
 
 _platform_client_factory: Callable[[], Any] | None = None
 
@@ -82,11 +81,12 @@ def await_job(client: Any, job_id: str, *, interval: float = POLL_INTERVAL_SECON
 
 def fetch_workspace(client: Any, job_id: str, platform_experiment_id: str, dest_root: Path) -> Path:
     """拉取任务产物：outputs 下 ``{job_id}.zip`` → 原子解包进 ``dest_root/{job_id}/``
-    （zip 根 = workspace 根）。重拉 = 原子替换（幂等）。"""
+    （zip 根 = workspace 根）。重拉 = 原子替换（幂等）。暂存目录建在 dest_root
+    内（同文件系统——rename 不跨 EXDEV）。"""
     from .job_provider.platform_client import download_presigned
 
     dest_root.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="mflowy_fetch_") as td:
+    with tempfile.TemporaryDirectory(prefix=".mflowy_fetch_", dir=dest_root) as td:
         zip_path = Path(td) / f"{job_id}.zip"
         url, _meta = client.get_download_url(platform_experiment_id, "outputs", f"{job_id}.zip")
         download_presigned(url, zip_path)
@@ -106,9 +106,6 @@ def fetch_workspace(client: Any, job_id: str, platform_experiment_id: str, dest_
         replacing.rename(dest)
         shutil.rmtree(retired, ignore_errors=True)
     return dest
-
-
-type RunFace = "RemoteRunFace | LocalRunFace"  # 回读面两形态（submitted/finished）——artifact/tag 同构
 
 
 class RemoteRunFace(NamedTuple):
@@ -170,12 +167,14 @@ def adopt_study_trials(
     remote_study_name: str,
 ) -> tuple[Any, int]:
     """study 采用（remote→local 翻回连续性，#225 实施细节）：远程 study 的
-    ``[n_adopted:]`` trial 经 ``optuna.add_trial`` 增量并入会话正典库（append-only
+    ``[n_adopted:]`` trial 经 ``study.add_trial`` 增量并入会话正典库（append-only
     ——不动远程真源）。会话侧打开 = ``_open_study`` 同语义：目标同一性门 + 缺库
     新建 + objective 盖章。返回 (会话 study, 新采用计数)。
 
     混合历史门（红线 1 宁可拒绝）：远程 trial 计数 < n_adopted = 链断裂（继承失
-    配）——fail-loud 不静默缩水。
+    配）——fail-loud 不静默缩水。目标变重开走 tmp 库 + rename（红线 3 原子性——
+    半成品库不落正典位）。采用进度随 study user_attr ``mflowy.remote_adopted``
+    留痕（自愈面：采用后、账本 commit 前崩溃，门按 study 侧真值放行重试）。
     """
     import optuna
     from optuna import samplers
@@ -193,10 +192,18 @@ def adopt_study_trials(
     if session_db.exists():
         study = optuna.load_study(study_name=study_name, storage=storage, sampler=sampler)
         if study.user_attrs.get("objective") != objective_id:
-            session_db.unlink()  # 目标变 → 重开（与 _open_study 同语义——append-only 真源换新目标）
+            # 目标变 → 重开（与 _open_study 同语义）：tmp 库新建 + rename 原子换位（红线 3）
+            tmp_db = session_db.with_suffix(".db.rebuild")
+            tmp_db.unlink(missing_ok=True)
             study = optuna.create_study(
-                study_name=study_name, storage=storage, direction=direction, load_if_exists=True, sampler=sampler
+                study_name=study_name,
+                storage=f"sqlite:///{tmp_db}",
+                direction=direction,
+                load_if_exists=True,
+                sampler=sampler,
             )
+            os.replace(tmp_db, session_db)
+            study = optuna.load_study(study_name=study_name, storage=storage, sampler=sampler)  # 重开（旧连接随换位作废）
     else:
         study = optuna.create_study(
             study_name=study_name, storage=storage, direction=direction, load_if_exists=True, sampler=sampler
@@ -204,6 +211,7 @@ def adopt_study_trials(
     study.set_user_attr("objective", objective_id)
     for trial in trials[n_adopted:]:
         study.add_trial(trial)  # 深拷贝含 user_attrs（scores 面）
+    study.set_user_attr("mflowy.remote_adopted", len(trials))  # 采用进度留痕（自愈面）
     return study, len(trials)
 
 
