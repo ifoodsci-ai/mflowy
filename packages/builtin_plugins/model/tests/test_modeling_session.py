@@ -395,11 +395,17 @@ def test_word_list_is_eight_faces(sessions_root, reg_csv):
 
 
 def test_run_hpo_rejects_extra_params(sessions_root, reg_csv):
-    """run_hpo 参数面 = n_trials——pin/收窄走配置动作（防第三入口）。"""
+    """run_hpo 参数面 = n_trials——pin/收窄走配置动作（防第三入口）。计算动作
+    拒绝同样吃步（#225 失败吃步）：失败条目进决策日志（r=None、错误入 note）。"""
     observation_json, s = _start(sessions_root, reg_csv)
     ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
     with pytest.raises(ValueError, match="set_hp"):
         ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1, "max_depth": 4})
+    rec = _log(sessions_root, observation_json)[-1]
+    assert rec["action"] == "run_hpo" and rec["failed"] is True and rec["r"] is None
+    assert "set_hp" in rec["note"]
+    r = ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1})
+    assert r.validation.steps == 2  # 失败尝试 + 成功尝试各吃一步
 
 
 # ── 增量 study：目标同一性判据 ───────────────────────────────────────────────

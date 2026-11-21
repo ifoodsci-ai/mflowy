@@ -14,8 +14,10 @@ append-only 决策日志/统一盘上写序），域实现 ``pomdp.POMDPSessionH
   一起水化、写穿原子（模块级内存 dict 的无 gc/同进程跨会话共享两缺陷由此解）
 
 统一写序（构造保证）：工件先行（域、未 commit、孤儿无害）→ 日志追加（commit）→
-观测投影最后落盘。崩溃窗口二分：追加前崩 = 失败免费；追加后投影前崩 = 日志领先，
-``open`` 的一致性牙齿（validation.recent_decisions 尾 ≡ 日志尾）fail-loud。
+观测投影最后落盘。失败吃步（#225 裁定 3）：计数动作 body 失败 = 壳提交 steps +
+失败决策日志条目后 re-raise（取代 #234「失败恒免费」）；硬崩（非异常）仍走撕裂
+窗口——追加后投影前崩 = 日志领先，``open`` 的一致性牙齿（validation.recent_decisions
+尾 ≡ 日志尾）fail-loud。
 """
 
 from __future__ import annotations
@@ -365,16 +367,46 @@ class POMDPSession:
         自增退役）；``l.append`` 写穿即 commit（⑥ 补 r：壳从 o.validation.reward
         stamp 进记录）；exit 投影最后。
 
-        body 内失败即免费（追加前抛出：零日志、零观测变更、孤儿工件无害——计步
-        同回滚）；先验在动作面冻结（⑧——init/更新只走 load_or_start/observe 缝）。
+        失败吃步（#225 裁定 3，取代 #234「失败恒免费」）：计数动作的尝试无论
+        成败占一步预算——body 失败时提交 steps + 失败决策日志条目（r=None、错误
+        入 note）后 re-raise（否则 max_steps 门界不住 π 的重试环）；免费动作失败
+        仍零日志零落盘（确定性拒绝，无重试环风险）。门自身拒绝（终态/预算耗尽）
+        发生在计步前——恒免费。失败路径从盘上事实重读推进（body 半改的内存态
+        丢弃，先验冻结面不可经失败写盘破例）；body 已 commit（日志已增长）后的
+        失败不追加第二条——补齐投影写盘完成该 commit。
         """
         o = self._gate_mutable()
-        if self._action_counts(action):
+        counted = self._action_counts(action)
+        if counted:
             if o.validation.steps >= o.validation.max_steps:
                 raise RuntimeError(f"预算耗尽（max_steps={o.validation.max_steps}）：请 rollback 或 finish")
-            o.validation.steps += 1  # 单源记账：commit 缝计步（body 失败 = 盘上未写，免费）
+            o.validation.steps += 1  # 单源记账：commit 缝计步（失败同样吃步，#225）
         prior_before = _canonical(o.prior)
-        yield o, _RewardStampLog(_DecisionLog(self._dir / DECISION_LOG_FILE), o)
+        log = _RewardStampLog(_DecisionLog(self._dir / DECISION_LOG_FILE), o)
+        committed = len(log)
+        try:
+            yield o, log
+        except Exception as exc:
+            if counted:
+                if len(log) == committed:  # body 未 commit：失败条目即该尝试的审计面
+                    disk = self._load_observation()  # 盘上事实推进（body 半改内存态不落盘）
+                    disk.validation.steps += 1
+                    disk.validation.reward = None
+                    o.validation.reward = None  # 补 r 面同置 None（log 从 o stamp——见 _RewardStampLog）
+                    log.append(
+                        {
+                            "action": action,
+                            "failed": True,
+                            "steps": disk.validation.steps,
+                            "budget_left": disk.validation.max_steps - disk.validation.steps,
+                            "note": f"{type(exc).__name__}: {exc}",
+                        }
+                    )
+                    self._write_observation(disk)
+                else:  # commit 后残余窗口：补齐投影完成该 commit（不追加第二条）
+                    self._assert_prior_frozen(o, prior_before)
+                    self._write_observation(o)
+            raise
         self._assert_prior_frozen(o, prior_before)
         self._write_observation(o)
 

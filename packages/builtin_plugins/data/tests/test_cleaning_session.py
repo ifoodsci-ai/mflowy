@@ -138,11 +138,12 @@ def test_apply_action_improves_quality_and_logs(sessions_root, dirty_csv):
     assert set(df["target"]) <= set(raw["target"])
 
 
-def test_failed_apply_is_free(sessions_root, dirty_csv):
-    """#65 dry_run 退役后的试探契约：失败 apply 免费——异常在 commit 点前抛出，
-    不耗预算、不落版本、不进决策日志（审计面只记录真实转移）。
+def test_failed_apply_eats_step(sessions_root, dirty_csv):
+    """失败吃步（#225 裁定 3，取代 #234「失败恒免费」——两域同生效）：清洗域
+    全动作计数，失败 apply 同样吃步 + 失败决策日志条目（r=None、错误入 note），
+    不落版本（v 不动——body 半改内存态丢弃）。
 
-    不确定动作的试探面 = 「提交 → 免费 s′ → 负 reward 即 rollback」（全量真值
+    不确定动作的试探面 = 「提交 → 吃步 s′ → 负 reward 即 rollback」（全量真值
     决策，试错价格明确 = 一步预算），不再有样本预览。
     """
     observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
@@ -151,10 +152,15 @@ def test_failed_apply_is_free(sessions_root, dirty_csv):
     with pytest.raises((ValueError, RuntimeError), match="不在数据框中"):
         CleaningSession().apply(observation_json, "drop_cols", {"cols": ["nope"]}, reason="测试决策")
 
+    log = _log(sessions_root, observation_json)
+    assert len(log) == 1  # 失败尝试进决策日志（审计面记录每次尝试）
+    assert log[0]["action"] == "drop_cols" and log[0]["failed"] is True and log[0]["r"] is None
+    assert "不在数据框中" in log[0]["note"]
+
     r = CleaningSession().apply(observation_json, "fill_median", {"cols": ["hole"]}, reason="测试决策")
-    assert r.validation.steps == 1  # 失败尝试不计步
+    assert r.validation.steps == 2  # 失败尝试同样吃步
     assert r.biz["v"] == 1  # 失败尝试不落版本
-    assert len(_log(sessions_root, observation_json)) == 1  # 失败尝试不进决策日志
+    assert len(_log(sessions_root, observation_json)) == 2
 
 
 def test_observation_computed_once_per_state(sessions_root, dirty_csv, monkeypatch):
@@ -712,8 +718,8 @@ def test_card_id_priors_feed_detector(sessions_root, tmp_path):
 
 
 def test_apply_decision_surface_finding_ids_and_reason(sessions_root, dirty_csv):
-    """提交面双必填：finding_ids ⊆ 当前 problems（幻觉即免费失败）、reason 非空、
-    日志键 clean_op + 派生 intent（drop_cols⇒drop、其余⇒fix）。"""
+    """提交面双必填：finding_ids ⊆ 当前 problems（幻觉即失败吃步，#225）、reason
+    非空、日志键 clean_op + 派生 intent（drop_cols⇒drop、其余⇒fix）。"""
     observation_json, s = CleaningSession().load_or_start(file_path=dirty_csv, prior=CARD)
     hole_id = next(p["finding_id"] for p in s.biz["problems"] if p.get("column") == "hole")
 
@@ -723,6 +729,7 @@ def test_apply_decision_surface_finding_ids_and_reason(sessions_root, dirty_csv)
         CleaningSession().apply(
             observation_json, "fill_median", {"cols": ["hole"]}, finding_ids=["ghost::x"], reason="r"
         )
+    assert all(rec["failed"] for rec in _log(sessions_root, observation_json))  # 两次拒绝均失败条目
 
     r = CleaningSession().apply(
         observation_json, "fill_median", {"cols": ["hole"]}, finding_ids=[hole_id], reason="中位数填空"
@@ -730,14 +737,15 @@ def test_apply_decision_surface_finding_ids_and_reason(sessions_root, dirty_csv)
     rec = _log(sessions_root, observation_json)[-1]
     assert rec["finding_ids"] == [hole_id] and rec["reason"] == "中位数填空"
     assert rec["clean_op"] == "fill_median" and rec["intent"] == "fix"
-    assert r.validation.steps == 1
+    assert r.validation.steps == 3  # 两次失败尝试 + 一次成功（失败吃步，#225）
 
     CleaningSession().apply(observation_json, "drop_cols", {"cols": ["pct"]}, reason="剔除 ID 列")
     assert _log(sessions_root, observation_json)[-1]["intent"] == "drop"  # drop_cols ⇒ drop（派生单源）
 
 
 def test_apply_noop_rejected(sessions_root, tmp_path):
-    """#113：no-op 步否决——不动 df 的提交拒绝（keep 走 finish 声明），免费不落版本。"""
+    """#113：no-op 步否决——不动 df 的提交拒绝（keep 走 finish 声明），不落版本；
+    #225 失败吃步后拒绝同样计步 + 失败条目入日志（审计面记录每次尝试）。"""
     df = pd.DataFrame({"a": [1.0, 2.0, 3.0]})
     path = tmp_path / "deduped.csv"
     df.to_csv(path, index=False)
@@ -745,7 +753,8 @@ def test_apply_noop_rejected(sessions_root, tmp_path):
 
     with pytest.raises(ValueError, match="no-op"):
         CleaningSession().apply(observation_json, "drop_duplicate", {}, reason="试探")
-    assert len(_log(sessions_root, observation_json)) == 0  # 免费
+    log = _log(sessions_root, observation_json)
+    assert len(log) == 1 and log[0]["failed"] is True  # 失败条目（吃步）
     assert CleaningSession().observe(observation_json).biz["v"] == 0  # 不落版本
 
 
