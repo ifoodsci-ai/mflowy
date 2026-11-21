@@ -158,7 +158,6 @@ def _load_split(m: dict):
 
 
 def _task(m: dict):
-    from mflowy.data.types import TASKTYPE
     from mflowy.driver.config import parse_enum
 
     return parse_enum(TASKTYPE, m["task"])
@@ -1089,18 +1088,15 @@ def _run_hpo(ss, o, m, board, log, params: dict) -> None:
     study = _open_study(m, key, objective_id, scoring, seed)
     with mlflow.start_run(run_name=f"run_hpo:{key}") as run:
         _tag_run(run, m, action="run_hpo", key=key, family=family)
-        from mflowy.model.model._pipeline import (
-            OOF_HALF_WIDTH_TAG,
-            hyperparameters_search,
-            oof_evidence_table,
-            oof_half_widths,
-            oof_predictions,
-        )
+        from mflowy.model.model._pipeline import OOF_HALF_WIDTH_TAG, hyperparameters_search
         from mflowy.utils.capture import capture_prints
+        from mflowy.utils.mlflow import log_file
 
         # 通道纪律（M7）：直调 _pipeline 绕过 driver 节点的唯一捕获窗口——自建窗口，
         # 业务数据（分数摘要）已进 mlflow/账本，捕获输出转 logger（stderr 诊断面）
         with capture_prints() as buf:
+            # OOF 观察面（#218 产面移进管线）随 hyperparameters_search 产——证据表/
+            # 半宽 tag/任务分组图族与 DAG search 分支同名工件对齐
             hyperparameters_search(
                 space,
                 scoring=scoring,
@@ -1111,23 +1107,6 @@ def _run_hpo(ss, o, m, board, log, params: dict) -> None:
                 study=study,
                 seed=seed,
             )
-            theta = {**base, **study.best_trial.params}
-            y_oof, y_proba = oof_predictions(ts, make_pipe, theta)
-            # OOF 真值面按 y_oof 索引对齐：K 折模式 = y_train 全量恒等；holdout-val 模式
-            # （≥HOLDOUT_MIN_ROWS）OOF 只覆盖 val 段——全量 y_true 会行数失配（证据/半宽/
-            # 图集/诊断四消费方同一对齐面）
-            y_true_oof = ts.y_train.loc[y_oof.index]
-            # #64 OOF 观察面指向 OOF 源（cross_val_predict × train 侧 y_true）；#95 项4：
-            # 工件挂父 run 工件树（log_table/log_figure 经落盘壳，run_id 寻址）——
-            # session 镜像目录 runs/<run_id>/ 退役，真源 = run 工件树
-            from mflowy.utils.mlflow import log_file, log_table
-
-            # log_table 不保索引（与 #66 holdout 副产物同契）：OOF 行序 ≡ y_true_oof 行序，按位对齐；
-            # #164 四面证据（y/y_pred/y_proba/error——BO 消费面 + predict 区间原料），工件名沿用
-            log_table(oof_evidence_table(y_true_oof, y_oof, y_proba, _task(m)), "oof_y_pred.parquet")
-            half_width = oof_half_widths(y_true_oof, y_oof) if _task(m) == TASKTYPE.REGRESSION else None
-            if half_width is not None:
-                mlflow.set_tag(OOF_HALF_WIDTH_TAG, json.dumps(half_width))  # loader/final 复制面
             # #95 项5：study storage 随父 run 落工件（只读投影——盘上真源不变，账本 append-only）
             log_file(_root() / m["session_id"] / _study_db_name(key))
             mlflow.set_tag(
@@ -1136,6 +1115,8 @@ def _run_hpo(ss, o, m, board, log, params: dict) -> None:
         captured = buf.getvalue().strip()
         if captured:
             logger.info("run_hpo[%s] 捕获输出：\n%s", key, captured)
+    # 半宽账本回读面：管线写 study user_attr（跨 db 拷回仍可寻址，#218）
+    half_width = study.user_attrs.get(OOF_HALF_WIDTH_TAG)
 
     from mflowy.model.model._pipeline import u_inner_of
 

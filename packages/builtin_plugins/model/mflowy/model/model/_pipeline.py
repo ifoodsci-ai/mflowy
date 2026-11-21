@@ -50,7 +50,7 @@ from sklearn.metrics import (
 from sklearn.model_selection import GroupShuffleSplit, cross_val_score, train_test_split
 
 from . import study as study_module
-from ._evaluation_plots import _Part, plot_evaluation
+from ._evaluation_plots import _Part, plot_evaluation, plot_oof_evaluation
 from ._loss_curve import plot_loss_curve
 from ._model import fit_with_eval
 from .artifacts import ModelLoader, ModelPipeline
@@ -392,6 +392,10 @@ def hyperparameters_search(
 
     ``seed`` **仅在 ``study=None``（自建 study）路径消费**——传入 study 时其 sampler
     由开 study 方随 seed 挂（#84：会话侧 `_open_study`；此处不再二次播种）。
+
+    搜索终产 OOF 观察面（#218 产面移进管线）：θ* 折外证据表/半宽 tag/任务分组
+    可视化落当前 run——会话直调与 DAG search 两分支同名工件对齐（remote zip ≡
+    local 输出）；窗外直调形态跳过。
     """
     import mlflow
     import optuna
@@ -486,9 +490,37 @@ def hyperparameters_search(
         (root := mlflow_util.active_artifact_root()) is not None and Path(db).parent == root
     ):
         mlflow_util.set_tags({study_module.STUDY_TRACE_TAG: str(Path(db).relative_to(root))})
+    _oof_surface(study, split=split, make_pipe=make_pipe, base_params=base_params)
     std_repr = f"{np.std(scores):.4f}" if len(scores) else "n/a"
     print(f"best_{scoring}={study.best_value:.4f}, trial={best.number}, std={std_repr}, params={best.params}")
     return study
+
+
+def _oof_surface(study, *, split: TrainSplit, make_pipe: Callable[..., ModelPipeline], base_params: dict) -> None:
+    """OOF 观察面（#218 产面移进管线）：θ* 折外预测 → 证据表 ``oof_y_pred.parquet``
+    （带 indices 四面证据）+ 半宽 tag（回归）+ 任务分组可视化——**会话直调与 DAG
+    search 两分支同名工件对齐**（remote zip ≡ local 输出的落点）。半宽随 study
+    user_attr 留痕（账本回读面——跨 db 拷回仍可寻址）。窗外直调形态整体跳过
+    （落盘壳 graceful 守门，不白算）。
+
+    loss_curve 不在 OOF 面（θ* 折外重评无独立 eval 轨迹——见 plot_oof_evaluation）。
+    """
+    import mlflow
+
+    if mlflow.active_run() is None:
+        logger.info("无 active run，跳过 OOF 观察面（直调形态不白算）")
+        return
+    theta = {**base_params, **study.best_trial.params}
+    y_oof, y_proba = oof_predictions(split, make_pipe, theta)
+    y_true_oof = split.y_train.loc[y_oof.index]  # 真值面按 OOF 索引对齐（holdout-val 退化形只覆盖 val 段）
+    from mflowy.utils.mlflow import log_table
+
+    log_table(oof_evidence_table(y_true_oof, y_oof, y_proba, split.task), "oof_y_pred.parquet")
+    half_width = oof_half_widths(y_true_oof, y_oof) if split.task == TASKTYPE.REGRESSION else None
+    if half_width is not None:
+        mlflow.set_tag(OOF_HALF_WIDTH_TAG, json.dumps(half_width))
+    study.set_user_attr(OOF_HALF_WIDTH_TAG, half_width)  # 账本回读面（JSON-safe；分类 None）
+    plot_oof_evaluation(y_true_oof, y_oof, y_proba, split.task)
 
 
 # ========== 最终训练 ==========

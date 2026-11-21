@@ -1,9 +1,11 @@
 """OOF 证据四面 + 回归区间半宽（#80/#164）：y / y_pred / y_proba / error 落盘件
 与 |error| 分位半宽——BO 消费面（预测范围对带 + 配对反馈分母）与 predict 区间原料。
+#218 OOF 产面移进管线：DAG search 行为 run 的 OOF 工件契约（双分支同名对齐）。
 """
 
 import numpy as np
 import pandas as pd
+import pytest
 from mflowy.data.types import TASKTYPE
 from mflowy.model.model._pipeline import PREDICT_INTERVAL_ALPHA, oof_evidence_table, oof_half_widths
 
@@ -80,3 +82,86 @@ class TestHalfWidths:
         y_pred = _frame({"t1": [1.0, 1.0], "t2": [2.0, 0.0]})
         w = oof_half_widths(y_true, y_pred)
         assert w["t1"] == 1.0 and w["t2"] == 2.0
+
+
+class TestOofSurfaceInPipeline:
+    """#218 OOF 产面移进管线：DAG search 行为（run 窗口内）随 run 产 OOF 证据表
+    + 半宽 tag + 任务分组可视化——与 session 直调分支同名工件对齐（remote zip ≡
+    local 输出的落点）。"""
+
+    @pytest.fixture(autouse=True)
+    def isolate_tracking(self, tmp_path, monkeypatch):
+        import mlflow
+
+        uri = f"sqlite:///{tmp_path}/tracking.db"
+        monkeypatch.setenv("MLFLOW_TRACKING_URI", uri)
+        mlflow.set_tracking_uri(uri)
+        monkeypatch.chdir(tmp_path)
+
+    def test_search_run_carries_oof_artifacts(self):
+        """RF search 行为 run：oof_y_pred.parquet（含 indices）+ 回归图族 + 半宽 tag
+        + study user_attr（账本回读面）齐备。"""
+        import json
+
+        import mlflow
+        import numpy as np
+        import pandas as pd
+        from mflowy.model.cv.split import split as split_fn
+        from mflowy.model.model._pipeline import OOF_HALF_WIDTH_TAG
+        from mflowy.model.model._split import materialize_split
+        from mflowy.model.model.random_forest import RF
+        from mflowy.model.model.types import TASKTYPE, MetricName
+        from mflowy.model.x_y import XySpec
+
+        rng = np.random.default_rng(4)
+        n = 60
+        x = rng.normal(size=n)
+        df = pd.DataFrame({"x": x, "target": 2.0 * x + 0.1 * rng.normal(size=n)})
+        xy = XySpec(df[["x"]], df[["target"]], TASKTYPE.REGRESSION)
+        ts = materialize_split(split_fn(x_y=xy, cv=3), xy)
+
+        with mlflow.start_run(run_name="search:oof") as run:
+            evidence = RF(ts, n_trials=2, scoring=MetricName.MAE)
+        run_id = run.info.run_id
+        arts = {a.path for a in mlflow.MlflowClient().list_artifacts(run_id)}
+        assert "oof_y_pred.parquet" in arts  # 证据四面表（indices 列在 TestEvidenceTable 钉）
+        assert {"prediction_scatter.png", "residual_scatter.png", "bland_altman.png"} <= arts  # 回归图族
+        tags = mlflow.get_run(run_id).data.tags
+        half_width = json.loads(tags[OOF_HALF_WIDTH_TAG])
+        assert set(half_width) == {"target"} and half_width["target"] > 0  # 回归半宽 tag
+        assert evidence["family"] == "RF"  # 搜索证据面不因产面移动改变
+
+    def test_classification_search_run_carries_oof_figures(self):
+        """分类 search run：confusion/roc/pr/calibration 图族 + proba 证据列。"""
+        import mlflow
+        import numpy as np
+        import pandas as pd
+        from mflowy.model.cv.split import split as split_fn
+        from mflowy.model.model._pipeline import OOF_HALF_WIDTH_TAG
+        from mflowy.model.model._split import materialize_split
+        from mflowy.model.model.random_forest import RF
+        from mflowy.model.model.types import TASKTYPE, MetricName
+        from mflowy.model.x_y import XySpec
+
+        rng = np.random.default_rng(7)
+        n = 80
+        x = rng.normal(size=n)
+        label = (x > 0).astype(int)
+        df = pd.DataFrame({"x": x, "label": label})
+        xy = XySpec(df[["x"]], df[["label"]], TASKTYPE.CLASSIFICATION)
+        ts = materialize_split(split_fn(x_y=xy, cv=3), xy)
+
+        with mlflow.start_run(run_name="search:oof-cls") as run:
+            RF(ts, n_trials=2, scoring=MetricName.F1)
+        run_id = run.info.run_id
+        arts = {a.path for a in mlflow.MlflowClient().list_artifacts(run_id)}
+        assert {"confusion_matrix.png", "roc_curve.png", "pr_curve.png", "calibration_curve.png"} <= arts
+        assert OOF_HALF_WIDTH_TAG not in mlflow.get_run(run_id).data.tags  # 分类无区间面
+        ev = pd.read_parquet(_download(run_id, "oof_y_pred.parquet"))
+        assert "y_proba_0" in ev.columns and "y_proba_1" in ev.columns  # proba 证据列
+
+
+def _download(run_id: str, name: str) -> str:
+    import mlflow
+
+    return mlflow.artifacts.download_artifacts(run_id=run_id, artifact_path=name)
