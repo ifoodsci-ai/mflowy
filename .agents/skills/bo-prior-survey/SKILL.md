@@ -1,22 +1,24 @@
 ---
-name: bo-prior
-description: BO 先验讨论问卷(mflowy)——产出 BOCard（bo 域先验卡 YAML）后交棒 bo-suggestion，不开局。用户要求"讨论实验先验/建 BO 卡/定搜索空间与业务规则"时触发；bo-suggestion 开局幕遇无卡时代调。继承上游 DomainCard（expected_ranges→搜索边界直取）与预测模型面，三幕收口落 <task_dir>/BOCard.yaml。
+name: bo-prior-survey
+description: BO 先验讨论问卷(mflowy)——产出 BOCard（bo 域先验卡 YAML）后交棒 bo-suggest，不开局。用户要求"讨论实验先验/建 BO 卡/定搜索空间与业务规则"时触发；bo-suggest 开局幕遇无卡时代调本剧本产卡（#233 三主剧本同构）。继承上游 CleanPrior（expected_ranges→搜索边界直取）与预测模型面，三幕收口落 <task_dir>/BOCard.yaml（bo 域例外保留卡工件，#233）。
 disable-model-invocation: true
 ---
 
-# BO-Prior Skill：BO 先验卡问卷（bo-prior → BOCard → 交棒不开局）
+# BO-Prior-Survey Skill：BO 先验卡问卷（bo-prior-survey → BOCard → 交棒不开局）
 
 你的职责：把 bo 推荐的对局先验问清楚、编译成 **BOCard**（bo 先验卡，pydantic 契约），
-落 `<task_dir>/BOCard.yaml` 后**交棒 bo-suggestion 剧本继续开局**——本问卷不做开局
-决策（survey→DomainCard 同构；不效仿 model-brief 直调 start 的先例）。
+落 `<task_dir>/BOCard.yaml` 后**交棒 bo-suggest 剧本继续开局**——本问卷不做开局
+决策（prior-survey 家族通例——交棒不开局，#233；bo 域例外：卡工件保留，BOCard.yaml
+即交棒货物与改卡留痕面）。
 
 ## 幕一：继承与列角色
 
 **预填不问**（证据来自上游产物，逐项展示让用户确认/改）：
 
-- 搜索边界 = DomainCard `expected_ranges` **直取**（物理域唯一权威在上游；缺列时卡
-  自持该维边界——这本身就是缺口的表达，不回写上游）；**卡声明宽于物理域 = 本剧本
-  对照 expected_ranges 逐维拒绝**（工具零卡耦合，无机器门——单位错位候选一并提示）；
+- 搜索边界 = 清洗先验 CleanPrior 的 `expected_ranges` **直取**（物理域唯一权威在
+  上游；缺列时卡自持该维边界——这本身就是缺口的表达，不回写上游）；**卡声明宽于
+  物理域 = 本剧本对照 expected_ranges 逐维拒绝**（工具零卡耦合，无机器门——单位
+  错位候选一并提示）；
 - dtype / log scale 建议值、预测模型的 x_names、湿实验历史 schema 与统计；
 - **知识节（通用方法论）**——三空间判据：特征空间（搜索维+边界）/ 目标空间
   （direction + 目标带）/ 置信度空间（v1 无载体——预测通道恒点值，上游区间/OOD
@@ -44,12 +46,12 @@ disable-model-invocation: true
 
 - BOCard 落 **`<task_dir>/BOCard.yaml`**（任务根，不进 study 子目录——当前卡唯一，
   study 指纹在 db attrs 审计）；YAML 写完逐项复述关键裁定让用户过目；
-- **交棒提示**：转 bo-suggestion 剧本继续开局（签名 = 卡可空 + data|db 至少一 +
+- **交棒提示**：转 bo-suggest 剧本继续开局（签名 = 卡可空 + data|db 至少一 +
   model_run_id）；
 - **纪律（提醒单落本剧本）**：改**身份字段**（搜索维 kind/边界/choices、direction）
-  = study 重建——必提示走 bo-suggestion 的迁移式开局（`bo_load_or_start` 传 db +
-  新空间组，在途推荐终局化、历史保态迁移）；策略组字段（规则/带/容差/门限/批缺省）
-  可后改不重建。卡变更留痕 = 卡 YAML 文件本身（无 decision.log）。
+  = study 重建——必提示走 bo-suggest 的迁移式开局（重开局传 db + 新空间组，在途
+  推荐终局化、历史保态迁移）；策略组字段（规则/带/容差/门限/批缺省）可后改不重建。
+  卡变更留痕 = 卡 YAML 文件本身（无 decision.log）。
 
 ## 参考
 
@@ -57,5 +59,6 @@ disable-model-invocation: true
 - BOCard 字段面与校验规则（match 必填带/规则树未知列拒绝/容差序/窗口门冗余）：
   [bo 域 README](../../../packages/builtin_plugins/bo/README.md)；
 - 词面（BOCard/study/trial/推荐台账/湿实验/学习信号）：CONTEXT.md BO 节；
-- 上游继承：DomainCard（survey 剧本产物）——expected_ranges/单位词表；
-- 主剧本：bo-suggestion（owns 开局与全循环；卡对其只读）。
+- 上游继承：清洗先验 CleanPrior（data-prior-survey 剧本产物，经清洗会话 manifest
+  持久化）——expected_ranges/单位词表；
+- 主剧本：bo-suggest（owns 开局与全循环；卡对其只读）。

@@ -7,7 +7,7 @@
 > mflowy.model；`search_input` 节点随本包真迁移自 model，#175 Q2）。
 
 **六工具**（`mflowy.tools` entry points 声明；签名/schema = docstring 单源，真源见
-`tools/list`；全无状态、恒本地——预测走既有 `model.predict`，bo 零触碰模型）：
+`mflowy --help`；全无状态、恒本地——预测走既有 `model.predict`，bo 零触碰模型）：
 
 | 工具 | 职责 |
 | --- | --- |
@@ -24,20 +24,21 @@
 读卡后以参数进入。确定性规则求值参照实现住 `mflowy/bo/rules.py`（agent/剧本/
 bo-bench 消费）。
 
-**剧本**：`bo-prior`（先验讨论产 `<task_dir>/BOCard.yaml`，交棒不开局）+
-`bo-suggestion`（owns 开局 + 全循环）——见 `.agents/skills/`。
+**剧本**：`bo-prior-survey`（先验讨论产 `<task_dir>/BOCard.yaml`，交棒不开局）+
+`bo-suggest`（owns 开局 + 全循环；开局幕遇无卡时代调 bo-prior-survey 产卡——
+三主剧本同构，#233）——见 `.agents/skills/`。
 
 ---
 
 # PILOT-AI4S 系统设计（先验继承闭环优化测试系统）
 
-> **状态**：草案 v1.0（目标态叙事）。本文是三子系统闭环的系统级设计基准（canon 随 bo 包分发，#184 迁自 `docs/pilot-loop.md`）：已实现部分以 `tools/list` 与模块注册表为准（防漂移，本文不复述），进行中决策见 [业务实现地图 #76](https://github.com/ifoodsci-ai/mflowy/issues/76)，对齐裁定记录见 [#171 附录 C](https://github.com/ifoodsci-ai/mflowy/issues/171#issuecomment-6767418379)。规划落地后在 [CHANGELOG.md](../../CHANGELOG.md) 记录并更新下表，不逐项改写正文。
+> **状态**：草案 v1.0（目标态叙事）。本文是三子系统闭环的系统级设计基准（canon 随 bo 包分发，#184 迁自 `docs/pilot-loop.md`）：已实现部分以 `mflowy --help` 与模块注册表为准（防漂移，本文不复述），进行中决策见 [业务实现地图 #76](https://github.com/ifoodsci-ai/mflowy/issues/76)，对齐裁定记录见 [#171 附录 C](https://github.com/ifoodsci-ai/mflowy/issues/171#issuecomment-6767418379)。规划落地后在 [CHANGELOG.md](../../CHANGELOG.md) 记录并更新下表，不逐项改写正文。
 
 ## 落位现状对照（随实现推进更新本表，不改正文）
 
 | PILOT 构件 | mflowy 落位 | 状态 |
 | :--- | :--- | :--- |
-| Clean 子系统（POMDP 检测↔清洗循环、先验建档） | clean 域 POMDP 会话 + survey 剧本 → DomainCard | **已实现** |
+| Clean 子系统（POMDP 检测↔清洗循环、先验建档） | data 域清洗 POMDP 会话（data-clean 主剧本 owns 开局）+ data-prior-survey 剧本产 CleanPrior JSON 交棒 | **已实现** |
 | Model 子系统（CV 钉死、逐模型 HPO、汇总决策、终训评估解释） | modeling 域 POMDP 会话（单会话八动作面） | **已实现**（嵌套会话形态 = 概念示意，未来迭代方向） |
 | BO 子系统（推荐台账、轮次闭环、信号） | bo 域六工具工作流（`bo_load_or_start`/`bo_ask`/`bo_prune`/`bo_diversity_check`/`bo_tell`/`bo_export_dataset`）+ study sqlite db，非 POMDP 会话（#177） | **已实现** |
 | 湿实验台账与两路回填 | 台账 = agent 推导推送文件（`round_00N.csv`，零预测列族）+ `bo_tell` 批量回填（信号批末附带） | **已实现**（#181 契约） |

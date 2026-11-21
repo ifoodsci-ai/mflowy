@@ -1,6 +1,6 @@
 """print 捕获 — ContextVar 路由的线程安全 stdout/stderr 代理。
 
-``contextlib.redirect_stdout`` 换的是进程级 ``sys.stdout``，MCP server 并发分发
+``contextlib.redirect_stdout`` 换的是进程级 ``sys.stdout``，宿主并发分发
 多个 workflow（asyncio.to_thread）时捕获窗口互相交叠：A 任务的业务 print 会落进
 B 的 NodeResult.output，B 的输出漏到真实流。本模块在捕获时把 sys.stdout/
 sys.stderr 替换为代理——当前上下文（ContextVar，随线程/请求隔离）设有缓冲则

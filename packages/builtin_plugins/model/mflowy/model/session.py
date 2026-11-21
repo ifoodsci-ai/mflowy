@@ -214,7 +214,7 @@ def _family_params(family: str) -> dict:
 # space_from_json / MACHINERY_SKIP——session 不留第二份拷贝
 
 
-# ── 开局：协议谈判在剧本层（model-brief / research-review）完成，cv_card 传入即物化冻结 ──
+# ── 开局：协议谈判在剧本层（model-prior-survey / model-research-review）完成，cv_card 传入即物化冻结 ──
 
 
 def _parse_split_yaml(cv_card: str) -> dict:
@@ -314,7 +314,7 @@ class ModelingSession:
         goal = goal or ""
         card = card or {}
         if not cv_card or not str(cv_card).strip():
-            raise ValueError("cv_card 必填——cv.split 配置 yaml 明文（协议谈判在剧本层 model-brief 完成）")
+            raise ValueError("cv_card 必填——cv.split 配置 yaml 明文（协议谈判在剧本层 model-prior-survey 完成）")
         if not file_path:
             raise ValueError("file_path 必填——新开局的原始数据源")
         split_params = _parse_split_yaml(cv_card)

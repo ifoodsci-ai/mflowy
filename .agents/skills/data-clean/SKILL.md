@@ -1,25 +1,29 @@
 ---
-name: clean
-description: 数据清洗 POMDP 回合操作手册(mflowy)。用户要求"开始清洗/自主清洗/修数据"，或清洗会话进行中(收到 observation_json)时使用。配合 mflowy CLI 工具 data_load_or_start / data_observe / data_apply / data_rollback / data_finish / data_abandon 驱动回合循环——环境面在引擎，π(策略)是你。前置:survey skill 已产出清洗先验卡 CleanPrior。
+name: data-clean
+description: 数据清洗 POMDP 回合操作主剧本(mflowy)。用户要求"开始清洗/自主清洗/修数据"，或清洗会话进行中(收到 observation_json)时使用。配合 mflowy CLI 工具 data_load_or_start / data_observe / data_apply / data_rollback / data_finish / data_abandon 驱动回合循环——环境面在引擎，π(策略)是你。开局权在本剧本（owns data_load_or_start 调用面，#233）。前置:data-prior-survey 剧本已产出开局货物 JSON（CleanPrior + domain/goal 叙事）。
 disable-model-invocation: true
 ---
 
-# Clean Skill：清洗 POMDP 回合循环
+# Data-Clean Skill：清洗 POMDP 回合循环
 
-三段式研究流第二段：`建档与 EDA →(冻结)→ 清洗 POMDP →(冻结)→ 建模 POMDP`。
-你的职责是**策略（π）**：读观测、选动作、必要时回滚、决定收局。环境面（转移/
-观测/奖励/预算/守卫）在会话引擎——你不重算状态，引擎每步免费给你 s′ 观测。
+三段式研究流第二段主剧本：`建档问卷(data-prior-survey) →(JSON 交棒)→ 清洗
+POMDP →(冻结)→ 建模 POMDP`。你的职责是**策略（π）**：读观测、选动作、必要时
+回滚、决定收局；开局权在你手里。环境面（转移/观测/奖励/预算/守卫）在会话引擎
+——你不重算状态，引擎每步免费给你 s′ 观测。
 
 ## 开局
 
 ```
-data_load_or_start(observation_json=None, file_path, prior=<CleanPrior>, domain=, goal=, max_steps=15)   # 唯一主通道，返回 {observation_json, observation} 二联信封
+data_load_or_start(observation_json=None, file_path, prior=<CleanPrior>, domain=, goal=, max_steps=15)   # 唯一主通道（#233 开局权归本剧本），返回 {observation_json, observation} 二联信封
 ```
 
-- 先验卡由 **survey skill**（warm-up/dive-in 问卷剧本）产出后传入——start 即全量
-  校验（列引用/物理范围/expected_values/invariants 公式编译 fail-loud）；never_drop /
-  目标列禁改 / unit_hints / expected_ranges / expected_values / invariants /
-  defect_priority / 保留率下限全部生效；domain/goal 纯叙事走开局显式参数（不进先验）；
+- 开局货物 = **data-prior-survey 剧本**（warm-up/dive-in 问卷）交棒的 JSON：CleanPrior
+  字段进 prior、domain/goal 叙事进开局显式参数。**无 JSON 在手 = 开局幕先代调
+  data-prior-survey 子剧本**跑问卷产 JSON 再回来开局（bo-suggest 同构，#233）；
+  先验字段面一跳发现自 `mflowy data_load_or_start -h` 的 `--prior`；
+- start 即全量校验（列引用/物理范围/合法值集/跨列不变式公式编译 fail-loud），
+  先验条款全部生效——字段面一跳发现自 `mflowy data_load_or_start -h` 的
+  `--prior`（先验持久化面 = 会话 manifest，无盘上卡工件）；
 - 返回 s′：缺陷清单（`biz.defects` 计数 + `biz.problems` 逐条证据）+ 内生
   质量分 + 列画像（`columns`：dtype 族 / 分布读数）+ 预算。改卡 = 新 episode（重开会话）。
 

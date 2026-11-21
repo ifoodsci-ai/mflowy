@@ -458,7 +458,7 @@ class CleaningSession:
     ) -> tuple[str, Observation]:
         """开局/续载（#226 ②⑤）：observation_json 给定 = 加载（任何开局入参同传 =
         参数来源冲突 fail-loud；续局带新认知 = 旧会话产物 data 路径 + 新先验
-        **开新局**）；缺省 = prior 必填新开（问卷经剧本层 survey 产出后开局，预算
+        **开新局**）；缺省 = prior 必填新开（问卷经剧本层 data-prior-survey 产出后开局，预算
         缺省 15）。返回 (observation_json, o)。domain/goal 纯叙事走本显式参数
         （不进先验，⑦）。"""
         if observation_json is not None:
@@ -478,7 +478,7 @@ class CleaningSession:
             ss = POMDPSession.load_or_start(observation_json=observation_json, actions_projector=_clean_actions)
             return ss.observation_json, ss.observation
         if prior is None:
-            raise ValueError("prior 必填——问卷在剧本层完成（survey），引擎不提供无先验开局")
+            raise ValueError("prior 必填——问卷在剧本层完成（data-prior-survey），引擎不提供无先验开局")
         if not file_path:
             raise ValueError("file_path 必填——新开局的原始数据源")
         max_steps = 15 if max_steps is None else max_steps

@@ -4,13 +4,13 @@
 
 - **空间组**（变更 = 重建 study）：``search_space``（每维三 kind + 边界/choices）+
   ``direction`` + ``seed``（#175 Q4：sampler 随 seed 建）。搜索维边界 =
-  DomainCard ``expected_ranges`` 直取（物理域唯一权威在上游；缺列时卡自持该维边界
+  CleanPrior ``expected_ranges`` 直取（物理域唯一权威在上游；缺列时卡自持该维边界
   ——卡自持边界这一事实本身即缺口的表达，#178 R4）。
 - **策略组**（变更不重建、不升版本号——卡 = 可变工件，无实例版本纪律）：hard 规则
   表达式树 / 按类常量表 / band / 容差 / 信号门限 / 批缺省 / 典型测量变异。
 
 **工具零卡耦合**（#180 R3）：bo 工具不读本卡——门限/规则/容差全由 agent 读卡后以
-参数或判断进入；本模块是卡的书写契约（bo-prior 剧本产 ``<task_dir>/BOCard.yaml``）
+参数或判断进入；本模块是卡的书写契约（bo-prior-survey 剧本产 ``<task_dir>/BOCard.yaml``）
 与机器校验面（未知谓词/未知列/未知表键/类型不合一律 fail-loud，红线 1）。
 
 结构性防错（#178 R5 构造性隔离）：软约束唯一形态 = ``band`` 标量，无表达式面——
@@ -204,7 +204,7 @@ class BOCard(BaseModel):
     signal_positive_gate: int = Field(default=100, ge=1)
     signal_negative_gate: int = Field(default=3, ge=1)
     signal_window: SignalWindow | None = None
-    # 批大小缺省（实验室容量）：必填、可逐轮覆写（无代码级缺省——bo-prior 问出）
+    # 批大小缺省（实验室容量）：必填、可逐轮覆写（无代码级缺省——bo-prior-survey 问出）
     batch_size_default: int = Field(ge=1)
     # 典型测量变异 w（ŷ±w 统计观测参考，#178 M3：机器消费方 = agent 统计观测）
     typical_measurement_variation: float | None = Field(default=None, ge=0)
@@ -309,7 +309,7 @@ class BOCard(BaseModel):
         for rule in rules:
             check_rule(rule)
 
-    # ── YAML 工件面（bo-prior 剧本收口落 <task_dir>/BOCard.yaml）──────────────
+    # ── YAML 工件面（bo-prior-survey 剧本收口落 <task_dir>/BOCard.yaml）──────────────
 
     @classmethod
     def from_yaml(cls, text: str) -> BOCard:

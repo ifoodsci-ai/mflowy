@@ -99,12 +99,29 @@ def test_console_scripts():
     }
 
 
+def _skill_files() -> list[pathlib.Path]:
+    """剧本层 SKILL.md 全集（M11/#233 共用：须全 git 追踪入仓）。"""
+    skills_dir = ROOT / ".agents" / "skills"
+    assert skills_dir.is_dir(), "M11：skills 须全 git 追踪入仓（.agents/skills/ 缺失即断链）"
+    return sorted(skills_dir.rglob("SKILL.md"))
+
+
+def _call_forms(text: str, suffix: str = "") -> set[str]:
+    """SKILL 文本里的调用形函数名（两曲面：反引号内联 + 围栏代码块行首），
+    可选按后缀过滤（#233 开局权断言用 ``_load_or_start``）。"""
+    import re
+
+    called = {t for t in re.findall(r"`([a-z][a-z0-9_]*)\(", text) if t.endswith(suffix)}
+    for fence in re.findall(r"^```.*?^```", text, re.MULTILINE | re.DOTALL):
+        called |= {t for t in re.findall(r"^([a-z][a-z0-9_]*)\(", fence, re.MULTILINE) if t.endswith(suffix)}
+    return called
+
+
 def test_skill_tool_names_in_tools_list():
     """M11：剧本层（.agents/skills/**/SKILL.md，全 git 追踪）的反引号调用形引用
-    不超纲——工具名 ⊆ tools/list（mflowy.tools entry points：平台 + 域静态声明）、
+    不超纲——工具名 ⊆ CLI 发现面（mflowy.tools entry points：平台 + 域静态声明）、
     节点 ⊆ 运行期目录、动作面 ⊆ 八动作面词表。改名漂移（SKILL 引用已退役工具/节点）
     即测试红。"""
-    import re
     from importlib.metadata import entry_points
 
     from mflowy.driver.discover import list_all
@@ -115,14 +132,48 @@ def test_skill_tool_names_in_tools_list():
     # start(...) = start_session 的剧本简写（clean/model 域 SKILL 惯例）
     allowed = tools_vocab | nodes_vocab | set(ACTIONS) | {"start"}
 
-    skills_dir = ROOT / ".agents" / "skills"
-    assert skills_dir.is_dir(), "M11：skills 须全 git 追踪入仓（.agents/skills/ 缺失即断链）"
     used: dict[str, str] = {}
-    for skill in skills_dir.rglob("SKILL.md"):
-        for tok in re.findall(r"`([a-z][a-z0-9_]*)\(", skill.read_text(encoding="utf-8")):
+    for skill in _skill_files():
+        for tok in _call_forms(skill.read_text(encoding="utf-8")):
             used.setdefault(tok, str(skill.relative_to(ROOT)))
     unknown = {t: p for t, p in used.items() if t not in allowed}
-    assert not unknown, f"SKILL 引用不在运行期词表（工具名 ⊆ tools/list 断链）: {unknown}"
+    assert not unknown, f"SKILL 引用不在运行期词表（工具名 ⊆ mflowy --help 断链）: {unknown}"
+
+
+def test_skill_topology_opening_ownership():
+    """#233 拓扑契约：开局权归主剧本——`<biz>_load_or_start` 调用形（反引号+调用括号）
+    只出现在主技能；prior-survey 家族产 JSON/卡交棒不开局。技能集镜像终名表
+    （目录名 = 前言 name 字段，改名回潮/半改名即红）。"""
+    import re
+
+    names = {p.parent.name for p in _skill_files()}
+    assert names == {
+        "data-prior-survey",
+        "model-prior-survey",
+        "bo-prior-survey",
+        "model-research-review",
+        "data-clean",
+        "modeling",
+        "bo-suggest",
+        "model-predict",
+        "model-explain",
+    }, f"#233 技能终名表漂移: {sorted(names)}"
+
+    owners = {
+        "data-clean": "data_load_or_start",
+        "modeling": "modeling_load_or_start",
+        "bo-suggest": "bo_load_or_start",
+    }
+    for skill in _skill_files():
+        text = skill.read_text(encoding="utf-8")
+        m = re.search(r"^name:\s*(\S+)", text, re.MULTILINE)
+        assert m and m.group(1) == skill.parent.name, f"SKILL 前言 name 与目录名不一致: {skill.parent.name}"
+        called = _call_forms(text, suffix="_load_or_start")
+        biz = skill.parent.name
+        if biz in owners:
+            assert called == {owners[biz]}, f"{biz} 开局调用面漂移（须恰持 {owners[biz]}）: {called}"
+        else:
+            assert not called, f"{biz} 不开局（开局权归主剧本，#233）: {called}"
 
 
 def test_skill_doc_references_stay_in_repo():

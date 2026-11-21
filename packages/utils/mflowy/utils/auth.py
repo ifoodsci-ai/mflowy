@@ -6,7 +6,7 @@ loopback 单通道；token 端点走 **JSON 体**（非 RFC 6749 form）；refre
 ``write_text_atomic``），且刷新/落盘临界区持文件锁（同机多 agent host 并发是
 现实场景）。
 
-消费方：mcp 层 ``login`` 平台工具（显式授权触发）与未来远程 JobProvider
+消费方：app 层 ``login`` 平台工具（CLI 分发，显式授权触发）与未来远程 JobProvider
 （``ensure_access_token`` / ``LoginRequiredError`` 接线点）。零第三方依赖。
 
 测试缝（预商定）：``_http_json``（HTTP transport 单点）、``credentials_path``

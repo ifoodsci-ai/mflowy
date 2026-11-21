@@ -4,7 +4,8 @@ stdlib 守则：库不配置 logging，入口配置。业务代码一律 ``loggi
 本模块只提供 ``setup()`` 供 ``app/cli.py`` / ``app/jobwrap.py`` 入口显式调用。
 direct import 场景遵循 stdlib 契约：默认 WARNING+，调用方自行 ``logging.basicConfig()``。
 
-console node 绑定 stderr：MCP stdio server 的 stdout 是 JSON-RPC 协议通道。
+console node 绑定 stderr：stdout 是业务数据通道（print 捕获窗口——通道纪律），
+过程诊断一律走 stderr。
 """
 
 import logging

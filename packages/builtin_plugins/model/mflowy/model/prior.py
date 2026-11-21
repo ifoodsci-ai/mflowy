@@ -25,5 +25,5 @@ class ModelPrior(BaseModel):
     candidates: list[dict[str, Any]] = Field(default_factory=list)  # 结构化候选（family 级）
     card: dict[str, Any] = Field(
         default_factory=dict
-    )  # DomainCard 背景（survey 产物——域间 dict 面，CleanPrior 归 data 域）
+    )  # 先验卡背景（data-prior-survey 产物——域间走 dict 面，CleanPrior 归 data 域）
     id_columns: list[str] = Field(default_factory=list)  # ID 剔除面（开局冻结）

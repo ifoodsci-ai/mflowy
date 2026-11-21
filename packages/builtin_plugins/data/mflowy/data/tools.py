@@ -136,7 +136,7 @@ def data_load_or_start(
     prior: Annotated[
         dict | None,
         Field(
-            description="清洗先验卡（CleanPrior 字段面，survey 产物）：target/id_columns/time_column/"
+            description="清洗先验卡（CleanPrior 字段面，data-prior-survey 剧本产 JSON 交棒）：target/id_columns/time_column/"
             "unit_hints/protected_columns/expected_ranges（列→[下限,上限]）/expected_values（列→合法值集）/"
             "invariants（跨列公式，如 'end >= start'）/primary_key_columns/foreign_key_columns/composite_keys/"
             "known_non_id_columns/hinted_id_patterns/source/defect_priority/min_row_retention/"
@@ -152,7 +152,8 @@ def data_load_or_start(
     {observation_json, observation}。
 
     何时使用 data_load_or_start：
-    - survey 问卷完成后，开始自主清洗的回合循环（observation_json 缺省新开）
+    - data-prior-survey 问卷产 CleanPrior JSON 交棒后，data-clean 主剧本开局回合循环
+      （#233 开局权归主剧本；observation_json 缺省新开）
     - 上下文丢失/跨进程续局：拿 observation_json 加载（开局入参与其同传 = 参数来源冲突报错）
     """
     from .session import CleaningSession

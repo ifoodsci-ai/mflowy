@@ -4,7 +4,7 @@ model 域四个顶层目录（model / cv / x_transformer / plot）全标 ``[loca
 （#216 裁定 Q6.1：本地建模重栈 CPU 六件 + torch 两件住 model 包唯一 extra，
 ``[deep]`` 真合并）。**目录全标**：标注 = import 失败时的安装提示，瘦装实可用
 节点不触发降级、无害；data 全栈硬依赖零标注。纯 dict 无第三方依赖：运行期由
-mcp 层零成本标注目录与 get_node_info——瘦装环境能看清装哪个 extra 可用。
+app 层零成本标注目录与 get_node_info——瘦装环境能看清装哪个 extra 可用。
 """
 
 _EXTRA_OF_DIR = {

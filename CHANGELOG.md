@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 三域剧本拓扑对齐（#233）——九技能改名 + 应用面拆两技能 + 开局权归主剧本
+
+- **开局权归主剧本**：`data-clean`/`modeling`/`bo-suggest` owns `<biz>_load_or_start`
+  调用面；prior-survey 家族产 JSON 交棒不开局；主剧本开局幕无卡/无协议 = 先代调
+  prior-survey 子剧本产 JSON/卡再回来开局（bo-suggest 同构）；「开始清洗/建模」
+  触发词移主剧本 description；
+  拓扑契约入 `tests/test_workspace.py`（技能集终名表镜像 + 开局调用形归属断言）
+- **技能改名**（终名表，全连字符——主技能 = 业务动作、子技能 = biz 前缀 + 角色）：
+  survey → data-prior-survey、model-brief → model-prior-survey、bo-prior →
+  bo-prior-survey、research-review → model-research-review、clean → data-clean、
+  model → modeling、bo-suggestion → bo-suggest
+- **新技能**：model-predict / model-explain（predict/explanation 应用面各一独立
+  SKILL——predict 含 loader/run_id 寻址语义；bo-suggest 内联 predict 用法保留）
+- **JSON 交棒契约**：任务 SKILL 交付 JSON（schema 一跳发现自 `mflowy <load_or_start
+  工具> -h` 的 `--prior`/`--candidates`）——技能零硬编码 prior/candidates 字段面；
+  先验持久化面 = 会话 manifest（无盘上卡工件）；bo 域例外 BOCard.yaml 保留
+- **术语与措辞同步**：modeling_load_or_start 的 card 参数「DomainCard（survey 产物）」
+  → CleanPrior（data-prior-survey 产物）；modeling 技能 inverse_optimization 退役词
+  清除（#179）；CONTEXT.md/bo README/AGENTS.md/根 README/roadmap 技能名同步；
+  `tools/list` 引用改 CLI 发现面（`mflowy --help` / `mflowy <tool> -h`）
+
 ### BREAKING：应用层 MCP→CLI 迁移（#243）——mcp→app 包改名 / argparse 旗标编译 / 手写遥测 / 单一安装形态
 
 SKILLS+CLI 替代 SKILLS+MCP：工具单源面从「本项目 stdio MCP server」改为「本项目

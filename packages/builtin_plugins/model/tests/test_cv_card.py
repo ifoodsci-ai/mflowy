@@ -3,7 +3,7 @@
 - 卡的核心是评估协议（task/metric/cv/预算），名字直说；全链改名（工具 schema、
   session start 签名、skills）
 - candidates = [{family, baseline: bool, space_hints: {param: 值|[lo,hi]}, seed}]：
-  research-review 标记恰一个 baseline（观测 prior 可见——π 先跑它定参照系）；每候选默认随机种子
+  model-research-review 标记恰一个 baseline（观测 prior 可见——π 先跑它定参照系）；每候选默认随机种子
   （搜索期内冻结——换 seed = 换目标 = study 重开）
 - 开局校验 fail-loud 带候选清单：hints ⊆ 签名声明空间；baseline 恰一
 - hints 作为缺省 pins/narrowing 注入（select_model 时进光标），π 回合内可覆盖
@@ -97,7 +97,7 @@ def test_cv_card_build_validates_candidates(reg_csv):
 def test_cv_card_default_candidates_first_is_baseline(reg_csv):
     """缺省路径：candidates 空 = 全部已声明族开放（字典序、首个 baseline）——校验可过。
 
-    回归防线：缺省条目全 baseline=False 会被"baseline 恰一"校验拒（无 research-review
+    回归防线：缺省条目全 baseline=False 会被"baseline 恰一"校验拒（无 model-research-review
     候选的开局整体不可用）。
     """
     from mflowy.model.registry import families
@@ -110,7 +110,7 @@ def test_cv_card_default_candidates_first_is_baseline(reg_csv):
 
 
 def test_start_default_candidates_open_all_families(sessions_root, reg_csv):
-    """开局不带 candidates（无 research-review 先验）走缺省全族开放面。"""
+    """开局不带 candidates（无 model-research-review 先验）走缺省全族开放面。"""
     observation_json, s = ModelingSession().load_or_start(
         file_path=reg_csv, cv_card=CV_CARD, card={"domain": "t", "target": "target"}, task="regression", metric="mae"
     )

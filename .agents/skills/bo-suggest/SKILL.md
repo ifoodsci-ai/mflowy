@@ -1,10 +1,10 @@
 ---
-name: bo-suggestion
-description: BO 推荐操作主剧本(mflowy)——owns 开局（bo_load_or_start 唯一调用面）与全循环（推荐→台账→湿实验→回填→学习信号）。签名 = <BOCard 可空> <湿历史 parquet|study db 至少一> <model_run_id>。用户要求"推荐下一轮实验/继续 BO/回填实验结果"时触发；无卡时代调 bo-prior。
+name: bo-suggest
+description: BO 推荐操作主剧本(mflowy)——owns 开局（bo_load_or_start 唯一调用面）与全循环（推荐→台账→湿实验→回填→学习信号）。签名 = <BOCard 可空> <湿历史 parquet|study db 至少一> <model_run_id>。用户要求"推荐下一轮实验/继续 BO/回填实验结果"时触发；开局幕遇无卡时代调 bo-prior-survey 产卡（三主剧本同构，#233）。
 disable-model-invocation: true
 ---
 
-# BO-Suggestion Skill：BO 推荐操作主剧本（四幕 + 纪律）
+# BO-Suggest Skill：BO 推荐操作主剧本（四幕 + 纪律）
 
 bo = agent 调 BO 工具的**工作流**（非会话）：状态载体 = study sqlite db，预测模型 =
 调用入参（换模型仅重置学习信号）。你的职责：开局 → 推荐轮循环 → 回填与信号；
@@ -12,9 +12,10 @@ bo = agent 调 BO 工具的**工作流**（非会话）：状态载体 = study s
 
 ## 开局幕（一次性）
 
-1. **剧本面预检**：BOCard（`<task_dir>/BOCard.yaml`，可空——无卡先**代调 bo-prior**
-   产卡再回来）、湿历史 parquet 与 study db **至少一个**（两缺即拦——机器面
-   fail-loud 兜底）、`model_run_id`（预测模型 run）；
+1. **剧本面预检**：BOCard（`<task_dir>/BOCard.yaml`，可空——无卡先**代调
+   bo-prior-survey 子剧本**产卡再回来，#233 三主剧本同构）、湿历史 parquet 与
+   study db **至少一个**（两缺即拦——机器面 fail-loud 兜底）、`model_run_id`
+   （预测模型 run）；
 2. **必问**：上轮信号/漂移情况（新局先验讨论必看旧局失败信号——最小闭环继承形态）；
 3. **一次性核对（不逐轮）**：模型是回归（分类模型拒绝）、卡搜索维 ⊆ 模型 x_names、
    单位显式（列名后缀承袭上游清洗词表——不显式让用户补命名）；
@@ -66,7 +67,7 @@ bo = agent 调 BO 工具的**工作流**（非会话）：状态载体 = study s
 
 ## 纪律
 
-- **卡只读**：卡改动（身份字段或策略组）一律经 bo-prior（改卡发生地与提醒单源）；
+- **卡只读**：卡改动（身份字段或策略组）一律经 bo-prior-survey（改卡发生地与提醒单源）；
 - 已终态 trial 再操作会被工具拒绝（两路回填先到为准）——对账冲突时向用户报告已
   回填内容，无覆盖入口；
 - 台账序号 = trial number 直用，跳号即事实（PRUNED/FAIL 也占号）；
@@ -78,4 +79,4 @@ bo = agent 调 BO 工具的**工作流**（非会话）：状态载体 = study s
 - 六工具参数面与行形态细则：`mflowy --help`（签名编译的 help 即 API 文档；记不清参数面时先 `mflowy <tool> --help`）；
 - 系统闭环设计与落位对照：[bo 域 README](../../../packages/builtin_plugins/bo/README.md)；
 - 词面（BOCard/study/trial/推荐台账/湿实验/学习信号）：CONTEXT.md BO 节；
-- 先验子剧本：bo-prior（产卡/改卡唯一发生地）。
+- 先验子剧本：bo-prior-survey（产卡/改卡唯一发生地）。

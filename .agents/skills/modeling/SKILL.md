@@ -1,26 +1,30 @@
 ---
-name: model
-description: 建模训练 POMDP 回合操作手册(mflowy)。开局产物就绪后开始建模回合，或建模会话进行中(收到 observation_json)时使用。配合 mflowy CLI 工具 modeling_load_or_start / modeling_observe / modeling_apply(action) / modeling_rollback / modeling_report_findings / modeling_finish / modeling_abandon 驱动回合循环——动作空间 = 九动作面（配置编辑 + 计算动作 + 判读落诊），环境面在引擎，π(策略)是你。判读归你：统计证据经 modeling_statistics 取回（#226 ⑥ 规则判读退役），经 report_findings 落账。会话恒单目标任务——多目标在会话外三层循环（多目标→多模型→单目标任务会话，每目标各开一会话）。前置:model-brief skill 已产出开局入参（cv_card = cv.split 配置 yaml 明文 + 显式协议参数，含 research-review 结构化候选）。
+name: modeling
+description: 建模训练 POMDP 回合操作主剧本(mflowy)。用户要求"建模/训练模型"（清洗已 finish），或建模会话进行中(收到 observation_json)时使用。配合 mflowy CLI 工具 modeling_load_or_start / modeling_observe / modeling_apply(action) / modeling_rollback / modeling_report_findings / modeling_finish / modeling_abandon 驱动回合循环——动作空间 = 九动作面（配置编辑 + 计算动作 + 判读落诊），环境面在引擎，π(策略)是你。开局权在本剧本（owns modeling_load_or_start 调用面，#233）。判读归你：统计证据经 modeling_statistics 取回（#226 ⑥ 规则判读退役），经 report_findings 落账。会话恒单目标任务——多目标在会话外三层循环（多目标→多模型→单目标任务会话，每目标各开一会话）。前置:model-prior-survey 剧本已产出开局入参 JSON（cv_card = cv.split 配置 yaml 明文 + 显式协议参数，含 model-research-review 结构化候选）。
 disable-model-invocation: true
 ---
 
-# Model Skill：建模 POMDP 回合循环（search-only 回路 + 先搜后店）
+# Modeling Skill：建模 POMDP 回合循环（search-only 回路 + 先搜后店）
 
-三段式研究流第三段。你的职责是**策略（π）**：读账本 board（u_inner 分数面 + findings
-诊断面）、决定光标指向哪个候选、怎么参数化、何时搜索/终训/收局。环境面（增量 study/
-预算/no-peeking 守卫/决策日志）在会话引擎。**holdout 全程只在 final_train_test 被读
-（每 combo 恰一次，读完即冻结）**——回路内你看到的永远只是 inner/OOF 证据。
+三段式研究流第三段主剧本。你的职责是**策略（π）**：读账本 board（u_inner 分数面 +
+findings 诊断面）、决定光标指向哪个候选、怎么参数化、何时搜索/终训/收局；开局权在
+你手里。环境面（增量 study/预算/no-peeking 守卫/决策日志）在会话引擎。
+**holdout 全程只在 final_train_test 被读（每 combo 恰一次，读完即冻结）**——回路内
+你看到的永远只是 inner/OOF 证据。
 
 ## 开局
 
 ```
 modeling_load_or_start(observation_json=None, file_path, cv_card=<cv.split 配置 yaml 明文>,
-                        target=, task=, metric=, candidates=, max_steps=, id_columns=)   # 唯一主通道：显式参数 > card 背景；返回 {observation_json, observation} 二联信封
+                        target=, task=, metric=, candidates=, max_steps=, id_columns=)   # 唯一主通道（#233 开局权归本剧本）：显式参数 > card 背景；返回 {observation_json, observation} 二联信封
 ```
 
-- 协议由 **model-brief skill**（含 research-review 结构化候选）产出——candidates =
-  `[{family, baseline, space_hints, seed}]`（baseline 恰一；hints 是缺省 pins/narrowing，
-  你回合内可覆盖——卡是先验不是边界）；start 即 D 物化冻结 + 单一预算起算；换协议 =
+- 协议 = **model-prior-survey 剧本**（含 model-research-review 结构化候选）交棒的
+  开局入参 JSON——**无 JSON 在手 = 开局幕先代调 model-prior-survey 子剧本**跑问卷
+  产 JSON 再回来开局（bo-suggest 同构，#233）；candidates 字段面一跳发现自
+  `mflowy modeling_load_or_start -h` 的 `--candidates`（baseline 恰一；hints 是缺省
+  pins/narrowing，你回合内可覆盖——卡是先验不是边界）；start 即 D 物化冻结 + 单一
+  预算起算（协议持久化面 = 会话 manifest，无盘上卡工件）；换协议 =
   新 episode（弃局重开）。
 
 ## 回合：九动作面（`modeling_apply(observation_json, action, params)`）
@@ -107,8 +111,8 @@ run_hpo 收账（board/observe——纯查询）
   做任何决策；final_train_test 读完即冻结——不可用 test 反复挑参；
 - findings 是回流的载体：误差集中列 → 建议用户回清洗域修列（建议式，不自动改）；
 - rank_consistency 是 SH 的诚信账——每次结算看一眼，inner 序不可信时调策略；
-- 应用（predict/inverse_optimization）不在本 POMDP——loader 引用（绝对路径直传）是
-  finish 交付物，下游工具按它寻址。
+- 应用（predict/explanation——见 model-predict / model-explain 技能）不在本
+  POMDP——loader 引用（绝对路径直传）是 finish 交付物，下游工具按它寻址。
 
 ## 参考
 

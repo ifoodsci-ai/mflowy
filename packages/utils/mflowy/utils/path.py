@@ -47,7 +47,7 @@ def task_dir_or_none() -> Path | None:
 
 
 def task_anchor() -> Path:
-    """当前任务锚（#207 单源链）：task_dir 绑定（MCP 恒有——钉住/锚参数推导/
+    """当前任务锚（#207 单源链）：task_dir 绑定（宿主入口恒有——钉住/锚参数推导/
     路由缺省）> 机器缺省 ``~/.mflowy``（直接 import 无绑定时）。任务工件消费
     （两域会话根 ``anchor/{domain}_sessions``、sessions_gc 缺省扫描面）；每调用
     现读零缓存（线程级无状态不变量）。"""

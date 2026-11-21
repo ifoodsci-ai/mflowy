@@ -38,7 +38,7 @@ uv workspace 七 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 | DDD 层 | distribution | 位置 | 职责 |
 | ------ | ------------ | ---- | ---- |
 | 应用 | app | `packages/app/mflowy/app/` | 工具注册面、CLI（旗标编译）、JSON 分发内核（runner）、jobwrap、遥测 |
-| 领域 | data | `packages/builtin_plugins/data/mflowy/data/` | 清洗 POMDP 动作域（load/statistic/detect/clean/plot + DomainCard 先验分级 + 缺陷封闭枚举/Finding 契约 + 路由提示表） |
+| 领域 | data | `packages/builtin_plugins/data/mflowy/data/` | 清洗 POMDP 动作域（load/statistic/detect/clean/plot + CleanPrior 先验分级 + 缺陷封闭枚举/Finding 契约 + 路由提示表） |
 | 领域 | model | `packages/builtin_plugins/model/mflowy/model/` | 建模 POMDP 动作域（x_y/cv/x_transformer/model + plot——cv 族 = split 参数构建/load 引用加载）+ JobProvider + diagnose/report 观察面 |
 | 领域 | bo | `packages/builtin_plugins/bo/mflowy/bo/` | 贝叶斯优化推荐工作流域（**非 POMDP 会话**，#177——agent 工具工作流 + study sqlite db）：六工具 + BOCard 契约 + 学习信号 + search_input 节点（自 model 真迁移，#175） |
 | 驱动 | driver | `packages/driver/mflowy/driver/` | YAML→DAG 编译调度、@node/@edge 插件 SDK、POMDP 会话基座（`pomdp` 契约——Observation 四件 o.prior/o.biz/o.actions/o.validation + Handle 六操作 load_or_start/observe/apply/rollback/finish/abandon；`session` 壳——单源计步/盘上 memo/o_actions 投影钩子/补 r 机制） |
@@ -69,7 +69,7 @@ uv workspace 七 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 5. **缺依赖=优雅降级**：extra 缺失时词表/会话对相关节点降级标注（`bindings=None`/跳过+warning），其余能力照常；词表 miss 与 import 失败按类型二分（`CatalogMiss` vs 裸 `ModuleNotFoundError`）。
 6. **依赖声明完整**：import 了什么就声明什么——靠传递依赖侥幸工作的 import 是缺陷（当前存量：scipy）。
 7. **测试钉契约**：行为变更带契约测试；架构不变量（依赖方向/版本锁步/注册表镜像）住 `tests/`；测试替身只打 adapter 缝位（`_DEFAULT_CATALOG`/`Tracking` seam）；测试随包镜像 `packages/<pkg>/tests/** ↔ mflowy/<pkg>/**`，跨域接缝用例住消费侧包；接缝测试真跑产物，以 mock 为主的地方补真跑。
-8. **文档同频**：工具行为改 docstring（`tools/list` 自动下发即 API 文档）；本文件与 skills 随行为变更同 PR 更新（见同步规则）。
+8. **文档同频**：工具行为改 docstring（CLI 发现面 `mflowy <tool> -h` 编译下发即 API 文档）；本文件与 skills 随行为变更同 PR 更新（见同步规则）。
 9. **mixin 组合方契约**：mixin 引用组合方才满足的属性/方法，一律直取 + 带码 ignore 注明「组合方满足——定义期不可见」（#122 裁定：是否满足取决于组合方）；TYPE_CHECKING 借基/伪继承伪造类型面即债。属性在缺是值级可选性（`getattr(..., None)` 语义，如 `evals_result_` 随 eval_set 在缺）；第三方无 py.typed 的属性发现走回退链，全缺 fail-loud。
 10. **观测/执行二分纪律**（#226 ⑧，会话工具设计）：observe 可从内存 o 翻译内部组合函数参数（如检测算子从 o.prior 取先验）；apply 必须由 agent 基于上下文中的 o 翻译参数，机器面**不得从 o 翻译 apply 参数**——新增节点零机器面注入接线。先验生命周期单缝：load_or_start 的 `*args` 初始化、observe 的 `*args` 更新（动作面冻结，壳牙齿强制）；observation_json+域尾巴开局入参同传 = 参数来源冲突 fail-loud（#242：会话寻址锚 = 状态文件本体路径）（续局带新认知 = 旧产物 data 路径 + 新 prior 开新局）。
 
@@ -111,7 +111,7 @@ uv workspace 七 distribution（PEP 420 namespace，版本锁步，`tests/test_w
 | 查数据清洗方法论（先验 / 检测算子 / 清洗算子矩阵） | [docs/method/data-cleaning.md](docs/method/data-cleaning.md)（研究领域知识，零词表绑定） |
 | 查建模方法论（模型矩阵 / CV-HPO / 特征工程 / 评估） | [docs/method/model-training.md](docs/method/model-training.md)（研究领域知识，零词表绑定） |
 | 查系统闭环设计（PILOT 三子系统 / 学习门禁 / 先验继承） | [bo 包 README](packages/builtin_plugins/bo/README.md)（目标态叙事 + 落位现状对照表，#184 随包分发） |
-| 规划新功能 / 查路线图      | [docs/roadmap.md](docs/roadmap.md)（已实现清单以 `tools/list` 为真源，roadmap 只留规划） |
+| 规划新功能 / 查路线图      | [docs/roadmap.md](docs/roadmap.md)（已实现清单以 `mflowy --help` 为真源，roadmap 只留规划） |
 
 **防漂移**：代码已表达的只链接不复述（文件树/签名/行号锚点留给代码）；只写追加式文档（新案例 → `examples/` 快照，新版本 → `CHANGELOG.md`）；"漂移可接受"仅限用户文档，release 边界回填——本文件与 skills 除外（见同步规则）。**剧本引用面谓词**（#65 裁定）：操作 skill（`.agents/skills/*`）参考节只允许引用工具名与入仓文档——引用实现路径（含包结构迁移前的旧路径）即 P0 漂移，删除而非修正。新建文档先过漂移测试："这文件里哪句话会因下次代码 PR 失效？"有答案就不建。
 

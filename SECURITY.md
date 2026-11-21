@@ -22,7 +22,7 @@ confidential until the issue is fixed and announced.
 
 In scope:
 
-- Remote code execution / injection through MCP tool arguments
+- Remote code execution / injection through CLI tool arguments
   (`modeling_steps_yaml`, `python_loader` / `<py_path>:<func>` entry, HTTP loader URLs, etc.)
 - Path traversal / arbitrary file access via tool path arguments
 - Data exfiltration through tool outputs, MLflow integration, or telemetry
