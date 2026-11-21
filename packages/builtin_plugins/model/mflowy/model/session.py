@@ -1089,15 +1089,21 @@ def _run_hpo(ss, o, m, board, log, params: dict) -> None:
             raise RuntimeError(f"{LOCAL_INSTALL_HINT}（缺 {e.name}）") from e
 
     _run_hpo_provider(
-        ss, o, m, board, log,
-        entry=entry, family=family, fe=fe, key=key, n_trials=n_trials,
+        ss,
+        o,
+        m,
+        board,
+        log,
+        entry=entry,
+        family=family,
+        fe=fe,
+        key=key,
+        n_trials=n_trials,
         platform_experiment_id=platform_experiment_id,
     )
 
 
-def _run_hpo_provider(
-    ss, o, m, board, log, *, entry, family, fe, key, n_trials, platform_experiment_id
-) -> None:
+def _run_hpo_provider(ss, o, m, board, log, *, entry, family, fe, key, n_trials, platform_experiment_id) -> None:
     """run_hpo 的 provider 执行面（#218/#225 裁定 1）：plan 渲染（remote_transport
     provider → uploads 寻址 + cv.split 确定性复现；其余 → 本径 + cv.load 按引用
     复用会话划分）→ 提交 → 消费 → study 采用 + OOF 回读 → 账本更新。
@@ -1194,12 +1200,14 @@ def _run_hpo_provider(
     if outcome.status == "finished":
         dag = outcome.dag_result
         if dag is None or dag.status != "finished":
-            raise RuntimeError(f"搜索受理 DAG 未完成（status={getattr(dag, 'status', None)}）：{getattr(dag, 'error', '')}")
-        node = next(
-            (r for r in dag.runs if r.node == f"model__{family}" and r.status == "FINISHED" and r.run_id), None
-        )
+            raise RuntimeError(
+                f"搜索受理 DAG 未完成（status={getattr(dag, 'status', None)}）：{getattr(dag, 'error', '')}"
+            )
+        node = next((r for r in dag.runs if r.node == f"model__{family}" and r.status == "FINISHED" and r.run_id), None)
         if node is None:
-            raise RuntimeError(f"受理 DAG 无完成的 model__{family} 节点（runs：{[(r.node, r.status) for r in dag.runs]}）")
+            raise RuntimeError(
+                f"受理 DAG 无完成的 model__{family} 节点（runs：{[(r.node, r.status) for r in dag.runs]}）"
+            )
         face_run = session_remote.LocalRunFace(run_id=node.run_id)
         job_id = None
     else:
@@ -1794,8 +1802,10 @@ def _hpo_plan_yaml(
     if degenerate_dim is not None:  # 全 pin 退化形：单点空间——DAG 侧保持 search 行为
         v = params.get(degenerate_dim, _family_params(family)[degenerate_dim])  # pin 值或声明缺省
         declared = _family_params(family)[degenerate_dim]  # 空间类型随签名（float|Continuous vs int|Discrete）
-        params[degenerate_dim] = ContinuousSpace(float(v), float(v)) if isinstance(declared, float) else (
-            ContinuousSpace(v, v) if isinstance(declared, ContinuousSpace) else DiscreteSpace([v])
+        params[degenerate_dim] = (
+            ContinuousSpace(float(v), float(v))
+            if isinstance(declared, float)
+            else (ContinuousSpace(v, v) if isinstance(declared, ContinuousSpace) else DiscreteSpace([v]))
         )
     params["n_trials"] = n_trials
     params["scoring"] = scoring

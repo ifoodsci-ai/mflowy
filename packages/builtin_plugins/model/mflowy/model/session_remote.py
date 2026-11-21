@@ -215,7 +215,9 @@ def adopt_study_trials(
                 sampler=sampler,
             )
             os.replace(tmp_db, session_db)
-            study = optuna.load_study(study_name=study_name, storage=storage, sampler=sampler)  # 重开（旧连接随换位作废）
+            study = optuna.load_study(
+                study_name=study_name, storage=storage, sampler=sampler
+            )  # 重开（旧连接随换位作废）
     else:
         study = optuna.create_study(
             study_name=study_name, storage=storage, direction=direction, load_if_exists=True, sampler=sampler
