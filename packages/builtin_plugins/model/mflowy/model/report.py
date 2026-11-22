@@ -96,7 +96,9 @@ def oof_plot_album(task, y_true: pd.DataFrame, y_pred: pd.DataFrame, y_proba) ->
         from mflowy.model.plot.model_evaluation.classification.pr_curve import pr_curve
         from mflowy.model.plot.model_evaluation.classification.roc_curve import roc_curve
 
-        proba_df = oof_proba_long_df(y_true, y_proba)
+        # proba 面：数组形态经长表构形；DataFrame = 调用方已构形直通（统计尾步回读
+        # 终训 run 的 test_probabilities.parquet——holdout 副产物 y_pred 无概率列）
+        proba_df = y_proba if isinstance(y_proba, pd.DataFrame) else oof_proba_long_df(y_true, y_proba)
         _, fig = confusion_matrix(model_test_predictions=(t, long_df))
         _save(fig, "confusion_matrix_oof.png")
         _, fig = roc_curve(model_test_probabilities=proba_df)

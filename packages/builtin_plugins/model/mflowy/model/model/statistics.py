@@ -172,6 +172,15 @@ def statistics(
 
     proba_cols = sorted(c for c in ev.columns if c.startswith("y_proba_"))
     y_proba = ev[proba_cols].to_numpy() if proba_cols else None
+    if not is_reg and y_proba is None:
+        # 分类 holdout 面：y_pred 副产物无概率列——回读终训 run 的概率长表
+        # （training 行为契约工件 test_probabilities.parquet；缺件 fail-loud）
+        if "test_probabilities.parquet" not in arts:
+            raise ValueError(
+                f"证据工件 {y_pred_artifact} 无 y_proba 列且 run {run_id} 缺 test_probabilities.parquet"
+                "（training 行为契约不符）——概率族图集（roc/pr/calibration）不可产"
+            )
+        y_proba = pd.read_parquet(download_run_artifact(run_id, "test_probabilities.parquet"))
     y_pred_df = y_pred if isinstance(y_pred, pd.DataFrame) else y_pred.to_frame()
     plots = oof_plot_album(TASKTYPE.REGRESSION if is_reg else TASKTYPE.CLASSIFICATION, y_true, y_pred_df, y_proba)
 
