@@ -170,19 +170,14 @@ def statistics(
     from mflowy.data.types import TASKTYPE
     from mflowy.model.report import oof_plot_album
 
-    proba_cols = sorted(c for c in ev.columns if c.startswith("y_proba_"))
-    y_proba = ev[proba_cols].to_numpy() if proba_cols else None
-    if not is_reg and y_proba is None:
-        # 分类 holdout 面：y_pred 副产物无概率列——回读终训 run 的概率长表
-        # （training 行为契约工件 test_probabilities.parquet；缺件 fail-loud）
-        if "test_probabilities.parquet" not in arts:
-            raise ValueError(
-                f"证据工件 {y_pred_artifact} 无 y_proba 列且 run {run_id} 缺 test_probabilities.parquet"
-                "（training 行为契约不符）——概率族图集（roc/pr/calibration）不可产"
-            )
-        y_proba = pd.read_parquet(download_run_artifact(run_id, "test_probabilities.parquet"))
+    # 概率面 = 独立伴生工件存在性（对齐裁定 2026-11-22：oof_y_proba / y_proba
+    # 宽表带 indices——回归不落，概率族图集按存在性生产）
+    proba_artifact = y_pred_artifact.replace("y_pred", "y_proba")
+    y_proba = pd.read_parquet(download_run_artifact(run_id, proba_artifact)) if proba_artifact in arts else None
     y_pred_df = y_pred if isinstance(y_pred, pd.DataFrame) else y_pred.to_frame()
-    plots = oof_plot_album(TASKTYPE.REGRESSION if is_reg else TASKTYPE.CLASSIFICATION, y_true, y_pred_df, y_proba)
+    plots = oof_plot_album(
+        TASKTYPE.REGRESSION if is_reg else TASKTYPE.CLASSIFICATION, y_true, y_pred_df, y_proba
+    )  # y_proba = 宽表 DataFrame（存在性）或 None——概率族图集随之产/不产
 
     return {
         "run_id": run_id,

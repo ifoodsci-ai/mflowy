@@ -111,6 +111,28 @@ def test_statistics_fingerprint_gate_inside_action(sessions_root, reg_csv):
         ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1})
 
 
+def test_statistics_album_existence_gating(sessions_root, tmp_path):
+    """图面按伴生工件存在性生产（对齐裁定）：回归 OOF——概率族图（roc/pr/
+    calibration）不产、误差族图（scatter/residual/error_dist/bland_altman）产。"""
+    import numpy as np
+
+    rng = np.random.default_rng(3)
+    x = rng.normal(size=60)
+    df = pd.DataFrame({"x": x, "target": 2.0 * x + 0.1 * rng.normal(size=60)})
+    csv = tmp_path / "reg.csv"
+    df.to_csv(csv, index=False)
+    observation_json, _ = _start(sessions_root, str(csv))
+    ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
+    r = ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1})
+    plots = r.biz["statistics"]["plots"]
+    assert any("prediction_scatter" in p for p in plots)  # 误差族图在
+    assert not any(
+        p.startswith(("roc_curve", "pr_curve", "calibration")) for p in plots
+    )  # 概率族不产（回归无伴生 y_proba）
+    entry = _board(observation_json)["models"][_K]
+    assert entry["oof"]["y_proba"] is None  # 回归槽位 None（板面 schema 稳定）
+
+
 def test_rule_findings_retired_single_source(sessions_root, reg_csv):
     """#226 ⑥ 判读退役：run_hpo 后账本 findings 空（单源 llm）——落账走 report_findings。"""
     observation_json, _ = _start(sessions_root, reg_csv)

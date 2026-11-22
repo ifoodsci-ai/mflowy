@@ -53,6 +53,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - study 链锚语义修正：续跳（#244 外部锚）不换锚——`entry.chain.run_id` 恒锚
   study 树主 run（本 run 无自有 study.db 不可寻址的缺陷修复）
 
+### OOF/holdout 副产物对齐（#218 收尾裁定，2026-11-22，BREAKING）
+
+用户裁定：**两证据面工件形态对齐——回归只 `y_pred`、分类加 `y_proba`，均带
+indices；图面按产物存在性生产**。
+
+- **OOF 面**：`oof_y_pred.parquet` 收窄为 indices/y/y_pred/error（概率列拆出）；
+  分类新增伴生 `oof_y_proba.parquet`（indices + `y_proba_{cls}` 宽表）；账本
+  `entry.oof.y_proba` 槽位（回归 None——板面 schema 稳定）；镜像/终训复制面随伴
+- **holdout 面**：分类终训新增 `y_proba.parquet`（同构宽表）——`test_probabilities.
+  parquet` 长表工件退役（图面长表构形内聚）；副产物面任务感知
+  （`holdout_byproducts(task)`：回归 X/y/y_pred，分类加 y_proba）
+- **图面存在性生产**：统计尾步/album 的概率族图（roc/pr/calibration）按伴生
+  y_proba 工件**存在性**产/不产（回归不产；缺件即不产——不再回退旧长表）；
+  run faces 增 `artifact(strict=False)` 存在性探测面
+
 ### 机器统计收尾步：modeling_statistics 退役（#218 收尾裁定，2026-11-22，BREAKING）
 
 用户裁定：**机器面统计 = 计算动作的最后一步，不是独立动作**——agent 回路免二次

@@ -177,8 +177,7 @@ def _plot_classification(pipe: ModelPipeline, parts: list[_Part], test_df: pd.Da
     from mflowy.model.plot.model_evaluation.classification.confusion_matrix import per_class_report
 
     X_test, y_test = parts[-1][0], parts[-1][1]
-    proba_df = proba_long_df(pipe, X_test, y_test)
-    mlflow_util.log_table(proba_df, "test_probabilities.parquet", graceful=True)
+    proba_df = proba_long_df(pipe, X_test, y_test)  # 图面数据（概率工件面 = y_proba.parquet 宽表，training 落盘单源）
 
     report = pd.concat(
         [

@@ -155,12 +155,19 @@ class TestClassificationZeroChange:
         entry = _entry(observation_json)
         oof_run = entry["oof"]["run_id"]
         ev = pd.read_parquet(download_run_artifact(oof_run, entry["oof"]["y_pred"]))
-        # 分类证据面：y/y_pred/error + y_proba_{cls}（概率一并落盘——日后分类区间零返工）
+        # 分类证据面：y/y_pred/error（概率面独立伴生工件，对齐裁定 2026-11-22）
         assert {"y_target", "y_pred_target", "error_target"} < set(ev.columns)
-        assert any(c.startswith("y_proba_") for c in ev.columns)
+        assert not any(c.startswith("y_proba_") for c in ev.columns)
+        pt = pd.read_parquet(download_run_artifact(oof_run, entry["oof"]["y_proba"]))
+        assert "indices" in pt.columns and any(c.startswith("y_proba_") for c in pt.columns)
         assert entry["oof"]["half_width"] is None  # 分类无区间面（键恒在、值 None——板面 schema 稳定）
 
         ModelingSession().apply(observation_json, "final_train_test")
-        final_run = _entry(observation_json)["run_id"]
+        entry = _entry(observation_json)
+        final_run = entry["run_id"]
+        # 对齐裁定：分类终训副产物含 y_proba.parquet（宽表带 indices；回归不落）
+        assert entry["byproducts"]["y_proba"] == "y_proba.parquet"
+        assert "y_proba.parquet" in run_artifacts(final_run)
+        assert "indices" in pd.read_parquet(download_run_artifact(final_run, "y_proba.parquet")).columns
         df = _predict_df(final_run, str(p))
         assert list(df.columns) == ["target"]  # 零变化钉：无区间列

@@ -1183,9 +1183,9 @@ def _run_hpo_provider(ss, o, m, board, log, *, entry, family, fe, key, n_trials,
         client.log_artifact(face_run.run_id, str(session_db))
         oof_run_id = face_run.run_id
     else:
-        oof_run_id = _mirror_oof_run(
-            m, family, key, oof_src=face_run.artifact("oof_y_pred.parquet"), half_width=half_width
-        )
+        oof_src_path = face_run.artifact("oof_y_pred.parquet")
+        assert oof_src_path is not None  # 上行在场过门已抛（strict 缺省）——收窄
+        oof_run_id = _mirror_oof_run(m, family, key, oof_src=oof_src_path, half_width=half_width, face=face_run)
 
     # 机器统计收尾步（裁定 2026-11-22）：宿主 = OOF 证据 run——图集/证据表落其工件树
     stats = {"key": key, **_statistics_tail(m, oof_run_id, "oof_y_pred.parquet")}
@@ -1214,6 +1214,9 @@ def _run_hpo_provider(ss, o, m, board, log, *, entry, family, fe, key, n_trials,
             "oof": {
                 "run_id": oof_run_id,
                 "y_pred": "oof_y_pred.parquet",
+                "y_proba": "oof_y_proba.parquet"
+                if face_run.artifact("oof_y_proba.parquet", strict=False)
+                else None,  # 分类独有（对齐裁定：伴生工件存在性）
                 "half_width": half_width,
                 "plots": stats["plots"],  # 机器统计收尾步产的图集（落 oof run 工件树，#226 ⑥ 收拢）
             },
@@ -1276,7 +1279,7 @@ def _statistics_tail(m: dict, run_id: str, artifact: str) -> dict:
         )
 
 
-def _mirror_oof_run(m: dict, family: str, key: str, *, oof_src: Path, half_width) -> str:
+def _mirror_oof_run(m: dict, family: str, key: str, *, oof_src: Path, half_width, face) -> str:
     """remote 分支的本地镜像 run（输出对齐 local，#225 裁定 1）：lineage tags +
     源指纹 + OOF 证据 parquet + 半宽 tag + 会话 study db 只读投影——账本 oof.run_id
     指向本地库，下游（统计工具/报告/终训复制面）零分叉。返回镜像 run_id。"""
@@ -1287,6 +1290,8 @@ def _mirror_oof_run(m: dict, family: str, key: str, *, oof_src: Path, half_width
     with _session_run(m, f"run_hpo:{key}") as run:
         _tag_run(run, m, action="run_hpo", key=key, family=family)
         log_file(oof_src, artifact_file="oof_y_pred.parquet")
+        if (oof_proba_src := face.artifact("oof_y_proba.parquet", strict=False)) is not None:
+            log_file(oof_proba_src, artifact_file="oof_y_proba.parquet")  # 伴生概率面随镜像（存在性——分类独有）
         if half_width is not None:
             mlflow.set_tag(OOF_HALF_WIDTH_TAG, json.dumps(half_width))
         log_file(_root() / m["session_id"] / _study_db_name(key))
@@ -1400,14 +1405,14 @@ def _final_train_test(ss, o, m, board, log, params: dict) -> None:
         raise RuntimeError(f"终训受理面意外形态（status={result.status}）——JobOutcome 契约违规")
 
     # 副产物指针经 run artifacts 清单解析落账（s 自描述——board 可见 run 下有什么）
-    from mflowy.model.model._pipeline import HOLDOUT_BYPRODUCTS, OOF_HALF_WIDTH_TAG
+    from mflowy.model.model._pipeline import HOLDOUT_BYPRODUCTS, OOF_HALF_WIDTH_TAG, holdout_byproducts
     from mflowy.utils.mlflow import download_run_artifact, run_artifacts
 
+    byproducts = holdout_byproducts(_task(m))  # 任务感知（对齐裁定：分类加 y_proba 副产物）
     arts = run_artifacts(target_run)
-    missing = set(HOLDOUT_BYPRODUCTS.values()) - set(arts)
+    missing = set(byproducts.values()) - set(arts)
     if missing:
         raise RuntimeError(f"终训 run 缺副产物 {sorted(missing)}（run artifacts：{arts}）——training 行为契约不符")
-    byproducts = dict(HOLDOUT_BYPRODUCTS)
     pd.read_parquet(
         download_run_artifact(target_run, HOLDOUT_BYPRODUCTS["y_pred"])
     )  # 副产物可读性过门（#236：判读退役后不再消费值）
@@ -1431,6 +1436,8 @@ def _final_train_test(ss, o, m, board, log, params: dict) -> None:
                 f"OOF 证据工件 {oof_name} 不在 run_hpo run {oof_src} 工件树（{src_arts}）——账本与 run 面不一致，请反馈"
             )
         client.log_artifact(target_run, download_run_artifact(oof_src, oof_name))
+    if (oof_proba_name := oof.get("y_proba")) and oof_src:
+        client.log_artifact(target_run, download_run_artifact(oof_src, oof_proba_name))  # 概率面随终训复制（存在性）
     if (w := oof.get("half_width")) is not None:
         client.set_tag(target_run, OOF_HALF_WIDTH_TAG, json.dumps(w))
 
@@ -1655,15 +1662,20 @@ def _final_train_test_remote(ss, m, family, key, *, outcome, scoring):
     if not metrics:
         raise RuntimeError(f"终训 remote run 无 holdout 指标（run={face.run_id[:8]}）——training 行为契约不符")
     holdout = {"u": round(terminal_u(metrics, scoring), 4), "metrics": metrics}
-    for name in HOLDOUT_BYPRODUCTS.values():
-        face.artifact(name)  # 副产物在场过门
-    pd.read_parquet(face.artifact(HOLDOUT_BYPRODUCTS["y_pred"]))  # 可读性过门（#236）
+    from .model._pipeline import holdout_byproducts
+
+    _byproducts = holdout_byproducts(TASKTYPE(m["task"]))
+    for name in _byproducts.values():
+        face.artifact(name)  # 副产物在场过门（任务感知——分类含 y_proba）
+    y_pred_path = face.artifact(HOLDOUT_BYPRODUCTS["y_pred"])
+    assert y_pred_path is not None  # 上行过门已抛——收窄
+    pd.read_parquet(y_pred_path)  # 可读性过门（#236）
     model_dir = session_remote.logged_model_dir(face.client, unpacked, face.run_id)
 
     from mflowy.utils.mlflow import log_file
 
     with _session_run(m, f"final_train_test:{key}") as mirror:
-        for name in HOLDOUT_BYPRODUCTS.values():
+        for name in _byproducts.values():
             log_file(face.artifact(name), artifact_file=name)
         import mlflow
 

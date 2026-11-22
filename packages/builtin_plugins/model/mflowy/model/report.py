@@ -60,6 +60,29 @@ def oof_proba_long_df(y_true: pd.DataFrame, y_proba) -> pd.DataFrame:
     return pd.concat(long_dfs, ignore_index=True)
 
 
+def wide_proba_long_df(y_true: pd.DataFrame, wide: pd.DataFrame) -> pd.DataFrame:
+    """概率宽表（``indices`` + ``y_proba_{cls}`` / ``y_proba_{t}__{cls}`` 伴生工件
+    形态，对齐裁定 2026-11-22）→ 图面长表 ``(y_name, y_true, class, proba)``。
+    y_true 面由调用方供给（宽表只持概率）；列名命名空间与 proba_table 单源。"""
+    proba_cols = [c for c in wide.columns if c != "indices"]
+    long_dfs = []
+    if len(y_true.columns) == 1:
+        y_name = y_true.columns[0]
+        y = y_true[y_name].to_numpy()
+        for col in proba_cols:
+            cls = col.removeprefix("y_proba_")
+            long_dfs.append(pd.DataFrame({"y_name": y_name, "y_true": y, "class": cls, "proba": wide[col].to_numpy()}))
+    else:
+        for col in proba_cols:
+            target, cls = col.removeprefix("y_proba_").split("__", 1)
+            long_dfs.append(
+                pd.DataFrame(
+                    {"y_name": target, "y_true": y_true[target].to_numpy(), "class": cls, "proba": wide[col].to_numpy()}
+                )
+            )
+    return pd.concat(long_dfs, ignore_index=True)
+
+
 def oof_plot_album(task, y_true: pd.DataFrame, y_pred: pd.DataFrame, y_proba) -> list[str]:
     """OOF 图集：回归 4 图（scatter/residual/error_dist/bland_altman）/ 分类 4 图
     （confusion/roc/pr/calibration），经 ``log_figure`` 挂当前（父）run 工件树
@@ -96,11 +119,17 @@ def oof_plot_album(task, y_true: pd.DataFrame, y_pred: pd.DataFrame, y_proba) ->
         from mflowy.model.plot.model_evaluation.classification.pr_curve import pr_curve
         from mflowy.model.plot.model_evaluation.classification.roc_curve import roc_curve
 
-        # proba 面：数组形态经长表构形；DataFrame = 调用方已构形直通（统计尾步回读
-        # 终训 run 的 test_probabilities.parquet——holdout 副产物 y_pred 无概率列）
-        proba_df = y_proba if isinstance(y_proba, pd.DataFrame) else oof_proba_long_df(y_true, y_proba)
+        # 概率族图集按概率面存在性生产（对齐裁定 2026-11-22）：DataFrame = 宽表
+        # （indices + y_proba_{cls}，伴生工件直读）经长表构形；数组 = 内存形态直构；
+        # None/缺席（回归或无概率工件）→ 概率族（roc/pr/calibration）不产
         _, fig = confusion_matrix(model_test_predictions=(t, long_df))
         _save(fig, "confusion_matrix_oof.png")
+        if y_proba is None:
+            return sorted(written)
+        if isinstance(y_proba, pd.DataFrame):
+            proba_df = wide_proba_long_df(y_true, y_proba)
+        else:
+            proba_df = oof_proba_long_df(y_true, y_proba)
         _, fig = roc_curve(model_test_probabilities=proba_df)
         _save(fig, "roc_curve_oof.png")
         _, fig = pr_curve(model_test_probabilities=proba_df)

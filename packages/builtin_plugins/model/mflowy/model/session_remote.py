@@ -152,10 +152,14 @@ class RemoteRunFace(NamedTuple):
     def run_tag(self, run_id: str, key: str) -> str | None:
         return self.client.get_run(run_id).data.tags.get(key)
 
-    def artifact(self, name: str, *, run_id: str | None = None) -> Path:
+    def artifact(self, name: str, *, run_id: str | None = None, strict: bool = True) -> Path | None:
+        """工件寻址（伴生工件存在性生产的机械面）：``strict=False`` 缺件返 None
+        （概率族工件按任务在缺——回归不落，调用方按 None 分支图面）。"""
         base = self.artifact_dir if run_id is None else self.run_dir(run_id)
         p = base / name
         if not p.is_file():
+            if not strict:
+                return None
             available = sorted(x.name for x in base.iterdir()) if base.is_dir() else []
             raise RuntimeError(f"模型步 run 缺工件 {name}（run={(run_id or self.run_id)[:8]}，工件面：{available}）")
         return p
@@ -322,16 +326,19 @@ class LocalRunFace(NamedTuple):
 
         return mlflow.get_run(run_id).data.tags.get(key)
 
-    def artifact(self, name: str, *, run_id: str | None = None) -> Path:
+    def artifact(self, name: str, *, run_id: str | None = None, strict: bool = True) -> Path | None:
+        """工件寻址（存在性语义同 Remote 形：``strict=False`` 缺件返 None）。"""
         rid = run_id or self.run_id
         from mflowy.utils.mlflow import download_run_artifact
 
         try:
             return Path(download_run_artifact(rid, name))
-        except Exception as e:  # mlflow 裸 MlflowException → 工件面清单（与 Remote 形同尺）
+        except Exception as e:
+            if not strict:
+                return None
             import mlflow
 
-            arts = [a.path for a in mlflow.MlflowClient().list_artifacts(rid)]
+            arts = [a.path for a in mlflow.MlflowClient().list_artifacts(rid)]  # mlflow 裸异常 → 工件面清单（同尺）
             raise RuntimeError(f"模型步 run 缺工件 {name}（run={rid[:8]}，工件面：{arts}）") from e
 
     def tag(self, key: str) -> str | None:
