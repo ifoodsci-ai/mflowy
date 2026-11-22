@@ -12,7 +12,8 @@ from dataclasses import replace
 import numpy as np
 import pandas as pd
 import pytest
-from mflowy.model.model.types import TASKTYPE, MetricName, ModelLoader
+from mflowy.model.model.artifacts import ModelLoader
+from mflowy.model.model.types import TASKTYPE, MetricName
 
 
 @pytest.fixture(autouse=True)

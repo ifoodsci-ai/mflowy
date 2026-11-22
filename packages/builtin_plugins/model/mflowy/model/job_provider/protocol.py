@@ -64,6 +64,10 @@ class JobProvider(Protocol):
     模式专属参数（#156）：``platform_experiment_id``（remote 必填——实验创建只住
     ensure 工具一处）与 ``inherit_platform_job_id``（引用前序状态时必填）在 local
     模式下忽略（先例 ``headers``——满足契约但不消费）；remote 校验住实现侧。
+
+    ``remote_transport`` 声明面（#218 会话 plan 渲染消费）：bool——真 = 受理跑在
+    远程容器（plan 渲染 uploads 寻址 + cv.split 复现）；自定义远程 provider 应声明
+    ``remote_transport = True``，缺省 getattr 视为 False（进程内受理）。
     """
 
     async def hyperparameters_search(

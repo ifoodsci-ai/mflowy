@@ -1,6 +1,6 @@
 ---
 name: modeling
-description: 建模训练 POMDP 回合操作主剧本(mflowy)。用户要求"建模/训练模型"（清洗已 finish），或建模会话进行中(收到 observation_json)时使用。配合 mflowy CLI 工具 modeling_load_or_start / modeling_observe / modeling_apply(action) / modeling_rollback / modeling_report_findings / modeling_finish / modeling_abandon 驱动回合循环——动作空间 = 九动作面（配置编辑 + 计算动作 + 判读落诊），环境面在引擎，π(策略)是你。开局权在本剧本（owns modeling_load_or_start 调用面，#233）。判读归你：统计证据经 modeling_statistics 取回（#226 ⑥ 规则判读退役），经 report_findings 落账。会话恒单目标任务——多目标在会话外三层循环（多目标→多模型→单目标任务会话，每目标各开一会话）。前置:model-prior-survey 剧本已产出开局入参 JSON（cv_card = cv.split 配置 yaml 明文 + 显式协议参数，含 model-research-review 结构化候选）。
+description: 建模训练 POMDP 回合操作主剧本(mflowy)。用户要求"建模/训练模型"（清洗已 finish），或建模会话进行中(收到 observation_json)时使用。配合 mflowy CLI 工具 modeling_load_or_start / modeling_observe / modeling_apply(action) / modeling_rollback / modeling_report_findings / modeling_finish / modeling_abandon 驱动回合循环——动作空间 = 九动作面（配置编辑 + 计算动作 + 判读落诊），环境面在引擎，π(策略)是你。开局权在本剧本（owns modeling_load_or_start 调用面，#233）。判读归你：统计证据随 run_hpo/final_train_test 收尾步产出（响应与 observe 的 statistics 面；#226 ⑥ 规则判读退役），经 report_findings 落账。会话恒单目标任务——多目标在会话外三层循环（多目标→多模型→单目标任务会话，每目标各开一会话）。前置:model-prior-survey 剧本已产出开局入参 JSON（cv_card = cv.split 配置 yaml 明文 + 显式协议参数，含 model-research-review 结构化候选）。
 disable-model-invocation: true
 ---
 
@@ -36,13 +36,19 @@ modeling_load_or_start(observation_json=None, file_path, cv_card=<cv.split 配�
 `set_seed{seed}`（换 seed = 换目标 = study 重开）→ `select_FE{node}` 换 FE 档
 （对当前候选结构非冗余的槽才合法）。
 
-计算动作（吃步；预算 = 实验数）：
-1. `run_hpo{n_trials}`——**search-only**：sqlite study 增量续跑（空间收窄/pin/加深
+计算动作（吃步；**失败同样吃步**——#225 起失败尝试占预算，拿不准先读观测）；
+预算 = 实验数。计算动作委派 JobProvider（#218，受理随 `switch_job_provider`）：
+remote 模式须带 `platform_experiment_id`（先 `ensure_platform_experiment` 同步源
+数据文件拿到 id）；remote 分支阻塞至终态（提交→拉日志→拉产物→收账一体），
+账本与 local 同形：
+1. `run_hpo{n_trials, platform_experiment_id?}`——**search-only**：sqlite study 增量续跑（空间收窄/pin/加深
    继续，seed/scoring 变重开）；每 trial inner CV → u_inner/std；结束在 θ* 上出 OOF
    预测工件（带 indices 列 + 源数据指纹）；响应 `validation.reward` = **Δu_inner**
-   （相对该键上次最优；#226 ① 四件观测）。机器判读已退役（#226 ⑥）——统计证据
-   走独立工具 `modeling_statistics`（见下）。
-2. `final_train_test`——**先搜后店**：终训走 modeling 工具（JobProvider DAG）——
+   （相对该键上次最优；#226 ① 四件观测）+ **机器统计收尾步**：证据摘要随响应
+   biz.statistics 浮出、图集落 oof run 工件树（判读素材免二次调用）。链外历史 fail-loud：provider 化之前
+   的存量会话不可续跑（换 FE/seed 出新键，或弃局重开）；全 pin 退化形全域可用
+   （引擎以单点空间渲染保持 search 行为，不碰 holdout）。
+2. `final_train_test{platform_experiment_id?}`——**先搜后店**：终训走 modeling 工具（JobProvider DAG）——
    交付的恒是**搜索时刻证据配置**（快照 ∪ θ*，搜后改 pin 不生效）→ 终训/终评/
    X_test·y_test·y_pred 副产物/plan 一体（交付的 plan_yaml 就是那次终训本身）→ holdout
    终评恰一次 → **combo 冻结**（同键不可再搜索）；reward = 0（终局效用 u 只进 verdict 面）。
@@ -55,7 +61,7 @@ modeling_load_or_start(observation_json=None, file_path, cv_card=<cv.split 配�
 
 ```
 run_hpo 收账（board/observe——纯查询）
-  → modeling_statistics(observation_json, key)：统计证据表 + 图集（run 寻址；OOF/holdout 同构）
+  → 统计证据已在手（run_hpo/final_train_test 响应 biz.statistics；续局重读走 observe 的 statistics 面）
   → 你推理（读证据表/图，判 overfit/underfit/fold-std/误差集中/切片塌陷…）
   → modeling_report_findings(observation_json, key, findings)：结构化落账（o_biz，observe 可见）
   → 据此决策下一步动作
@@ -79,7 +85,7 @@ run_hpo 收账（board/observe——纯查询）
   永不回退——append-only 审计面）；
 - `modeling_report_findings(observation_json, key, findings)`：你的判读落账（九动作面词表内——
   `modeling_apply(observation_json, "report_findings", …)` 的薄别名；kind ⊆ 词表、severity ∈
-  [0,1]；决策日志审计）——**单源**：机器只出统计证据（modeling_statistics），
+  [0,1]；决策日志审计）——**单源**：机器只出统计证据（动作收尾步），
   判断归你（#226 ⑥）；
 - **收局剧本固定序**（素材两工具 → 撰写 → 收编 → 交付）：
   1. `draw_taylor_diagram(observation_json, run_ids)`：多终训 run 副产物画泰勒图（误差结构

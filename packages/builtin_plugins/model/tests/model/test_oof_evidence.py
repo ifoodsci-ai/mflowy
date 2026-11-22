@@ -1,9 +1,11 @@
 """OOF 证据四面 + 回归区间半宽（#80/#164）：y / y_pred / y_proba / error 落盘件
 与 |error| 分位半宽——BO 消费面（预测范围对带 + 配对反馈分母）与 predict 区间原料。
+#218 OOF 产面移进管线：DAG search 行为 run 的 OOF 工件契约（双分支同名对齐）。
 """
 
 import numpy as np
 import pandas as pd
+import pytest
 from mflowy.data.types import TASKTYPE
 from mflowy.model.model._pipeline import PREDICT_INTERVAL_ALPHA, oof_evidence_table, oof_half_widths
 
@@ -14,53 +16,62 @@ def _frame(d: dict) -> pd.DataFrame:
 
 class TestEvidenceTable:
     def test_regression_four_faces(self):
-        """回归：y/y_pred/error 三面（无 proba），error = y − y_pred（残差符号）。"""
+        """回归 y_pred 面：indices/y/y_pred/error 三面（概率面不落——回归无）。"""
         y_true = _frame({"target": [1.0, 2.0, 3.0]})
         y_pred = _frame({"target": [1.5, 1.0, 3.6]})
-        ev = oof_evidence_table(y_true, y_pred, None, TASKTYPE.REGRESSION)
-        assert list(ev.columns) == [
-            "indices",
-            "y_target",
-            "y_pred_target",
-            "error_target",
-        ]  # #236：indices 稳定行身份列
+        ev = oof_evidence_table(y_true, y_pred, TASKTYPE.REGRESSION)
+        assert list(ev.columns) == ["indices", "y_target", "y_pred_target", "error_target"]
         np.testing.assert_allclose(ev["y_target"], [1.0, 2.0, 3.0])
         np.testing.assert_allclose(ev["y_pred_target"], [1.5, 1.0, 3.6])
         np.testing.assert_allclose(ev["error_target"], [-0.5, 1.0, -0.6])
 
-    def test_classification_misjudgment_indicator_and_proba(self):
-        """分类：error = 误判指示 0/1（int）；y_proba_{cls} 单目标平铺（列序 = sorted classes）。"""
+    def test_classification_misjudgment_indicator(self):
+        """分类 y_pred 面：error = 误判指示 0/1（int）——概率面独立工件。"""
         y_true = _frame({"label": ["a", "b", "a"]})
         y_pred = _frame({"label": ["a", "b", "b"]})
-        y_proba = np.array([[0.9, 0.1], [0.2, 0.8], [0.4, 0.6]])
-        ev = oof_evidence_table(y_true, y_pred, y_proba, TASKTYPE.CLASSIFICATION)
-        assert list(ev.columns) == [
-            "indices",
-            "y_label",
-            "y_pred_label",
-            "error_label",
-            "y_proba_a",
-            "y_proba_b",
-        ]  # #236：indices 列
+        ev = oof_evidence_table(y_true, y_pred, TASKTYPE.CLASSIFICATION)
+        assert list(ev.columns) == ["indices", "y_label", "y_pred_label", "error_label"]
         assert ev["error_label"].tolist() == [0, 0, 1]
-        np.testing.assert_allclose(ev["y_proba_a"], [0.9, 0.2, 0.4])
-        np.testing.assert_allclose(ev["y_proba_b"], [0.1, 0.8, 0.6])
-
-    def test_multitarget_proba_namespaced(self):
-        """多目标 proba（list 形态）：y_proba_{t}__{cls} 命名空间隔离。"""
-        y_true = _frame({"t1": ["a", "b"], "t2": ["x", "y"]})
-        y_pred = _frame({"t1": ["a", "b"], "t2": ["x", "y"]})
-        y_proba = [np.array([[0.9, 0.1], [0.3, 0.7]]), np.array([[0.8, 0.2], [0.1, 0.9]])]
-        ev = oof_evidence_table(y_true, y_pred, y_proba, TASKTYPE.CLASSIFICATION)
-        assert "y_proba_t1__a" in ev.columns and "y_proba_t2__y" in ev.columns
-        np.testing.assert_allclose(ev["y_proba_t2__y"], [0.2, 0.9])
 
     def test_row_order_follows_y_true(self):
         """行序 ≡ y_true（log_table 不保索引——与 holdout 副产物同契）。"""
         y_true = _frame({"target": [1.0, 2.0, 3.0, 4.0]})
         y_pred = _frame({"target": [1.0, 2.0, 3.0, 4.0]})
-        ev = oof_evidence_table(y_true, y_pred, None, TASKTYPE.REGRESSION)
+        ev = oof_evidence_table(y_true, y_pred, TASKTYPE.REGRESSION)
         assert len(ev) == 4 and (ev["error_target"].to_numpy() == 0).all()
+
+
+class TestProbaTable:
+    """概率伴生工件表（对齐裁定 2026-11-22：独立 y_proba 宽表带 indices——OOF/holdout 同构）。"""
+
+    def test_single_target_wide_with_indices(self):
+        """单目标：indices + y_proba_{cls} 平铺（列序 = sorted classes）。"""
+        from mflowy.model.model._pipeline import proba_table
+
+        y_true = _frame({"label": ["a", "b", "a"]})
+        y_proba = np.array([[0.9, 0.1], [0.2, 0.8], [0.4, 0.6]])
+        pt = proba_table(y_true, y_proba)
+        assert pt is not None  # 分类面非 None（None = 回归不落）
+        assert list(pt.columns) == ["indices", "y_proba_a", "y_proba_b"]
+        np.testing.assert_allclose(pt["y_proba_a"], [0.9, 0.2, 0.4])
+        np.testing.assert_allclose(pt["y_proba_b"], [0.1, 0.8, 0.6])
+
+    def test_multitarget_namespaced(self):
+        """多目标（list 形态）：y_proba_{t}__{cls} 命名空间隔离。"""
+        from mflowy.model.model._pipeline import proba_table
+
+        y_true = _frame({"t1": ["a", "b"], "t2": ["x", "y"]})
+        y_proba = [np.array([[0.9, 0.1], [0.3, 0.7]]), np.array([[0.8, 0.2], [0.1, 0.9]])]
+        pt = proba_table(y_true, y_proba)
+        assert pt is not None
+        assert "y_proba_t1__a" in pt.columns and "y_proba_t2__y" in pt.columns
+        np.testing.assert_allclose(pt["y_proba_t2__y"], [0.2, 0.9])
+
+    def test_none_returns_none(self):
+        """回归（y_proba=None）→ None：工件不落（图面按存在性生产）。"""
+        from mflowy.model.model._pipeline import proba_table
+
+        assert proba_table(_frame({"target": [1.0, 2.0]}), None) is None
 
 
 class TestHalfWidths:
@@ -80,3 +91,92 @@ class TestHalfWidths:
         y_pred = _frame({"t1": [1.0, 1.0], "t2": [2.0, 0.0]})
         w = oof_half_widths(y_true, y_pred)
         assert w["t1"] == 1.0 and w["t2"] == 2.0
+
+
+class TestOofSurfaceInPipeline:
+    """#218 OOF 产面移进管线：DAG search 行为（run 窗口内）随 run 产 OOF 证据表
+    + 半宽 tag + 任务分组可视化——与 session 直调分支同名工件对齐（remote zip ≡
+    local 输出的落点）。"""
+
+    @pytest.fixture(autouse=True)
+    def isolate_tracking(self, tmp_path, monkeypatch):
+        import mlflow
+
+        uri = f"sqlite:///{tmp_path}/tracking.db"
+        monkeypatch.setenv("MLFLOW_TRACKING_URI", uri)
+        mlflow.set_tracking_uri(uri)
+        monkeypatch.chdir(tmp_path)
+
+    def test_search_run_carries_oof_artifacts(self):
+        """RF search 行为 run：oof_y_pred.parquet（含 indices）+ 回归图族 + 半宽 tag
+        + study user_attr（账本回读面）齐备。"""
+        import json
+
+        import mlflow
+        import numpy as np
+        import pandas as pd
+        from mflowy.model.cv.split import split as split_fn
+        from mflowy.model.model._pipeline import OOF_HALF_WIDTH_TAG
+        from mflowy.model.model._split import materialize_split
+        from mflowy.model.model.random_forest import RF
+        from mflowy.model.model.types import TASKTYPE, MetricName
+        from mflowy.model.x_y import XySpec
+
+        rng = np.random.default_rng(4)
+        n = 60
+        x = rng.normal(size=n)
+        df = pd.DataFrame({"x": x, "target": 2.0 * x + 0.1 * rng.normal(size=n)})
+        X, y = df[["x"]], df[["target"]]
+        assert isinstance(X, pd.DataFrame) and isinstance(y, pd.DataFrame)  # 列清单索引恒 DataFrame（联合噪声）
+        xy = XySpec(X, y, TASKTYPE.REGRESSION)
+        ts = materialize_split(split_fn(x_y=xy, cv=3), xy)
+
+        with mlflow.start_run(run_name="search:oof") as run:
+            evidence = RF(ts, n_trials=2, scoring=MetricName.MAE)
+        run_id = run.info.run_id
+        arts = {a.path for a in mlflow.MlflowClient().list_artifacts(run_id)}
+        assert "oof_y_pred.parquet" in arts  # 证据四面表（indices 列在 TestEvidenceTable 钉）
+        assert {"prediction_scatter.png", "residual_scatter.png", "bland_altman.png"} <= arts  # 回归图族
+        tags = mlflow.get_run(run_id).data.tags
+        half_width = json.loads(tags[OOF_HALF_WIDTH_TAG])
+        assert set(half_width) == {"target"} and half_width["target"] > 0  # 回归半宽 tag
+        assert evidence["family"] == "RF"  # 搜索证据面不因产面移动改变
+
+    def test_classification_search_run_carries_oof_figures(self):
+        """分类 search run：confusion/roc/pr/calibration 图族 + proba 证据列。"""
+        import mlflow
+        import numpy as np
+        import pandas as pd
+        from mflowy.model.cv.split import split as split_fn
+        from mflowy.model.model._pipeline import OOF_HALF_WIDTH_TAG
+        from mflowy.model.model._split import materialize_split
+        from mflowy.model.model.random_forest import RF
+        from mflowy.model.model.types import TASKTYPE, MetricName
+        from mflowy.model.x_y import XySpec
+
+        rng = np.random.default_rng(7)
+        n = 80
+        x = rng.normal(size=n)
+        label = (x > 0).astype(int)
+        df = pd.DataFrame({"x": x, "label": label})
+        X, y = df[["x"]], df[["label"]]
+        assert isinstance(X, pd.DataFrame) and isinstance(y, pd.DataFrame)  # 列清单索引恒 DataFrame（联合噪声）
+        xy = XySpec(X, y, TASKTYPE.CLASSIFICATION)
+        ts = materialize_split(split_fn(x_y=xy, cv=3), xy)
+
+        with mlflow.start_run(run_name="search:oof-cls") as run:
+            RF(ts, n_trials=2, scoring=MetricName.F1)
+        run_id = run.info.run_id
+        arts = {a.path for a in mlflow.MlflowClient().list_artifacts(run_id)}
+        assert {"confusion_matrix.png", "roc_curve.png", "pr_curve.png", "calibration_curve.png"} <= arts
+        assert OOF_HALF_WIDTH_TAG not in mlflow.get_run(run_id).data.tags  # 分类无区间面
+        ev = pd.read_parquet(_download(run_id, "oof_y_pred.parquet"))
+        assert not any(c.startswith("y_proba_") for c in ev.columns)  # y_pred 面无概率列（拆独立工件）
+        pt = pd.read_parquet(_download(run_id, "oof_y_proba.parquet"))  # 分类伴生概率面（indices + 宽列）
+        assert "indices" in pt.columns and "y_proba_0" in pt.columns and "y_proba_1" in pt.columns
+
+
+def _download(run_id: str, name: str) -> str:
+    from mlflow.tracking import MlflowClient
+
+    return str(MlflowClient().download_artifacts(run_id, name))

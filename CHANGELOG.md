@@ -7,6 +7,115 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 建模会话计算面委派 JobProvider——run_hpo 全形态 provider 化与瘦装会话（#218）
+
+#225 裁定集（2026-11-21 生效版）的会话半边落地 + 用户裁定（2026-11-21 债清偿）：
+**run_hpo 全形态经 JobProvider**（local 不再进程内直调——受理单源
+`provider.hyperparameters_search`）；remote/local = 同一动作的两个受理分支，
+输出对齐（账本条目同形）。
+
+- **失败吃步（BREAKING 行为变更，取代 #234「失败恒免费」）**：apply 尝试无论
+  成败占一步预算——壳失败路径提交 steps + 失败决策日志条目（r=None、错误入
+  note）后 re-raise（max_steps 门才界得住 π 的重试环）；免费动作失败与门拒绝
+  （终态/预算耗尽）仍零日志零计步。两域同生效。
+- **会话目录提交锁（并行分支）**：`.commit.lock` flock 跨进程互斥、进程内可
+  重入（域 board 写与壳投影写同锁嵌套）；apply exit 进锁做 steps 键控合并
+  （盘上事实 +1，分支间可交换）。提交/长等待不持锁。
+- **run_hpo 全形态 provider 化（BREAKING）**：一律渲染搜索 plan →
+  `provider.hyperparameters_search` → 消费 JobOutcome——finished（进程内 DAG /
+  mock：模型步 run 本地库直读，oof.run_id 直指 + 后补血缘/指纹/正典投影）或
+  submitted（阻塞拉日志增量上屏 → zip 拉取原子解包 → 查询）。study 采用
+  （`add_trial` 增量并入会话正典库 `study_{key}.db`）两形态同构。稳态链 =
+  `inherit_platform_job_id`（工作区恢复）+ plan 内 `inherit_study_run_id`
+  （study 寻址，#244 外部锚——`entry.chain` 链簿恒锚 study 树主）两层。remote
+  模式须带 `platform_experiment_id`（先 ensure_platform_experiment 同步源数据）。
+  **存量会话不可续跑**（provider 化之前的链外 study 历史 fail-loud——换键或
+  重开）。全 pin 退化形经单点空间（`ContinuousSpace(v,v)`/单值 `DiscreteSpace`）
+  保持 search 行为不碰 holdout；MLP 补两行为面（`learning_rate` 收 Space——
+  缺省恒标量零影响，`n_trials`/`scoring`/`inherit_study_run_id` 入签名）。
+- **final_train_test「终训恒 local」门拆除**（#156 翻转）：submitted 分支同机械
+  ——holdout 指标从 run metrics 展平面解析（terminal_u 单源）、logged model
+  （mlflow 3 `models:/` 实体）定位、副产物+模型镜像本地 run——loader 指镜像
+  run 的 `runs:/` URI，下游 predict/统计/泰勒零分叉。
+- **OOF 产面移进管线**：`hyperparameters_search` 搜索终产 OOF 观察面——证据表
+  `oof_y_pred.parquet`（带 indices）+ 半宽 tag（随 study user_attr 留痕）+
+  任务分组可视化（回归 4+1 / 分类 4，同名对齐 holdout 终评图族）——会话与
+  DAG search 同名工件（remote zip ≡ local 输出）。
+
+### 技术债清偿（#218 后续，用户裁定 2026-11-21：全走 JobProvider）
+
+- run_hpo local 旁路（进程内直调 machinery）删除——`_run_hpo_provider` 单执行面
+- 工件 URI 远程前缀改写单源 `utils.path.rewrite_remote_artifact`（app 观察面/
+  会话解包面共用；常量 `REMOTE_TASK_DIR`/`REMOTE_UPLOADS_DIR` 住
+  `utils.constants`）
+- provider 声明面 `remote_transport: bool`（Local=False/Remote=True；自定义远程
+  provider 声明后 plan 自动 uploads 寻址——替代 isinstance 启发）
+- study 链锚语义修正：续跳（#244 外部锚）不换锚——`entry.chain.run_id` 恒锚
+  study 树主 run（本 run 无自有 study.db 不可寻址的缺陷修复）
+
+### OOF/holdout 副产物对齐（#218 收尾裁定，2026-11-22，BREAKING）
+
+用户裁定：**两证据面工件形态对齐——回归只 `y_pred`、分类加 `y_proba`，均带
+indices；图面按产物存在性生产**。
+
+- **OOF 面**：`oof_y_pred.parquet` 收窄为 indices/y/y_pred/error（概率列拆出）；
+  分类新增伴生 `oof_y_proba.parquet`（indices + `y_proba_{cls}` 宽表）；账本
+  `entry.oof.y_proba` 槽位（回归 None——板面 schema 稳定）；镜像/终训复制面随伴
+- **holdout 面**：分类终训新增 `y_proba.parquet`（同构宽表）——`test_probabilities.
+  parquet` 长表工件退役（图面长表构形内聚）；副产物面任务感知
+  （`holdout_byproducts(task)`：回归 X/y/y_pred，分类加 y_proba）
+- **图面存在性生产**：统计尾步/album 的概率族图（roc/pr/calibration）按伴生
+  y_proba 工件**存在性**产/不产（回归不产；缺件即不产——不再回退旧长表）；
+  run faces 增 `artifact(strict=False)` 存在性探测面
+- **X_test/y_test 副产物退役（对齐二轮）**：`y_pred` 已带 indices——特征/真值面
+  经 `holdout_rows_from_source`（**x_y 节点单源**重构：列面/dtype/id 剔除零漂移）
+  从原始数据文件按 indices 加载。消费方改造：explanation（modeling_steps 的
+  load 源 + x_y 参数提取 → 重构 X_test 落临时 parquet 喂 SHAP 链）、taylor
+  （`taylor_for_runs` 收 source_file/target/id_columns，y_test 回源重构）；
+  `HOLDOUT_BYPRODUCTS` 收窄为 `y_pred`（+分类 y_proba）
+
+### 机器统计收尾步：modeling_statistics 退役（#218 收尾裁定，2026-11-22，BREAKING）
+
+用户裁定：**机器面统计 = 计算动作的最后一步，不是独立动作**——agent 回路免二次
+调用（原「run_hpo → modeling_statistics 取证 → report_findings」两步机械收拢为
+「run_hpo（证据随动作产出）→ 判读 → report_findings」）。
+
+- `run_hpo` / `final_train_test` 收尾步：进程内直调 `model__statistics` 节点
+  （消费面分析——工件已本地；**非受理提交**）——证据表/图集落**宿主 run**（oof/
+  终训）工件树（寻址面不变，`entry.oof.plots` 落真值），证据摘要随响应
+  `biz.statistics`（key/evidence_head/n/plots）+ `observe` 投影 + `entry.statistics`
+  落账（判读素材可重读）
+- `modeling_statistics` 工具退役（session 方法/CLI 函数/entry point）；原票面债
+  「statistics remote 消费缺失」随工具消亡自然闭账（收尾步在本地工件上运行，
+  两受理形态同构）
+- resume 宿主 run 前对齐 fluent 活动实验（`ensure_experiment` 的 `set_experiment`
+  全局残留会撞跨实验 resume 门）
+
+### 技术债收尾（#218 第二轮，2026-11-22——票面评论六项的清偿）
+
+- **红线 6 清账**：`scikit-learn`/`optuna` 升 mflowy-model 硬依赖（瘦面 x_y/cv.split/
+  session study 链直用；此前靠 mlflow（utils 传递）/bo（app 聚合链）随行属侥幸——
+  先例 bo #231；`[local]` 同步去重收敛为六件重栈）。AGENTS 红线 6 存量注记更新
+  （scipy 项已不成立——唯一 import 点 model 域早已声明，注记系陈旧债）。
+- **远程静态门盲区收口**：`RemoteJobProvider` 提交侧 parse `modeling_steps`——
+  节点级 `inherit_study_run_id` 缺 `inherit_platform_job_id` 即拒（工具级
+  `_RESUMES_PRIOR_STATE` 门看不见 YAML 内部参数；过门会在全新容器内找前史
+  study 而败——浪费远程任务、错误只现于 job 日志）。
+- **await_job 工程旋钮**：轮询间隔指数退避（起始 5s ×2 封顶 60s——长任务不再
+  每 5s 拉一次万行日志）+ `MAX_WAIT_SECONDS`（24h）卡死安全网——非终态永挂
+  fail-loud 带 `get_platform_job_logs` 诊断出口（真任务时界由 preset
+  active_deadline 承担，此门只兜平台异常）。
+- **metrics_from_flat 词表护栏**：契约测试钉 MetricName 全值域不含 "."（展平面
+  `{target}.{metric}` 后缀切分的词表不变式——值域演进引入带点值即红灯）。
+- **瘦装会话面**：`model/types.py` 拆出 `artifacts.py`（sklearn 基类解耦，纯枚举
+  零重栈）；session 顶层重栈 import 惰性化；shap 契约件执行期导入（五族中
+  XGB/LGBM/CAT/RF 瘦装可解析）；安装提示单源 `extras.LOCAL_INSTALL_HINT`——
+  瘦装 + local provider 计算动作 fail-loud 带安装指引（永久降级路径）。
+- **CI 瘦装门**追加 modeling_* 远程会话断言（`scripts/_thin_session_smoke.py`：
+  mock provider 受理 start→select_model→run_hpo→observe 四连）。
+- 远程任务镜像基座随本票合入（`feat/remote-job-image` @ 740ac36e，#161 决议：
+  Dockerfile zip/unzip + 三挂载烧 ENV + HOME=/tmp 可写）。
+
 ### 三域剧本拓扑对齐（#233）——九技能改名 + 应用面拆两技能 + 开局权归主剧本
 
 - **开局权归主剧本**：`data-clean`/`modeling`/`bo-suggest` owns `<biz>_load_or_start`
@@ -406,7 +515,6 @@ study 续跑从「路径寻址」转向「run 寻址」（#158 §3，`study_stor
   （`.mlruns/` 进 pod 唯一通道 = 继承解包），违者 fail-loud 提示两参。
 - 全链 S1–S8 验收与系列收尾勾稽随本切片 PR 合并前完成（runbook 门禁）。
 
-
 ### 远程执行切片⑤：download 工具 + 观察面单参 tracking_uri（#198，feat）
 
 拉取与本地查询面（#159 §3/§4 + #160 单参推导终稿）——远程任务产物的取回闭环。
@@ -424,7 +532,6 @@ study 续跑从「路径寻址」转向「run 寻址」（#158 §3，`study_stor
   目录即工件根，run 工件与 logged models 双形态均覆盖）；不匹配前缀原样透传
   （`artifact_root_local` 取消，#160 终稿）。
 - presigned 下载段经切片② `download_presigned`（tmp+rename 原子写 + 凭据不变量）。
-
 
 ### 远程执行切片④：RemoteJobProvider + mflowy-job wrap + JobOutcome（#197，feat·BREAKING 随 0.2.0 门禁）
 
@@ -460,7 +567,6 @@ study 续跑从「路径寻址」转向「run 寻址」（#158 §3，`study_stor
 - E2E：S2+S3+S4 工具面驱动扩展（switch/受理/job 面/负向族/tail 边界/轮询/inheritable
   J1 收口/local 等价）；geesefs 外部 PUT 后目录可见性竞态入 runbook 已知陷阱（驱动侧
   15s 沉淀 + FileNotExisted 单次重提）。
-
 
 ### 远程执行切片③：ensure_platform_experiment 实验就绪工具（#196，feat）
 
@@ -572,6 +678,17 @@ RemoteJobProvider 接入上游实验服务（决策地图 #153）实现系列的
   `[mcp,modeling]` → `[mcp,model]`（照文档安装即报错）；model README 已退役契约
   `Candidate` 残留；CONTRIBUTING 依赖归属段（`[stats]`/`[modeling]` 旧 extras）对齐
   域包形态。
+
+### 远程任务镜像基座：training-job 烧三挂载 ENV + zip 往返工具（#161，docker）
+
+- `docker/Dockerfile` 运行时层新增 `zip`/`unzip`（远程任务产物打包与跨 Job 继承解包，
+  任务包装器与调用方参考模式共用）。
+- 烧平台 Job 容器契约 ENV：`MFLOWY_TASK_DIR=/user-data/workspace`、
+  `MLFLOW_TRACKING_URI=sqlite:////user-data/workspace/mlflow.db`（决策地图 #153 定稿；
+  显式 `-e` 覆盖优先，本地/MCP 部署语义不变）。
+- `HOME=/tmp`：nobody 缺省 HOME 不可写，而 `utils/mlflow.py` setup() 急切 mkdir
+  `$HOME/.mflowy`、mlflow 遥测自写 `$HOME/.config/mlflow`（#161 研究回填）——指向
+  /tmp（per-pod 临时，不占 workspace 配额、不进 zip）。
 
 ### 用户文档拆解：方法论知识库两份参考 + 叙事瘦身（#163，docs）
 
@@ -942,7 +1059,6 @@ range_violation / outlier_numeric 成批命中时先怀疑记法混录（同列�
   `in_window` 分支走壳）。测试 patch 目标相应移至壳缝 `mflowy.utils.mlflow.log_metrics`。
 - session 缓存（split.pkl / loader_*.pkl）转 `write_bytes_atomic`（tmp+rename）。
 
-
 ### 测试内存纪律——图落盘即闭（生产级泄漏）+ 重栈会话 fixture 模块级共享（#92）
 
 - **闭图单源纪律（生产修复，长跑 MCP server 同病）**：三处直存/直 log 图路径从不
@@ -983,7 +1099,6 @@ range_violation / outlier_numeric 成批命中时先怀疑记法混录（同列�
 - 迁移小项「utils mlflow 转 extra」撤销：tracking 是节点 run 刚需（每个 handler
   开窗），hard dep 合理。
 
-
 ### BREAKING：执行结果目录收敛——DAGResult/NodeResult 最小元信息面 + 工件落盘壳 + mlflow 观测双工具
 
 - `DAGResult.graph` 保持 mermaid 展示形态（机器投影 = `to_graph()` 公共方法，
@@ -1017,7 +1132,6 @@ range_violation / outlier_numeric 成批命中时先怀疑记法混录（同列�
   过滤/翻页随迁；params/metrics 全量返回收窄为 `get_run` 下钻）；`list_run_artifacts`
   并入 `get_run`（详情 = params/metrics/tags/artifacts 产物目录）；`read_artifact`
   退役（工件后端为本地文件树，内容直接访问）。工具总数 33→31（平台 9→7）。
-
 
 ### 类型门落地：pyright basic 全仓清零 + CI/本地/pre-commit 三工位门（#42 决议→#91）
 
@@ -1228,7 +1342,6 @@ range_violation / outlier_numeric 成批命中时先怀疑记法混录（同列�
 - 工具层与 MCP schema **零改动**（六操作门面签名不变——包装层 model_dump 适配）；
   同频：CONTEXT 词条（会话基座/观测摘要/决策日志/Observation·Activation/规则通俗
   定义）、AGENTS（分层表/迁移表）、driver·data README、clean skill、防回潮豁免注记。
-
 
 ### Changed（剧本层调用治理）：六域 skill 置 `disable-model-invocation`
 

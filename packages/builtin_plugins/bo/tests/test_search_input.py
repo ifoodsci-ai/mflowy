@@ -22,7 +22,7 @@ from mflowy.model.model.study import ContinuousSpace, DiscreteSpace
 
 def _make_loader(y_names, x_names, predict_vals):
     """构造 mock ModelLoader 门面：_pipe.predict 返回给定值，y_names/x_names 可配。"""
-    from mflowy.model.model.types import ModelLoader
+    from mflowy.model.model.artifacts import ModelLoader
 
     pipe = MagicMock()
     pipe.y_names = y_names
@@ -178,7 +178,7 @@ class TestDirectionality:
     @staticmethod
     def _monotonic_loader():
         """y ≡ x 的恒等门面：predict(x) = x（方向语义的唯一信号源）"""
-        from mflowy.model.model.types import ModelLoader
+        from mflowy.model.model.artifacts import ModelLoader
 
         pipe = MagicMock()
         pipe.y_names = ["y"]

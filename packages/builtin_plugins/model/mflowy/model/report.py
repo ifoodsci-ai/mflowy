@@ -60,6 +60,29 @@ def oof_proba_long_df(y_true: pd.DataFrame, y_proba) -> pd.DataFrame:
     return pd.concat(long_dfs, ignore_index=True)
 
 
+def wide_proba_long_df(y_true: pd.DataFrame, wide: pd.DataFrame) -> pd.DataFrame:
+    """概率宽表（``indices`` + ``y_proba_{cls}`` / ``y_proba_{t}__{cls}`` 伴生工件
+    形态，对齐裁定 2026-11-22）→ 图面长表 ``(y_name, y_true, class, proba)``。
+    y_true 面由调用方供给（宽表只持概率）；列名命名空间与 proba_table 单源。"""
+    proba_cols = [c for c in wide.columns if c != "indices"]
+    long_dfs = []
+    if len(y_true.columns) == 1:
+        y_name = y_true.columns[0]
+        y = y_true[y_name].to_numpy()
+        for col in proba_cols:
+            cls = col.removeprefix("y_proba_")
+            long_dfs.append(pd.DataFrame({"y_name": y_name, "y_true": y, "class": cls, "proba": wide[col].to_numpy()}))
+    else:
+        for col in proba_cols:
+            target, cls = col.removeprefix("y_proba_").split("__", 1)
+            long_dfs.append(
+                pd.DataFrame(
+                    {"y_name": target, "y_true": y_true[target].to_numpy(), "class": cls, "proba": wide[col].to_numpy()}
+                )
+            )
+    return pd.concat(long_dfs, ignore_index=True)
+
+
 def oof_plot_album(task, y_true: pd.DataFrame, y_pred: pd.DataFrame, y_proba) -> list[str]:
     """OOF 图集：回归 4 图（scatter/residual/error_dist/bland_altman）/ 分类 4 图
     （confusion/roc/pr/calibration），经 ``log_figure`` 挂当前（父）run 工件树
@@ -96,9 +119,17 @@ def oof_plot_album(task, y_true: pd.DataFrame, y_pred: pd.DataFrame, y_proba) ->
         from mflowy.model.plot.model_evaluation.classification.pr_curve import pr_curve
         from mflowy.model.plot.model_evaluation.classification.roc_curve import roc_curve
 
-        proba_df = oof_proba_long_df(y_true, y_proba)
+        # 概率族图集按概率面存在性生产（对齐裁定 2026-11-22）：DataFrame = 宽表
+        # （indices + y_proba_{cls}，伴生工件直读）经长表构形；数组 = 内存形态直构；
+        # None/缺席（回归或无概率工件）→ 概率族（roc/pr/calibration）不产
         _, fig = confusion_matrix(model_test_predictions=(t, long_df))
         _save(fig, "confusion_matrix_oof.png")
+        if y_proba is None:
+            return sorted(written)
+        if isinstance(y_proba, pd.DataFrame):
+            proba_df = wide_proba_long_df(y_true, y_proba)
+        else:
+            proba_df = oof_proba_long_df(y_true, y_proba)
         _, fig = roc_curve(model_test_probabilities=proba_df)
         _save(fig, "roc_curve_oof.png")
         _, fig = pr_curve(model_test_probabilities=proba_df)
@@ -144,28 +175,31 @@ def taylor_byproducts(byproducts: list[tuple[str, pd.DataFrame, pd.DataFrame]]) 
     return pd.concat(parts, ignore_index=True)
 
 
-def taylor_for_runs(runs: list[tuple[str, str]], task, out_dir: Path) -> dict:
+def taylor_for_runs(
+    runs: list[tuple[str, str]], task, out_dir: Path, *, source_file: str, target: str, id_columns=None
+) -> dict:
     """多终训 run 副产物 fan-in → (corr, σ, rmse) + 泰勒图（落 ``out_dir``）。
 
-    ``runs`` = (combo label, run_id) 清单；副产物缺 fail-loud；单模型不出图
-    （多模型对比图——统计照出）；分类任务不出统计面。图名恒 ``TAYLOR_FIGURE``
-    常量（确定性产物名，重复绘制覆盖）。
+    ``runs`` = (combo label, run_id) 清单；y_pred 副产物缺 fail-loud；y_test 回源
+    重构（对齐裁定二轮：``source_file``/``target``/``id_columns`` 寻址 + y_pred
+    indices——x_y 单源列面）；单模型不出图（多模型对比图——统计照出）；分类任务
+    不出统计面。图名恒 ``TAYLOR_FIGURE`` 常量（确定性产物名，重复绘制覆盖）。
     """
-    from mflowy.model.model._pipeline import HOLDOUT_BYPRODUCTS
+    from mflowy.model.model._pipeline import HOLDOUT_BYPRODUCTS, holdout_rows_from_source
     from mflowy.utils.mlflow import download_run_artifact, run_artifacts
     from mflowy.utils.plot import save_figure
 
     byproducts: list[tuple[str, pd.DataFrame, pd.DataFrame]] = []
     for label, rid in runs:
         arts = run_artifacts(rid)
-        missing = {HOLDOUT_BYPRODUCTS["y_test"], HOLDOUT_BYPRODUCTS["y_pred"]} - set(arts)
-        if missing:
+        if HOLDOUT_BYPRODUCTS["y_pred"] not in arts:
             raise ValueError(
-                f"run `{rid}`（{label}）缺副产物 {sorted(missing)}（final_train_test 的 training 行为产物）"
+                f"run `{rid}`（{label}）缺副产物 {HOLDOUT_BYPRODUCTS['y_pred']}（final_train_test 的 training 行为产物）"
             )
-        y_test = pd.read_parquet(download_run_artifact(rid, HOLDOUT_BYPRODUCTS["y_test"]))
         y_pred = pd.read_parquet(download_run_artifact(rid, HOLDOUT_BYPRODUCTS["y_pred"]))
-        byproducts.append((label, y_test, y_pred))
+        # y_test 回源重构（对齐裁定二轮：y_test 副产物退役——y_pred 带 indices）
+        _, y_test = holdout_rows_from_source(source_file, y_pred["indices"], target=target, id_columns=id_columns)
+        byproducts.append((label, y_test.reset_index(drop=True), y_pred))
     plot_df = taylor_byproducts(byproducts)
 
     rows: dict[str, dict] = {}

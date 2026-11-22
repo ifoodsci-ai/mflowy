@@ -8,12 +8,14 @@ from typing import Annotated
 
 from mflowy.driver.node import node
 from mflowy.model.model._split import TrainSplit
+from mflowy.model.model.study import ContinuousSpace
 from mflowy.utils.constants import RANDOM_STATE
 from sklearn.compose import ColumnTransformer
 
 from ._neural_network import ACTIVATION, OPTIMIZER
-from ._pipeline import training
-from .utils import make_machinery
+from ._pipeline import hyperparameters_search, search_evidence, training
+from .types import MetricName
+from .utils import infer_metric, make_machinery
 
 logger = logging.getLogger(__name__)
 
@@ -34,21 +36,33 @@ def MLP(
     dropout: Annotated[float, "Dropout 概率"] = 0.1,
     use_batch_norm: Annotated[bool, "是否在隐藏层后加 BatchNorm1d"] = True,
     optimizer: Annotated[OPTIMIZER, "优化器 (adam/adamw/sgd)"] = OPTIMIZER.adam,
-    learning_rate: Annotated[float, "学习率（步长收缩）"] = 0.01,
+    # 类型面放宽（#218 全形态经 provider）：默认恒标量（缺省用户零影响——DAG 两行为
+    # 判据不变）；会话全 pin 退化形经此渲染单点 ContinuousSpace 保持 search 行为
+    learning_rate: Annotated[float | ContinuousSpace[float], "学习率（步长收缩）"] = 0.01,
     weight_decay: Annotated[float, "L2 正则化系数"] = 0.001,
     max_epochs: Annotated[int, "训练 epoch 数"] = 100,
     batch_size: Annotated[int, "batch 大小"] = 32,
+    n_trials: Annotated[int, "优化试验次数"] = 100,
+    inherit_study_run_id: Annotated[
+        str | None,
+        "增量续跑源模型步 run_id（#244 节点参数寻址）：解析其 study 工件——tag 相对路径零拷贝直驻增量"
+        "（缺件回退 download）；多 model 节点各自寻址互不污染，仅 search 行为（参数含搜索空间）可用",
+    ] = None,
+    scoring: Annotated[MetricName | None, "评估指标，None 时按任务自动选（回归 MAE/分类 F1）"] = None,
     early_stopping_rounds: Annotated[int | None, "val_loss 不下降多少 epoch 后停（仅最终训练生效）"] = None,
     random_state: Annotated[int, "随机种子"] = RANDOM_STATE,
 ):
-    """MLP，神经网络基线；超参全标量、无搜索空间——按 #62 派生判据恒走 **training 行为**
-    （全量拟合 + holdout 终评 + loader），不经 Optuna。
+    """MLP，神经网络基线；两行为派生（#62，``extract_search_spaces`` 空否即判据）：
+    缺省全标量 → **training 行为**（全量拟合 + holdout 终评 + loader）；``learning_rate``
+    等收 Space → **hyperparameters_search 行为**（inner CV 选参，不终训不碰 holdout
+    ——#218 会话全 pin 退化形经单点空间走此面）。
 
     ``early_stopping_rounds`` 仅最终训练生效（早停时从 train 切 val），trial 阶段不适用；上游 pipeline 应已 StandardScaler 归一化（本 node 不内置 scaler，树模型则免缩放）。
 
     MLP 用 >=10k 数据规模且已标准化场景，GBDT 系列用无需标准化的表格基线场景。随机性统一由 ``MLPEstimator`` 的 ``random_state``（fit 首行 ``pl.seed_everything``）承载——machinery seed_key 契约单源。
     """
     split = train_split
+    metric = scoring or infer_metric(split.task)
     make_pipe, initial_params, param_space = _machinery(
         split.task,
         x_preprocessors,
@@ -64,8 +78,19 @@ def MLP(
         batch_size=batch_size,
         early_stopping_rounds=early_stopping_rounds,
     )
-    assert not param_space, "MLP 缺省无搜索空间——派生判据恒 training 行为"
-    return training(split, "MLP", make_pipe, initial_params)
+    if param_space:  # search 行为（#218 parity：会话退化形/空间收窄经 provider 可达）
+        study = hyperparameters_search(
+            param_space,
+            scoring=metric,
+            n_trials=n_trials,
+            split=split,
+            make_pipe=make_pipe,
+            base_params=initial_params,
+            seed=random_state,
+            inherit_study_run_id=inherit_study_run_id,
+        )
+        return search_evidence(study, "MLP", metric)
+    return training(split, "MLP", make_pipe, initial_params, scoring=scoring)
 
 
 # 族自声明（.mdp_family 唯一尾巴，知识随词汇主人居住）：
@@ -75,7 +100,7 @@ def MLP(
 # structure 相容 + regularizers 正则面（出题规则的目标参数）+ machinery
 # （会话直调的 estimator 机器——run_hpo/final_train_test 两动作的消费面）。
 # 两行为共享的 estimator 机器：缺省 = 签名 ∪ task（estimator fit 期自算结构参数）；
-# 全标量签名 → 恒空空间 → 派生判据恒 training 行为
+# 缺省全标量 → 空间空 → training 行为（learning_rate 收 Space 时开 search 面）
 _base_machinery = make_machinery(MLP, _model_cls)
 
 

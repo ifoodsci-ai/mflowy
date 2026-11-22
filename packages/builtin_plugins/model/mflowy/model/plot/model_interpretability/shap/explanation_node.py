@@ -17,7 +17,7 @@ import pandas as pd
 import shap
 from mflowy.driver.node import node
 from mflowy.model.middlewares import log_shap_explanation
-from mflowy.model.model.types import ModelLoader
+from mflowy.model.model.artifacts import ModelLoader
 from mflowy.utils.constants import RANDOM_STATE
 
 from .contract import attach_annotations

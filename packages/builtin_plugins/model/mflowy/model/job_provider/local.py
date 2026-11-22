@@ -102,6 +102,35 @@ def _gate_resume_face(steps_text: str, resume_study_from: str) -> None:
         )
 
 
+def _source_face_of_steps(steps_text: str) -> tuple[str, dict]:
+    """modeling_steps → (load 源文件路径, x_y 参数面)：回源重构的寻址输入
+    （对齐裁定二轮）。load 步取 ``file_path``/``source``；x_y 步取 target/
+    id_columns——缺任一 fail-loud（重构面不可猜）。"""
+    import yaml as _yaml
+
+    parsed = _yaml.safe_load(steps_text)
+    if not isinstance(parsed, list):
+        raise ValueError("modeling_steps 须为顶层步骤列表——回源重构面不可解析")
+    load_path = None
+    xy_params: dict = {}
+    for step in parsed:
+        if not isinstance(step, dict) or not step:
+            continue
+        key = next(iter(step))
+        params = (step[key] or {}).get("params") or {}
+        if str(key).startswith("load") and load_path is None:
+            fp = params.get("file_path") or params.get("source")
+            if isinstance(fp, str):
+                load_path = fp
+        if str(key) == "x_y":
+            xy_params = {k: v for k, v in params.items() if k in ("target", "id_columns")}
+    if not load_path:
+        raise ValueError("modeling_steps 无 load 步 file_path——holdout 行面回源重构不可寻址")
+    if "target" not in xy_params:
+        raise ValueError("modeling_steps 的 x_y 步缺 target——holdout 行面回源重构不可寻址")
+    return load_path, xy_params
+
+
 def _build_modeling_steps(
     modeling_steps: str,
     model: str,
@@ -127,6 +156,8 @@ def _build_modeling_steps(
 
 class LocalJobProvider:
     """完全体直调：编排逻辑 + compute 全部原地执行（[local] extra 本地建模栈环境）。
+
+    remote_transport = False  # 声明面（#218 会话 plan 渲染：本径寻址 + cv.load 引用）
 
     headers / platform_experiment_id / inherit_platform_job_id 形参满足 Protocol
     契约但本地模式不消费（模式专属参数原则，#156——先例 headers）；结果恒
@@ -273,17 +304,29 @@ class LocalJobProvider:
             _anchor_task_dir(steps_text)
 
             modeling_steps_text = _build_modeling_steps(steps_text, model=model)
-            # 测试集面从训练 run 的 X_test.parquet 副产物取（终评同面）——节点零 run_id
-            # 知识，工件寻址住在工具层；缺副产物 fail-loud 带该 run 工件清单
+            # 测试集面回源重构（对齐裁定二轮：X_test 副产物退役）——y_pred 的 indices
+            # + modeling_steps 的 load 源/x_y 参数（target/id_columns），经 x_y 单源
+            # 重构列面；缺 y_pred 工件 fail-loud 带该 run 工件清单
+            import pandas as pd
+            from mflowy.model.model._pipeline import holdout_rows_from_source
             from mflowy.utils.mlflow import download_run_artifact, run_artifacts
 
             arts = run_artifacts(model)
-            if "X_test.parquet" not in arts:
+            if "y_pred.parquet" not in arts:
                 raise ValueError(
-                    f"run {model} 没有 X_test.parquet 副产物（training 行为的 holdout 留痕），"
+                    f"run {model} 没有 y_pred.parquet 副产物（training 行为的 holdout 留痕），"
                     f"现有工件: {arts or '无'}——SHAP 解释面 = 终评测试集，无法替代"
                 )
-            x_test_path = download_run_artifact(model, "X_test.parquet")
+            y_pred_ev = pd.read_parquet(download_run_artifact(model, "y_pred.parquet"))
+            load_path, xy_params = _source_face_of_steps(steps_text)
+            x_test, _y = holdout_rows_from_source(
+                load_path, y_pred_ev["indices"], target=xy_params["target"], id_columns=xy_params.get("id_columns")
+            )
+            import tempfile
+            from pathlib import Path as _Path
+
+            x_test_path = _Path(tempfile.mkdtemp(prefix="mflowy_x_test_")) / "X_test.parquet"
+            x_test.to_parquet(x_test_path, index=False)
             builder = Builder(
                 dag_yaml=EXPLANATION_TEMPLATE,
                 env={

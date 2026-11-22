@@ -189,3 +189,36 @@ def test_kwargs_json_over_128kib_rejected(preset_env):
 def test_factory_resolves_remote(monkeypatch):
     monkeypatch.setenv("MFLOWY_JOB_PROVIDER", "remote")
     assert type(jp.get_job_provider()).__name__ == "RemoteJobProvider"
+
+
+def test_node_level_inherit_requires_inherit_static_gate(preset_env):
+    """#218 债收尾：节点级 ``inherit_study_run_id``（藏 modeling_steps YAML 内）缺
+    inherit_platform_job_id → 提交侧拒绝（工具级 _RESUMES_PRIOR_STATE 门看不见的
+    盲区——过门会在全新容器内找前史 study 而败，浪费远程任务）；带 inherit 过门。
+    """
+    steps_with_inherit = "- model__XGB:\n    name: 搜索\n    params:\n      inherit_study_run_id: run-9\n"
+    provider = RemoteJobProvider(client=FakeClient(outputs=["job-old.zip"]))
+    with pytest.raises(ValueError, match=r"节点级 inherit_study_run_id.*inherit_platform_job_id"):
+        asyncio.run(
+            provider.hyperparameters_search(
+                modeling_steps=steps_with_inherit, name="n", desc="d", platform_experiment_id="e"
+            )
+        )
+    asyncio.run(
+        provider.hyperparameters_search(
+            modeling_steps=steps_with_inherit,
+            name="n",
+            desc="d",
+            platform_experiment_id="e",
+            inherit_platform_job_id="job-old",
+        )
+    )
+    # 非 model 步带同名参数不触发（边/前置节点无 study 寻址面）
+    asyncio.run(
+        provider.modeling(
+            modeling_steps="- load__file:\n    name: 导入\n    params:\n      file_path: /x\n",
+            name="n",
+            desc="d",
+            platform_experiment_id="e",
+        )
+    )

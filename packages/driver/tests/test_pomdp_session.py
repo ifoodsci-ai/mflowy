@@ -154,17 +154,62 @@ class TestApplyCtx:
             with ss.rollback_ctx():
                 pass
 
-    def test_failure_before_append_is_free(self, tmp_path):
+    def test_failed_counting_apply_eats_step_and_logs_failure(self, tmp_path):
+        """失败吃步（#225 裁定 3，取代 #234「失败恒免费」）：计数动作失败 = steps
+        提交 + 失败决策日志条目（r=None、错误入 note）后 re-raise——max_steps 门
+        界住 π 的重试环。孤儿工件无害（重试覆写同号）。"""
         ss = _start(tmp_path)
         with pytest.raises(RuntimeError, match="过激"):
             with ss.apply_ctx("clean__x") as (o, log):
                 (ss.dir / "v1.orphan").write_bytes(b"orphan")  # 工件先写
+                o.biz = {**o.biz, "v": "half-mutated"}  # body 半改内存态
                 raise RuntimeError("动作过激被拒")
-        assert (ss.dir / DECISION_LOG_FILE).read_text(encoding="utf-8") == ""  # 零日志
-        assert (
-            POMDPSession.open(ss.observation_json)._load_observation().validation.steps == 0
-        )  # 观测不变（计步回滚免费）
-        assert (ss.dir / "v1.orphan").exists()  # 未 commit 孤儿无害（重试覆写同号）
+        lines = (ss.dir / DECISION_LOG_FILE).read_text(encoding="utf-8").splitlines()
+        rec = json.loads(lines[0])
+        assert rec["action"] == "clean__x" and rec["failed"] is True and rec["r"] is None
+        assert "RuntimeError: 动作过激被拒" in rec["note"]
+        reopened = POMDPSession.open(ss.observation_json)  # 一致性牙齿不撕裂
+        o = reopened._load_observation()
+        assert o.validation.steps == 1 and o.validation.reward is None
+        assert o.biz == {"v": 0}  # 半改内存态丢弃（盘上事实推进）
+        assert o.validation.recent_decisions == [rec]
+        assert (ss.dir / "v1.orphan").exists()
+
+    def test_failed_free_apply_stays_free(self, tmp_path):
+        """免费动作（counts_step=False）失败仍零日志零计步——确定性拒绝无重试环风险。"""
+        ss = POMDPSession(tmp_path / "free", counts_step=lambda a: a.startswith("run_"))
+        with ss.start_ctx(max_steps=3):
+            pass
+        with pytest.raises(ValueError, match="超纲"):
+            with ss.apply_ctx("set_hp") as (o, log):
+                raise ValueError("参数超纲")
+        assert (ss.dir / DECISION_LOG_FILE).read_text(encoding="utf-8") == ""
+        assert POMDPSession.open(ss.observation_json)._load_observation().validation.steps == 0
+
+    def test_failure_after_commit_completes_projection_without_second_entry(self, tmp_path):
+        """commit 后残余窗口（log.append 之后 body 仍抛）：补齐投影完成该 commit，
+        不追加第二条失败条目（一次尝试一条审计记录）。"""
+        ss = _start(tmp_path)
+        with pytest.raises(RuntimeError, match="收尾崩"):
+            with ss.apply_ctx("clean__x") as (o, log):
+                o.validation.reward = 0.5
+                log.append({"step": len(log) + 1, "action": "clean__x", "v": 1})
+                o.biz = {**o.biz, "v": 1}
+                raise RuntimeError("收尾崩")
+        lines = (ss.dir / DECISION_LOG_FILE).read_text(encoding="utf-8").splitlines()
+        assert len(lines) == 1 and "failed" not in json.loads(lines[0])
+        o = POMDPSession.open(ss.observation_json)._load_observation()
+        assert o.validation.steps == 1 and o.biz["v"] == 1  # commit 完成（含 r=0.5）
+
+    def test_gate_rejections_stay_free(self, tmp_path):
+        """门自身拒绝（终态/预算耗尽）在计步前——恒免费零日志。"""
+        ss = _start(tmp_path)  # max_steps=3
+        for _ in range(3):
+            _apply(ss)
+        with pytest.raises(RuntimeError, match="预算耗尽"):
+            with ss.apply_ctx("clean__x"):
+                pass
+        assert len((ss.dir / DECISION_LOG_FILE).read_text(encoding="utf-8").splitlines()) == 3
 
     def test_prior_frozen_in_action_plane(self, tmp_path):
         """⑧ 先验生命周期：动作面（apply/rollback）冻结——init/更新只走 load_or_start/observe 缝。"""
@@ -206,6 +251,77 @@ class TestApplyCtx:
         o = POMDPSession.open(ss.observation_json)._load_observation()
         assert len(o.validation.recent_decisions) == TOP_K_DECISIONS
         assert o.validation.recent_decisions[-1]["v"] == 7 and o.validation.recent_decisions[0]["v"] == 3  # 尾 5 条
+
+
+# ── 提交锁与键控合并（#225 裁定 3 并行分支，#218 落地） ─────────────────────
+
+
+class TestCommitLock:
+    def test_lock_is_reentrant_in_process(self, tmp_path):
+        """进程内可重入：域 board 写与壳投影写同锁嵌套（同目录注册表去重）。"""
+        ss = _start(tmp_path)
+        with ss.commit_lock():
+            with ss.commit_lock():
+                pass
+            assert (ss.dir / ".commit.lock").exists()
+
+    def test_cross_process_lock_mutual_exclusion(self, tmp_path):
+        """跨进程 flock 互斥：他进程持锁期间本进程 commit_lock 阻塞。"""
+        import subprocess
+        import sys
+        import time
+
+        ss = _start(tmp_path)
+        holder = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import fcntl, sys, time\n"
+                    f"fh = open({str(ss.dir / '.commit.lock')!r}, 'a')\n"
+                    "fcntl.flock(fh, fcntl.LOCK_EX)\n"
+                    "print('held', flush=True)\n"
+                    "time.sleep(1.5)\n"
+                ),
+            ],
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+        assert holder.stdout is not None and holder.stdout.readline().strip() == "held"
+        t0 = time.monotonic()
+        with ss.commit_lock():
+            pass
+        waited = time.monotonic() - t0
+        holder.wait()
+        assert waited >= 1.0  # 阻塞至他进程释放（留 0.5s 容差）
+
+    def test_apply_steps_merge_from_disk_under_interleaving(self, tmp_path):
+        """键控合并：分支 A 计步后、commit 前有分支 B 完整提交——A 的 exit 从盘上
+        事实（B 的 steps）+1 推进，不覆盖回退 B 的步数。"""
+        ss = _start(tmp_path)
+        ss_a = POMDPSession.open(ss.observation_json)
+        ss_b = POMDPSession.open(ss.observation_json)
+        with ss_a.apply_ctx("run_a") as (o_a, log_a):
+            _apply(ss_b, version=1)  # B 在 A 的 body 内完整提交（steps 0→1）
+            o_a.validation.reward = 0.2
+            log_a.append({"step": len(log_a) + 1, "action": "run_a", "v": 2})
+        o = POMDPSession.open(ss.observation_json)._load_observation()
+        assert o.validation.steps == 2  # 盘上 1（B）+ 1（A）——非内存整写覆盖
+        assert len(o.validation.recent_decisions) == 2  # 两分支决策日志均在投影尾
+
+    def test_failed_apply_steps_merge_from_disk_under_interleaving(self, tmp_path):
+        """失败吃步 × 键控合并：失败路径同样从盘上事实 +1（B 先提交不回退）。"""
+        ss = _start(tmp_path)
+        ss_a = POMDPSession.open(ss.observation_json)
+        ss_b = POMDPSession.open(ss.observation_json)
+        with pytest.raises(RuntimeError, match="过激"):
+            with ss_a.apply_ctx("run_a") as (o, log):
+                _apply(ss_b, version=1)  # B 完整提交（steps 0→1）
+                raise RuntimeError("动作过激被拒")
+        o = POMDPSession.open(ss.observation_json)._load_observation()
+        assert o.validation.steps == 2
+        recs = [json.loads(x) for x in (ss.dir / DECISION_LOG_FILE).read_text(encoding="utf-8").splitlines()]
+        assert [r.get("failed") for r in recs] == [None, True]  # B 成功（无旗）+ A 失败条目
 
 
 # ── o_actions 投影钩子（④）与盘上 memo（③） ────────────────────────────────

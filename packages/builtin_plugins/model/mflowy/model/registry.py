@@ -95,6 +95,32 @@ def family_face(family: str) -> dict:
     return family_param_defaults(get_node(node_key("model", family)))
 
 
+def family_space_dims(family: str) -> frozenset[str]:
+    """签名**类型面**收 Space 的维（含缺省标量的并集维——如 ``float | ContinuousSpace``）：
+    会话全 pin 退化形的单点空间渲染面（#218 全形态经 provider——静态缺省族如 MLP
+    经此可达 search 行为）。装饰期冻结注解检视，零活反射。"""
+    import types
+    import typing
+
+    from mflowy.driver.config import node_key
+    from mflowy.driver.discover import get_node
+    from mflowy.model.model.study import ContinuousSpace, DiscreteSpace
+
+    spaces = (ContinuousSpace, DiscreteSpace)
+    entry = get_node(node_key("model", family))
+    out: set[str] = set()
+    for name, (annotation, _default) in entry.param_fields.items():
+        ann = typing.get_args(annotation)[0] if typing.get_origin(annotation) is typing.Annotated else annotation
+        union = typing.get_args(ann) if typing.get_origin(ann) in (types.UnionType, typing.Union) else ()
+
+        def _is_space(t) -> bool:  # 参数化别名（ContinuousSpace[float]）经 origin 认亲
+            return t in spaces or typing.get_origin(t) in spaces
+
+        if _is_space(ann) or any(_is_space(a) for a in union):
+            out.add(name)
+    return frozenset(out)
+
+
 def families() -> dict[str, dict]:
     """族目录（运行期真源）：model 词表 ∩ ``.mdp_family`` 声明者（聚合期准入校验）。
 

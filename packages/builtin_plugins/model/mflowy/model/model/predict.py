@@ -9,7 +9,7 @@ from mflowy.driver.node import node
 from mflowy.model.middlewares import log_prediction
 
 from ._pipeline import _slice_pred
-from .types import ModelLoader
+from .artifacts import ModelLoader
 
 logger = logging.getLogger(__name__)
 

@@ -11,7 +11,8 @@ from mflowy.data.middlewares import log_figure
 from mflowy.utils import mlflow as mlflow_util
 from mflowy.utils.plot import DPI
 
-from .types import TASKTYPE, ModelPipeline
+from .artifacts import ModelPipeline
+from .types import TASKTYPE
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,75 @@ def proba_long_df(pipe: ModelPipeline, X: pd.DataFrame, y: pd.DataFrame) -> pd.D
     return pd.concat(long_dfs, ignore_index=True)
 
 
+def _precomputed_proba_long_df(y: pd.DataFrame, y_proba, classes_hint: np.ndarray | None) -> pd.DataFrame:
+    """预计算概率长表（同 ``proba_long_df`` 形状）：OOF 面预测由折外组装不可经
+    pipe 重算（``predict`` 是 in-sample）——直接消费调用方备好的 proba。"""
+    probas = y_proba if isinstance(y_proba, list) else [y_proba]
+    long_dfs: list[pd.DataFrame] = []
+    for i, col in enumerate(y.columns):
+        y_true = y[col].to_numpy()
+        proba = np.asarray(probas[i])
+        if proba.ndim == 1:
+            proba = np.stack([1 - proba, proba], axis=-1)
+        classes = (
+            np.asarray(classes_hint[i] if isinstance(classes_hint, list) else classes_hint)
+            if classes_hint is not None
+            else np.unique(y_true)  # proba 列序 = sorted classes（与 oof_evidence_table 同一假设）
+        )
+        for j, cls in enumerate(classes):
+            long_dfs.append(pd.DataFrame({"y_name": col, "y_true": y_true, "class": cls, "proba": proba[:, j]}))
+    return pd.concat(long_dfs, ignore_index=True)
+
+
+def plot_oof_evaluation(y_true: pd.DataFrame, y_pred: pd.DataFrame, y_proba, task: TASKTYPE) -> None:
+    """OOF 观察面的任务分组可视化（#218 OOF 产面移进管线）：θ* 折外预测的图族
+    ——回归 4+1 / 分类 4，与 holdout 终评同件同库、工件名同名（搜索 run 与终训
+    run 各居所——remote zip ≡ local 输出的对齐落点）。预测面由调用方备好。
+
+    loss_curve 不在 OOF 面：θ* 折外重评无独立 eval 轨迹（K 折逐折 refit、
+    holdout-val 退化形无 eval 集），loss 曲线是终训面（training 行为）工件。
+    """
+    import mlflow
+
+    if mlflow.active_run() is None:
+        logger.warning("无 active run，跳过 OOF 图（副产物族计算+落盘整体随 run——直调形态不白算）")
+        return
+    long_df = pd.concat(
+        [
+            pd.DataFrame({"type": "OOF", "y_name": col, "y": y_true[col].values, "y_pred": y_pred[col].values})
+            for col in y_true.columns
+        ],
+        ignore_index=True,
+    )
+    match task:
+        case TASKTYPE.REGRESSION:
+            _plot_regression(long_df, long_df)  # bland_altman 面同样取全 OOF（无 Test 子集）
+        case TASKTYPE.CLASSIFICATION:
+            proba_df = _precomputed_proba_long_df(y_true, y_proba, classes_hint=None)
+            _plot_classification_figures(long_df, proba_df)
+        case _:
+            raise ValueError(f"不支持的任务类型 {task}")
+
+
+def _plot_classification_figures(test_df: pd.DataFrame, proba_df: pd.DataFrame) -> None:
+    """分类四图 + 概率面（预计算数据版——holdout 终评 ``_plot_classification`` 与
+    OOF 面 ``plot_oof_evaluation`` 共用件；OOF 面不重复落 proba 表——证据四面表
+    ``oof_y_pred.parquet`` 已含 y_proba 列）。"""
+    from mflowy.model.plot.model_evaluation.classification.calibration_curve import calibration_curve
+    from mflowy.model.plot.model_evaluation.classification.confusion_matrix import confusion_matrix
+    from mflowy.model.plot.model_evaluation.classification.pr_curve import pr_curve
+    from mflowy.model.plot.model_evaluation.classification.roc_curve import roc_curve
+
+    _, fig = confusion_matrix(model_test_predictions=(TASKTYPE.CLASSIFICATION, test_df))
+    log_figure(fig, "confusion_matrix.png", DPI, graceful=True)
+    _, fig = roc_curve(model_test_probabilities=proba_df)
+    log_figure(fig, "roc_curve.png", DPI, graceful=True)
+    _, fig = pr_curve(model_test_probabilities=proba_df)
+    log_figure(fig, "pr_curve.png", DPI, graceful=True)
+    _, fig = calibration_curve(model_test_probabilities=proba_df)
+    log_figure(fig, "calibration_curve.png", DPI, graceful=True)
+
+
 def plot_evaluation(pipe: ModelPipeline, parts: list[_Part], task: TASKTYPE) -> None:
     """holdout 终评全套：actual_vs_predictions 长表 + 回归 4+1 图 / 分类 4 图。"""
     import mlflow
@@ -104,17 +174,10 @@ def _plot_regression(long_df: pd.DataFrame, test_df: pd.DataFrame) -> None:
 
 
 def _plot_classification(pipe: ModelPipeline, parts: list[_Part], test_df: pd.DataFrame) -> None:
-    from mflowy.model.plot.model_evaluation.classification.calibration_curve import calibration_curve
-    from mflowy.model.plot.model_evaluation.classification.confusion_matrix import (
-        confusion_matrix,
-        per_class_report,
-    )
-    from mflowy.model.plot.model_evaluation.classification.pr_curve import pr_curve
-    from mflowy.model.plot.model_evaluation.classification.roc_curve import roc_curve
+    from mflowy.model.plot.model_evaluation.classification.confusion_matrix import per_class_report
 
     X_test, y_test = parts[-1][0], parts[-1][1]
-    proba_df = proba_long_df(pipe, X_test, y_test)
-    mlflow_util.log_table(proba_df, "test_probabilities.parquet", graceful=True)
+    proba_df = proba_long_df(pipe, X_test, y_test)  # 图面数据（概率工件面 = y_proba.parquet 宽表，training 落盘单源）
 
     report = pd.concat(
         [
@@ -126,14 +189,4 @@ def _plot_classification(pipe: ModelPipeline, parts: list[_Part], test_df: pd.Da
     )
     mlflow_util.log_dict(report.to_dict(orient="records"), "classification_report.json", graceful=True)
 
-    _, fig = confusion_matrix(model_test_predictions=(TASKTYPE.CLASSIFICATION, test_df))
-    log_figure(fig, "confusion_matrix.png", DPI, graceful=True)
-
-    _, fig = roc_curve(model_test_probabilities=proba_df)
-    log_figure(fig, "roc_curve.png", DPI, graceful=True)
-
-    _, fig = pr_curve(model_test_probabilities=proba_df)
-    log_figure(fig, "pr_curve.png", DPI, graceful=True)
-
-    _, fig = calibration_curve(model_test_probabilities=proba_df)
-    log_figure(fig, "calibration_curve.png", DPI, graceful=True)
+    _plot_classification_figures(test_df, proba_df)

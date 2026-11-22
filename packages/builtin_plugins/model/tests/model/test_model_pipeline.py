@@ -7,7 +7,8 @@ import pandas as pd
 import pytest
 from mflowy.model.model._model import build_pipeline
 from mflowy.model.model._pipeline import training
-from mflowy.model.model.types import TASKTYPE, ModelLoader, ModelPipeline
+from mflowy.model.model.artifacts import ModelLoader, ModelPipeline
+from mflowy.model.model.types import TASKTYPE
 
 
 def _tiny_regression_parts():

@@ -50,17 +50,16 @@ from sklearn.metrics import (
 from sklearn.model_selection import GroupShuffleSplit, cross_val_score, train_test_split
 
 from . import study as study_module
-from ._evaluation_plots import _Part, plot_evaluation
+from ._evaluation_plots import _Part, plot_evaluation, plot_oof_evaluation
 from ._loss_curve import plot_loss_curve
 from ._model import fit_with_eval
+from .artifacts import ModelLoader, ModelPipeline
 from .study import ParameterSearchSpace, search_ml, suggest_params
 from .types import (
     TASKTYPE,
     Metric,
     MetricName,
     Metrics,
-    ModelLoader,
-    ModelPipeline,
 )
 from .utils import infer_metric
 
@@ -281,7 +280,37 @@ def terminal_u(metrics: Metrics, scoring: MetricName) -> float:
 
 # #66 节点副产物契约的单一真源名（training 行为落 run；session/report 消费面共享）。
 # X_test 随落——SHAP 解释等下游按 run_id 同时引用测试集与模型（mlflow final 模型）
-HOLDOUT_BYPRODUCTS = {"X_test": "X_test.parquet", "y_test": "y_test.parquet", "y_pred": "y_pred.parquet"}
+HOLDOUT_BYPRODUCTS = {
+    "y_pred": "y_pred.parquet"
+}  # 对齐裁定二轮：X_test/y_test 副产物退役——y_pred 带 indices，行面回源重构
+HOLDOUT_PROBA_ARTIFACT = (
+    "y_proba.parquet"  # 分类独有（对齐裁定 2026-11-22：y_proba 副产物带 indices；图面按存在性生产）
+)
+
+
+def holdout_rows_from_source(
+    source_file: str, indices, *, target: str, id_columns: list[str] | None = None
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """holdout 行面回源重构（对齐裁定二轮）：X_test/y_test 副产物退役——
+    ``y_pred``/``y_proba`` 带 indices（原始行身份），特征/真值面经 **x_y 节点单源**
+    从原始数据文件重构（列面/dtype 语义/id 剔除零漂移），按 indices 选行。返回
+    (X, y)——explanation/taylor 消费方共用。"""
+    from mflowy.model.x_y import x_y
+
+    df = pd.read_parquet(source_file) if source_file.endswith(".parquet") else pd.read_csv(source_file)
+    xy = x_y(load=df, target=target, id_columns=id_columns)
+    rows_idx = list(indices)
+    return xy.X.loc[rows_idx], xy.y.loc[rows_idx]
+
+
+def holdout_byproducts(task: TASKTYPE) -> dict[str, str]:
+    """终训副产物面（任务感知）：回归 = y_pred；分类加 ``y_proba.parquet``。"""
+    return (
+        dict(HOLDOUT_BYPRODUCTS)
+        if task != TASKTYPE.CLASSIFICATION
+        else {**HOLDOUT_BYPRODUCTS, "y_proba": HOLDOUT_PROBA_ARTIFACT}
+    )
+
 
 # predict 回归区间常量（#80 裁定：α=0.1 → 90% 区间，代码单源——出现真实可调
 # 需求再升 Annotated 默认参数）；半宽 tag 键（run 面——loader 读、final 复制）
@@ -289,16 +318,13 @@ PREDICT_INTERVAL_ALPHA: float = 0.1
 OOF_HALF_WIDTH_TAG = "mflowy.oof_half_width"
 
 
-def oof_evidence_table(
-    y_true: pd.DataFrame, y_pred: pd.DataFrame, y_proba: np.ndarray | list[np.ndarray] | None, task: TASKTYPE
-) -> pd.DataFrame:
-    """OOF 证据四面表（#80/#164——BO 消费面：预测范围对带 + 配对反馈分母）。
+def oof_evidence_table(y_true: pd.DataFrame, y_pred: pd.DataFrame, task: TASKTYPE) -> pd.DataFrame:
+    """OOF 证据表（#80/#164 + 对齐裁定 2026-11-22：概率面拆独立工件）。
 
     列 schema（目标 t 逐列并排）：``y_{t}``（真值）/ ``y_pred_{t}`` / ``error_{t}``
-    （回归 = 残差 y−y_pred；分类 = 误判指示 0/1）/ ``y_proba_{cls}``（单目标）或
-    ``y_proba_{t}__{cls}``（多目标 list 形态；仅分类，proba 列序 = sorted classes——
-    与 report.oof_proba_long_df 同一假设）。行序 ≡ y_true（log_table 不保索引，
-    与 holdout 副产物同契）。工件名沿用 ``oof_y_pred.parquet``——四面增强零寻址变更。
+    （回归 = 残差 y−y_pred；分类 = 误判指示 0/1）。行序 ≡ y_true（log_table 不保
+    索引，与 holdout 副产物同契）；概率面（分类）独立 ``y_proba`` 工件——与
+    holdout 副产物形态对齐（回归只 y_pred、分类加 y_proba，均带 indices）。
     """
     out = pd.DataFrame(index=y_true.index)
     out["indices"] = (
@@ -310,14 +336,28 @@ def oof_evidence_table(
         out[f"y_{t}"] = yt
         out[f"y_pred_{t}"] = yp
         out[f"error_{t}"] = yt - yp if task == TASKTYPE.REGRESSION else (yt != yp).astype(int)
-    if y_proba is not None:
-        probas = y_proba if isinstance(y_proba, list) else [y_proba]
-        for t, proba in zip(y_true.columns, probas, strict=True):
-            proba = np.asarray(proba)
-            classes = np.unique(y_true[t].to_numpy())  # proba 列序 = sorted classes
-            for j, cls in enumerate(classes):
-                name = f"y_proba_{cls}" if len(y_true.columns) == 1 else f"y_proba_{t}__{cls}"
-                out[name] = proba[:, j]
+    return out
+
+
+def proba_table(
+    y_true: pd.DataFrame, y_proba: np.ndarray | list[np.ndarray] | None, *, indices=None
+) -> pd.DataFrame | None:
+    """概率副产物表（对齐裁定 2026-11-22——OOF/holdout 同构）：``indices`` +
+    ``y_proba_{cls}``（单目标）或 ``y_proba_{t}__{cls}``（多目标 list 形态）；
+    列序 = sorted classes（与 report.oof_proba_long_df 同一假设）。y_proba 缺席
+    （回归）返回 None——工件不落（图面按产物存在性生产）。
+    """
+    if y_proba is None:
+        return None
+    out = pd.DataFrame(index=y_true.index)
+    out["indices"] = y_true.index.to_numpy() if indices is None else np.asarray(indices)
+    probas = y_proba if isinstance(y_proba, list) else [y_proba]
+    for t, proba in zip(y_true.columns, probas, strict=True):
+        proba = np.asarray(proba)
+        classes = np.unique(y_true[t].to_numpy())  # proba 列序 = sorted classes
+        for j, cls in enumerate(classes):
+            name = f"y_proba_{cls}" if len(y_true.columns) == 1 else f"y_proba_{t}__{cls}"
+            out[name] = proba[:, j]
     return out
 
 
@@ -392,7 +432,11 @@ def hyperparameters_search(
     download 落家本 run；多 model 节点各自寻址互不污染。
 
     ``seed`` **仅在 ``study=None``（自建 study）路径消费**——传入 study 时其 sampler
-    由开 study 方随 seed 挂（#84：会话侧 `_open_study`；此处不再二次播种）。
+    由开 study 方随 seed 挂（#84：会话侧采用面 adopt_study_trials；此处不再二次播种）。
+
+    搜索终产 OOF 观察面（#218 产面移进管线）：θ* 折外证据表/半宽 tag/任务分组
+    可视化落当前 run——会话直调与 DAG search 两分支同名工件对齐（remote zip ≡
+    local 输出）；窗外直调形态跳过。
     """
     import mlflow
     import optuna
@@ -487,9 +531,39 @@ def hyperparameters_search(
         (root := mlflow_util.active_artifact_root()) is not None and Path(db).parent == root
     ):
         mlflow_util.set_tags({study_module.STUDY_TRACE_TAG: str(Path(db).relative_to(root))})
+    _oof_surface(study, split=split, make_pipe=make_pipe, base_params=base_params)
     std_repr = f"{np.std(scores):.4f}" if len(scores) else "n/a"
     print(f"best_{scoring}={study.best_value:.4f}, trial={best.number}, std={std_repr}, params={best.params}")
     return study
+
+
+def _oof_surface(study, *, split: TrainSplit, make_pipe: Callable[..., ModelPipeline], base_params: dict) -> None:
+    """OOF 观察面（#218 产面移进管线）：θ* 折外预测 → 证据表 ``oof_y_pred.parquet``
+    （带 indices 四面证据）+ 半宽 tag（回归）+ 任务分组可视化——**会话直调与 DAG
+    search 两分支同名工件对齐**（remote zip ≡ local 输出的落点）。半宽随 study
+    user_attr 留痕（账本回读面——跨 db 拷回仍可寻址）。窗外直调形态整体跳过
+    （落盘壳 graceful 守门，不白算）。
+
+    loss_curve 不在 OOF 面（θ* 折外重评无独立 eval 轨迹——见 plot_oof_evaluation）。
+    """
+    import mlflow
+
+    if mlflow.active_run() is None:
+        logger.info("无 active run，跳过 OOF 观察面（直调形态不白算）")
+        return
+    theta = {**base_params, **study.best_trial.params}
+    y_oof, y_proba = oof_predictions(split, make_pipe, theta)
+    y_true_oof = split.y_train.loc[y_oof.index]  # 真值面按 OOF 索引对齐（holdout-val 退化形只覆盖 val 段）
+    from mflowy.utils.mlflow import log_table
+
+    log_table(oof_evidence_table(y_true_oof, y_oof, split.task), "oof_y_pred.parquet")
+    if (pt := proba_table(y_true_oof, y_proba)) is not None:  # 分类独有（对齐裁定：均带 indices）
+        log_table(pt, "oof_y_proba.parquet")
+    half_width = oof_half_widths(y_true_oof, y_oof) if split.task == TASKTYPE.REGRESSION else None
+    if half_width is not None:
+        mlflow.set_tag(OOF_HALF_WIDTH_TAG, json.dumps(half_width))
+    study.set_user_attr(OOF_HALF_WIDTH_TAG, half_width)  # 账本回读面（JSON-safe；分类 None）
+    plot_oof_evaluation(y_true_oof, y_oof, y_proba, split.task)
 
 
 # ========== 最终训练 ==========
@@ -594,9 +668,11 @@ def training(
 
     y_pred_df = pd.DataFrame(y_pred, columns=split.y_test.columns)
     y_pred_df.insert(0, "indices", split.y_test.index.to_numpy())  # #236 工件契约：稳定行身份（统计工具显式对齐）
-    _log_table(split.X_test, HOLDOUT_BYPRODUCTS["X_test"], graceful=True)
-    _log_table(split.y_test, HOLDOUT_BYPRODUCTS["y_test"], graceful=True)
-    _log_table(y_pred_df, HOLDOUT_BYPRODUCTS["y_pred"], graceful=True)
+    _log_table(
+        y_pred_df, HOLDOUT_BYPRODUCTS["y_pred"], graceful=True
+    )  # X_test/y_test 已退役（对齐裁定二轮：行面回源重构）
+    if (pt := proba_table(split.y_test, y_proba)) is not None:
+        _log_table(pt, HOLDOUT_PROBA_ARTIFACT, graceful=True)  # 分类独有（对齐裁定：y_proba 副产物带 indices）
     parts: list[_Part] = [(X_fit, y_fit, "Train")]
     if X_val is not None:
         assert y_val is not None  # split_val 恒成对返回（X_val/y_val 同源切分）
@@ -665,7 +741,7 @@ def oof_predictions(
 def holdout_report(loader: ModelLoader, split: TrainSplit, scoring: MetricName) -> dict:
     """SDK 直 import 面的独立终评入口：loader 在 holdout 上预测（不重训）→ u（归一，
     ``terminal_u`` 单源）+ 全套指标（#226 ⑥/#236 判读退役：规则 findings 键移除
-    ——统计证据走 modeling_statistics 工具，判读归 agent）。
+    ——统计证据随计算动作收尾步产出（#226 ⑥ 收拢），判读归 agent）。
 
     与会话 finish 解耦——test 读即终局的语义由调用方（finish 每交付模型恰一次）承载。
     """

@@ -66,19 +66,24 @@ def _run_split_chain():
     return split_ctx.run_id, spec
 
 
-# ── training 行为副产物：y_test/y_pred parquet 随 run ───────────────────────
+# ── training 行为副产物：y_pred parquet 随 run（X_test/y_test 退役——回源重构）──
 
 
-def test_training_behavior_writes_holdout_byproducts(xy):
-    """training 行为（全 pin → 空间空）：X_test/y_test/y_pred parquet 副产物 +
-    loader.holdout（u/metrics——final_train_test 的 DAGResult 回读面）。"""
+def test_training_behavior_writes_holdout_byproducts(xy, tmp_path):
+    """training 行为（全 pin → 空间空）：y_pred parquet 副产物（X_test/y_test 已退役，
+    对齐裁定二轮——行面回源重构）+ loader.holdout（u/metrics——final_train_test 的
+    DAGResult 回读面）。"""
     import mlflow
     import pandas as pd
     from mflowy.model.cv.split import split
     from mflowy.model.model._split import materialize_split
     from mflowy.model.model.random_forest import RF
+    from mflowy.model.x_y import x_y
 
-    ts = materialize_split(split(x_y=xy), xy)
+    csv_path = tmp_path / "reg.csv"
+    _reg_df().to_csv(csv_path, index=False)  # 真实源文件（重构保真断言的回源面）
+    xy_csv = x_y(load=pd.read_csv(csv_path), target="y")
+    ts = materialize_split(split(x_y=xy_csv), xy_csv)
     with mlflow.start_run(run_name="byproduct:rf") as run:
         loader = RF(
             train_split=ts,
@@ -91,18 +96,24 @@ def test_training_behavior_writes_holdout_byproducts(xy):
         )
     rid = run.info.run_id
     arts = _artifacts(rid)
-    assert {"X_test.parquet", "y_test.parquet", "y_pred.parquet"} <= set(arts)  # 副产物可按 run 寻址
+    # 对齐裁定二轮：X_test/y_test 副产物退役——终训面只落 y_pred（+分类 y_proba）
+    assert "y_pred.parquet" in arts and "X_test.parquet" not in arts and "y_test.parquet" not in arts
 
     import mlflow.artifacts
 
     def _read(name: str):
         return pd.read_parquet(mlflow.artifacts.download_artifacts(run_id=rid, artifact_path=name))
 
-    X_test, y_test, y_pred = _read("X_test.parquet"), _read("y_test.parquet"), _read("y_pred.parquet")
-    assert list(X_test.columns) == list(ts.X_test.columns) and len(X_test) == len(ts.X_test)  # 解释输入面原样取回
+    y_pred = _read("y_pred.parquet")
     assert list(y_pred.columns) == ["indices", *list(ts.y_test.columns)]  # #236：indices 首列（稳定行身份）+ 行位对齐
-    assert len(X_test) == len(y_test) == len(y_pred)
-    assert len(y_test) == len(ts.y_test)
+    assert len(y_pred) == len(ts.y_test)
+    # 行面回源重构保真（对齐裁定二轮）：x_y 单源重构 ≡ 内存 split 面（列面/行数/值）
+    from mflowy.model.model._pipeline import holdout_rows_from_source
+
+    X_rec, y_rec = holdout_rows_from_source(str(csv_path), y_pred["indices"], target="y")
+    assert list(X_rec.columns) == list(ts.X_test.columns) and len(X_rec) == len(ts.X_test)
+    pd.testing.assert_frame_equal(X_rec.reset_index(drop=True), ts.X_test.reset_index(drop=True))
+    pd.testing.assert_frame_equal(y_rec.reset_index(drop=True), ts.y_test.reset_index(drop=True))
     assert loader.holdout and loader.holdout["u"] is not None  # DAGResult 回读面
     assert loader.holdout["metrics"] and all(loader.holdout["metrics"].values())
 

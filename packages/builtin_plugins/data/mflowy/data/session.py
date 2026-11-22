@@ -537,15 +537,17 @@ class CleaningSession:
         """执行一个 clean 词表动作：守卫 → 转移 → 快照 → 观测/奖励 → 决策日志。
 
         提交面双必填（#117 Q3）：``finding_ids``（本步处理的 findings——非空时校验 ⊆
-        当前 problems 的 finding_id，幻觉 id 即免费失败；可空 = 行级算子/逃生舱）、
+        当前 problems 的 finding_id，幻觉 id 即失败吃步，#225；可空 = 行级算子/逃生舱）、
         ``reason``（每步可审计的非空理由）。日志键 = ``clean_op``（执行名，#111 action
         归意图面）+ 派生 ``intent``；记录自带 r（壳补 r 机制）。
 
         转移走单步流编译执行（Conf→Builder→DAG.run——编译校验/观测/捕获/血缘免费，
-        apply 与导出计划同构）。失败即免费异常（守卫/校验在 commit 点前抛出——不耗
-        预算、不落版本、不进决策日志）；no-op 步否决（不动 df 的提交拒绝——keep 走
-        finish 声明，#113）；dry_run 已退役（#65——试探走「提交 → 免费 s′ → 负 reward
-        即 rollback」）。版本分配 = 日志派生 max+1（append-only——永不复用已 commit 版本）。
+        apply 与导出计划同构）。失败吃步（#225 裁定 3）：ctx 内失败 = 壳提交 steps +
+        失败决策日志条目后 re-raise（不落版本——body 半改内存态丢弃）；ctx 前的入参
+        拒绝（reason 缺失/词表外动作）恒免费；no-op 步否决（不动 df 的提交拒绝——keep
+        走 finish 声明，#113）；dry_run 已退役（#65——试探走「提交 → 吃步 s′ → 负
+        reward 即 rollback」）。版本分配 = 日志派生 max+1（append-only——永不复用已
+        commit 版本）。
         """
         params = dict(params or {})
         if action == "finish":

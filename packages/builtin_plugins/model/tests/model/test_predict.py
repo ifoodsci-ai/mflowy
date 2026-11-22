@@ -6,8 +6,8 @@ from unittest.mock import MagicMock
 import numpy as np
 import pandas as pd
 import pytest
+from mflowy.model.model.artifacts import ModelLoader, ModelPipeline
 from mflowy.model.model.predict import predict
-from mflowy.model.model.types import ModelLoader, ModelPipeline
 
 
 @pytest.fixture

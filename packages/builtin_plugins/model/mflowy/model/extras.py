@@ -7,6 +7,14 @@ model 域四个顶层目录（model / cv / x_transformer / plot）全标 ``[loca
 app 层零成本标注目录与 get_node_info——瘦装环境能看清装哪个 extra 可用。
 """
 
+# [local] extra 安装提示单源（#218 瘦装+local provider 永久降级路径）：tools 会话
+# 降级 catch 与 session 计算动作的 ModuleNotFoundError 翻译共用——纯常量零依赖，
+# 瘦装环境可 import。
+LOCAL_INSTALL_HINT = (
+    "本地建模重栈缺依赖——安装：pip install 'mflowy-model[local]'（聚合形态 mflowy[local]）；"
+    "瘦装环境的计算动作请走 remote provider（switch_job_provider）"
+)
+
 _EXTRA_OF_DIR = {
     "model": "local",
     "cv": "local",

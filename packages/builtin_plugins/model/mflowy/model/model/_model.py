@@ -19,7 +19,8 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from .types import TASKTYPE, ModelPipeline
+from .artifacts import ModelPipeline
+from .types import TASKTYPE
 
 if TYPE_CHECKING:
     from sklearn.compose import ColumnTransformer

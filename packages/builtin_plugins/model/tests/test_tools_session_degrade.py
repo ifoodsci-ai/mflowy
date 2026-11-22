@@ -45,3 +45,24 @@ def test_session_warm_path_passthrough():
     from mflowy.model.session import ModelingSession
 
     assert isinstance(tools._session(), ModelingSession)
+
+
+def test_session_import_pulls_no_family_stack():
+    """瘦装面（#218）：import mflowy.model.session 零牵五族重栈模块（族装载随
+    registry.families() 惰性 + 降级跳过）——session 顶层惰性化的行为契约，子进程
+    干净 sys.modules 实证（全栈环境不因装了重栈而放宽判据）。"""
+    import subprocess
+    import sys
+
+    code = (
+        "import sys\n"
+        "import mflowy.model.session\n"
+        "heavy = sorted(\n"
+        "    m for m in sys.modules\n"
+        "    if m.startswith('mflowy.model.model.')\n"
+        "    and any(f in m for f in ('xgboost', 'lightgbm', 'catboost', 'random_forest', '_mlp', '_neural_network'))\n"
+        ")\n"
+        "print(','.join(heavy))\n"
+    )
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == "", f"session import 牵入重栈模块：{out.stdout.strip()}"

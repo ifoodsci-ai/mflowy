@@ -24,20 +24,20 @@ from .templates import MODELING_TEMPLATE, count_model_steps, parse_steps_fragmen
 
 
 def _session():
-    """建模会话引擎惰性导入（瘦装降级面，#216 裁定/#217）：session 顶层重栈 import
-    （sklearn/optuna 等 [local] extra 依赖）在瘦装环境失败——fail-loud 带安装提示，
-    不裸抛 ModuleNotFoundError（会话 provider 化落地后保留为瘦装+local provider 的
-    永久降级路径）。importlib 相对导入 = 测试缝位（全栈环境注入缺依赖替身）。"""
+    """建模会话引擎惰性导入（瘦装降级面，#216 裁定/#217 + #218）：session 顶层
+    重栈 import 已惰性化——瘦装可 import、配置动作可用；本 catch 保留为瘦装 +
+    local provider 的**永久降级路径**（session 模块自身的意外缺依赖——提示单源
+    extras.LOCAL_INSTALL_HINT，与会话计算动作同文）。importlib 相对导入 = 测试缝位
+    （全栈环境注入缺依赖替身）。"""
     import importlib
 
     try:
         module = importlib.import_module(".session", __package__)
         return module.ModelingSession()  # #236 ⑨ 实体面（模块级薄门面退役）
     except ModuleNotFoundError as e:
-        raise RuntimeError(
-            f"建模会话引擎依赖本地建模栈（{e}）——安装：pip install 'mflowy-model[local]'"
-            "（聚合形态 mflowy[local]；瘦装 server 的计算动作请走 remote provider）"
-        ) from e
+        from .extras import LOCAL_INSTALL_HINT
+
+        raise RuntimeError(f"建模会话引擎导入失败（{e}）——{LOCAL_INSTALL_HINT}") from e
 
 
 def validate_modeling_steps(
@@ -341,7 +341,6 @@ def modeling_load_or_start(
     """
     session = _session()
 
-    # TODO(#226 ⑤ 后续)：submitted 状态信封自带 watch 命令（#225 remote 半边随用随加）
     observation_json_out, o = session.load_or_start(
         observation_json,
         file_path=file_path,
@@ -391,7 +390,8 @@ def modeling_apply(
         dict | None,
         Field(
             description="动作参数：select_model={family}；set_hp={param: 值}；set_hp_space={param: [lo,hi]|[v1,v2,…]}；"
-            "set_seed={seed}；select_FE={node}；run_hpo={n_trials}；final_train_test={}。未知参数即报错"
+            "set_seed={seed}；select_FE={node}；run_hpo={n_trials, platform_experiment_id?}；"
+            "final_train_test={platform_experiment_id?}。未知参数即报错"
         ),
     ] = None,
 ) -> dict:
@@ -401,6 +401,12 @@ def modeling_apply(
 
     run_hpo 全程不碰 holdout（no-peeking choke point 在 final_train_test）；账本键 =
     (family, FE 组合)；study sqlite 落会话目录增量续跑（空间变继续，seed/scoring 变重开）。
+
+    计算动作全形态经 JobProvider（#218/#225 + 债清偿裁定）：受理单源
+    settings.json job_provider（switch_job_provider 切换）——一律渲染 plan 提交
+    provider；submitted 全流 = 一个 apply（失败吃步）：提交任务 → 阻塞拉日志 →
+    zip 拉取解包 → 查询 → 账本对齐 finished 形态。remote 模式下计算动作须带
+    platform_experiment_id（先 ensure_platform_experiment 同步源数据文件拿到 id）。
 
     何时使用 modeling_apply：
     - select_model 定光标候选 → run_hpo 出首条账本 → final_train_test 终训交付
@@ -492,26 +498,6 @@ def modeling_report_skeleton(
     return session.report_skeleton(observation_json)
 
 
-def modeling_statistics(
-    observation_json: _Anchor,
-    key: Annotated[str, Field(description="combo 结构键（账本键——observe 的 models 面可查）")],
-    top_k: Annotated[int, Field(description="误差集中列取证上限（缺省 5）")] = 5,
-) -> dict:
-    """统计证据（#226 ⑥ 判读退役承接，#236）：run 寻址的声明式分析——证据表
-    （overall/误差集中列分组/目标分档）+ 图集，工件落统计 run；判读归你（经
-    modeling_report_findings 落账）。
-
-    指纹门：源数据换血（与工件旁记指纹不一致）fail-loud——按旧工件统计 = 撒谎的证据。
-
-    何时使用 modeling_statistics：
-    - run_hpo / final_train_test 后取统计证据（read 观测账本 → 本工具 → 推理 → 落账）
-    - 收局报告的误差结构叙述素材（与 draw_taylor_diagram 互补：单模型深证据 vs 多模型对比）
-    """
-    session = _session()
-
-    return session.statistics(observation_json, key, top_k=top_k)
-
-
 def modeling_report_findings(
     observation_json: _Anchor,
     key: Annotated[str, Field(description="落诊账本键（combo 结构键）")],
@@ -520,7 +506,7 @@ def modeling_report_findings(
         Field(
             description="agent 判读的结构化发现：[{kind, severity, evidence, message}]——"
             "kind ⊆ 已知词表（fail-loud）；#226 ⑥ 判读退役后单源 source=llm"
-            "（统计证据经 modeling_statistics 取回，判读归你）"
+            "（统计证据随 run_hpo/final_train_test 收尾产出——响应/观测的 statistics 面，判读归你）"
         ),
     ],
 ) -> dict:
@@ -528,7 +514,7 @@ def modeling_report_findings(
     薄别名工具——schema 校验 + 决策日志审计，写进 models[key].findings（o_biz）。
 
     何时使用 modeling_report_findings：
-    - run_hpo/终训后读统计证据（modeling_statistics 工具）推理分析，结构化落账
+    - run_hpo/终训后读响应/观测的 statistics 面证据摘要推理分析，结构化落账
       （observe 投影可见，支撑下一步决策）
     """
     session = _session()
