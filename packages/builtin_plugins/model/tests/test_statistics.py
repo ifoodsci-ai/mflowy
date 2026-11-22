@@ -1,9 +1,14 @@
-"""modeling_statistics 契约（#226 ⑥ 判读退役承接 + 补充裁定统计步独立成工具，#236）。
+"""机器统计收尾步契约（#226 ⑥ 承接面收拢，用户裁定 2026-11-22：机器面统计 =
+计算动作的最后一步，不是独立动作——modeling_statistics 工具退役）。
 
-- run 寻址证据面：证据表（overall + 分组读数）+ 图集（oof_plot_album 迁入）
-- 工件契约：indices 列重构（缺列 = #236 前旧工件 fail-loud）；源指纹门（换血 fail-loud）
-- 判读单源：run_hpo 后 entry.findings 空（规则 findings 退役）——落账走 report_findings
+- 证据随动作产出：run_hpo/final_train_test 的响应 biz.statistics（evidence_head/n）
+  + 图集落宿主 run（oof/终训）工件树——entry.oof.plots / entry.statistics 落账
+- observe 投影 statistics 面（判读素材可重读）；判读仍归 agent 经 report_findings
+- 工件契约（住 model__statistics 节点单源）：indices 列重构；源指纹门（换血 fail-loud）
 """
+
+import json
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -37,8 +42,8 @@ def reg_csv(tmp_path) -> str:
     return str(p)
 
 
-def _searched(sessions_root, reg_csv):
-    observation_json, s = ModelingSession().load_or_start(
+def _start(sessions_root, reg_csv):
+    return ModelingSession().load_or_start(
         file_path=reg_csv,
         cv_card="cv: 3",
         card={"target": "target"},
@@ -47,38 +52,70 @@ def _searched(sessions_root, reg_csv):
         candidates=[{"family": "RF", "baseline": True}],
         max_steps=4,
     )
+
+
+def _board(observation_json) -> dict:
+    return json.loads((Path(observation_json).parent / "board.json").read_text(encoding="utf-8"))
+
+
+def test_run_hpo_tail_produces_statistics(sessions_root, reg_csv):
+    """收尾步（OOF 面）：run_hpo 响应 biz.statistics 带证据摘要 + 图集落 oof run
+    工件树 + entry.oof.plots / entry.statistics 落账。"""
+    observation_json, _ = _start(sessions_root, reg_csv)
     ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
-    ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 2})
-    return observation_json
+    r = ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 2})
+    stats = r.biz["statistics"]
+    assert stats["key"] == _K and stats["n"] > 0 and stats["plots"]
+    head = stats["evidence_head"]
+    assert head[0]["slice"] == "overall" and head[0]["n"] == stats["n"]
+    assert any(row["slice"] == "by_column" for row in head)  # 误差集中列取证
+
+    entry = _board(observation_json)["models"][_K]
+    assert entry["oof"]["plots"] == stats["plots"]  # 图集寻址面（report_skeleton 消费）
+    assert entry["statistics"]["n"] == stats["n"]
+    from mflowy.utils.mlflow import run_artifacts
+
+    arts = run_artifacts(entry["oof"]["run_id"])
+    assert set(stats["plots"]) <= set(arts) and "statistics_evidence.parquet" in arts  # 落宿主 run 工件树
+
+    o = ModelingSession().observe(observation_json)
+    assert o.biz["statistics"]["key"] == _K and o.biz["statistics"]["n"] == stats["n"]  # 观测投影可重读
 
 
-def test_statistics_evidence_and_contract(sessions_root, reg_csv):
-    observation_json = _searched(sessions_root, reg_csv)
-    out = ModelingSession().statistics(observation_json, _K, top_k=2)
-    assert out["run_id"] and out["n"] > 0
-    assert out["evidence"] == "statistics_evidence.parquet" and out["plots"]
-    head = out["evidence_head"]
-    assert head[0]["slice"] == "overall" and head[0]["n"] == out["n"]
-    assert any(r["slice"] == "by_column" for r in head)  # 误差集中列取证
+def test_final_train_test_tail_holdout_face(sessions_root, reg_csv):
+    """收尾步（holdout 面，对称）：final_train_test 响应带 statistics + 图集落终训
+    run 工件树 + entry.statistics 落账（y_pred 副产物带 indices、指纹 tag 已旁记）。"""
+    observation_json, _ = _start(sessions_root, reg_csv)
+    ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
+    ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1})
+    r = ModelingSession().apply(observation_json, "final_train_test")
+    stats = r.biz["statistics"]
+    assert stats["key"] == _K and stats["n"] > 0 and stats["plots"]
+    entry = _board(observation_json)["models"][_K]
+    assert entry["statistics"]["n"] == stats["n"]
+    from mflowy.utils.mlflow import run_artifacts
+
+    assert set(stats["plots"]) <= set(run_artifacts(entry["run_id"]))  # 宿主 = 终训 run
 
 
-def test_statistics_fingerprint_gate(sessions_root, reg_csv):
-    """工件契约指纹门：源数据换血 → fail-loud（按旧工件统计 = 撒谎的证据）。"""
-    observation_json = _searched(sessions_root, reg_csv)
-    # 换血：改写源文件后开局同一路径的新会话统计寻址旧 run——直接用新 load 对旧 run：
-    import pathlib
-
-    p = pathlib.Path(reg_csv)
+def test_statistics_fingerprint_gate_inside_action(sessions_root, reg_csv):
+    """工件契约指纹门（节点单源）：开局后源数据换血 → run_hpo 收尾步 fail-loud
+    （动作失败吃步——按旧工件统计 = 撒谎的证据）。"""
+    observation_json, _ = _start(sessions_root, reg_csv)
+    ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
+    p = Path(reg_csv)
     df = pd.read_csv(p)
     df.loc[0, "target"] = 999.0
-    df.to_csv(p, index=False)
+    df.to_csv(p, index=False)  # 换血：开局指纹 ≠ 现算指纹
     with pytest.raises(ValueError, match="指纹不一致"):
-        ModelingSession().statistics(observation_json, _K)
+        ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1})
 
 
 def test_rule_findings_retired_single_source(sessions_root, reg_csv):
     """#226 ⑥ 判读退役：run_hpo 后账本 findings 空（单源 llm）——落账走 report_findings。"""
-    observation_json = _searched(sessions_root, reg_csv)
+    observation_json, _ = _start(sessions_root, reg_csv)
+    ModelingSession().apply(observation_json, "select_model", {"family": "RF"})
+    ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1})
     o = ModelingSession().observe(observation_json)
     assert o.biz["models"][_K].get("findings") in (None, [])
     ModelingSession().apply(
@@ -89,13 +126,3 @@ def test_rule_findings_retired_single_source(sessions_root, reg_csv):
     o2 = ModelingSession().observe(observation_json)
     fs = [f for f in o2.biz["findings"] if f.get("key") == _K]
     assert len(fs) == 1 and fs[0]["source"] == "llm"
-
-
-def test_statistics_on_frozen_holdout_face(sessions_root, reg_csv):
-    """终训面同构（#226 ⑥/补充裁定）：final_train_test 后按终训 run 统计——holdout
-    y_pred 副产物带 indices（裸列 schema）、终训 run 旁记指纹 tag（#236 工件契约）。"""
-    observation_json = _searched(sessions_root, reg_csv)
-    ModelingSession().apply(observation_json, "final_train_test")
-    out = ModelingSession().statistics(observation_json, _K, top_k=2)  # 冻结面优先终训 run
-    assert out["n"] > 0 and out["plots"]
-    assert out["evidence_head"][0]["slice"] == "overall"

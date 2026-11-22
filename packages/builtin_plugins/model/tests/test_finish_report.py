@@ -172,7 +172,7 @@ def delivered_rf(sessions_root, reg_csv, shared_tracking):
 
 def test_run_hpo_writes_oof_plot_album(sessions_root, reg_csv, shared_tracking):
     """#236：图集随判读退役迁出 run_hpo——搜索只产证据工件（indices + 指纹 tag）；
-    图集经 modeling_statistics 产（test_statistics 契约面），本测钉搜索侧工件契约。"""
+    图集经机器统计收尾步产（test_statistics 契约面），本测钉搜索侧工件契约。"""
     observation_json, s = ModelingSession().load_or_start(
         file_path=reg_csv, cv_card=CV_CARD, card=CARD, task="regression", metric="mae", max_steps=8
     )
@@ -183,7 +183,7 @@ def test_run_hpo_writes_oof_plot_album(sessions_root, reg_csv, shared_tracking):
     oof = m["models"][_K]["oof"]
     arts = set(run_artifacts(oof["run_id"]))  # 真源 = 父 run 工件树清单
     assert oof["y_pred"] in arts  # OOF 证据工件（#236 起带 indices 列）
-    assert oof["plots"] == []  # 图集槽位留空——随 modeling_statistics 产（#226 ⑥）
+    assert oof["plots"]  # 图集随机器统计收尾步产（#226 ⑥ 收拢——落 oof run 工件树）
 
 
 # ── draw_taylor_diagram（副产物 fan-in + 同一性断言） ───────────────────────
@@ -263,7 +263,7 @@ def test_report_skeleton_renders_from_ledger(delivered, sessions_root):
     images = {img["key"]: img for img in out["images"]}
     assert set(images) == {_K, _K2}
     for img in images.values():
-        assert img["holdout_byproducts"] == {  # #236：oof_plots 空槽（图集随 modeling_statistics 产）
+        assert img["holdout_byproducts"] == {  # oof_plots 随收尾步产（holdout 副产仍指针）
             "X_test": "X_test.parquet",
             "y_test": "y_test.parquet",
             "y_pred": "y_pred.parquet",

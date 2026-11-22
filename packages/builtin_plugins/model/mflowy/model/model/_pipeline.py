@@ -696,7 +696,7 @@ def oof_predictions(
 def holdout_report(loader: ModelLoader, split: TrainSplit, scoring: MetricName) -> dict:
     """SDK 直 import 面的独立终评入口：loader 在 holdout 上预测（不重训）→ u（归一，
     ``terminal_u`` 单源）+ 全套指标（#226 ⑥/#236 判读退役：规则 findings 键移除
-    ——统计证据走 modeling_statistics 工具，判读归 agent）。
+    ——统计证据随计算动作收尾步产出（#226 ⑥ 收拢），判读归 agent）。
 
     与会话 finish 解耦——test 读即终局的语义由调用方（finish 每交付模型恰一次）承载。
     """

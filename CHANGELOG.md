@@ -53,6 +53,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - study 链锚语义修正：续跳（#244 外部锚）不换锚——`entry.chain.run_id` 恒锚
   study 树主 run（本 run 无自有 study.db 不可寻址的缺陷修复）
 
+### 机器统计收尾步：modeling_statistics 退役（#218 收尾裁定，2026-11-22，BREAKING）
+
+用户裁定：**机器面统计 = 计算动作的最后一步，不是独立动作**——agent 回路免二次
+调用（原「run_hpo → modeling_statistics 取证 → report_findings」两步机械收拢为
+「run_hpo（证据随动作产出）→ 判读 → report_findings」）。
+
+- `run_hpo` / `final_train_test` 收尾步：进程内直调 `model__statistics` 节点
+  （消费面分析——工件已本地；**非受理提交**）——证据表/图集落**宿主 run**（oof/
+  终训）工件树（寻址面不变，`entry.oof.plots` 落真值），证据摘要随响应
+  `biz.statistics`（key/evidence_head/n/plots）+ `observe` 投影 + `entry.statistics`
+  落账（判读素材可重读）
+- `modeling_statistics` 工具退役（session 方法/CLI 函数/entry point）；原票面债
+  「statistics remote 消费缺失」随工具消亡自然闭账（收尾步在本地工件上运行，
+  两受理形态同构）
+- resume 宿主 run 前对齐 fluent 活动实验（`ensure_experiment` 的 `set_experiment`
+  全局残留会撞跨实验 resume 门）
+
 ### 技术债收尾（#218 第二轮，2026-11-22——票面评论六项的清偿）
 
 - **红线 6 清账**：`scikit-learn`/`optuna` 升 mflowy-model 硬依赖（瘦面 x_y/cv.split/

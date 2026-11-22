@@ -498,26 +498,6 @@ def modeling_report_skeleton(
     return session.report_skeleton(observation_json)
 
 
-def modeling_statistics(
-    observation_json: _Anchor,
-    key: Annotated[str, Field(description="combo 结构键（账本键——observe 的 models 面可查）")],
-    top_k: Annotated[int, Field(description="误差集中列取证上限（缺省 5）")] = 5,
-) -> dict:
-    """统计证据（#226 ⑥ 判读退役承接，#236）：run 寻址的声明式分析——证据表
-    （overall/误差集中列分组/目标分档）+ 图集，工件落统计 run；判读归你（经
-    modeling_report_findings 落账）。
-
-    指纹门：源数据换血（与工件旁记指纹不一致）fail-loud——按旧工件统计 = 撒谎的证据。
-
-    何时使用 modeling_statistics：
-    - run_hpo / final_train_test 后取统计证据（read 观测账本 → 本工具 → 推理 → 落账）
-    - 收局报告的误差结构叙述素材（与 draw_taylor_diagram 互补：单模型深证据 vs 多模型对比）
-    """
-    session = _session()
-
-    return session.statistics(observation_json, key, top_k=top_k)
-
-
 def modeling_report_findings(
     observation_json: _Anchor,
     key: Annotated[str, Field(description="落诊账本键（combo 结构键）")],
@@ -526,7 +506,7 @@ def modeling_report_findings(
         Field(
             description="agent 判读的结构化发现：[{kind, severity, evidence, message}]——"
             "kind ⊆ 已知词表（fail-loud）；#226 ⑥ 判读退役后单源 source=llm"
-            "（统计证据经 modeling_statistics 取回，判读归你）"
+            "（统计证据随 run_hpo/final_train_test 收尾产出——响应/观测的 statistics 面，判读归你）"
         ),
     ],
 ) -> dict:
@@ -534,7 +514,7 @@ def modeling_report_findings(
     薄别名工具——schema 校验 + 决策日志审计，写进 models[key].findings（o_biz）。
 
     何时使用 modeling_report_findings：
-    - run_hpo/终训后读统计证据（modeling_statistics 工具）推理分析，结构化落账
+    - run_hpo/终训后读响应/观测的 statistics 面证据摘要推理分析，结构化落账
       （observe 投影可见，支撑下一步决策）
     """
     session = _session()
