@@ -175,28 +175,31 @@ def taylor_byproducts(byproducts: list[tuple[str, pd.DataFrame, pd.DataFrame]]) 
     return pd.concat(parts, ignore_index=True)
 
 
-def taylor_for_runs(runs: list[tuple[str, str]], task, out_dir: Path) -> dict:
+def taylor_for_runs(
+    runs: list[tuple[str, str]], task, out_dir: Path, *, source_file: str, target: str, id_columns=None
+) -> dict:
     """多终训 run 副产物 fan-in → (corr, σ, rmse) + 泰勒图（落 ``out_dir``）。
 
-    ``runs`` = (combo label, run_id) 清单；副产物缺 fail-loud；单模型不出图
-    （多模型对比图——统计照出）；分类任务不出统计面。图名恒 ``TAYLOR_FIGURE``
-    常量（确定性产物名，重复绘制覆盖）。
+    ``runs`` = (combo label, run_id) 清单；y_pred 副产物缺 fail-loud；y_test 回源
+    重构（对齐裁定二轮：``source_file``/``target``/``id_columns`` 寻址 + y_pred
+    indices——x_y 单源列面）；单模型不出图（多模型对比图——统计照出）；分类任务
+    不出统计面。图名恒 ``TAYLOR_FIGURE`` 常量（确定性产物名，重复绘制覆盖）。
     """
-    from mflowy.model.model._pipeline import HOLDOUT_BYPRODUCTS
+    from mflowy.model.model._pipeline import HOLDOUT_BYPRODUCTS, holdout_rows_from_source
     from mflowy.utils.mlflow import download_run_artifact, run_artifacts
     from mflowy.utils.plot import save_figure
 
     byproducts: list[tuple[str, pd.DataFrame, pd.DataFrame]] = []
     for label, rid in runs:
         arts = run_artifacts(rid)
-        missing = {HOLDOUT_BYPRODUCTS["y_test"], HOLDOUT_BYPRODUCTS["y_pred"]} - set(arts)
-        if missing:
+        if HOLDOUT_BYPRODUCTS["y_pred"] not in arts:
             raise ValueError(
-                f"run `{rid}`（{label}）缺副产物 {sorted(missing)}（final_train_test 的 training 行为产物）"
+                f"run `{rid}`（{label}）缺副产物 {HOLDOUT_BYPRODUCTS['y_pred']}（final_train_test 的 training 行为产物）"
             )
-        y_test = pd.read_parquet(download_run_artifact(rid, HOLDOUT_BYPRODUCTS["y_test"]))
         y_pred = pd.read_parquet(download_run_artifact(rid, HOLDOUT_BYPRODUCTS["y_pred"]))
-        byproducts.append((label, y_test, y_pred))
+        # y_test 回源重构（对齐裁定二轮：y_test 副产物退役——y_pred 带 indices）
+        _, y_test = holdout_rows_from_source(source_file, y_pred["indices"], target=target, id_columns=id_columns)
+        byproducts.append((label, y_test.reset_index(drop=True), y_pred))
     plot_df = taylor_byproducts(byproducts)
 
     rows: dict[str, dict] = {}

@@ -280,14 +280,31 @@ def terminal_u(metrics: Metrics, scoring: MetricName) -> float:
 
 # #66 节点副产物契约的单一真源名（training 行为落 run；session/report 消费面共享）。
 # X_test 随落——SHAP 解释等下游按 run_id 同时引用测试集与模型（mlflow final 模型）
-HOLDOUT_BYPRODUCTS = {"X_test": "X_test.parquet", "y_test": "y_test.parquet", "y_pred": "y_pred.parquet"}
+HOLDOUT_BYPRODUCTS = {
+    "y_pred": "y_pred.parquet"
+}  # 对齐裁定二轮：X_test/y_test 副产物退役——y_pred 带 indices，行面回源重构
 HOLDOUT_PROBA_ARTIFACT = (
     "y_proba.parquet"  # 分类独有（对齐裁定 2026-11-22：y_proba 副产物带 indices；图面按存在性生产）
 )
 
 
+def holdout_rows_from_source(
+    source_file: str, indices, *, target: str, id_columns: list[str] | None = None
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """holdout 行面回源重构（对齐裁定二轮）：X_test/y_test 副产物退役——
+    ``y_pred``/``y_proba`` 带 indices（原始行身份），特征/真值面经 **x_y 节点单源**
+    从原始数据文件重构（列面/dtype 语义/id 剔除零漂移），按 indices 选行。返回
+    (X, y)——explanation/taylor 消费方共用。"""
+    from mflowy.model.x_y import x_y
+
+    df = pd.read_parquet(source_file) if source_file.endswith(".parquet") else pd.read_csv(source_file)
+    xy = x_y(load=df, target=target, id_columns=id_columns)
+    rows_idx = list(indices)
+    return xy.X.loc[rows_idx], xy.y.loc[rows_idx]
+
+
 def holdout_byproducts(task: TASKTYPE) -> dict[str, str]:
-    """终训副产物面（任务感知）：回归 = X/y/y_pred；分类加 ``y_proba.parquet``。"""
+    """终训副产物面（任务感知）：回归 = y_pred；分类加 ``y_proba.parquet``。"""
     return (
         dict(HOLDOUT_BYPRODUCTS)
         if task != TASKTYPE.CLASSIFICATION
@@ -651,9 +668,9 @@ def training(
 
     y_pred_df = pd.DataFrame(y_pred, columns=split.y_test.columns)
     y_pred_df.insert(0, "indices", split.y_test.index.to_numpy())  # #236 工件契约：稳定行身份（统计工具显式对齐）
-    _log_table(split.X_test, HOLDOUT_BYPRODUCTS["X_test"], graceful=True)
-    _log_table(split.y_test, HOLDOUT_BYPRODUCTS["y_test"], graceful=True)
-    _log_table(y_pred_df, HOLDOUT_BYPRODUCTS["y_pred"], graceful=True)
+    _log_table(
+        y_pred_df, HOLDOUT_BYPRODUCTS["y_pred"], graceful=True
+    )  # X_test/y_test 已退役（对齐裁定二轮：行面回源重构）
     if (pt := proba_table(split.y_test, y_proba)) is not None:
         _log_table(pt, HOLDOUT_PROBA_ARTIFACT, graceful=True)  # 分类独有（对齐裁定：y_proba 副产物带 indices）
     parts: list[_Part] = [(X_fit, y_fit, "Train")]

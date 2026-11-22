@@ -264,8 +264,6 @@ def test_report_skeleton_renders_from_ledger(delivered, sessions_root):
     assert set(images) == {_K, _K2}
     for img in images.values():
         assert img["holdout_byproducts"] == {  # oof_plots 随收尾步产（holdout 副产仍指针）
-            "X_test": "X_test.parquet",
-            "y_test": "y_test.parquet",
             "y_pred": "y_pred.parquet",
         }
         assert img["run_id"]

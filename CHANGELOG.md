@@ -67,6 +67,12 @@ indices；图面按产物存在性生产**。
 - **图面存在性生产**：统计尾步/album 的概率族图（roc/pr/calibration）按伴生
   y_proba 工件**存在性**产/不产（回归不产；缺件即不产——不再回退旧长表）；
   run faces 增 `artifact(strict=False)` 存在性探测面
+- **X_test/y_test 副产物退役（对齐二轮）**：`y_pred` 已带 indices——特征/真值面
+  经 `holdout_rows_from_source`（**x_y 节点单源**重构：列面/dtype/id 剔除零漂移）
+  从原始数据文件按 indices 加载。消费方改造：explanation（modeling_steps 的
+  load 源 + x_y 参数提取 → 重构 X_test 落临时 parquet 喂 SHAP 链）、taylor
+  （`taylor_for_runs` 收 source_file/target/id_columns，y_test 回源重构）；
+  `HOLDOUT_BYPRODUCTS` 收窄为 `y_pred`（+分类 y_proba）
 
 ### 机器统计收尾步：modeling_statistics 退役（#218 收尾裁定，2026-11-22，BREAKING）
 

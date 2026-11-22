@@ -575,7 +575,14 @@ class ModelingSession:
                 f"run_ids {unknown} 无终训副产物（不在账本终训面——先 final_train_test）——可用 run：{sorted(rid_to_key)}"
             )
         runs = [(rid_to_key[r], r) for r in run_ids]
-        out = taylor_for_runs(runs, m["task"], ss.dir)
+        out = taylor_for_runs(
+            runs,
+            m["task"],
+            ss.dir,
+            source_file=m["source_file"],
+            target=m["target"],
+            id_columns=m.get("id_columns"),
+        )
         return {**out, "figure": out["figure"] if out["figure"] is None else str(out["figure"])}
 
     def report_skeleton(self, observation_json: str) -> dict:

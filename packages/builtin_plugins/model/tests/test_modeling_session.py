@@ -292,11 +292,11 @@ def test_final_train_test_freezes_and_reads_holdout_once(sessions_root, reg_csv,
     entry = m["models"][_K_RF]
     assert entry["frozen"] and entry["u"] is not None and entry["run_id"]
     # 副产物指针（s 自描述）：X_test/y_test/y_pred parquet 随终训 run 落 mlflow 工件
-    assert entry["byproducts"] == {"X_test": "X_test.parquet", "y_test": "y_test.parquet", "y_pred": "y_pred.parquet"}
+    assert entry["byproducts"] == {"y_pred": "y_pred.parquet"}  # 对齐裁定二轮：X_test/y_test 退役
     from mflowy.utils.mlflow import run_artifacts
 
     arts = run_artifacts(entry["run_id"])
-    assert {"X_test.parquet", "y_test.parquet", "y_pred.parquet"} <= set(arts)
+    assert {"y_pred.parquet"} <= set(arts) and "X_test.parquet" not in arts and "y_test.parquet" not in arts
     assert (Path(observation_json).parent / f"loader_{_K_RF.replace('|', '__')}_v1.pkl").exists()
     with pytest.raises(RuntimeError, match="冻结"):
         ModelingSession().apply(observation_json, "run_hpo", {"n_trials": 1})

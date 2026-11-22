@@ -672,7 +672,7 @@ def test_final_train_test_submitted_branch(tmp_path, monkeypatch, isolate, reg_c
     entry = st["models"][_K_RF]
     assert entry["frozen"] and entry["u"] < 0  # MAE 误差类取负（terminal_u 单源）
     assert entry["metrics"]["target"]["mae"] > 0 and entry["run_id"]
-    assert entry["byproducts"] == {"X_test": "X_test.parquet", "y_test": "y_test.parquet", "y_pred": "y_pred.parquet"}
+    assert entry["byproducts"] == {"y_pred": "y_pred.parquet"}  # 对齐裁定二轮
     assert r.biz["board"][_K_RF]["frozen"] is True
 
     # 镜像 run：本地库可寻址（副产物 + final 模型 + lineage tags）
@@ -680,7 +680,7 @@ def test_final_train_test_submitted_branch(tmp_path, monkeypatch, isolate, reg_c
     from mflowy.utils.mlflow import run_artifacts
 
     arts = run_artifacts(entry["run_id"])
-    assert {"X_test.parquet", "y_test.parquet", "y_pred.parquet", "final"} <= set(arts)
+    assert {"y_pred.parquet", "final"} <= set(arts) and "X_test.parquet" not in arts
     tags = mlflow.get_run(entry["run_id"]).data.tags
     assert tags["mflowy.action"] == "final_train_test" and tags["mflowy.family"] == "RF"
 
